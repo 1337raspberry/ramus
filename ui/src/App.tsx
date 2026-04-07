@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { isAuthenticated, togglePlayPause, nextTrack, previousTrack } from "./lib/commands";
-import type { AccentColorPayload } from "./lib/types";
+import type {
+  AccentColorPayload,
+  PlaybackStatePayload,
+  PlaybackPositionPayload,
+  PlaybackBufferingPayload,
+} from "./lib/types";
+import { usePlaybackStore } from "./stores/playbackStore";
 import ThreeColumnLayout from "./components/ThreeColumnLayout";
 import SidebarView from "./components/SidebarView";
 import AlbumGridView from "./components/AlbumGridView";
-import TrackListView from "./components/TrackListView";
+import DetailColumn from "./components/DetailColumn";
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -27,6 +33,33 @@ export default function App() {
     });
     return () => {
       unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  // Listen for playback events
+  useEffect(() => {
+    const store = usePlaybackStore.getState();
+
+    const u1 = listen<PlaybackStatePayload>("playback-state", (event) => {
+      const { status, currentTrack, queueIndex } = event.payload;
+      store.onPlaybackState(status, currentTrack, queueIndex);
+    });
+    const u2 = listen<PlaybackPositionPayload>("playback-position", (event) => {
+      const { position, duration } = event.payload;
+      store.onPlaybackPosition(position, duration);
+    });
+    const u3 = listen<PlaybackBufferingPayload>("playback-buffering", (event) => {
+      const { isBuffering, bufferedFraction } = event.payload;
+      store.onBuffering(isBuffering, bufferedFraction);
+    });
+
+    // Load initial volume
+    store.loadVolume();
+
+    return () => {
+      u1.then((fn) => fn());
+      u2.then((fn) => fn());
+      u3.then((fn) => fn());
     };
   }, []);
 
@@ -105,7 +138,7 @@ export default function App() {
       <ThreeColumnLayout
         sidebar={<SidebarView />}
         content={<AlbumGridView />}
-        detail={<TrackListView />}
+        detail={<DetailColumn />}
       />
     </>
   );
