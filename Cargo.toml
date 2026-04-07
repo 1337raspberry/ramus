@@ -1,0 +1,3 @@
+[workspace]
+members = ["ramus-core"]
+resolver = "2"

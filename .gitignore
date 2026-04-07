@@ -1,3 +1,5 @@
 .DS_Store
 .build/
 swift-project/RamusMusicCore/.build/
+swift-project/RamusMusicCore/.swiftpm/
+target/
