@@ -15,6 +15,7 @@ import DetailColumn from "./components/DetailColumn";
 import SearchOverlay from "./components/SearchOverlay";
 import EqualizerPanel from "./components/EqualizerPanel";
 import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
+import OnboardingFlow from "./components/onboarding/OnboardingFlow";
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -130,21 +131,12 @@ export default function App() {
     );
   }
 
-  // Not authenticated — show onboarding placeholder
+  // Not authenticated — onboarding flow
   if (!authed) {
     return (
       <>
         <div className="drag-region" data-tauri-drag-region />
-        <div className="empty-state">
-          <div>
-            <div style={{ fontSize: "2rem", fontWeight: 300, letterSpacing: "0.1em" }}>
-              ramus
-            </div>
-            <div style={{ marginTop: "0.5rem", fontSize: "0.85rem", opacity: 0.5 }}>
-              onboarding flow (Phase 17)
-            </div>
-          </div>
-        </div>
+        <OnboardingFlow onComplete={() => setAuthed(true)} />
       </>
     );
   }
