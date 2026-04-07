@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type SidebarMode } from "../stores/libraryStore";
 import GenreTreeView from "./GenreTreeView";
 import { useGenreDebugStore } from "./GenreDebugPanel";
@@ -18,35 +19,66 @@ function ArtistList({ artists, selectedArtistId, selectArtist }: {
   selectedArtistId: string | null;
   selectArtist: (id: string) => void;
 }) {
-  const { textSize, padH, rowHeight, chevronWidth } = useGenreDebugStore();
+  const textSize = useGenreDebugStore((s) => s.textSize);
+  const padH = useGenreDebugStore((s) => s.padH);
+  const rowHeight = useGenreDebugStore((s) => s.rowHeight);
+  const chevronWidth = useGenreDebugStore((s) => s.chevronWidth);
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const estimateSize = useCallback(() => rowHeight, [rowHeight]);
+  const virtualizer = useVirtualizer({
+    count: artists.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize,
+    overscan: 20,
+  });
+
+  useEffect(() => {
+    virtualizer.measure();
+  }, [rowHeight, virtualizer]);
 
   if (artists.length === 0) {
     return <div className="empty-state">No artists loaded</div>;
   }
 
   return (
-    <div style={{ height: "100%", overflow: "auto", paddingTop: 2 }}>
-      {artists.map((artist) => (
-        <div
-          key={artist.sourceId}
-          className={`genre-row${selectedArtistId === artist.sourceId ? " selected" : ""}`}
-          style={{
-            height: rowHeight,
-            display: "flex",
-            alignItems: "center",
-            paddingLeft: padH,
-            paddingRight: padH,
-            fontSize: textSize,
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-          }}
-          onClick={() => selectArtist(artist.sourceId)}
-        >
-          <span style={{ width: chevronWidth, flexShrink: 0 }} />
-          <span className="genre-name">{artist.name}</span>
-        </div>
-      ))}
+    <div ref={parentRef} style={{ height: "100%", overflow: "auto", paddingTop: 2 }}>
+      <div
+        style={{
+          height: virtualizer.getTotalSize(),
+          width: "100%",
+          position: "relative",
+        }}
+      >
+        {virtualizer.getVirtualItems().map((vItem) => {
+          const artist = artists[vItem.index];
+          return (
+            <div
+              key={artist.sourceId}
+              className={`genre-row${selectedArtistId === artist.sourceId ? " selected" : ""}`}
+              style={{
+                position: "absolute",
+                top: vItem.start,
+                left: 0,
+                right: 0,
+                height: rowHeight,
+                display: "flex",
+                alignItems: "center",
+                paddingLeft: padH,
+                paddingRight: padH,
+                fontSize: textSize,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+              }}
+              onClick={() => selectArtist(artist.sourceId)}
+            >
+              <span style={{ width: chevronWidth, flexShrink: 0 }} />
+              <span className="genre-name">{artist.name}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

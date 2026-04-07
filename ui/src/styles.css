@@ -96,6 +96,8 @@ input, textarea {
   z-index: 0;
   pointer-events: none;
   filter: blur(100px);
+  will-change: filter;
+  contain: strict;
 }
 
 .ultrablur-blob {

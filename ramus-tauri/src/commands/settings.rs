@@ -25,6 +25,7 @@ pub async fn update_settings(
     // Update connection monitor HTTP policy
     state.connection_monitor.set_allow_http(!settings.refuse_http);
 
+    ramus_core::settings::save(&settings).map_err(|e| e.to_string())?;
     *state.settings.write() = settings;
     Ok(())
 }

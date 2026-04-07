@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { getArtUrl } from "../lib/commands";
 
@@ -12,11 +12,14 @@ function QueueTrackThumb({ thumb }: { thumb: string | null }) {
   const [src, setSrc] = useState<string | null>(null);
   const [err, setErr] = useState(false);
 
-  if (thumb && !src && !err) {
+  useEffect(() => {
+    if (!thumb) return;
+    let cancelled = false;
     getArtUrl(thumb, 50)
-      .then(setSrc)
-      .catch(() => setErr(true));
-  }
+      .then((url) => { if (!cancelled) setSrc(url); })
+      .catch(() => { if (!cancelled) setErr(true); });
+    return () => { cancelled = true; };
+  }, [thumb]);
 
   if (src && !err) {
     return (

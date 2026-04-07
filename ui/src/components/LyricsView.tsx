@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { LyricsResult } from "../lib/types";
-import { activeLineIndex } from "../stores/playbackStore";
+import { usePlaybackStore, activeLineIndex } from "../stores/playbackStore";
 
 interface Props {
   lyrics: LyricsResult;
-  position: number;
   isPinned: boolean;
   onTogglePin: () => void;
   onSeek: (seconds: number) => void;
@@ -13,20 +12,22 @@ interface Props {
 
 export default function LyricsView({
   lyrics,
-  position,
   isPinned,
   onTogglePin,
   onSeek,
   onDismiss,
 }: Props) {
+  const position = usePlaybackStore((s) => s.position);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [flashId, setFlashId] = useState<number | null>(null);
+  const lastActiveRef = useRef(-1);
 
   const active = activeLineIndex(lyrics, position);
 
-  // Auto-scroll to active line
+  // Auto-scroll only when active line actually changes
   useEffect(() => {
-    if (active < 0) return;
+    if (active < 0 || active === lastActiveRef.current) return;
+    lastActiveRef.current = active;
     const container = scrollRef.current;
     if (!container) return;
     const el = container.querySelector(`[data-line-index="${active}"]`);
@@ -52,7 +53,7 @@ export default function LyricsView({
         className={`lyrics-pin${isPinned ? " pinned" : ""}`}
         onClick={onTogglePin}
       >
-        {isPinned ? "\u{1F4CC}" : "\u{1F4CC}"}
+        {"\u{1F4CC}"}
       </button>
       <div className="lyrics-scroll" ref={scrollRef}>
         {lyrics.lines.map((line, i) => {

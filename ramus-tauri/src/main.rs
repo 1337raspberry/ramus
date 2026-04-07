@@ -11,7 +11,6 @@ use tauri::Manager;
 use ramus_core::cache::db::CacheDatabase;
 use ramus_core::cache::sync::SyncEngine;
 use ramus_core::genre::mapper::GenreMapper;
-use ramus_core::models::Settings;
 use ramus_core::playback::session::SessionTracker;
 use ramus_core::plex::auth;
 use ramus_core::plex::client::PlexClient;
@@ -64,7 +63,7 @@ fn main() {
                 sync_engine: Arc::new(parking_lot::Mutex::new(None)),
                 session_tracker: Arc::new(parking_lot::Mutex::new(SessionTracker::default())),
                 connection_monitor: connection_monitor.clone(),
-                settings: Arc::new(RwLock::new(Settings::default())),
+                settings: Arc::new(RwLock::new(ramus_core::settings::load())),
                 http_client: reqwest::Client::new(),
             };
 

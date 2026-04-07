@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { search as searchCmd, getArtUrl, insertNext, appendToQueue, getTracksForAlbum, playTracks } from "../lib/commands";
 import type { SearchResult, Track } from "../lib/types";
-import { useLibraryStore } from "../stores/libraryStore";
 
 interface Props {
   onDismiss: () => void;
