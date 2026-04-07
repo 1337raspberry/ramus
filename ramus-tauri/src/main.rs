@@ -80,8 +80,8 @@ fn main() {
                             let token = config.access_token.clone();
                             let client_id = client.client_identifier.clone();
 
-                            // Connect client (blocking in setup is fine)
-                            let rt = tokio::runtime::Handle::current();
+                            // Connect client synchronously during setup
+                            let rt = tokio::runtime::Runtime::new().unwrap();
                             let client_c = client.clone();
                             let url_c = url.clone();
                             let _ = rt.block_on(async {
