@@ -1,9 +1,12 @@
 use std::collections::HashSet;
 
+use serde::{Deserialize, Serialize};
+
 /// A node in the genre hierarchy tree.
 /// `children` is `None` for leaf nodes (required for UI tree rendering).
 /// `id` is path-based (e.g. "rock/funk") to handle genres appearing in multiple subtrees.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GenreNode {
     pub id: String,
     pub name: String,

@@ -3,7 +3,8 @@
 //! Supports synced (LRC) and unsynced (plain text) lyrics from Plex and LRCLIB.
 
 /// A single line of lyrics.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LyricLine {
     pub id: usize,
     /// Timestamp in seconds. `None` for unsynced lyrics.
@@ -12,14 +13,16 @@ pub struct LyricLine {
 }
 
 /// Source of lyrics data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum LyricsSource {
     Plex,
     Lrclib,
 }
 
 /// Parsed lyrics result with sync state and source.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LyricsResult {
     pub lines: Vec<LyricLine>,
     pub is_synced: bool,

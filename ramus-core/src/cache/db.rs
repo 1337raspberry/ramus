@@ -45,7 +45,8 @@ pub struct CachedAlbumInfo {
     pub first_genre: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CacheStats {
     pub artist_count: i64,
     pub album_count: i64,
