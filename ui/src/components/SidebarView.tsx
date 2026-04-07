@@ -8,7 +8,11 @@ const TABS: { mode: SidebarMode; label: string }[] = [
   { mode: "artists", label: "Artists" },
 ];
 
-export default function SidebarView() {
+interface SidebarProps {
+  onOpenSettings?: () => void;
+}
+
+export default function SidebarView({ onOpenSettings }: SidebarProps) {
   const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const setSidebarMode = useLibraryStore((s) => s.setSidebarMode);
   const artists = useLibraryStore((s) => s.artists);
@@ -55,6 +59,11 @@ export default function SidebarView() {
           </div>
         )}
       </div>
+      {onOpenSettings && (
+        <button className="sidebar-settings-btn" onClick={onOpenSettings}>
+          Settings
+        </button>
+      )}
     </div>
   );
 }

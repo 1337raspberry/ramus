@@ -12,9 +12,15 @@ import ThreeColumnLayout from "./components/ThreeColumnLayout";
 import SidebarView from "./components/SidebarView";
 import AlbumGridView from "./components/AlbumGridView";
 import DetailColumn from "./components/DetailColumn";
+import SearchOverlay from "./components/SearchOverlay";
+import EqualizerPanel from "./components/EqualizerPanel";
+import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
+  const [showEQ, setShowEQ] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Check auth on mount
   useEffect(() => {
@@ -69,7 +75,19 @@ export default function App() {
 
     if (mod && e.key === "f") {
       e.preventDefault();
-      // TODO: open search overlay (Phase 16)
+      setShowSearch((s) => !s);
+      return;
+    }
+
+    if (mod && e.key === "e") {
+      e.preventDefault();
+      setShowEQ((s) => !s);
+      return;
+    }
+
+    if (mod && e.key === ",") {
+      e.preventDefault();
+      setShowSettings((s) => !s);
       return;
     }
 
@@ -95,7 +113,7 @@ export default function App() {
       previousTrack();
       return;
     }
-  }, []);
+  }, [setShowSearch, setShowEQ, setShowSettings]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -136,10 +154,21 @@ export default function App() {
     <>
       <div className="drag-region" data-tauri-drag-region />
       <ThreeColumnLayout
-        sidebar={<SidebarView />}
+        sidebar={<SidebarView onOpenSettings={() => setShowSettings(true)} />}
         content={<AlbumGridView />}
-        detail={<DetailColumn />}
+        detail={<DetailColumn onOpenEQ={() => setShowEQ(true)} />}
       />
+      {showSearch && <SearchOverlay onDismiss={() => setShowSearch(false)} />}
+      {showEQ && <EqualizerPanel onDismiss={() => setShowEQ(false)} />}
+      {showSettings && (
+        <LibrarySettingsPanel
+          onDismiss={() => setShowSettings(false)}
+          onSignOut={() => {
+            setShowSettings(false);
+            setAuthed(false);
+          }}
+        />
+      )}
     </>
   );
 }
