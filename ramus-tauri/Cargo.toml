@@ -17,6 +17,8 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 uuid = { version = "1", features = ["v4"] }
 urlencoding = "2"
 rand = "0.8"
+open = "5"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+pkg-config = "0.3"

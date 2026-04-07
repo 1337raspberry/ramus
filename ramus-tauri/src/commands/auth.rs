@@ -5,6 +5,7 @@ use url::Url;
 
 use ramus_core::cache::db::CacheDatabase;
 use ramus_core::cache::sync::SyncEngine;
+use ramus_core::genre::mapper::GenreMapper;
 use ramus_core::models::{LibrarySection, PlexServer};
 use ramus_core::plex::auth::{self, PlexAuth};
 use ramus_core::plex::token_store::{TokenKey, TokenStore};
@@ -23,7 +24,10 @@ pub async fn start_oauth(state: State<'_, AppState>) -> CmdResult<String> {
         .map_err(|e| e.to_string())?;
 
     let url = PlexAuth::auth_url(&pin.code, &state.client.client_identifier);
-    // Store the pin ID so poll_oauth can use it
+
+    // Open the auth URL in the default browser
+    let _ = open::that(&url);
+
     Ok(serde_json::json!({
         "authUrl": url,
         "pinId": pin.id,
@@ -157,6 +161,19 @@ pub async fn finalize_onboarding(
     // For direct cache queries, open a second handle
     let db2 = CacheDatabase::open(&db_path).map_err(|e| e.to_string())?;
     *state.cache.lock() = Some(db2);
+
+    // Configure the audio player with server connection details
+    state.player.configure(
+        url.clone(),
+        server.access_token.clone(),
+        state.client.client_identifier.clone(),
+    );
+
+    // Load genre mapper from bundled open.json
+    let open_json_bytes = include_bytes!("../../data/open.json");
+    if let Ok(mapper) = GenreMapper::from_json_bytes(open_json_bytes) {
+        *state.genre_mapper.write() = Some(mapper);
+    }
 
     // Start connection monitor
     state

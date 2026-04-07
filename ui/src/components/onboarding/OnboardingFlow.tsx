@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { finalizeOnboarding } from "../../lib/commands";
+import { finalizeOnboarding, connectManualUrl } from "../../lib/commands";
 import type { LibrarySection, PlexServer } from "../../lib/types";
 import OAuthSignIn from "./OAuthSignIn";
 import ServerPicker from "./ServerPicker";
@@ -21,9 +21,15 @@ export default function OnboardingFlow({ onComplete }: Props) {
     setStep("discoverServers");
   }, []);
 
-  const handleServerSelect = useCallback((srv: PlexServer, url: string) => {
+  const handleServerSelect = useCallback(async (srv: PlexServer, url: string) => {
     setServer(srv);
     setServerUrl(url);
+    // Connect the client to this server so findMusicLibraries works
+    try {
+      await connectManualUrl(url);
+    } catch {
+      // proceed anyway — finalize will also connect
+    }
     setStep("selectLibrary");
   }, []);
 

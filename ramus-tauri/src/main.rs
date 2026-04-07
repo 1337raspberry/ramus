@@ -3,12 +3,47 @@
     windows_subsystem = "windows"
 )]
 
+use std::sync::Arc;
+
+use parking_lot::RwLock;
+use tauri::Manager;
+
+use ramus_core::models::Settings;
+use ramus_core::playback::session::SessionTracker;
+use ramus_core::plex::client::PlexClient;
+use ramus_core::plex::connection::ConnectionMonitor;
+
 use ramus_tauri::commands;
-use ramus_tauri::create_app_state;
+use ramus_tauri::state::AppState;
 
 fn main() {
     tauri::Builder::default()
-        .manage(create_app_state())
+        .setup(|app| {
+            let app_handle = app.handle().clone();
+
+            let client_identifier = uuid::Uuid::new_v4().to_string();
+            let client = Arc::new(PlexClient::new(client_identifier));
+            let connection_monitor = Arc::new(ConnectionMonitor::new(client.clone()));
+
+            // Create real mpv player with event callbacks
+            let player = ramus_tauri::create_mpv_player(app_handle);
+
+            let state = AppState {
+                client,
+                cache: Arc::new(parking_lot::Mutex::new(None)),
+                player,
+                genre_mapper: Arc::new(RwLock::new(None)),
+                search_engine: Arc::new(RwLock::new(None)),
+                sync_engine: Arc::new(parking_lot::Mutex::new(None)),
+                session_tracker: Arc::new(parking_lot::Mutex::new(SessionTracker::default())),
+                connection_monitor,
+                settings: Arc::new(RwLock::new(Settings::default())),
+                http_client: reqwest::Client::new(),
+            };
+
+            app.manage(state);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // auth
             commands::auth::start_oauth,

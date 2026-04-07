@@ -11,6 +11,7 @@ export default function LibraryPicker({ server, onSelect }: Props) {
   const [libraries, setLibraries] = useState<LibrarySection[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     findMusicLibraries()
@@ -18,7 +19,10 @@ export default function LibraryPicker({ server, onSelect }: Props) {
         setLibraries(libs);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((e) => {
+        setError(String(e));
+        setLoading(false);
+      });
   }, []);
 
   const handleSelect = (lib: LibrarySection) => {
@@ -32,6 +36,7 @@ export default function LibraryPicker({ server, onSelect }: Props) {
       <p className="onboarding-subtitle">{server.name}</p>
 
       {loading && <div className="onboarding-loading">Loading libraries...</div>}
+      {error && <div className="onboarding-error">{error}</div>}
 
       <div className="library-list">
         {libraries.map((lib) => (
