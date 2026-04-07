@@ -10,7 +10,8 @@ use crate::plex::client::{MediaItem, PlexClient, PlexClientError};
 // Progress
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum SyncPhase {
     Artists,
     Albums,
@@ -19,7 +20,8 @@ pub enum SyncPhase {
     Done,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncProgress {
     pub phase: SyncPhase,
     pub current: usize,

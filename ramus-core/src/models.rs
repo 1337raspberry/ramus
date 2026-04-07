@@ -353,6 +353,73 @@ pub struct SearchResult {
 }
 
 // ---------------------------------------------------------------------------
+// ArtistInfo (serializable artist for frontend)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtistInfo {
+    pub id: i64,
+    pub name: String,
+    pub source_id: String,
+    pub art_url: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// GenreSource
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GenreSource {
+    #[default]
+    Open,
+    Custom,
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Settings {
+    pub playback_mode: PlaybackMode,
+    pub lookahead_depth: u8,
+    pub audio_cache_limit_bytes: i64,
+    pub sync_interval_hours: u32,
+    pub genre_source: GenreSource,
+    pub library_padding: u8,
+    pub show_taglines: bool,
+    pub refuse_http: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            playback_mode: PlaybackMode::DirectPlay,
+            lookahead_depth: 3,
+            audio_cache_limit_bytes: PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES,
+            sync_interval_hours: 0,
+            genre_source: GenreSource::default(),
+            library_padding: 6,
+            show_taglines: true,
+            refuse_http: false,
+        }
+    }
+}
+
+impl Settings {
+    pub fn to_playback_config(&self) -> PlaybackConfig {
+        PlaybackConfig::new(
+            self.playback_mode,
+            self.lookahead_depth,
+            self.audio_cache_limit_bytes,
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
 // LibrarySection
 // ---------------------------------------------------------------------------
 
