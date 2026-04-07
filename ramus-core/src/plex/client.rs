@@ -702,6 +702,21 @@ impl PlexClient {
             .and_then(|s| s.into_iter().find(|s| s.stream_type == Some(4))))
     }
 
+    /// Find the audio stream (stream_type == 2) from full track metadata.
+    pub async fn fetch_audio_stream(
+        &self,
+        rating_key: &str,
+    ) -> Result<Option<StreamInfo>, PlexClientError> {
+        let item = self.fetch_item_metadata(rating_key).await?;
+        Ok(item
+            .media
+            .and_then(|m| m.into_iter().next())
+            .and_then(|m| m.parts)
+            .and_then(|p| p.into_iter().next())
+            .and_then(|p| p.streams)
+            .and_then(|s| s.into_iter().find(|s| s.stream_type == Some(2))))
+    }
+
     /// Download raw lyrics data from a Plex stream path.
     pub async fn download_lyrics_data(&self, path: &str) -> Result<Vec<u8>, PlexClientError> {
         let (base, token) = self.read_state()?;

@@ -165,6 +165,7 @@ fn main() {
             commands::library::get_album_genres,
             commands::library::get_random_album,
             commands::library::get_art_url,
+            commands::library::get_album_colors,
             commands::library::get_cache_stats,
             // playback
             commands::playback::play_tracks,

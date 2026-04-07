@@ -1,7 +1,8 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { GenreNode } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
+import { useGenreDebugStore } from "./GenreDebugPanel";
 
 interface FlatRow {
   node: GenreNode;
@@ -35,6 +36,11 @@ export default function GenreTreeView() {
   const expandAll = useLibraryStore((s) => s.expandAll);
   const collapseAll = useLibraryStore((s) => s.collapseAll);
   const selectGenre = useLibraryStore((s) => s.selectGenre);
+  const loadAllAlbums = useLibraryStore((s) => s.loadAllAlbums);
+  const set = useLibraryStore.setState;
+
+  const { chevronSize, chevronWidth, textSize, padH, rowHeight, indentDepth } =
+    useGenreDebugStore();
 
   const totalCount = useMemo(() => {
     let sum = 0;
@@ -42,7 +48,6 @@ export default function GenreTreeView() {
     return sum;
   }, [genreTree]);
 
-  // "All" sentinel + flattened tree
   const rows = useMemo(
     () => flattenTree(genreTree, expandedGenreIds),
     [genreTree, expandedGenreIds]
@@ -63,18 +68,46 @@ export default function GenreTreeView() {
   }, [genreTree, expandedGenreIds]);
 
   const virtualizer = useVirtualizer({
-    count: rows.length + 1, // +1 for "All" row
+    count: rows.length + 1,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 28,
+    estimateSize: () => rowHeight,
     overscan: 20,
   });
+
+  useEffect(() => {
+    virtualizer.measure();
+  }, [rowHeight, virtualizer]);
 
   if (!genreTree.length) {
     return <div className="empty-state">No genres loaded</div>;
   }
 
+  const rowStyle = (depth: number): React.CSSProperties => ({
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: rowHeight,
+    display: "flex",
+    alignItems: "center",
+    paddingLeft: padH + depth * indentDepth,
+    paddingRight: padH,
+    fontSize: textSize,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+  });
+
+  const chevronStyle: React.CSSProperties = {
+    width: chevronWidth,
+    flexShrink: 0,
+    fontSize: chevronSize,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+
   return (
-    <div ref={parentRef} style={{ height: "100%", overflow: "auto" }}>
+    <div ref={parentRef} style={{ height: "100%", overflow: "auto", paddingTop: 2 }}>
       <div
         style={{
           height: virtualizer.getTotalSize(),
@@ -83,23 +116,26 @@ export default function GenreTreeView() {
         }}
       >
         {virtualizer.getVirtualItems().map((vItem) => {
-          // First row is the "All" sentinel
           if (vItem.index === 0) {
             return (
               <div
                 key="__all__"
-                className="genre-row"
-                style={{
-                  position: "absolute",
-                  top: vItem.start,
-                  left: 0,
-                  right: 0,
-                  height: vItem.size,
+                className={`genre-row${selectedGenreId === "__all__" ? " selected" : ""}`}
+                style={{ ...rowStyle(0), top: vItem.start }}
+                onClick={() => {
+                  set({ selectedGenreId: "__all__" });
+                  loadAllAlbums();
                 }}
-                onClick={() => (allExpanded ? collapseAll() : expandAll())}
               >
-                <span className="genre-chevron">
-                  {allExpanded ? "▾" : "▸"}
+                <span
+                  className={`genre-chevron${allExpanded ? " expanded" : ""}`}
+                  style={chevronStyle}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    allExpanded ? collapseAll() : expandAll();
+                  }}
+                >
+                  {"›"}
                 </span>
                 <span className="genre-name" style={{ fontWeight: 600 }}>
                   All
@@ -117,28 +153,22 @@ export default function GenreTreeView() {
             <div
               key={row.node.id}
               className={`genre-row${isSelected ? " selected" : ""}`}
-              style={{
-                position: "absolute",
-                top: vItem.start,
-                left: 0,
-                right: 0,
-                height: vItem.size,
-                paddingLeft: 8 + row.depth * 8,
-              }}
+              style={{ ...rowStyle(row.depth), top: vItem.start }}
               onClick={() => selectGenre(row.node)}
             >
               {row.hasChildren ? (
                 <span
-                  className="genre-chevron"
+                  className={`genre-chevron${isExpanded ? " expanded" : ""}`}
+                  style={chevronStyle}
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleGenreExpanded(row.node.id);
                   }}
                 >
-                  {isExpanded ? "▾" : "▸"}
+                  {"›"}
                 </span>
               ) : (
-                <span className="genre-chevron-spacer" />
+                <span style={{ width: chevronWidth, flexShrink: 0 }} />
               )}
               <span className="genre-name">{row.node.name}</span>
               {row.node.deduplicatedTotalCount > 0 && (

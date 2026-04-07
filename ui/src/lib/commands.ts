@@ -12,6 +12,7 @@ import type {
   SearchResult,
   Settings,
   Track,
+  UltraBlurColors,
 } from "./types";
 
 // -- Auth --
@@ -82,6 +83,9 @@ export const getRandomAlbum = () => invoke<Album | null>("get_random_album");
 
 export const getArtUrl = (thumb: string, size?: number) =>
   invoke<string>("get_art_url", { thumb, size });
+
+export const getAlbumColors = (sourceId: string) =>
+  invoke<UltraBlurColors | null>("get_album_colors", { sourceId });
 
 export const getCacheStats = () => invoke<CacheStats>("get_cache_stats");
 

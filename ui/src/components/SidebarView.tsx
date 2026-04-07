@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useLibraryStore, type SidebarMode } from "../stores/libraryStore";
 import GenreTreeView from "./GenreTreeView";
+import { useGenreDebugStore } from "./GenreDebugPanel";
 
 const TABS: { mode: SidebarMode; label: string }[] = [
   { mode: "genres", label: "Genres" },
@@ -10,6 +11,44 @@ const TABS: { mode: SidebarMode; label: string }[] = [
 
 interface SidebarProps {
   onOpenSettings?: () => void;
+}
+
+function ArtistList({ artists, selectedArtistId, selectArtist }: {
+  artists: { sourceId: string; name: string }[];
+  selectedArtistId: string | null;
+  selectArtist: (id: string) => void;
+}) {
+  const { textSize, padH, rowHeight, chevronWidth } = useGenreDebugStore();
+
+  if (artists.length === 0) {
+    return <div className="empty-state">No artists loaded</div>;
+  }
+
+  return (
+    <div style={{ height: "100%", overflow: "auto", paddingTop: 2 }}>
+      {artists.map((artist) => (
+        <div
+          key={artist.sourceId}
+          className={`genre-row${selectedArtistId === artist.sourceId ? " selected" : ""}`}
+          style={{
+            height: rowHeight,
+            display: "flex",
+            alignItems: "center",
+            paddingLeft: padH,
+            paddingRight: padH,
+            fontSize: textSize,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+          }}
+          onClick={() => selectArtist(artist.sourceId)}
+        >
+          <span style={{ width: chevronWidth, flexShrink: 0 }} />
+          <span className="genre-name">{artist.name}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function SidebarView({ onOpenSettings }: SidebarProps) {
@@ -42,21 +81,11 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
           <GenreTreeView />
         )}
         {sidebarMode === "artists" && (
-          <div style={{ height: "100%", overflow: "auto" }}>
-            {artists.length === 0 ? (
-              <div className="empty-state">No artists loaded</div>
-            ) : (
-              artists.map((artist) => (
-                <div
-                  key={artist.sourceId}
-                  className={`genre-row${selectedArtistId === artist.sourceId ? " selected" : ""}`}
-                  onClick={() => selectArtist(artist.sourceId)}
-                >
-                  <span className="genre-name">{artist.name}</span>
-                </div>
-              ))
-            )}
-          </div>
+          <ArtistList
+            artists={artists}
+            selectedArtistId={selectedArtistId}
+            selectArtist={selectArtist}
+          />
         )}
       </div>
       {onOpenSettings && (

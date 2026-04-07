@@ -4,7 +4,7 @@ use std::path::Path;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 
-use crate::models::{Album, RangeOp, Track};
+use crate::models::{Album, RangeOp, Track, UltraBlurColors};
 
 // ---------------------------------------------------------------------------
 // Type aliases for complex tuples
@@ -589,18 +589,33 @@ impl CacheDatabase {
 
     /// Get albums for a genre name (joined with artist).
     pub fn albums_for_genre(&self, genre_name: &str) -> Result<Vec<Album>, CacheError> {
+        self.albums_for_genres(&[genre_name])
+    }
+
+    /// Get albums matching any of the given genre names (deduplicated).
+    pub fn albums_for_genres(&self, genre_names: &[&str]) -> Result<Vec<Album>, CacheError> {
+        if genre_names.is_empty() {
+            return Ok(Vec::new());
+        }
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
-            "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
+        let placeholders: Vec<String> = (1..=genre_names.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "SELECT DISTINCT a.sourceId, a.title, ar.name, a.year, a.artUrl,
                     a.rating, a.studio, a.addedAt, a.lastViewedAt
              FROM albums a
              JOIN artists ar ON ar.id = a.artistId
              JOIN album_genres ag ON ag.albumId = a.id
              JOIN genres g ON g.id = ag.genreId
-             WHERE g.name = ?1 COLLATE NOCASE
+             WHERE g.name COLLATE NOCASE IN ({})
              ORDER BY ar.name COLLATE NOCASE, a.year",
-        )?;
-        let albums = Self::map_album_rows(&mut stmt, params![genre_name], &conn)?;
+            placeholders.join(", ")
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::types::ToSql> = genre_names
+            .iter()
+            .map(|s| s as &dyn rusqlite::types::ToSql)
+            .collect();
+        let albums = Self::map_album_rows(&mut stmt, params.as_slice(), &conn)?;
         Ok(albums)
     }
 
@@ -1282,6 +1297,25 @@ impl CacheDatabase {
         )?;
         let mut albums = Self::map_album_rows(&mut stmt, params![], &conn)?;
         Ok(albums.pop())
+    }
+
+    /// UltraBlur colors for an album (parsed from JSON stored in DB).
+    pub fn album_colors(&self, source_id: &str) -> Result<Option<UltraBlurColors>, CacheError> {
+        let conn = self.conn.lock();
+        let r: Result<Option<String>, _> = conn.query_row(
+            "SELECT ultraBlurColors FROM albums WHERE sourceId = ?1",
+            params![source_id],
+            |row| row.get(0),
+        );
+        match r {
+            Ok(Some(json)) => {
+                let colors: UltraBlurColors = serde_json::from_str(&json)?;
+                Ok(Some(colors))
+            }
+            Ok(None) => Ok(None),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// Genre names for an album.

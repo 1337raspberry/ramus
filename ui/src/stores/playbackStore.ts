@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Track, LyricsResult } from "../lib/types";
+import type { Track, LyricsResult, UltraBlurColors } from "../lib/types";
 import {
   getVolume,
   setVolume as setVolumeCmd,
@@ -8,6 +8,7 @@ import {
   getWaveform,
   getQueue,
   getAlbumGenres,
+  getAlbumColors,
   removeFromQueue as removeFromQueueCmd,
   jumpToQueueIndex as jumpToQueueIndexCmd,
 } from "../lib/commands";
@@ -31,6 +32,9 @@ interface PlaybackState {
 
   // Waveform
   waveformLevels: number[] | null;
+
+  // UltraBlur
+  ultraBlurColors: UltraBlurColors | null;
 
   // Queue
   queue: Track[];
@@ -90,6 +94,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   waveformLevels: null,
 
+  ultraBlurColors: null,
+
   queue: [],
   showQueue: false,
 
@@ -111,14 +117,26 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
       // Fetch waveform
       getWaveform(track.ratingKey)
-        .then((levels) => set({ waveformLevels: levels }))
-        .catch(() => {});
+        .then((levels) => {
+          if (levels) {
+            console.log(`[waveform] got ${levels.length} levels for ${track.ratingKey}`);
+          } else {
+            console.log(`[waveform] no levels returned for ${track.ratingKey}`);
+          }
+          set({ waveformLevels: levels });
+        })
+        .catch((e) => console.warn("[waveform] fetch failed:", e));
 
-      // Fetch genres for the album
+      // Fetch genres and colors for the album
       if (track.albumKey) {
         getAlbumGenres(track.albumKey)
           .then((genres) => set({ currentGenres: genres }))
           .catch(() => set({ currentGenres: [] }));
+        getAlbumColors(track.albumKey)
+          .then((colors) => {
+            if (colors) set({ ultraBlurColors: colors });
+          })
+          .catch(() => {});
       } else {
         set({ currentGenres: [] });
       }
