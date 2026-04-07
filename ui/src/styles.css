@@ -15,7 +15,7 @@
   --bg-primary: #1a1a1a;
   --bg-secondary: #222222;
   --bg-tertiary: #2a2a2a;
-  --bg-hover: #333333;
+  --bg-hover: rgba(255, 255, 255, 0.08);
   --bg-glass: rgba(30, 30, 30, 0.85);
 
   --text-primary: #e0e0e0;
@@ -40,11 +40,17 @@
   box-sizing: border-box;
 }
 
-html, body, #root {
+html {
+  height: 100%;
+  width: 100%;
+  background: #111;
+}
+
+body, #root {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background: var(--bg-primary);
+  background: transparent;
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 13px;
@@ -67,11 +73,43 @@ html, body, #root {
   background: var(--accent-35);
 }
 
-/* Prevent text selection on UI elements */
-button, [data-tauri-drag-region] {
+/* Prevent text selection and drag highlighting globally */
+* {
   -webkit-user-select: none;
   user-select: none;
+  -webkit-user-drag: none;
 }
+
+/* Allow selection in text inputs */
+input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ----------------------------------------------------------------
+   UltraBlur background
+   ---------------------------------------------------------------- */
+
+.ultrablur-bg {
+  position: fixed;
+  inset: -120px;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(100px);
+}
+
+.ultrablur-blob {
+  position: absolute;
+  width: 60%;
+  height: 60%;
+  border-radius: 50%;
+  transition: background-color 0.8s ease-in-out;
+}
+
+.ultrablur-tl { top: 0; left: 0; }
+.ultrablur-tr { top: 0; right: 0; }
+.ultrablur-bl { bottom: 0; left: 0; }
+.ultrablur-br { bottom: 0; right: 0; }
 
 /* ----------------------------------------------------------------
    Window drag region
@@ -87,8 +125,40 @@ button, [data-tauri-drag-region] {
   -webkit-app-region: drag;
 }
 
-.drag-region * {
+.drag-region button {
   -webkit-app-region: no-drag;
+}
+
+.traffic-lights {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  height: 100%;
+  pointer-events: none;
+  -webkit-app-region: drag;
+}
+
+.traffic-light {
+  pointer-events: auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 9px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s;
+}
+
+.traffic-light:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* ----------------------------------------------------------------
@@ -110,6 +180,8 @@ button, [data-tauri-drag-region] {
   height: 100%;
   width: 100%;
   overflow: hidden;
+  position: relative;
+  z-index: 1;
 }
 
 .column {
@@ -119,20 +191,21 @@ button, [data-tauri-drag-region] {
 }
 
 .column-sidebar {
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
+  background: transparent;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
   padding-top: 32px; /* below drag region */
 }
 
 .column-content {
-  background: var(--bg-primary);
+  background: transparent;
   padding-top: 32px;
 }
 
 .column-detail {
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border);
+  background: transparent;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
   padding-top: 32px;
+  overflow-y: hidden;
 }
 
 /* ----------------------------------------------------------------
@@ -150,7 +223,7 @@ button, [data-tauri-drag-region] {
 
 .column-divider:hover,
 .column-divider.dragging {
-  background: var(--accent-20);
+  background: transparent;
 }
 
 /* ----------------------------------------------------------------
@@ -193,13 +266,6 @@ button, [data-tauri-drag-region] {
    ---------------------------------------------------------------- */
 
 .genre-row {
-  display: flex;
-  align-items: center;
-  padding: 4px 10px 4px 8px;
-  cursor: pointer;
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
   transition: background 0.1s;
 }
 
@@ -213,17 +279,14 @@ button, [data-tauri-drag-region] {
 }
 
 .genre-chevron {
-  width: 14px;
-  flex-shrink: 0;
-  font-size: 10px;
   color: var(--text-muted);
   cursor: pointer;
-  text-align: center;
+  transition: transform 0.15s ease;
+  transform: rotate(0deg);
 }
 
-.genre-chevron-spacer {
-  width: 14px;
-  flex-shrink: 0;
+.genre-chevron.expanded {
+  transform: rotate(90deg);
 }
 
 .genre-name {
@@ -251,18 +314,29 @@ button, [data-tauri-drag-region] {
 }
 
 .sort-select {
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
   padding: 4px 8px;
   font-size: 11px;
   cursor: pointer;
   outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='10' viewBox='0 0 8 10'%3E%3Cpath d='M4 0L7 3.5H1z' fill='%23999'/%3E%3Cpath d='M4 10L1 6.5H7z' fill='%23999'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  padding-right: 20px;
 }
 
 .sort-select:focus {
   border-color: var(--accent);
+}
+
+.sort-select option {
+  background: #1a1a1a;
+  color: var(--text-primary);
 }
 
 .album-grid {
@@ -457,34 +531,12 @@ button, [data-tauri-drag-region] {
 }
 
 /* ----------------------------------------------------------------
-   Detail column tabs
+   Detail column scroll
    ---------------------------------------------------------------- */
 
-.detail-tabs {
-  display: flex;
-  justify-content: flex-end;
-  padding: 4px 12px;
-  border-bottom: 1px solid var(--border);
-}
-
-.detail-tab {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 11px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 3px;
-  transition: color 0.15s, background 0.15s;
-}
-
-.detail-tab:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
-.detail-tab.active {
-  color: var(--accent);
+.detail-scroll {
+  height: 100%;
+  overflow-y: auto;
 }
 
 /* ----------------------------------------------------------------
@@ -492,10 +544,51 @@ button, [data-tauri-drag-region] {
    ---------------------------------------------------------------- */
 
 .now-playing {
-  padding: 16px;
   display: flex;
   flex-direction: column;
+}
+
+.np-visible {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* Top: artist/album/year — fixed at top */
+.np-top {
+  flex-shrink: 0;
+}
+
+/* Middle: art, track, waveform, transport — fills remaining space, centered */
+.np-middle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   gap: 8px;
+  min-height: 0;
+  padding: 8px 0;
+}
+
+
+
+/* Bottom: genres, studio/codec, queue chevron — fixed at bottom */
+.np-bottom {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.np-queue-chevron {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 18px;
+  padding: 2px 0;
+  transform: rotate(90deg);
 }
 
 .np-header {
@@ -549,11 +642,22 @@ button, [data-tauri-drag-region] {
   color: #f0c040;
 }
 
-/* Album art */
-.np-art-container {
+/* Album art — always square, fits the smaller of width/height */
+.np-art-wrapper {
+  flex: 1 1 0;
+  min-height: 0;
   position: relative;
-  width: 100%;
-  aspect-ratio: 1;
+  container-type: size;
+}
+
+.np-art-container {
+  --art-size: min(100cqw, 100cqh);
+  width: var(--art-size);
+  height: var(--art-size);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
@@ -617,26 +721,41 @@ button, [data-tauri-drag-region] {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 20px;
+  gap: 12px;
   padding: 4px 0;
 }
 
 .np-transport-btn {
   background: none;
   border: none;
-  color: var(--text-primary);
+  color: var(--accent);
   font-size: 18px;
   cursor: pointer;
-  padding: 4px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: opacity 0.15s;
+  flex-shrink: 0;
+  border-radius: 50%;
+  position: relative;
+  z-index: 1;
 }
 
 .np-transport-btn:hover {
   opacity: 0.7;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .np-play-btn {
   font-size: 24px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  min-height: 48px;
 }
 
 /* Footer */
@@ -661,7 +780,7 @@ button, [data-tauri-drag-region] {
   gap: 4px;
 }
 
-/* Queue toggle */
+/* Queue toggle (legacy) */
 .np-queue-toggle {
   background: none;
   border: none;
@@ -724,6 +843,7 @@ button, [data-tauri-drag-region] {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-height: 58px;
 }
 
 .waveform-canvas-wrap {
@@ -1565,6 +1685,8 @@ button, [data-tauri-drag-region] {
   height: 100%;
   width: 100%;
   padding: 20px;
+  position: relative;
+  z-index: 1;
 }
 
 .onboarding-card {
@@ -1870,6 +1992,8 @@ button, [data-tauri-drag-region] {
   justify-content: center;
   height: 100%;
   opacity: 0.4;
+  position: relative;
+  z-index: 1;
   font-size: 14px;
   text-align: center;
   padding: 20px;

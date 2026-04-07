@@ -1,10 +1,6 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
-import { useLibraryStore } from "../stores/libraryStore";
 import NowPlayingView from "./NowPlayingView";
-import TrackListView from "./TrackListView";
-
-type DetailMode = "auto" | "tracks" | "nowPlaying";
 
 interface DetailColumnProps {
   onOpenEQ?: () => void;
@@ -12,38 +8,26 @@ interface DetailColumnProps {
 
 export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
   const currentTrack = usePlaybackStore((s) => s.currentTrack);
-  const selectedAlbum = useLibraryStore((s) => s.selectedAlbum);
-  const [mode, setMode] = useState<DetailMode>("auto");
+  const [panelHeight, setPanelHeight] = useState(0);
+  const obsRef = useRef<ResizeObserver | null>(null);
 
-  const isPlaying = currentTrack !== null;
-  const hasAlbum = selectedAlbum !== null;
+  const scrollRef = useCallback((el: HTMLDivElement | null) => {
+    obsRef.current?.disconnect();
+    if (el) {
+      setPanelHeight(el.clientHeight);
+      const obs = new ResizeObserver(() => setPanelHeight(el.clientHeight));
+      obs.observe(el);
+      obsRef.current = obs;
+    }
+  }, []);
 
-  // Determine what to show
-  const showNowPlaying =
-    mode === "nowPlaying" ||
-    (mode === "auto" && isPlaying);
-
-  // If nothing to show at all
-  if (!isPlaying && !hasAlbum) {
+  if (!currentTrack) {
     return <div className="empty-state">Select an album</div>;
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {/* Toggle tabs when both views are available */}
-      {isPlaying && hasAlbum && (
-        <div className="detail-tabs">
-          <button
-            className={`detail-tab${showNowPlaying ? " active" : ""}`}
-            onClick={() => setMode(showNowPlaying ? "tracks" : "nowPlaying")}
-          >
-            {showNowPlaying ? "Tracks" : "Now Playing"}
-          </button>
-        </div>
-      )}
-      <div style={{ flex: 1, overflow: "auto" }}>
-        {showNowPlaying && isPlaying ? <NowPlayingView onOpenEQ={onOpenEQ} /> : <TrackListView />}
-      </div>
+    <div ref={scrollRef} className="detail-scroll">
+      <NowPlayingView onOpenEQ={onOpenEQ} panelHeight={panelHeight} />
     </div>
   );
 }

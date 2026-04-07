@@ -185,13 +185,12 @@ pub async fn get_waveform(
     state: State<'_, AppState>,
     rating_key: String,
 ) -> CmdResult<Option<Vec<f32>>> {
-    // Fetch stream info to get stream ID
-    let stream = match state.client.fetch_lyrics_stream(&rating_key).await {
+    // Fetch audio stream (type 2) to get stream ID for levels endpoint
+    let stream = match state.client.fetch_audio_stream(&rating_key).await {
         Ok(Some(s)) => s,
         _ => return Ok(None),
     };
 
-    // Fetch dB levels from Plex
     let stream_id = match stream.id {
         Some(id) => id,
         None => return Ok(None),

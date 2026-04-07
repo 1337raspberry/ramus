@@ -145,3 +145,10 @@ export interface AccentColorPayload {
   g: number;
   b: number;
 }
+
+export interface UltraBlurColors {
+  topLeft: string;
+  topRight: string;
+  bottomRight: string;
+  bottomLeft: string;
+}

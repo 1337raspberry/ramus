@@ -2,7 +2,8 @@ use tauri::State;
 
 use ramus_core::cache::db::CacheStats;
 use ramus_core::genre::node::GenreNode;
-use ramus_core::models::{Album, ArtistInfo, Track};
+use ramus_core::models::{Album, ArtistInfo, Track, UltraBlurColors};
+use ramus_core::search::engine::GenreExpander;
 
 use crate::state::AppState;
 
@@ -47,7 +48,21 @@ pub async fn get_albums_for_genre(
     state: State<'_, AppState>,
     genre: String,
 ) -> CmdResult<Vec<Album>> {
-    with_cache(&state, |db| db.albums_for_genre(&genre))
+    // Expand parent genres to include all descendants
+    let mapper = state.genre_mapper.read();
+    let names: Vec<String> = if let Some(mapper) = mapper.as_ref() {
+        if let Some(expanded) = mapper.expand_genre(&genre) {
+            expanded.into_iter().collect()
+        } else {
+            vec![genre.clone()]
+        }
+    } else {
+        vec![genre.clone()]
+    };
+    drop(mapper);
+
+    let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+    with_cache(&state, |db| db.albums_for_genres(&name_refs))
 }
 
 #[tauri::command]
@@ -194,6 +209,14 @@ pub async fn get_art_url(
         urlencoding::encode(&thumb),
         token,
     ))
+}
+
+#[tauri::command]
+pub async fn get_album_colors(
+    state: State<'_, AppState>,
+    source_id: String,
+) -> CmdResult<Option<UltraBlurColors>> {
+    with_cache(&state, |db| db.album_colors(&source_id))
 }
 
 #[tauri::command]

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { search as searchCmd, getArtUrl, insertNext, appendToQueue } from "../lib/commands";
+import { search as searchCmd, getArtUrl, insertNext, appendToQueue, getTracksForAlbum, playTracks } from "../lib/commands";
 import type { SearchResult, Track } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 
@@ -67,22 +67,34 @@ export default function SearchOverlay({ onDismiss }: Props) {
 
   const handleSelect = useCallback(
     (result: SearchResult) => {
-      const store = useLibraryStore.getState();
-      if (result.kind === "album") {
-        store.selectAlbum({
-          ratingKey: result.albumSourceId,
-          title: result.albumTitle,
-          artistName: result.artistName,
-          year: result.year,
-          thumb: result.albumArtPath,
-          genres: [],
-          isFavourite: false,
-          studio: null,
-          addedAt: null,
-          lastViewedAt: null,
-        });
-      }
       onDismiss();
+      if (result.kind === "album") {
+        // Load album tracks and play from the start
+        getTracksForAlbum(result.albumSourceId)
+          .then((tracks) => {
+            if (tracks.length > 0) playTracks(tracks, 0);
+          })
+          .catch(() => {});
+      } else if (result.trackSourceId) {
+        // Play the individual track
+        const track: Track = {
+          ratingKey: result.trackSourceId,
+          title: result.trackTitle ?? result.albumTitle,
+          artistName: result.trackArtist ?? result.artistName,
+          trackArtist: result.trackArtist,
+          albumTitle: result.albumTitle,
+          albumKey: result.albumSourceId,
+          index: null,
+          duration: 0,
+          codec: null,
+          partKey: null,
+          thumb: result.albumArtPath,
+          isFavourite: false,
+          bitrate: null,
+          discNumber: null,
+        };
+        playTracks([track], 0).catch(() => {});
+      }
     },
     [onDismiss]
   );
