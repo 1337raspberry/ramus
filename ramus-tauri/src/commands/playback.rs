@@ -1,20 +1,34 @@
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use ramus_core::models::Track;
 use ramus_core::playback::lyrics::{self, LyricsResult};
 use ramus_core::playback::waveform;
 
+use crate::events::{emit_playback_state, PlaybackStatePayload};
 use crate::state::AppState;
 
 type CmdResult<T> = Result<T, String>;
 
 #[tauri::command]
 pub async fn play_tracks(
+    app: AppHandle,
     state: State<'_, AppState>,
     tracks: Vec<Track>,
     start_at: usize,
 ) -> CmdResult<()> {
     state.player.load_queue(tracks, start_at);
+
+    // Emit playback state so the UI updates
+    let player_state = state.player.state();
+    emit_playback_state(
+        &app,
+        PlaybackStatePayload {
+            status: "playing".to_string(),
+            current_track: player_state.current_track,
+            queue_index: player_state.queue_index,
+        },
+    );
+
     Ok(())
 }
 

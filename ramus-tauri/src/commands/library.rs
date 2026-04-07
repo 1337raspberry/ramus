@@ -19,10 +19,27 @@ where
 
 #[tauri::command]
 pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<Vec<GenreNode>> {
-    let mapper = state.genre_mapper.read();
-    let mapper = mapper.as_ref().ok_or("Genre mapper not loaded")?;
     let genre_album_sets = with_cache(&state, |db| db.genre_album_sets())?;
-    Ok(mapper.build_display_tree(&genre_album_sets))
+
+    let mapper = state.genre_mapper.read();
+    if let Some(mapper) = mapper.as_ref() {
+        Ok(mapper.build_display_tree(&genre_album_sets))
+    } else {
+        // Fallback: flat genre list when mapper isn't loaded
+        let mut nodes: Vec<GenreNode> = genre_album_sets
+            .iter()
+            .map(|(name, ids)| GenreNode {
+                id: name.clone(),
+                name: name.clone(),
+                short_summary: None,
+                children: None,
+                album_count: ids.len(),
+                deduplicated_total_count: ids.len(),
+            })
+            .collect();
+        nodes.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(nodes)
+    }
 }
 
 #[tauri::command]
@@ -75,9 +92,6 @@ pub async fn get_all_artists(state: State<'_, AppState>) -> CmdResult<Vec<Artist
 
 #[tauri::command]
 pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<Vec<GenreNode>> {
-    let mapper = state.genre_mapper.read();
-    let mapper = mapper.as_ref().ok_or("Genre mapper not loaded")?;
-
     // Get favourite album IDs, then build genre sets restricted to favourites
     let fav_ids = with_cache(&state, |db| db.album_ids_for_favourites())?;
     let all_sets = with_cache(&state, |db| db.genre_album_sets())?;
@@ -96,7 +110,24 @@ pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<V
         })
         .collect();
 
-    Ok(mapper.build_display_tree(&filtered))
+    let mapper = state.genre_mapper.read();
+    if let Some(mapper) = mapper.as_ref() {
+        Ok(mapper.build_display_tree(&filtered))
+    } else {
+        let mut nodes: Vec<GenreNode> = filtered
+            .iter()
+            .map(|(name, ids)| GenreNode {
+                id: name.clone(),
+                name: name.clone(),
+                short_summary: None,
+                children: None,
+                album_count: ids.len(),
+                deduplicated_total_count: ids.len(),
+            })
+            .collect();
+        nodes.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(nodes)
+    }
 }
 
 #[tauri::command]

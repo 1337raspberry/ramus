@@ -15,19 +15,14 @@ export default function OAuthSignIn({ onSuccess }: Props) {
   const startAuth = useCallback(async () => {
     setError(null);
     try {
-      const code = await startOauth();
-      // code is the pin code string, but we also need the pin ID
-      // The start_oauth command returns the pin code; we'll parse the ID from it
-      // Actually, looking at the command: start_oauth returns the PIN code string
-      // and poll_oauth takes a pin ID number. The PIN code is displayed to the user.
-      // Let's assume start_oauth returns "CODE:ID" or similar, or we adapt.
-      // Based on the Plex OAuth flow, the code IS the pin ID.
-      setPinCode(code);
-      const id = parseInt(code, 10);
-      if (!isNaN(id)) {
-        setPinId(id);
-        setPolling(true);
-      }
+      const raw = await startOauth();
+      // start_oauth returns JSON: { authUrl, pinId, code }
+      const data = JSON.parse(raw);
+      setPinCode(data.code);
+      setPinId(data.pinId);
+      setPolling(true);
+
+      // Browser is opened from Rust side via open::that()
     } catch (e) {
       setError(String(e));
     }
