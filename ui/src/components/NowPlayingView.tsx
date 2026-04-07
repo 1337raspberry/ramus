@@ -1,9 +1,8 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { getArtUrl, toggleAlbumFavourite, toggleTrackFavourite } from "../lib/commands";
 import { extractVibrantColor } from "../lib/vibrantColor";
-import VolumeSlider from "./VolumeSlider";
 import WaveformSeekBar from "./WaveformSeekBar";
 import FlowLayout from "./FlowLayout";
 import LyricsView from "./LyricsView";
@@ -26,13 +25,6 @@ interface NowPlayingProps {
 export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProps) {
   const track = usePlaybackStore((s) => s.currentTrack);
   const status = usePlaybackStore((s) => s.status);
-  const position = usePlaybackStore((s) => s.position);
-  const duration = usePlaybackStore((s) => s.duration);
-  const isBuffering = usePlaybackStore((s) => s.isBuffering);
-  const bufferedFraction = usePlaybackStore((s) => s.bufferedFraction);
-  const volume = usePlaybackStore((s) => s.volume);
-  const changeVolume = usePlaybackStore((s) => s.changeVolume);
-  const waveformLevels = usePlaybackStore((s) => s.waveformLevels);
   const lyrics = usePlaybackStore((s) => s.lyrics);
   const lyricsLoading = usePlaybackStore((s) => s.lyricsLoading);
   const showLyrics = usePlaybackStore((s) => s.showLyrics);
@@ -46,30 +38,31 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
 
   const [artSrc, setArtSrc] = useState<string | null>(null);
   const [artErr, setArtErr] = useState(false);
-  const [artThumb, setArtThumb] = useState<string | null>(null);
   const lastAccentThumb = useRef<string | null>(null);
 
-  const thumb = track?.thumb ?? selectedAlbum?.thumb;
-  if (thumb && thumb !== artThumb) {
-    setArtThumb(thumb);
+  const thumb = track?.thumb ?? selectedAlbum?.thumb ?? null;
+  useEffect(() => {
+    if (!thumb) return;
     setArtErr(false);
     setArtSrc(null);
+    let cancelled = false;
     getArtUrl(thumb, 600)
-      .then(setArtSrc)
-      .catch(() => setArtErr(true));
-  }
+      .then((url) => { if (!cancelled) setArtSrc(url); })
+      .catch(() => { if (!cancelled) setArtErr(true); });
+    return () => { cancelled = true; };
+  }, [thumb]);
 
   const handleArtLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
-    if (lastAccentThumb.current === artThumb) return;
-    lastAccentThumb.current = artThumb;
+    if (lastAccentThumb.current === thumb) return;
+    lastAccentThumb.current = thumb;
     const color = extractVibrantColor(img);
     if (color) {
       document.documentElement.style.setProperty("--accent-r", String(color[0]));
       document.documentElement.style.setProperty("--accent-g", String(color[1]));
       document.documentElement.style.setProperty("--accent-b", String(color[2]));
     }
-  }, [artThumb]);
+  }, [thumb]);
 
   if (!track) return null;
 
@@ -148,7 +141,6 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
                 {lyrics ? (
                   <LyricsView
                     lyrics={lyrics}
-                    position={position}
                     isPinned={lyricsPinned}
                     onTogglePin={toggleLyricsPinned}
                     onSeek={seek}
@@ -182,14 +174,7 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
           </button>
         </div>
 
-        <WaveformSeekBar
-          levels={waveformLevels}
-          position={position}
-          duration={duration}
-          bufferedFraction={bufferedFraction}
-          isBuffering={isBuffering}
-          onSeek={seek}
-        />
+        <WaveformSeekBar />
 
         <div className="np-transport">
           <button className="np-transport-btn" onClick={() => previousTrack()}>

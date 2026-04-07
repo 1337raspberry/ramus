@@ -30,6 +30,7 @@ export default function GenreTreeView() {
   const parentRef = useRef<HTMLDivElement>(null);
 
   const genreTree = useLibraryStore((s) => s.genreTree);
+  const totalAlbumCount = useLibraryStore((s) => s.totalAlbumCount);
   const expandedGenreIds = useLibraryStore((s) => s.expandedGenreIds);
   const selectedGenreId = useLibraryStore((s) => s.selectedGenreId);
   const toggleGenreExpanded = useLibraryStore((s) => s.toggleGenreExpanded);
@@ -41,12 +42,6 @@ export default function GenreTreeView() {
 
   const { chevronSize, chevronWidth, textSize, padH, rowHeight, indentDepth } =
     useGenreDebugStore();
-
-  const totalCount = useMemo(() => {
-    let sum = 0;
-    for (const n of genreTree) sum += n.deduplicatedTotalCount;
-    return sum;
-  }, [genreTree]);
 
   const rows = useMemo(
     () => flattenTree(genreTree, expandedGenreIds),
@@ -140,7 +135,7 @@ export default function GenreTreeView() {
                 <span className="genre-name" style={{ fontWeight: 600 }}>
                   All
                 </span>
-                <span className="genre-count">{totalCount}</span>
+                <span className="genre-count">{totalAlbumCount}</span>
               </div>
             );
           }

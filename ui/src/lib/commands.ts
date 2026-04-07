@@ -5,7 +5,7 @@ import type {
   Album,
   ArtistInfo,
   CacheStats,
-  GenreNode,
+  GenreTreeResponse,
   LibrarySection,
   LyricsResult,
   PlexServer,
@@ -49,7 +49,7 @@ export const logout = () => invoke<void>("logout");
 
 // -- Library --
 
-export const getGenreTree = () => invoke<GenreNode[]>("get_genre_tree");
+export const getGenreTree = () => invoke<GenreTreeResponse>("get_genre_tree");
 
 export const getAlbumsForGenre = (genre: string) =>
   invoke<Album[]>("get_albums_for_genre", { genre });
@@ -68,7 +68,7 @@ export const getTracksForAlbum = (sourceId: string) =>
 export const getAllArtists = () => invoke<ArtistInfo[]>("get_all_artists");
 
 export const getFavouriteGenreTree = () =>
-  invoke<GenreNode[]>("get_favourite_genre_tree");
+  invoke<GenreTreeResponse>("get_favourite_genre_tree");
 
 export const toggleAlbumFavourite = (sourceId: string, favourite: boolean) =>
   invoke<void>("toggle_album_favourite", { sourceId, favourite });

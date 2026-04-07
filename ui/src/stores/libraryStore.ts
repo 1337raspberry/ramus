@@ -25,6 +25,7 @@ interface LibraryState {
 
   // Genre tree
   genreTree: GenreNode[];
+  totalAlbumCount: number;
   expandedGenreIds: Set<string>;
   selectedGenreId: string | null;
   loadGenreTree: () => Promise<void>;
@@ -107,13 +108,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   // Genre tree
   genreTree: [],
+  totalAlbumCount: 0,
   expandedGenreIds: new Set(),
   selectedGenreId: null,
 
   loadGenreTree: async () => {
     try {
-      const tree = await getGenreTree();
-      set({ genreTree: tree });
+      const resp = await getGenreTree();
+      set({ genreTree: resp.tree, totalAlbumCount: resp.totalAlbumCount });
     } catch {
       // Cache may not be initialized yet
     }
@@ -121,8 +123,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   loadFavouriteGenreTree: async () => {
     try {
-      const tree = await getFavouriteGenreTree();
-      set({ genreTree: tree });
+      const resp = await getFavouriteGenreTree();
+      set({ genreTree: resp.tree, totalAlbumCount: resp.totalAlbumCount });
     } catch {
       // Cache may not be initialized yet
     }

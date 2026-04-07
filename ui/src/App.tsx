@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isAuthenticated, togglePlayPause, nextTrack, previousTrack } from "./lib/commands";
 import type {
   AccentColorPayload,
@@ -17,16 +18,43 @@ import EqualizerPanel from "./components/EqualizerPanel";
 import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
 import OnboardingFlow from "./components/onboarding/OnboardingFlow";
 import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackground";
-// import GenreDebugPanel from "./components/GenreDebugPanel";
+import ColorDebugPanel from "./components/ColorDebugPanel";
+
+const appWindow = getCurrentWindow();
+
+function TrafficLights() {
+  return (
+    <div className="drag-region" data-tauri-drag-region>
+      <div className="traffic-lights">
+        <button className="traffic-light tl-close" title="Close" onClick={() => appWindow.close()}>
+          {"\u00d7"}
+        </button>
+        <button className="traffic-light tl-minimize" title="Minimize" onClick={() => appWindow.minimize()}>
+          {"\u2013"}
+        </button>
+        <button className="traffic-light tl-fullscreen" title="Fullscreen" onClick={() => appWindow.toggleMaximize()}>
+          {"\u2922"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // Generate once at module level so it persists across re-renders
-const initialColors = randomPalette();
+const initialPalette = randomPalette();
+const initialColors = initialPalette.colors;
+
+// Apply initial accent color immediately
+document.documentElement.style.setProperty("--accent-r", String(initialPalette.accent[0]));
+document.documentElement.style.setProperty("--accent-g", String(initialPalette.accent[1]));
+document.documentElement.style.setProperty("--accent-b", String(initialPalette.accent[2]));
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showEQ, setShowEQ] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showColorDebug, setShowColorDebug] = useState(false);
   const albumColors = usePlaybackStore((s) => s.ultraBlurColors);
   const blurColors = useMemo(() => albumColors ?? initialColors, [albumColors]);
 
@@ -99,6 +127,12 @@ export default function App() {
       return;
     }
 
+    if (mod && e.shiftKey && e.key === "D") {
+      e.preventDefault();
+      setShowColorDebug((s) => !s);
+      return;
+    }
+
     if (
       e.key === " " &&
       !mod &&
@@ -133,13 +167,7 @@ export default function App() {
     return (
       <>
         <UltraBlurBackground colors={blurColors} />
-        <div className="drag-region" data-tauri-drag-region>
-        <div className="traffic-lights">
-          <button className="traffic-light" title="Close">&#xd7;</button>
-          <button className="traffic-light" title="Minimize">&#x2013;</button>
-          <button className="traffic-light" title="Fullscreen">&#x2922;</button>
-        </div>
-      </div>
+        <TrafficLights />
         <div className="empty-state">loading...</div>
       </>
     );
@@ -150,13 +178,7 @@ export default function App() {
     return (
       <>
         <UltraBlurBackground colors={blurColors} />
-        <div className="drag-region" data-tauri-drag-region>
-        <div className="traffic-lights">
-          <button className="traffic-light" title="Close">&#xd7;</button>
-          <button className="traffic-light" title="Minimize">&#x2013;</button>
-          <button className="traffic-light" title="Fullscreen">&#x2922;</button>
-        </div>
-      </div>
+        <TrafficLights />
         <OnboardingFlow onComplete={() => setAuthed(true)} />
       </>
     );
@@ -166,13 +188,7 @@ export default function App() {
   return (
     <>
       <UltraBlurBackground colors={blurColors} />
-      <div className="drag-region" data-tauri-drag-region>
-        <div className="traffic-lights">
-          <button className="traffic-light" title="Close">&#xd7;</button>
-          <button className="traffic-light" title="Minimize">&#x2013;</button>
-          <button className="traffic-light" title="Fullscreen">&#x2922;</button>
-        </div>
-      </div>
+      <TrafficLights />
       <ThreeColumnLayout
         sidebar={<SidebarView onOpenSettings={() => setShowSettings(true)} />}
         content={<AlbumGridView />}
@@ -189,6 +205,7 @@ export default function App() {
           }}
         />
       )}
+      {showColorDebug && <ColorDebugPanel />}
     </>
   );
 }

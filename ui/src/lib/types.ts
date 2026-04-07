@@ -9,6 +9,11 @@ export interface GenreNode {
   deduplicatedTotalCount: number;
 }
 
+export interface GenreTreeResponse {
+  tree: GenreNode[];
+  totalAlbumCount: number;
+}
+
 export interface Album {
   ratingKey: string;
   title: string;

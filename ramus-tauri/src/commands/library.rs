@@ -4,10 +4,18 @@ use ramus_core::cache::db::CacheStats;
 use ramus_core::genre::node::GenreNode;
 use ramus_core::models::{Album, ArtistInfo, Track, UltraBlurColors};
 use ramus_core::search::engine::GenreExpander;
+use serde::Serialize;
 
 use crate::state::AppState;
 
 type CmdResult<T> = Result<T, String>;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenreTreeResponse {
+    pub tree: Vec<GenreNode>,
+    pub total_album_count: usize,
+}
 
 fn with_cache<F, T>(state: &AppState, f: F) -> CmdResult<T>
 where
@@ -19,12 +27,21 @@ where
 }
 
 #[tauri::command]
-pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<Vec<GenreNode>> {
+pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeResponse> {
     let genre_album_sets = with_cache(&state, |db| db.genre_album_sets())?;
 
+    // Deduplicated total: union of all album IDs across all genres
+    let total_album_count = {
+        let mut all: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        for ids in genre_album_sets.values() {
+            all.extend(ids);
+        }
+        all.len()
+    };
+
     let mapper = state.genre_mapper.read();
-    if let Some(mapper) = mapper.as_ref() {
-        Ok(mapper.build_display_tree(&genre_album_sets))
+    let tree = if let Some(mapper) = mapper.as_ref() {
+        mapper.build_display_tree(&genre_album_sets)
     } else {
         // Fallback: flat genre list when mapper isn't loaded
         let mut nodes: Vec<GenreNode> = genre_album_sets
@@ -39,8 +56,10 @@ pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<Vec<GenreNo
             })
             .collect();
         nodes.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        Ok(nodes)
-    }
+        nodes
+    };
+
+    Ok(GenreTreeResponse { tree, total_album_count })
 }
 
 #[tauri::command]
@@ -106,7 +125,7 @@ pub async fn get_all_artists(state: State<'_, AppState>) -> CmdResult<Vec<Artist
 }
 
 #[tauri::command]
-pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<Vec<GenreNode>> {
+pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeResponse> {
     // Get favourite album IDs, then build genre sets restricted to favourites
     let fav_ids = with_cache(&state, |db| db.album_ids_for_favourites())?;
     let all_sets = with_cache(&state, |db| db.genre_album_sets())?;
@@ -125,9 +144,18 @@ pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<V
         })
         .collect();
 
+    // Deduplicated total: union of all favourite album IDs that appear in any genre
+    let total_album_count = {
+        let mut all: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        for ids in filtered.values() {
+            all.extend(ids);
+        }
+        all.len()
+    };
+
     let mapper = state.genre_mapper.read();
-    if let Some(mapper) = mapper.as_ref() {
-        Ok(mapper.build_display_tree(&filtered))
+    let tree = if let Some(mapper) = mapper.as_ref() {
+        mapper.build_display_tree(&filtered)
     } else {
         let mut nodes: Vec<GenreNode> = filtered
             .iter()
@@ -141,8 +169,10 @@ pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<V
             })
             .collect();
         nodes.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        Ok(nodes)
-    }
+        nodes
+    };
+
+    Ok(GenreTreeResponse { tree, total_album_count })
 }
 
 #[tauri::command]

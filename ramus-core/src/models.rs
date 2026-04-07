@@ -382,7 +382,7 @@ pub enum GenreSource {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub playback_mode: PlaybackMode,
     pub lookahead_depth: u8,
