@@ -8,20 +8,47 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tauri::Manager;
 
+use ramus_core::cache::db::CacheDatabase;
+use ramus_core::cache::sync::SyncEngine;
+use ramus_core::genre::mapper::GenreMapper;
 use ramus_core::models::Settings;
 use ramus_core::playback::session::SessionTracker;
+use ramus_core::plex::auth;
 use ramus_core::plex::client::PlexClient;
 use ramus_core::plex::connection::ConnectionMonitor;
+use ramus_core::plex::token_store::TokenStore;
+use ramus_core::search::engine::SearchEngine;
 
 use ramus_tauri::commands;
 use ramus_tauri::state::AppState;
+
+fn load_server_url() -> Option<String> {
+    let dir = ramus_core::plex::token_store::config_dir().ok()?;
+    std::fs::read_to_string(dir.join("server_url.txt")).ok()
+}
 
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
             let app_handle = app.handle().clone();
 
-            let client_identifier = uuid::Uuid::new_v4().to_string();
+            // Try to restore a persistent client_identifier, or create a new one
+            let id_path = ramus_core::plex::token_store::config_dir()
+                .ok()
+                .map(|d| d.join("client_id.txt"));
+
+            let client_identifier = id_path
+                .as_ref()
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .unwrap_or_else(|| {
+                    let id = uuid::Uuid::new_v4().to_string();
+                    if let Some(ref p) = id_path {
+                        let _ = std::fs::create_dir_all(p.parent().unwrap());
+                        let _ = std::fs::write(p, &id);
+                    }
+                    id
+                });
+
             let client = Arc::new(PlexClient::new(client_identifier));
             let connection_monitor = Arc::new(ConnectionMonitor::new(client.clone()));
 
@@ -29,17 +56,86 @@ fn main() {
             let player = ramus_tauri::create_mpv_player(app_handle);
 
             let state = AppState {
-                client,
+                client: client.clone(),
                 cache: Arc::new(parking_lot::Mutex::new(None)),
-                player,
+                player: player.clone(),
                 genre_mapper: Arc::new(RwLock::new(None)),
                 search_engine: Arc::new(RwLock::new(None)),
                 sync_engine: Arc::new(parking_lot::Mutex::new(None)),
                 session_tracker: Arc::new(parking_lot::Mutex::new(SessionTracker::default())),
-                connection_monitor,
+                connection_monitor: connection_monitor.clone(),
                 settings: Arc::new(RwLock::new(Settings::default())),
                 http_client: reqwest::Client::new(),
             };
+
+            // Try to restore previous session
+            if let Ok(token_store) = TokenStore::new() {
+                if let Some(config) = auth::stored_server_config(&token_store) {
+                    // Restore auth token on the client
+                    client.set_token(Some(config.access_token.clone()));
+
+                    // Restore server connection
+                    if let Some(url_str) = load_server_url() {
+                        if let Ok(url) = url::Url::parse(&url_str) {
+                            let token = config.access_token.clone();
+                            let client_id = client.client_identifier.clone();
+
+                            // Connect client (blocking in setup is fine)
+                            let rt = tokio::runtime::Handle::current();
+                            let client_c = client.clone();
+                            let url_c = url.clone();
+                            let _ = rt.block_on(async {
+                                client_c.connect(url_c, token.clone()).await
+                            });
+
+                            // Configure player
+                            player.configure(url.clone(), token, client_id);
+
+                            // Open cache database
+                            if let Ok(cache_dir) = ramus_core::plex::token_store::config_dir() {
+                                let db_path = cache_dir.join("library_cache.db");
+                                if db_path.exists() {
+                                    if let Ok(db) = CacheDatabase::open(&db_path) {
+                                        let db_arc = Arc::new(db);
+
+                                        // Sync engine
+                                        let sync = SyncEngine::new(db_arc.clone(), client.clone());
+                                        *state.sync_engine.lock() = Some(sync);
+
+                                        // Search engine
+                                        let search = SearchEngine::new(db_arc.clone(), None);
+                                        *state.search_engine.write() = Some(search);
+
+                                        // Cache handle for queries
+                                        if let Ok(db2) = CacheDatabase::open(&db_path) {
+                                            *state.cache.lock() = Some(db2);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Load genre mapper
+                            let open_json = include_bytes!("../data/open.json");
+                            if let Ok(mapper) = GenreMapper::from_json_bytes(open_json) {
+                                *state.genre_mapper.write() = Some(mapper);
+                            }
+
+                            // Start connection monitor
+                            connection_monitor.start(
+                                ramus_core::models::PlexServer {
+                                    machine_identifier: config.machine_identifier,
+                                    name: config.name,
+                                    access_token: config.access_token,
+                                    owned: true,
+                                    connections: vec![],
+                                },
+                                url_str,
+                                String::new(),
+                            );
+                        }
+                    }
+                }
+            }
 
             app.manage(state);
             Ok(())
