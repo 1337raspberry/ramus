@@ -17,7 +17,11 @@ function formatCodec(codec: string | null, bitrate: number | null): string | nul
   return codec.toUpperCase();
 }
 
-export default function NowPlayingView() {
+interface NowPlayingProps {
+  onOpenEQ?: () => void;
+}
+
+export default function NowPlayingView({ onOpenEQ }: NowPlayingProps) {
   const track = usePlaybackStore((s) => s.currentTrack);
   const status = usePlaybackStore((s) => s.status);
   const position = usePlaybackStore((s) => s.position);
@@ -144,6 +148,11 @@ export default function NowPlayingView() {
       {/* Track title + EQ + fav */}
       <div className="np-track-row">
         <span className="np-track-title">{track.title}</span>
+        {onOpenEQ && (
+          <button className="np-eq-btn" onClick={onOpenEQ} title="Equalizer">
+            {"\u2261"}
+          </button>
+        )}
         <button
           className={`np-fav-btn${trackFav ? " active" : ""}`}
           onClick={(e) => {

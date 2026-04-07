@@ -6,7 +6,11 @@ import TrackListView from "./TrackListView";
 
 type DetailMode = "auto" | "tracks" | "nowPlaying";
 
-export default function DetailColumn() {
+interface DetailColumnProps {
+  onOpenEQ?: () => void;
+}
+
+export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
   const currentTrack = usePlaybackStore((s) => s.currentTrack);
   const selectedAlbum = useLibraryStore((s) => s.selectedAlbum);
   const [mode, setMode] = useState<DetailMode>("auto");
@@ -38,7 +42,7 @@ export default function DetailColumn() {
         </div>
       )}
       <div style={{ flex: 1, overflow: "auto" }}>
-        {showNowPlaying && isPlaying ? <NowPlayingView /> : <TrackListView />}
+        {showNowPlaying && isPlaying ? <NowPlayingView onOpenEQ={onOpenEQ} /> : <TrackListView />}
       </div>
     </div>
   );
