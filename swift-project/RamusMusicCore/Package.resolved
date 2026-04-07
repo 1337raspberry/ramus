@@ -1,0 +1,33 @@
+{
+  "originHash" : "8f7289185fd8ef08050d39e8da35fc5a20edf37bb223b3d7be3a8a77579c4b7b",
+  "pins" : [
+    {
+      "identity" : "fuse-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/krisk/fuse-swift.git",
+      "state" : {
+        "revision" : "26ba868691b2d8b7bf2b1322951eb591be70ccca",
+        "version" : "1.4.0"
+      }
+    },
+    {
+      "identity" : "grdb.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/groue/GRDB.swift.git",
+      "state" : {
+        "revision" : "36e30a6f1ef10e4194f6af0cff90888526f0c115",
+        "version" : "7.10.0"
+      }
+    },
+    {
+      "identity" : "mpvkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/mpvkit/MPVKit.git",
+      "state" : {
+        "revision" : "613c0ccc3acf70e136aaff880a9b5fe8fdfaf5b8",
+        "version" : "0.41.0"
+      }
+    }
+  ],
+  "version" : 3
+}
