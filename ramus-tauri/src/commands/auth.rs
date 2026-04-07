@@ -133,6 +133,11 @@ pub async fn finalize_onboarding(
     };
     auth::store_server_config(&config, &token_store);
 
+    // Persist server URL for session restoration
+    if let Ok(dir) = ramus_core::plex::token_store::config_dir() {
+        let _ = std::fs::write(dir.join("server_url.txt"), &server_url);
+    }
+
     // Connect client
     let url = Url::parse(&server_url).map_err(|e| e.to_string())?;
     state
@@ -200,6 +205,11 @@ pub async fn logout(state: State<'_, AppState>) -> CmdResult<()> {
         token_store.delete(TokenKey::AuthToken);
         token_store.delete(TokenKey::ServerToken);
         auth::delete_server_config(&token_store);
+    }
+
+    // Clear persisted server URL
+    if let Ok(dir) = ramus_core::plex::token_store::config_dir() {
+        let _ = std::fs::remove_file(dir.join("server_url.txt"));
     }
 
     // Clear cache
