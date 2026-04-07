@@ -1,0 +1,472 @@
+/* ----------------------------------------------------------------
+   ramus — global styles & CSS foundation
+   ---------------------------------------------------------------- */
+
+:root {
+  --accent-r: 120;
+  --accent-g: 90;
+  --accent-b: 220;
+  --accent: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
+  --accent-8: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.08);
+  --accent-20: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.20);
+  --accent-35: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.35);
+  --accent-85: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.85);
+
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #222222;
+  --bg-tertiary: #2a2a2a;
+  --bg-hover: #333333;
+  --bg-glass: rgba(30, 30, 30, 0.85);
+
+  --text-primary: #e0e0e0;
+  --text-secondary: #999999;
+  --text-muted: #666666;
+
+  --border: #333333;
+  --divider: #2a2a2a;
+
+  --sidebar-width: 220px;
+  --detail-width: 420px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+
+  color-scheme: dark;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Hide scrollbars globally */
+::-webkit-scrollbar {
+  display: none;
+}
+
+* {
+  scrollbar-width: none;
+}
+
+/* Selection */
+::selection {
+  background: var(--accent-35);
+}
+
+/* Prevent text selection on UI elements */
+button, [data-tauri-drag-region] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ----------------------------------------------------------------
+   Window drag region
+   ---------------------------------------------------------------- */
+
+.drag-region {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  z-index: 9999;
+  -webkit-app-region: drag;
+}
+
+.drag-region * {
+  -webkit-app-region: no-drag;
+}
+
+/* ----------------------------------------------------------------
+   Glass morphism utility
+   ---------------------------------------------------------------- */
+
+.glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* ----------------------------------------------------------------
+   Layout
+   ---------------------------------------------------------------- */
+
+.three-column-layout {
+  display: grid;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.column {
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: 100%;
+}
+
+.column-sidebar {
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  padding-top: 32px; /* below drag region */
+}
+
+.column-content {
+  background: var(--bg-primary);
+  padding-top: 32px;
+}
+
+.column-detail {
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  padding-top: 32px;
+}
+
+/* ----------------------------------------------------------------
+   Divider (draggable column resize)
+   ---------------------------------------------------------------- */
+
+.column-divider {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.column-divider:hover,
+.column-divider.dragging {
+  background: var(--accent-20);
+}
+
+/* ----------------------------------------------------------------
+   Sidebar tabs
+   ---------------------------------------------------------------- */
+
+.sidebar-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-tab {
+  flex: 1;
+  padding: 6px 0;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.sidebar-tab:hover {
+  color: var(--text-primary);
+}
+
+.sidebar-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ----------------------------------------------------------------
+   Genre tree
+   ---------------------------------------------------------------- */
+
+.genre-row {
+  display: flex;
+  align-items: center;
+  padding: 4px 10px 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background 0.1s;
+}
+
+.genre-row:hover {
+  background: var(--bg-hover);
+}
+
+.genre-row.selected {
+  background: var(--accent-8);
+  color: var(--accent);
+}
+
+.genre-chevron {
+  width: 14px;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: center;
+}
+
+.genre-chevron-spacer {
+  width: 14px;
+  flex-shrink: 0;
+}
+
+.genre-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.genre-count {
+  flex-shrink: 0;
+  margin-left: 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------------
+   Album grid
+   ---------------------------------------------------------------- */
+
+.album-grid-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 16px;
+}
+
+.sort-select {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+}
+
+.sort-select:focus {
+  border-color: var(--accent);
+}
+
+.album-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
+  gap: 16px;
+  padding: 0 16px 16px;
+}
+
+.album-card {
+  cursor: pointer;
+  position: relative;
+  border-radius: 4px;
+  transition: background 0.1s;
+  padding: 4px;
+}
+
+.album-card:hover {
+  background: var(--bg-hover);
+}
+
+.album-card.selected {
+  background: var(--accent-8);
+}
+
+.album-art {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+  object-fit: cover;
+  display: block;
+}
+
+.album-art-placeholder {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 24px;
+}
+
+.album-title {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-artist {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-fav {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  padding: 2px;
+  line-height: 1;
+}
+
+.album-fav.visible {
+  opacity: 0.8;
+}
+
+.album-card:hover .album-fav {
+  opacity: 0.6;
+}
+
+.album-fav:hover {
+  opacity: 1 !important;
+}
+
+/* ----------------------------------------------------------------
+   Track list
+   ---------------------------------------------------------------- */
+
+.track-list {
+  padding: 8px 0;
+}
+
+.track-list-header {
+  padding: 8px 16px 16px;
+}
+
+.track-list-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.track-list-header .album-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.track-row {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.1s;
+}
+
+.track-row:hover {
+  background: var(--bg-hover);
+}
+
+.track-number {
+  width: 24px;
+  text-align: right;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.track-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.track-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-artist-inline {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-duration {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.track-format-badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.track-fav-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.track-fav-btn.visible {
+  opacity: 0.7;
+}
+
+.track-row:hover .track-fav-btn {
+  opacity: 0.5;
+}
+
+.track-fav-btn:hover {
+  opacity: 1 !important;
+}
+
+/* ----------------------------------------------------------------
+   Placeholder / empty state
+   ---------------------------------------------------------------- */
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  opacity: 0.4;
+  font-size: 14px;
+  text-align: center;
+  padding: 20px;
+}
