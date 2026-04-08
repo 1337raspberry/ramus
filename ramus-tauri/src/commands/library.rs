@@ -95,6 +95,11 @@ pub async fn get_favourite_albums(state: State<'_, AppState>) -> CmdResult<Vec<A
 }
 
 #[tauri::command]
+pub async fn get_favourite_tracks(state: State<'_, AppState>) -> CmdResult<Vec<Track>> {
+    with_cache(&state, |db| db.favourite_tracks())
+}
+
+#[tauri::command]
 pub async fn get_albums_for_artist(
     state: State<'_, AppState>,
     source_id: String,

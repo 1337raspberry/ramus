@@ -1,9 +1,10 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type AlbumSortOrder } from "../stores/libraryStore";
+import { usePlaybackStore } from "../stores/playbackStore";
 import type { Album } from "../lib/types";
-import { getArtUrl } from "../lib/commands";
-import { IconPlay, IconStarFilled, IconStarEmpty, IconMusicNote } from "./Icons";
+import { getArtUrl, getFavouriteTracks, playTracks, getQueue } from "../lib/commands";
+import { IconPlay, IconStarFilled, IconStarEmpty, IconMusicNote, IconShuffle } from "./Icons";
 
 const SORT_OPTIONS: { value: AlbumSortOrder; label: string }[] = [
   { value: "alphabetical", label: "A-Z" },
@@ -117,6 +118,7 @@ export default function AlbumGridView() {
   const albums = useLibraryStore((s) => s.albums);
   const albumSortOrder = useLibraryStore((s) => s.albumSortOrder);
   const setAlbumSortOrder = useLibraryStore((s) => s.setAlbumSortOrder);
+  const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const { cols, cardWidth, callbackRef } = useGridLayout();
 
@@ -148,6 +150,24 @@ export default function AlbumGridView() {
     [setAlbumSortOrder]
   );
 
+  const handleShuffleFavs = useCallback(() => {
+    getFavouriteTracks()
+      .then((tracks) => {
+        if (!tracks.length) return;
+        // Fisher-Yates shuffle
+        const shuffled = [...tracks];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return playTracks(shuffled, 0).then(() => getQueue());
+      })
+      .then((q) => {
+        if (q) usePlaybackStore.setState({ queue: q });
+      })
+      .catch(() => {});
+  }, []);
+
   if (!albums.length) {
     return <div className="empty-state">Select a genre to browse albums</div>;
   }
@@ -155,6 +175,16 @@ export default function AlbumGridView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div className="album-grid-header">
+        {sidebarMode === "favourites" && (
+          <button
+            className="shuffle-favs-btn"
+            onClick={handleShuffleFavs}
+            title="Shuffle all favourite tracks"
+          >
+            <IconShuffle size={14} />
+            <span>Shuffle</span>
+          </button>
+        )}
         <select
           className="sort-select"
           value={albumSortOrder}

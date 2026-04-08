@@ -719,6 +719,45 @@ impl CacheDatabase {
         Ok(tracks)
     }
 
+    /// Get all favourite tracks (userRating >= 10).
+    pub fn favourite_tracks(&self) -> Result<Vec<Track>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
+                    al.title, al.sourceId, t.trackNumber, t.durationMs,
+                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber
+             FROM tracks t
+             JOIN albums al ON al.id = t.albumId
+             JOIN artists ar ON ar.id = t.artistId
+             WHERE t.userRating >= 10.0
+             ORDER BY ar.name COLLATE NOCASE, al.year, t.discNumber, t.trackNumber",
+        )?;
+        let tracks = stmt
+            .query_map(params![], |row| {
+                let rating: Option<f64> = row.get(11)?;
+                Ok(Track {
+                    rating_key: row.get(0)?,
+                    title: row.get(1)?,
+                    artist_name: row.get(2)?,
+                    track_artist: row.get(3)?,
+                    album_title: row.get(4)?,
+                    album_key: row.get(5)?,
+                    index: row.get(6)?,
+                    duration: row.get::<_, Option<i64>>(7)?
+                        .map(|ms| ms as f64 / 1000.0)
+                        .unwrap_or(0.0),
+                    codec: row.get(8)?,
+                    part_key: row.get(9)?,
+                    thumb: row.get(10)?,
+                    is_favourite: rating.map(|r| r >= 10.0).unwrap_or(false),
+                    bitrate: row.get(12)?,
+                    disc_number: row.get(13)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(tracks)
+    }
+
     /// Get all favourite albums (rating >= 10).
     pub fn favourite_albums(&self) -> Result<Vec<Album>, CacheError> {
         let conn = self.conn.lock();
