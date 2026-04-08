@@ -2929,6 +2929,7 @@ dependencies = [
 name = "ramus-tauri"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "log",
  "open",
  "parking_lot",

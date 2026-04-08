@@ -116,9 +116,17 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   sidebarMode: "genres",
   setSidebarMode: (mode) => {
     set({ sidebarMode: mode, suggestion: null, detailAlbum: null });
-    if (mode === "genres") get().loadGenreTree();
-    else if (mode === "favourites") get().loadFavouriteGenreTree();
-    else if (mode === "artists") get().loadArtists();
+    if (mode === "genres") {
+      get().loadGenreTree();
+      get().loadAllAlbums();
+      set({ selectedGenreId: "__all__" });
+    } else if (mode === "favourites") {
+      get().loadFavouriteGenreTree();
+      get().loadFavouriteAlbums();
+      set({ selectedGenreId: "__all__" });
+    } else if (mode === "artists") {
+      get().loadArtists();
+    }
   },
 
   // Genre tree
