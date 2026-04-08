@@ -19,14 +19,20 @@ pub fn trigger(player: Arc<AudioPlayer>, http_client: reqwest::Client) {
         Err(_) => return,
     };
 
+    log::info!("prefetch: {} targets to cache", targets.len());
     for (track_id, url) in targets {
+        let is_hls = url.contains("/transcode/");
+        log::info!(
+            "prefetch: rk={track_id} {}",
+            if is_hls { "HLS transcode" } else { "direct" }
+        );
         let player = player.clone();
         let client = http_client.clone();
         let dir = cache_dir.clone();
 
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             if let Err(e) = download_and_cache(&player, &client, &dir, &track_id, &url).await {
-                log::debug!("prefetch failed for {track_id}: {e}");
+                log::warn!("prefetch failed for {track_id}: {e}");
             }
         });
     }
