@@ -7,6 +7,8 @@ import {
   getAllAlbums,
   getFavouriteAlbums,
   getAlbumsForArtist,
+  getAlbumsForArtistName,
+  getAlbumsForYear,
   getTracksForAlbum,
   getAllArtists,
   getRandomAlbum,
@@ -49,6 +51,8 @@ interface LibraryState {
   loadAllAlbums: () => Promise<void>;
   loadFavouriteAlbums: () => Promise<void>;
   loadAlbumsForArtist: (sourceId: string) => Promise<void>;
+  loadAlbumsForArtistName: (name: string) => Promise<void>;
+  loadAlbumsForYear: (year: number) => Promise<void>;
   shuffleAlbums: () => void;
 
   // Selected album & tracks
@@ -56,6 +60,17 @@ interface LibraryState {
   tracks: Track[];
   selectAlbum: (album: Album) => Promise<void>;
   clearSelectedAlbum: () => void;
+
+  // Suggestion
+  suggestion: Album | null;
+  loadSuggestion: () => Promise<void>;
+  clearSuggestion: () => void;
+
+  // Album detail view
+  detailAlbum: Album | null;
+  detailTracks: Track[];
+  openAlbumDetail: (album: Album) => Promise<void>;
+  closeAlbumDetail: () => void;
 
   // Actions
   toggleAlbumFav: (album: Album) => Promise<void>;
@@ -100,7 +115,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   // Sidebar
   sidebarMode: "genres",
   setSidebarMode: (mode) => {
-    set({ sidebarMode: mode });
+    set({ sidebarMode: mode, suggestion: null, detailAlbum: null });
     if (mode === "genres") get().loadGenreTree();
     else if (mode === "favourites") get().loadFavouriteGenreTree();
     else if (mode === "artists") get().loadArtists();
@@ -144,8 +159,18 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   collapseAll: () => set({ expandedGenreIds: new Set() }),
 
   selectGenre: (node) => {
-    set({ selectedGenreId: node.id });
-    get().loadAlbumsForGenre(node.name);
+    set({ selectedGenreId: node.id, suggestion: null, detailAlbum: null });
+    if (get().sidebarMode === "favourites") {
+      // Load albums for genre then filter to favourites only
+      getAlbumsForGenre(node.name)
+        .then((albums) => {
+          const favs = albums.filter((a) => a.isFavourite);
+          set((state) => ({ albums: sortAlbums(favs, state.albumSortOrder) }));
+        })
+        .catch(() => {});
+    } else {
+      get().loadAlbumsForGenre(node.name);
+    }
   },
 
   // Artists
@@ -162,15 +187,16 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   selectArtist: (sourceId) => {
-    set({ selectedArtistId: sourceId });
+    set({ selectedArtistId: sourceId, suggestion: null, detailAlbum: null });
     get().loadAlbumsForArtist(sourceId);
   },
 
   // Albums
   albums: [],
-  albumSortOrder: "alphabetical",
+  albumSortOrder: (localStorage.getItem("ramus-album-sort") as AlbumSortOrder) || "alphabetical",
 
   setAlbumSortOrder: (order) => {
+    localStorage.setItem("ramus-album-sort", order);
     set((state) => ({
       albumSortOrder: order,
       albums: sortAlbums(state.albums, order),
@@ -213,8 +239,64 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
   },
 
+  loadAlbumsForArtistName: async (name) => {
+    try {
+      const albums = await getAlbumsForArtistName(name);
+      set((state) => ({
+        albums: sortAlbums(albums, state.albumSortOrder),
+        detailAlbum: null,
+        suggestion: null,
+      }));
+    } catch {
+      // ignore
+    }
+  },
+
+  loadAlbumsForYear: async (year) => {
+    try {
+      const albums = await getAlbumsForYear(year);
+      set((state) => ({
+        albums: sortAlbums(albums, state.albumSortOrder),
+        detailAlbum: null,
+        suggestion: null,
+      }));
+    } catch {
+      // ignore
+    }
+  },
+
   shuffleAlbums: () =>
     set((state) => ({ albums: sortAlbums(state.albums, "random") })),
+
+  // Suggestion
+  suggestion: null,
+
+  loadSuggestion: async () => {
+    try {
+      const album = await getRandomAlbum();
+      if (album) set({ suggestion: album });
+    } catch {
+      // ignore
+    }
+  },
+
+  clearSuggestion: () => set({ suggestion: null }),
+
+  // Album detail view
+  detailAlbum: null,
+  detailTracks: [],
+
+  openAlbumDetail: async (album) => {
+    set({ detailAlbum: album, suggestion: null });
+    try {
+      const tracks = await getTracksForAlbum(album.ratingKey);
+      set({ detailTracks: tracks, selectedAlbum: album, tracks });
+    } catch {
+      set({ detailTracks: [] });
+    }
+  },
+
+  closeAlbumDetail: () => set({ detailAlbum: null, detailTracks: [] }),
 
   // Selected album & tracks
   selectedAlbum: null,
@@ -245,6 +327,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           state.selectedAlbum?.ratingKey === album.ratingKey
             ? { ...state.selectedAlbum, isFavourite: next }
             : state.selectedAlbum,
+        detailAlbum:
+          state.detailAlbum?.ratingKey === album.ratingKey
+            ? { ...state.detailAlbum, isFavourite: next }
+            : state.detailAlbum,
       }));
     } catch {
       // ignore
@@ -257,6 +343,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       await toggleTrackFavourite(track.ratingKey, next);
       set((state) => ({
         tracks: state.tracks.map((t) =>
+          t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t
+        ),
+        detailTracks: state.detailTracks.map((t) =>
           t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t
         ),
       }));

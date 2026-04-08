@@ -4,6 +4,7 @@ import { useLibraryStore } from "../stores/libraryStore";
 import { getArtUrl, toggleAlbumFavourite, toggleTrackFavourite } from "../lib/commands";
 import { extractVibrantColor } from "../lib/vibrantColor";
 import WaveformSeekBar from "./WaveformSeekBar";
+import VolumeSlider from "./VolumeSlider";
 import FlowLayout from "./FlowLayout";
 import LyricsView from "./LyricsView";
 import QueueView from "./QueueView";
@@ -33,14 +34,16 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
   const toggleLyricsPinned = usePlaybackStore((s) => s.toggleLyricsPinned);
   const seek = usePlaybackStore((s) => s.seek);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
+  const volume = usePlaybackStore((s) => s.volume);
+  const changeVolume = usePlaybackStore((s) => s.changeVolume);
 
-  const selectedAlbum = useLibraryStore((s) => s.selectedAlbum);
+  const nowPlayingAlbum = usePlaybackStore((s) => s.nowPlayingAlbum);
 
   const [artSrc, setArtSrc] = useState<string | null>(null);
   const [artErr, setArtErr] = useState(false);
   const lastAccentThumb = useRef<string | null>(null);
 
-  const thumb = track?.thumb ?? selectedAlbum?.thumb ?? null;
+  const thumb = track?.thumb ?? nowPlayingAlbum?.thumb ?? null;
   useEffect(() => {
     if (!thumb) return;
     setArtErr(false);
@@ -71,19 +74,32 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
   const hasTrackArtist =
     track.trackArtist &&
     track.trackArtist.toLowerCase() !== track.artistName.toLowerCase();
-  const year = selectedAlbum?.year;
-  const studio = selectedAlbum?.studio;
+  const year = nowPlayingAlbum?.year;
+  const studio = nowPlayingAlbum?.studio;
   const codec = formatCodec(track.codec, track.bitrate);
-  const albumFav = selectedAlbum?.isFavourite ?? false;
+  const albumFav = nowPlayingAlbum?.isFavourite ?? false;
   const trackFav = track.isFavourite;
 
   const handleAlbumFavToggle = () => {
-    if (!selectedAlbum) return;
-    toggleAlbumFavourite(selectedAlbum.ratingKey, !albumFav).catch(() => {});
+    if (!nowPlayingAlbum) return;
+    toggleAlbumFavourite(nowPlayingAlbum.ratingKey, !albumFav).catch(() => {});
   };
 
   const handleTrackFavToggle = () => {
     toggleTrackFavourite(track.ratingKey, !trackFav).catch(() => {});
+  };
+
+  const handleArtistClick = () => {
+    useLibraryStore.getState().loadAlbumsForArtistName(track.artistName);
+  };
+
+  const handleAlbumClick = () => {
+    if (!nowPlayingAlbum) return;
+    useLibraryStore.getState().openAlbumDetail(nowPlayingAlbum);
+  };
+
+  const handleYearClick = () => {
+    if (year) useLibraryStore.getState().loadAlbumsForYear(year);
   };
 
   const handleGenreClick = (genre: string) => {
@@ -99,13 +115,13 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
       {/* === TOP: Artist, Album, Year === */}
       <div className="np-top">
         <div className="np-header">
-          <div className="np-artist">
+          <div className="np-artist np-clickable" onClick={handleArtistClick}>
             {hasTrackArtist
               ? `${artistName} (${track.trackArtist})`
               : artistName}
           </div>
           <div className="np-album-row">
-            <span className="np-album-title">{albumTitle}</span>
+            <span className="np-album-title np-clickable" onClick={handleAlbumClick}>{albumTitle}</span>
             <button
               className={`np-fav-btn${albumFav ? " active" : ""}`}
               onClick={handleAlbumFavToggle}
@@ -113,7 +129,7 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
               {albumFav ? "\u2605" : "\u2606"}
             </button>
           </div>
-          {year && <div className="np-year">{year}</div>}
+          {year && <div className="np-year np-clickable" onClick={handleYearClick}>{year}</div>}
         </div>
       </div>
 
@@ -155,6 +171,8 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
             )}
           </div>
         </div>
+
+        <VolumeSlider value={volume} onChange={changeVolume} />
 
         <div className="np-track-row">
           <span className="np-track-title">{track.title}</span>

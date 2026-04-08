@@ -62,6 +62,12 @@ export const getFavouriteAlbums = () =>
 export const getAlbumsForArtist = (sourceId: string) =>
   invoke<Album[]>("get_albums_for_artist", { sourceId });
 
+export const getAlbumsForArtistName = (name: string) =>
+  invoke<Album[]>("get_albums_for_artist_name", { name });
+
+export const getAlbumsForYear = (year: number) =>
+  invoke<Album[]>("get_albums_for_year", { year });
+
 export const getTracksForAlbum = (sourceId: string) =>
   invoke<Track[]>("get_tracks_for_album", { sourceId });
 
@@ -78,6 +84,9 @@ export const toggleTrackFavourite = (sourceId: string, favourite: boolean) =>
 
 export const getAlbumGenres = (sourceId: string) =>
   invoke<string[]>("get_album_genres", { sourceId });
+
+export const getAlbum = (sourceId: string) =>
+  invoke<Album | null>("get_album", { sourceId });
 
 export const getRandomAlbum = () => invoke<Album | null>("get_random_album");
 

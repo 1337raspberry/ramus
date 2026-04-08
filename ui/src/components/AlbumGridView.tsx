@@ -17,16 +17,10 @@ const PAD_H = 16;
 const TEXT_HEIGHT = 40; // title + artist + margins
 const CARD_PAD = 8; // 4px top + 4px bottom
 
-const AlbumCard = memo(function AlbumCard({
-  album,
-  isSelected,
-}: {
-  album: Album;
-  isSelected: boolean;
-}) {
+const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
   const [artSrc, setArtSrc] = useState<string | null>(null);
   const [artError, setArtError] = useState(false);
-  const selectAlbum = useLibraryStore((s) => s.selectAlbum);
+  const openAlbumDetail = useLibraryStore((s) => s.openAlbumDetail);
   const playAlbum = useLibraryStore((s) => s.playAlbum);
   const toggleAlbumFav = useLibraryStore((s) => s.toggleAlbumFav);
 
@@ -47,21 +41,32 @@ const AlbumCard = memo(function AlbumCard({
 
   return (
     <div
-      className={`album-card${isSelected ? " selected" : ""}`}
-      onClick={() => selectAlbum(album)}
-      onDoubleClick={() => playAlbum(album)}
+      className="album-card"
+      onClick={() => openAlbumDetail(album)}
     >
-      {artSrc && !artError ? (
-        <img
-          className="album-art"
-          src={artSrc}
-          alt={album.title}
-          loading="lazy"
-          onError={() => setArtError(true)}
-        />
-      ) : (
-        <div className="album-art-placeholder">{"\u266B"}</div>
-      )}
+      <div className="album-art-wrap">
+        {artSrc && !artError ? (
+          <img
+            className="album-art"
+            src={artSrc}
+            alt={album.title}
+            loading="lazy"
+            onError={() => setArtError(true)}
+          />
+        ) : (
+          <div className="album-art-placeholder">{"\u266B"}</div>
+        )}
+        <button
+          className="album-card-play-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            playAlbum(album);
+          }}
+          title="Play"
+        >
+          {"\u25B6"}
+        </button>
+      </div>
       <div className="album-title">{album.title}</div>
       <div className="album-artist">{album.artistName}</div>
       <button
@@ -77,58 +82,56 @@ const AlbumCard = memo(function AlbumCard({
   );
 });
 
-function useColumnCount(parentRef: React.RefObject<HTMLDivElement | null>): number {
-  const [cols, setCols] = useState(4);
+// IMPORTANT: This uses a callback ref, NOT useRef + useEffect.
+// When albums are empty the grid renders an empty-state div and the scroll
+// container is not in the DOM at all. A useRef-based ResizeObserver would
+// attach during the empty state (parentRef.current === null), and because
+// useRef is a stable reference the useEffect dependency never changes, so
+// the observer is never re-attached when the scroll container finally mounts.
+// A callback ref fires every time the DOM element mounts/unmounts, ensuring
+// the ResizeObserver is always set up correctly regardless of render timing.
+function useGridLayout() {
+  const [layout, setLayout] = useState({ cols: 4, cardWidth: MIN_CARD_WIDTH });
+  const obsRef = useRef<ResizeObserver | null>(null);
 
-  useEffect(() => {
-    const el = parentRef.current;
+  const callbackRef = useCallback((el: HTMLDivElement | null) => {
+    obsRef.current?.disconnect();
     if (!el) return;
     const compute = () => {
       const contentWidth = el.clientWidth - PAD_H * 2;
-      setCols(Math.max(1, Math.floor((contentWidth + GAP) / (MIN_CARD_WIDTH + GAP))));
+      const cols = Math.max(1, Math.floor((contentWidth + GAP) / (MIN_CARD_WIDTH + GAP)));
+      const cardWidth = (contentWidth - (cols - 1) * GAP) / cols;
+      setLayout({ cols, cardWidth });
     };
     compute();
     const obs = new ResizeObserver(compute);
     obs.observe(el);
-    return () => obs.disconnect();
-  }, [parentRef]);
+    obsRef.current = obs;
+  }, []);
 
-  return cols;
+  return { ...layout, callbackRef };
 }
 
 export default function AlbumGridView() {
   const albums = useLibraryStore((s) => s.albums);
-  const selectedRatingKey = useLibraryStore(
-    (s) => s.selectedAlbum?.ratingKey ?? null
-  );
   const albumSortOrder = useLibraryStore((s) => s.albumSortOrder);
   const setAlbumSortOrder = useLibraryStore((s) => s.setAlbumSortOrder);
-  const parentRef = useRef<HTMLDivElement>(null);
-  const cols = useColumnCount(parentRef);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const { cols, cardWidth, callbackRef } = useGridLayout();
+
+  const setRef = useCallback((el: HTMLDivElement | null) => {
+    scrollRef.current = el;
+    callbackRef(el);
+  }, [callbackRef]);
 
   const rowCount = Math.ceil(albums.length / cols);
-
-  // Compute exact card width from container
-  const [cardWidth, setCardWidth] = useState(MIN_CARD_WIDTH);
-  useEffect(() => {
-    const el = parentRef.current;
-    if (!el) return;
-    const compute = () => {
-      const contentWidth = el.clientWidth - PAD_H * 2;
-      setCardWidth((contentWidth - (cols - 1) * GAP) / cols);
-    };
-    compute();
-    const obs = new ResizeObserver(compute);
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [cols]);
 
   const rowHeight = Math.floor(cardWidth + TEXT_HEIGHT + CARD_PAD + GAP);
   const estimateSize = useCallback(() => rowHeight, [rowHeight]);
 
   const virtualizer = useVirtualizer({
     count: rowCount,
-    getScrollElement: () => parentRef.current,
+    getScrollElement: () => scrollRef.current,
     estimateSize,
     overscan: 3,
   });
@@ -164,8 +167,8 @@ export default function AlbumGridView() {
         </select>
       </div>
       <div
-        ref={parentRef}
-        style={{ flex: 1, overflow: "auto" }}
+        ref={setRef}
+        style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}
       >
         <div
           style={{
@@ -195,10 +198,7 @@ export default function AlbumGridView() {
                     key={album.ratingKey}
                     style={{ width: cardWidth, flexShrink: 0 }}
                   >
-                    <AlbumCard
-                      album={album}
-                      isSelected={album.ratingKey === selectedRatingKey}
-                    />
+                    <AlbumCard album={album} />
                   </div>
                 ))}
               </div>

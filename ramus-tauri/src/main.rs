@@ -113,10 +113,21 @@ fn main() {
                                 }
                             }
 
-                            // Load genre mapper
-                            let open_json = include_bytes!("../data/open.json");
-                            if let Ok(mapper) = GenreMapper::from_json_bytes(open_json) {
-                                *state.genre_mapper.write() = Some(mapper);
+                            // Load genre mapper — use custom genres if previously imported
+                            let settings = state.settings.read().clone();
+                            let loaded_custom = if settings.genre_source == ramus_core::models::GenreSource::Custom {
+                                if let Some(data) = ramus_core::settings::load_custom_genres() {
+                                    if let Ok(mapper) = GenreMapper::from_json_bytes(&data) {
+                                        *state.genre_mapper.write() = Some(mapper);
+                                        true
+                                    } else { false }
+                                } else { false }
+                            } else { false };
+                            if !loaded_custom {
+                                let open_json = include_bytes!("../data/open.json");
+                                if let Ok(mapper) = GenreMapper::from_json_bytes(open_json) {
+                                    *state.genre_mapper.write() = Some(mapper);
+                                }
                             }
 
                             // Start connection monitor
@@ -156,12 +167,15 @@ fn main() {
             commands::library::get_all_albums,
             commands::library::get_favourite_albums,
             commands::library::get_albums_for_artist,
+            commands::library::get_albums_for_artist_name,
+            commands::library::get_albums_for_year,
             commands::library::get_tracks_for_album,
             commands::library::get_all_artists,
             commands::library::get_favourite_genre_tree,
             commands::library::toggle_album_favourite,
             commands::library::toggle_track_favourite,
             commands::library::get_album_genres,
+            commands::library::get_album,
             commands::library::get_random_album,
             commands::library::get_art_url,
             commands::library::get_album_colors,

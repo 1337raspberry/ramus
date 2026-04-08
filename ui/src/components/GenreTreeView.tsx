@@ -37,7 +37,9 @@ export default function GenreTreeView() {
   const expandAll = useLibraryStore((s) => s.expandAll);
   const collapseAll = useLibraryStore((s) => s.collapseAll);
   const selectGenre = useLibraryStore((s) => s.selectGenre);
+  const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const loadAllAlbums = useLibraryStore((s) => s.loadAllAlbums);
+  const loadFavouriteAlbums = useLibraryStore((s) => s.loadFavouriteAlbums);
   const set = useLibraryStore.setState;
 
   const { chevronSize, chevronWidth, textSize, padH, rowHeight, indentDepth } =
@@ -119,7 +121,11 @@ export default function GenreTreeView() {
                 style={{ ...rowStyle(0), top: vItem.start }}
                 onClick={() => {
                   set({ selectedGenreId: "__all__" });
-                  loadAllAlbums();
+                  if (sidebarMode === "favourites") {
+                    loadFavouriteAlbums();
+                  } else {
+                    loadAllAlbums();
+                  }
                 }}
               >
                 <span

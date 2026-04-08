@@ -349,6 +349,7 @@ pub struct SearchResult {
     pub track_source_id: Option<String>,
     pub track_title: Option<String>,
     pub track_artist: Option<String>,
+    pub is_favourite: bool,
     pub score: f64,
 }
 

@@ -103,6 +103,22 @@ pub async fn get_albums_for_artist(
 }
 
 #[tauri::command]
+pub async fn get_albums_for_artist_name(
+    state: State<'_, AppState>,
+    name: String,
+) -> CmdResult<Vec<Album>> {
+    with_cache(&state, |db| db.albums_for_artist_name(&name))
+}
+
+#[tauri::command]
+pub async fn get_albums_for_year(
+    state: State<'_, AppState>,
+    year: i32,
+) -> CmdResult<Vec<Album>> {
+    with_cache(&state, |db| db.albums_for_year(year))
+}
+
+#[tauri::command]
 pub async fn get_tracks_for_album(
     state: State<'_, AppState>,
     source_id: String,
@@ -209,6 +225,14 @@ pub async fn get_album_genres(
     source_id: String,
 ) -> CmdResult<Vec<String>> {
     with_cache(&state, |db| db.album_genres(&source_id))
+}
+
+#[tauri::command]
+pub async fn get_album(
+    state: State<'_, AppState>,
+    source_id: String,
+) -> CmdResult<Option<Album>> {
+    with_cache(&state, |db| db.album_by_source_id(&source_id))
 }
 
 #[tauri::command]

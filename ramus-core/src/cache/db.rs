@@ -66,6 +66,7 @@ pub struct AlbumSearchRow {
     pub artist_name: String,
     pub year: Option<i32>,
     pub art_url: Option<String>,
+    pub is_favourite: bool,
 }
 
 /// Track row returned by enriched search queries.
@@ -79,6 +80,7 @@ pub struct TrackSearchRow {
     pub album_source_id: String,
     pub art_url: Option<String>,
     pub track_artist: Option<String>,
+    pub is_favourite: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -619,6 +621,50 @@ impl CacheDatabase {
         Ok(albums)
     }
 
+    /// Get a single album by its source_id.
+    pub fn album_by_source_id(&self, source_id: &str) -> Result<Option<Album>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
+                    a.rating, a.studio, a.addedAt, a.lastViewedAt
+             FROM albums a
+             JOIN artists ar ON ar.id = a.artistId
+             WHERE a.sourceId = ?1",
+        )?;
+        let mut albums = Self::map_album_rows(&mut stmt, params![source_id], &conn)?;
+        Ok(albums.pop())
+    }
+
+    /// Get all albums for a given year.
+    pub fn albums_for_year(&self, year: i32) -> Result<Vec<Album>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
+                    a.rating, a.studio, a.addedAt, a.lastViewedAt
+             FROM albums a
+             JOIN artists ar ON ar.id = a.artistId
+             WHERE a.year = ?1
+             ORDER BY ar.name COLLATE NOCASE, a.title COLLATE NOCASE",
+        )?;
+        let albums = Self::map_album_rows(&mut stmt, params![year], &conn)?;
+        Ok(albums)
+    }
+
+    /// Get albums for an artist by artist name.
+    pub fn albums_for_artist_name(&self, artist_name: &str) -> Result<Vec<Album>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
+                    a.rating, a.studio, a.addedAt, a.lastViewedAt
+             FROM albums a
+             JOIN artists ar ON ar.id = a.artistId
+             WHERE ar.name = ?1 COLLATE NOCASE
+             ORDER BY a.year",
+        )?;
+        let albums = Self::map_album_rows(&mut stmt, params![artist_name], &conn)?;
+        Ok(albums)
+    }
+
     /// Get albums for an artist by artist source_id.
     pub fn albums_for_artist(&self, artist_source_id: &str) -> Result<Vec<Album>, CacheError> {
         let conn = self.conn.lock();
@@ -859,7 +905,7 @@ impl CacheDatabase {
             }
             let placeholders = ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
             let sql = format!(
-                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl
+                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl, a.rating
                  FROM albums a
                  JOIN artists ar ON ar.id = a.artistId
                  WHERE a.title LIKE ?1 ESCAPE '\\' AND a.id IN ({})
@@ -876,13 +922,14 @@ impl CacheDatabase {
                         artist_name: row.get(2)?,
                         year: row.get(3)?,
                         art_url: row.get(4)?,
+                        is_favourite: row.get::<_, Option<f64>>(5)?.map(|r| r >= 10.0).unwrap_or(false),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         } else {
             let mut stmt = conn.prepare(
-                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl
+                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl, a.rating
                  FROM albums a
                  JOIN artists ar ON ar.id = a.artistId
                  WHERE a.title LIKE ?1 ESCAPE '\\'
@@ -897,6 +944,7 @@ impl CacheDatabase {
                         artist_name: row.get(2)?,
                         year: row.get(3)?,
                         art_url: row.get(4)?,
+                        is_favourite: row.get::<_, Option<f64>>(5)?.map(|r| r >= 10.0).unwrap_or(false),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -920,7 +968,7 @@ impl CacheDatabase {
             }
             let placeholders = ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
             let sql = format!(
-                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl
+                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl, a.rating
                  FROM albums a
                  JOIN artists ar ON ar.id = a.artistId
                  WHERE ar.name LIKE ?1 ESCAPE '\\' AND a.id IN ({})
@@ -937,13 +985,14 @@ impl CacheDatabase {
                         artist_name: row.get(2)?,
                         year: row.get(3)?,
                         art_url: row.get(4)?,
+                        is_favourite: row.get::<_, Option<f64>>(5)?.map(|r| r >= 10.0).unwrap_or(false),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         } else {
             let mut stmt = conn.prepare(
-                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl
+                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl, a.rating
                  FROM albums a
                  JOIN artists ar ON ar.id = a.artistId
                  WHERE ar.name LIKE ?1 ESCAPE '\\'
@@ -958,6 +1007,7 @@ impl CacheDatabase {
                         artist_name: row.get(2)?,
                         year: row.get(3)?,
                         art_url: row.get(4)?,
+                        is_favourite: row.get::<_, Option<f64>>(5)?.map(|r| r >= 10.0).unwrap_or(false),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -981,7 +1031,7 @@ impl CacheDatabase {
             }
             let placeholders = ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
             let sql = format!(
-                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl
+                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl, a.rating
                  FROM albums a
                  JOIN artists ar ON ar.id = a.artistId
                  WHERE (ar.name LIKE ?1 ESCAPE '\\' OR a.title LIKE ?1 ESCAPE '\\') AND a.id IN ({})
@@ -998,13 +1048,14 @@ impl CacheDatabase {
                         artist_name: row.get(2)?,
                         year: row.get(3)?,
                         art_url: row.get(4)?,
+                        is_favourite: row.get::<_, Option<f64>>(5)?.map(|r| r >= 10.0).unwrap_or(false),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         } else {
             let mut stmt = conn.prepare(
-                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl
+                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl, a.rating
                  FROM albums a
                  JOIN artists ar ON ar.id = a.artistId
                  WHERE ar.name LIKE ?1 ESCAPE '\\' OR a.title LIKE ?1 ESCAPE '\\'
@@ -1019,6 +1070,7 @@ impl CacheDatabase {
                         artist_name: row.get(2)?,
                         year: row.get(3)?,
                         art_url: row.get(4)?,
+                        is_favourite: row.get::<_, Option<f64>>(5)?.map(|r| r >= 10.0).unwrap_or(false),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -1039,7 +1091,7 @@ impl CacheDatabase {
             }
             let placeholders = ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
             let sql = format!(
-                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl
+                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl, a.rating
                  FROM albums a
                  JOIN artists ar ON ar.id = a.artistId
                  WHERE a.id IN ({})
@@ -1056,6 +1108,7 @@ impl CacheDatabase {
                         artist_name: row.get(2)?,
                         year: row.get(3)?,
                         art_url: row.get(4)?,
+                        is_favourite: row.get::<_, Option<f64>>(5)?.map(|r| r >= 10.0).unwrap_or(false),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -1080,7 +1133,7 @@ impl CacheDatabase {
             }
             let placeholders = ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
             let sql = format!(
-                "SELECT t.id, t.sourceId, t.title, ar.name, al.title, al.sourceId, al.artUrl, t.trackArtist
+                "SELECT t.id, t.sourceId, t.title, ar.name, al.title, al.sourceId, al.artUrl, t.trackArtist, t.userRating
                  FROM tracks_fts fts
                  JOIN tracks t ON t.id = fts.rowid
                  JOIN albums al ON al.id = t.albumId
@@ -1102,13 +1155,14 @@ impl CacheDatabase {
                         album_source_id: row.get(5)?,
                         art_url: row.get(6)?,
                         track_artist: row.get(7)?,
+                        is_favourite: row.get::<_, Option<f64>>(8)?.map(|r| r >= 10.0).unwrap_or(false),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         } else {
             let mut stmt = conn.prepare(
-                "SELECT t.id, t.sourceId, t.title, ar.name, al.title, al.sourceId, al.artUrl, t.trackArtist
+                "SELECT t.id, t.sourceId, t.title, ar.name, al.title, al.sourceId, al.artUrl, t.trackArtist, t.userRating
                  FROM tracks_fts fts
                  JOIN tracks t ON t.id = fts.rowid
                  JOIN albums al ON al.id = t.albumId
@@ -1128,6 +1182,7 @@ impl CacheDatabase {
                         album_source_id: row.get(5)?,
                         art_url: row.get(6)?,
                         track_artist: row.get(7)?,
+                        is_favourite: row.get::<_, Option<f64>>(8)?.map(|r| r >= 10.0).unwrap_or(false),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -1149,7 +1204,7 @@ impl CacheDatabase {
             }
             let placeholders = ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
             let sql = format!(
-                "SELECT t.id, t.sourceId, t.title, ar.name, al.title, al.sourceId, al.artUrl, t.trackArtist
+                "SELECT t.id, t.sourceId, t.title, ar.name, al.title, al.sourceId, al.artUrl, t.trackArtist, t.userRating
                  FROM tracks t
                  JOIN albums al ON al.id = t.albumId
                  JOIN artists ar ON ar.id = t.artistId
@@ -1169,13 +1224,14 @@ impl CacheDatabase {
                         album_source_id: row.get(5)?,
                         art_url: row.get(6)?,
                         track_artist: row.get(7)?,
+                        is_favourite: row.get::<_, Option<f64>>(8)?.map(|r| r >= 10.0).unwrap_or(false),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         } else {
             let mut stmt = conn.prepare(
-                "SELECT t.id, t.sourceId, t.title, ar.name, al.title, al.sourceId, al.artUrl, t.trackArtist
+                "SELECT t.id, t.sourceId, t.title, ar.name, al.title, al.sourceId, al.artUrl, t.trackArtist, t.userRating
                  FROM tracks t
                  JOIN albums al ON al.id = t.albumId
                  JOIN artists ar ON ar.id = t.artistId
@@ -1192,6 +1248,7 @@ impl CacheDatabase {
                         album_source_id: row.get(5)?,
                         art_url: row.get(6)?,
                         track_artist: row.get(7)?,
+                        is_favourite: row.get::<_, Option<f64>>(8)?.map(|r| r >= 10.0).unwrap_or(false),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
