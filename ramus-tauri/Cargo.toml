@@ -19,6 +19,9 @@ urlencoding = "2"
 rand = "0.8"
 open = "5"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 pkg-config = "0.3"

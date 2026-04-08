@@ -44,6 +44,15 @@ impl MpvController {
     /// Spawns a background event loop thread that dispatches `callbacks`.
     pub fn new(callbacks: Arc<MpvCallbacks>) -> Result<Self, String> {
         unsafe {
+            // mpv requires LC_NUMERIC=C for POSIX float formatting (e.g. EQ filters).
+            // On Linux desktops with non-C locales, mpv_create() returns null without this.
+            #[cfg(target_os = "linux")]
+            {
+                let c_locale = std::ffi::CString::new("C").unwrap();
+                let lc_numeric = 1; // LC_NUMERIC
+                libc::setlocale(lc_numeric, c_locale.as_ptr());
+            }
+
             let ctx = mpv_create();
             if ctx.is_null() {
                 return Err("mpv_create() returned null".into());
