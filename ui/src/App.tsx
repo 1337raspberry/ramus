@@ -22,6 +22,7 @@ import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
 import OnboardingFlow from "./components/onboarding/OnboardingFlow";
 import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackground";
 import ColorDebugPanel from "./components/ColorDebugPanel";
+import { IconClose, IconMinimize, IconFullscreen } from "./components/Icons";
 
 const appWindow = getCurrentWindow();
 
@@ -30,13 +31,13 @@ function TrafficLights() {
     <div className="drag-region" data-tauri-drag-region>
       <div className="traffic-lights">
         <button className="traffic-light tl-close" title="Close" onClick={() => appWindow.close()}>
-          {"\u00d7"}
+          <IconClose size={10} />
         </button>
         <button className="traffic-light tl-minimize" title="Minimize" onClick={() => appWindow.minimize()}>
-          {"\u2013"}
+          <IconMinimize size={10} />
         </button>
         <button className="traffic-light tl-fullscreen" title="Fullscreen" onClick={() => appWindow.toggleMaximize()}>
-          {"\u2922"}
+          <IconFullscreen size={10} />
         </button>
       </div>
     </div>

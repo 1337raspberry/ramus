@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { GenreNode } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useGenreDebugStore } from "./GenreDebugPanel";
+import { IconChevronRight } from "./Icons";
 
 interface FlatRow {
   node: GenreNode;
@@ -136,7 +137,7 @@ export default function GenreTreeView() {
                     allExpanded ? collapseAll() : expandAll();
                   }}
                 >
-                  {"›"}
+                  <IconChevronRight />
                 </span>
                 <span className="genre-name" style={{ fontWeight: 600 }}>
                   All
@@ -166,7 +167,7 @@ export default function GenreTreeView() {
                     toggleGenreExpanded(row.node.id);
                   }}
                 >
-                  {"›"}
+                  <IconChevronRight />
                 </span>
               ) : (
                 <span style={{ width: chevronWidth, flexShrink: 0 }} />

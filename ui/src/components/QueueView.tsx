@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { getArtUrl } from "../lib/commands";
+import { IconMusicNote, IconClose } from "./Icons";
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -31,7 +32,7 @@ function QueueTrackThumb({ thumb }: { thumb: string | null }) {
       />
     );
   }
-  return <div className="queue-thumb queue-thumb-placeholder">&#9835;</div>;
+  return <div className="queue-thumb queue-thumb-placeholder"><IconMusicNote /></div>;
 }
 
 export default function QueueView() {
@@ -80,7 +81,7 @@ export default function QueueView() {
                     removeQueueItem(globalIndex);
                   }}
                 >
-                  x
+                  <IconClose size={12} />
                 </button>
               </div>
             );

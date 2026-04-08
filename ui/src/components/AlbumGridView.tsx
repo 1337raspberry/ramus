@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type AlbumSortOrder } from "../stores/libraryStore";
 import type { Album } from "../lib/types";
 import { getArtUrl } from "../lib/commands";
+import { IconPlay, IconStarFilled, IconStarEmpty, IconMusicNote } from "./Icons";
 
 const SORT_OPTIONS: { value: AlbumSortOrder; label: string }[] = [
   { value: "alphabetical", label: "A-Z" },
@@ -54,7 +55,7 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
             onError={() => setArtError(true)}
           />
         ) : (
-          <div className="album-art-placeholder">{"\u266B"}</div>
+          <div className="album-art-placeholder"><IconMusicNote /></div>
         )}
         <button
           className="album-card-play-btn"
@@ -64,7 +65,7 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
           }}
           title="Play"
         >
-          {"\u25B6"}
+          <IconPlay />
         </button>
       </div>
       <div className="album-title">{album.title}</div>
@@ -76,7 +77,7 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
           toggleAlbumFav(album);
         }}
       >
-        {album.isFavourite ? "\u2605" : "\u2606"}
+        {album.isFavourite ? <IconStarFilled /> : <IconStarEmpty />}
       </button>
     </div>
   );

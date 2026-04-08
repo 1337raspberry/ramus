@@ -5,6 +5,7 @@ import { getArtUrl, getAlbumColors, getAlbumGenres, getTracksForAlbum } from "..
 import { extractVibrantColor } from "../lib/vibrantColor";
 import { formatCodec } from "../lib/format";
 import FlowLayout from "./FlowLayout";
+import { IconMusicNote } from "./Icons";
 
 export default function SuggestionView() {
   const album = useLibraryStore((s) => s.suggestion);
@@ -109,7 +110,7 @@ export default function SuggestionView() {
               onError={() => setArtErr(true)}
             />
           ) : (
-            <div className="suggestion-art-placeholder">{"\u266B"}</div>
+            <div className="suggestion-art-placeholder"><IconMusicNote /></div>
           )}
         </div>
         <div className="suggestion-info">
