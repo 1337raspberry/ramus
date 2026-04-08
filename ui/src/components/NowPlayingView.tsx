@@ -25,9 +25,11 @@ function formatCodec(codec: string | null, bitrate: number | null): string | nul
 interface NowPlayingProps {
   onOpenEQ?: () => void;
   panelHeight?: number;
+  showQueue: boolean;
+  onToggleQueue: () => void;
 }
 
-export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProps) {
+export default function NowPlayingView({ onOpenEQ, panelHeight, showQueue, onToggleQueue }: NowPlayingProps) {
   const track = usePlaybackStore((s) => s.currentTrack);
   const status = usePlaybackStore((s) => s.status);
   const lyrics = usePlaybackStore((s) => s.lyrics);
@@ -43,7 +45,6 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
 
   const nowPlayingAlbum = usePlaybackStore((s) => s.nowPlayingAlbum);
 
-  const [showQueue, setShowQueue] = useState(false);
   const [artSrc, setArtSrc] = useState<string | null>(null);
   const [artErr, setArtErr] = useState(false);
   const lastAccentThumb = useRef<string | null>(null);
@@ -228,7 +229,7 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
         </div>
         <button
           className={`np-queue-toggle${showQueue ? " expanded" : ""}`}
-          onClick={() => setShowQueue((s) => !s)}
+          onClick={onToggleQueue}
         >
           <IconChevronDown />
         </button>
