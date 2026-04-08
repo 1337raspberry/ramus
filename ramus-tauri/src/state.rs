@@ -3,6 +3,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 
 use ramus_core::cache::db::CacheDatabase;
+use ramus_core::cache::image_cache::ImageCache;
 use ramus_core::cache::sync::SyncEngine;
 use ramus_core::genre::mapper::GenreMapper;
 use ramus_core::models::{PlexServer, Settings};
@@ -21,6 +22,7 @@ pub struct AppState {
     pub session_reporter: Arc<crate::session_reporter::SessionReporter>,
     pub connection_monitor: Arc<ConnectionMonitor>,
     pub settings: Arc<RwLock<Settings>>,
+    pub image_cache: Arc<parking_lot::Mutex<ImageCache>>,
     pub http_client: reqwest::Client,
     /// Servers from the last `discover_servers` call — keyed by machine_identifier.
     /// Holds full data including tokens so the frontend never needs them.

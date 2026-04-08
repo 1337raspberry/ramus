@@ -43,27 +43,13 @@ impl SessionReporter {
 
     /// A new track started playing.
     pub fn track_started(&self, track: &Track, session_id: &str) {
-        log::info!(
-            "session: track_started rk={} session={}",
-            track.rating_key,
-            session_id
-        );
         let timeline = self.tracker.lock().track_started(track, session_id);
         self.send_timeline(&timeline);
         self.start_periodic();
-
-        // Debug: check what the server sees as active sessions
-        let client = self.client.clone();
-        tauri::async_runtime::spawn(async move {
-            // Small delay to let the HLS stream establish
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            client.log_active_sessions().await;
-        });
     }
 
     /// A track ended naturally (auto-advance). Scrobbles it.
     pub fn track_ended(&self, track: &Track) {
-        log::info!("session: track_ended rk={}", track.rating_key);
         let rk = track.rating_key.clone();
         let client = self.client.clone();
         tauri::async_runtime::spawn(async move {
@@ -73,7 +59,6 @@ impl SessionReporter {
 
     /// Playback paused.
     pub fn playback_paused(&self) {
-        log::debug!("session: paused");
         self.update_tracker_position();
         if let Some(timeline) = self.tracker.lock().playback_paused() {
             self.send_timeline(&timeline);
@@ -83,7 +68,6 @@ impl SessionReporter {
 
     /// Playback resumed from pause.
     pub fn playback_resumed(&self) {
-        log::debug!("session: resumed");
         self.update_tracker_position();
         if let Some(timeline) = self.tracker.lock().playback_resumed() {
             self.send_timeline(&timeline);
@@ -93,7 +77,6 @@ impl SessionReporter {
 
     /// Playback stopped entirely (end of queue, new queue load, user stop).
     pub fn playback_stopped(&self) {
-        log::debug!("session: stopped");
         self.stop_periodic();
         self.update_tracker_position();
         if let Some(timeline) = self.tracker.lock().playback_stopped() {

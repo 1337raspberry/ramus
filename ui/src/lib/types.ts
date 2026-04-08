@@ -90,6 +90,7 @@ export interface Settings {
   playbackMode: "directPlay" | "transcodeLosslessRemote" | "transcodeLossless";
   lookaheadDepth: number;
   audioCacheLimitBytes: number;
+  imageCacheLimitBytes: number;
   syncIntervalHours: number;
   genreSource: "open" | "custom";
   libraryPadding: number;

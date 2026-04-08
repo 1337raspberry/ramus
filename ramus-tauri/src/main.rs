@@ -27,9 +27,11 @@ fn load_server_url() -> Option<String> {
 }
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format_timestamp_millis()
-        .init();
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("ramus_tauri=debug,ramus_core=debug,info"),
+    )
+    .format_timestamp_millis()
+    .init();
 
     tauri::Builder::default()
         .setup(|app| {
@@ -70,6 +72,15 @@ fn main() {
             let saved_settings = ramus_core::settings::load();
             player.update_config(saved_settings.to_playback_config());
 
+            // Initialize image cache from saved settings
+            let image_cache_dir = ramus_core::plex::token_store::config_dir()
+                .map(|d| d.join("image_cache"))
+                .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/ramus_image_cache"));
+            let image_cache = ramus_core::cache::image_cache::ImageCache::load(
+                image_cache_dir,
+                saved_settings.image_cache_limit_bytes as u64,
+            );
+
             let state = AppState {
                 client: client.clone(),
                 cache: Arc::new(parking_lot::Mutex::new(None)),
@@ -80,6 +91,7 @@ fn main() {
                 session_reporter: session_reporter.clone(),
                 connection_monitor: connection_monitor.clone(),
                 settings: Arc::new(RwLock::new(saved_settings)),
+                image_cache: Arc::new(parking_lot::Mutex::new(image_cache)),
                 http_client,
                 discovered_servers: Arc::new(parking_lot::Mutex::new(Vec::new())),
             };
@@ -277,6 +289,8 @@ fn main() {
             commands::settings::update_settings,
             commands::settings::import_custom_genres,
             commands::settings::remove_custom_genres,
+            commands::settings::flush_image_cache,
+            commands::settings::get_image_cache_stats,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")

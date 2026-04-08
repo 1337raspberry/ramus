@@ -793,7 +793,7 @@ impl CacheDatabase {
     ) -> Result<Vec<ArtistRow>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, name, sourceId, artUrl FROM artists ORDER BY COALESCE(sortName, name) COLLATE NOCASE",
+            "SELECT id, name, sourceId, artUrl FROM artists ORDER BY name COLLATE NOCASE",
         )?;
         let rows = stmt
             .query_map([], |row| {

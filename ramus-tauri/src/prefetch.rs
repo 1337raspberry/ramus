@@ -19,23 +19,23 @@ pub fn trigger(player: Arc<AudioPlayer>, http_client: reqwest::Client) {
         Err(_) => return,
     };
 
-    log::info!("prefetch: {} targets to cache", targets.len());
-    for (track_id, url) in targets {
-        let is_hls = url.contains("/transcode/");
-        log::info!(
-            "prefetch: rk={track_id} {}",
-            if is_hls { "HLS transcode" } else { "direct" }
-        );
-        let player = player.clone();
-        let client = http_client.clone();
-        let dir = cache_dir.clone();
+    tauri::async_runtime::spawn(async move {
+        // Brief delay to let the server finish setting up the current stream
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-        tauri::async_runtime::spawn(async move {
-            if let Err(e) = download_and_cache(&player, &client, &dir, &track_id, &url).await {
-                log::warn!("prefetch failed for {track_id}: {e}");
+        for (track_id, url) in targets {
+            // Re-check cache in case another trigger already downloaded this
+            let cached = player.with_cache(|c| c.get(&track_id).is_some());
+            if cached {
+                continue;
             }
-        });
-    }
+            if let Err(e) =
+                download_and_cache(&player, &http_client, &cache_dir, &track_id, &url).await
+            {
+                log::debug!("prefetch failed for {track_id}: {e}");
+            }
+        }
+    });
 }
 
 async fn download_and_cache(

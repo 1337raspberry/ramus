@@ -16,6 +16,33 @@ import type { SyncProgress } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
+function ImageCacheRow() {
+  const [stats, setStats] = useState<{ entryCount: number; totalSizeBytes: number } | null>(null);
+  const refresh = useCallback(() => {
+    import("../lib/commands").then(({ getImageCacheStats }) =>
+      getImageCacheStats().then(setStats).catch(() => {})
+    );
+  }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+  const mb = stats ? (stats.totalSizeBytes / 1_048_576).toFixed(1) : "—";
+  const count = stats?.entryCount ?? 0;
+  return (
+    <div className="settings-row">
+      <span>{count} images, {mb} MB</span>
+      <button
+        className="settings-btn"
+        onClick={() => {
+          import("../lib/commands").then(({ flushImageCache }) =>
+            flushImageCache().then(refresh).catch(() => {})
+          );
+        }}
+      >
+        Flush
+      </button>
+    </div>
+  );
+}
+
 interface Props {
   onDismiss: () => void;
   onSignOut: () => void;
@@ -235,6 +262,28 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
               }}
             />
           </label>
+
+          <label className="settings-row">
+            <span>Image cache limit (GB)</span>
+            <input
+              type="number"
+              className="settings-number-input"
+              min={0.1}
+              max={10}
+              step={0.1}
+              value={(settings.imageCacheLimitBytes / 1_073_741_824).toFixed(1)}
+              onChange={(e) => {
+                const gb = Math.max(0.1, Math.min(10, Number(e.target.value)));
+                save({ imageCacheLimitBytes: Math.round(gb * 1_073_741_824) });
+              }}
+              onBlur={(e) => {
+                const gb = Math.max(0.1, Math.min(10, Number(e.target.value)));
+                save({ imageCacheLimitBytes: Math.round(gb * 1_073_741_824) });
+              }}
+            />
+          </label>
+
+          <ImageCacheRow />
 
           {/* Library */}
           <div className="settings-section-header">LIBRARY</div>

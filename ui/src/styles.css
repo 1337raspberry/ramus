@@ -648,8 +648,7 @@ input, textarea {
 }
 
 .adv-tracks {
-  flex: 1;
-  min-height: 0;
+  flex: none;
 }
 
 .adv-disc-header {
