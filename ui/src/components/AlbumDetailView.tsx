@@ -3,6 +3,10 @@ import { useLibraryStore } from "../stores/libraryStore";
 import { getArtUrl, getQueue, insertNext, appendToQueue } from "../lib/commands";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { formatDuration, formatCodec } from "../lib/format";
+import {
+  IconChevronLeft, IconStarFilled, IconStarEmpty, IconMusicNote,
+  IconPlay, IconMoreDots,
+} from "./Icons";
 
 export default function AlbumDetailView() {
   const album = useLibraryStore((s) => s.detailAlbum);
@@ -57,14 +61,14 @@ export default function AlbumDetailView() {
       {/* Header */}
       <div className="adv-header">
         <button className="adv-back" onClick={closeAlbumDetail}>
-          {"\u2039"}
+          <IconChevronLeft />
         </button>
         <h1 className="adv-title">{album.title}</h1>
         <button
           className={`adv-album-fav${album.isFavourite ? " active" : ""}`}
           onClick={() => toggleAlbumFav(album)}
         >
-          {album.isFavourite ? "\u2605" : "\u2606"}
+          {album.isFavourite ? <IconStarFilled /> : <IconStarEmpty />}
         </button>
       </div>
 
@@ -74,7 +78,7 @@ export default function AlbumDetailView() {
           {artSrc && !artErr ? (
             <img className="adv-art" src={artSrc} alt={album.title} />
           ) : (
-            <div className="adv-art-placeholder">{"\u266B"}</div>
+            <div className="adv-art-placeholder"><IconMusicNote /></div>
           )}
         </div>
         <div className="adv-hero-info">
@@ -82,7 +86,7 @@ export default function AlbumDetailView() {
           {album.year && <div className="adv-year">{album.year}</div>}
         </div>
         <button className="adv-hero-play" onClick={handlePlayAlbum} title="Play Album">
-          {"\u25B6"}
+          <IconPlay />
         </button>
       </div>
 
@@ -132,7 +136,7 @@ export default function AlbumDetailView() {
                     toggleTrackFav(track);
                   }}
                 >
-                  {track.isFavourite ? "\u2605" : "\u2606"}
+                  {track.isFavourite ? <IconStarFilled /> : <IconStarEmpty />}
                 </button>
                 <div className="adv-track-menu-wrap">
                   <button
@@ -144,7 +148,7 @@ export default function AlbumDetailView() {
                       );
                     }}
                   >
-                    {"\u22EF"}
+                    <IconMoreDots />
                   </button>
                   {isMenuOpen && (
                     <div className={`adv-dropdown${isNearBottom ? " up" : ""}`}>

@@ -306,6 +306,9 @@ input, textarea {
   cursor: pointer;
   transition: transform 0.15s ease;
   transform: rotate(0deg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .genre-chevron.expanded {
@@ -467,7 +470,8 @@ input, textarea {
   opacity: 0;
   transition: opacity 0.15s;
   padding: 2px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 
 .album-fav.visible {
@@ -509,7 +513,8 @@ input, textarea {
   font-size: 24px;
   cursor: pointer;
   padding: 0 4px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 
 .adv-back:hover {
@@ -533,6 +538,8 @@ input, textarea {
   cursor: pointer;
   color: var(--text-muted);
   padding: 2px;
+  display: inline-flex;
+  align-items: center;
   transition: color 0.15s;
 }
 
@@ -695,6 +702,8 @@ input, textarea {
   transition: opacity 0.15s;
   padding: 2px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
 }
 
 .adv-track-fav.active {
@@ -724,6 +733,8 @@ input, textarea {
   padding: 2px 4px;
   opacity: 0;
   transition: opacity 0.15s;
+  display: inline-flex;
+  align-items: center;
 }
 
 .adv-track-row:hover .adv-track-dots {
@@ -848,7 +859,8 @@ input, textarea {
   color: var(--text-muted);
   font-size: 18px;
   padding: 2px 0;
-  transform: rotate(90deg);
+  display: flex;
+  justify-content: center;
 }
 
 .np-header {
@@ -900,6 +912,8 @@ input, textarea {
   color: var(--text-secondary);
   padding: 2px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
   transition: color 0.15s;
 }
 
@@ -1168,6 +1182,8 @@ input, textarea {
   font-size: 12px;
   color: var(--text-secondary);
   transition: color 0.15s;
+  display: inline-flex;
+  align-items: center;
 }
 
 .lyrics-close:hover,
@@ -1537,6 +1553,8 @@ input, textarea {
   color: var(--text-secondary);
   padding: 2px 4px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
   transition: color 0.15s;
 }
 
@@ -1705,6 +1723,8 @@ input, textarea {
   color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
   font-size: 12px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
 }
 
 .search-menu-wrap {
@@ -1721,6 +1741,8 @@ input, textarea {
   padding: 2px 4px;
   opacity: 0;
   transition: opacity 0.15s;
+  display: inline-flex;
+  align-items: center;
 }
 
 .search-row:hover .search-dots-btn {

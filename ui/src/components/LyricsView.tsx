@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LyricsResult } from "../lib/types";
 import { usePlaybackStore, activeLineIndex } from "../stores/playbackStore";
+import { IconClose, IconPin } from "./Icons";
 
 interface Props {
   lyrics: LyricsResult;
@@ -47,13 +48,13 @@ export default function LyricsView({
   return (
     <div className="lyrics-overlay" onClick={(e) => e.stopPropagation()}>
       <button className="lyrics-close" onClick={onDismiss}>
-        x
+        <IconClose size={14} />
       </button>
       <button
         className={`lyrics-pin${isPinned ? " pinned" : ""}`}
         onClick={onTogglePin}
       >
-        {"\u{1F4CC}"}
+        <IconPin />
       </button>
       <div className="lyrics-scroll" ref={scrollRef}>
         {lyrics.lines.map((line, i) => {

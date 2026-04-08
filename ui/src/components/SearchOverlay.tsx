@@ -3,6 +3,7 @@ import { search as searchCmd, getArtUrl, insertNext, appendToQueue, getTracksFor
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import type { SearchResult, Track } from "../lib/types";
+import { IconMusicNote, IconPlay, IconStarFilled, IconMoreDots, IconSearch } from "./Icons";
 
 interface Props {
   onDismiss: () => void;
@@ -26,7 +27,7 @@ function SearchThumb({ artPath, onPlay }: { artPath: string | null; onPlay: () =
       {src && !err ? (
         <img className="search-thumb" src={src} alt="" onError={() => setErr(true)} />
       ) : (
-        <div className="search-thumb search-thumb-placeholder">{"\u266B"}</div>
+        <div className="search-thumb search-thumb-placeholder"><IconMusicNote /></div>
       )}
       <button
         className="search-thumb-play"
@@ -36,7 +37,7 @@ function SearchThumb({ artPath, onPlay }: { artPath: string | null; onPlay: () =
         }}
         title="Play"
       >
-        {"\u25B6"}
+        <IconPlay />
       </button>
     </div>
   );
@@ -248,7 +249,7 @@ export default function SearchOverlay({ onDismiss }: Props) {
           </div>
         </div>
         {result.isFavourite && (
-          <span className="search-fav-star">{"\u2605"}</span>
+          <span className="search-fav-star"><IconStarFilled /></span>
         )}
         <div className="search-menu-wrap">
           <button
@@ -258,7 +259,7 @@ export default function SearchOverlay({ onDismiss }: Props) {
               setOpenMenuId((prev) => (prev === result.id ? null : result.id));
             }}
           >
-            {"\u22EF"}
+            <IconMoreDots />
           </button>
           {isMenuOpen && (
             <div className="search-dropdown">
@@ -292,7 +293,7 @@ export default function SearchOverlay({ onDismiss }: Props) {
         onKeyDown={handleKeyDown}
       >
         <div className="search-input-row">
-          <span className="search-icon">{"\uD83D\uDD0D"}</span>
+          <span className="search-icon"><IconSearch /></span>
           <input
             ref={inputRef}
             className="search-input"

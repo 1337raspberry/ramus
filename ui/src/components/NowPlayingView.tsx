@@ -9,6 +9,10 @@ import FlowLayout from "./FlowLayout";
 import LyricsView from "./LyricsView";
 import QueueView from "./QueueView";
 import { togglePlayPause, nextTrack, previousTrack } from "../lib/commands";
+import {
+  IconStarFilled, IconStarEmpty, IconMusicNote, IconEqualizer,
+  IconPrevious, IconPause, IconPlay, IconNext, IconChevronDown,
+} from "./Icons";
 
 function formatCodec(codec: string | null, bitrate: number | null): string | null {
   if (!codec) return null;
@@ -126,7 +130,7 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
               className={`np-fav-btn${albumFav ? " active" : ""}`}
               onClick={handleAlbumFavToggle}
             >
-              {albumFav ? "\u2605" : "\u2606"}
+              {albumFav ? <IconStarFilled /> : <IconStarEmpty />}
             </button>
           </div>
           {year && <div className="np-year np-clickable" onClick={handleYearClick}>{year}</div>}
@@ -150,7 +154,7 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
                 onError={() => setArtErr(true)}
               />
             ) : (
-              <div className="np-art-placeholder">{"\u266B"}</div>
+              <div className="np-art-placeholder"><IconMusicNote /></div>
             )}
             {showLyrics && (
               <div className="np-lyrics-overlay">
@@ -178,7 +182,7 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
           <span className="np-track-title">{track.title}</span>
           {onOpenEQ && (
             <button className="np-eq-btn" onClick={onOpenEQ} title="Equalizer">
-              {"\u2261"}
+              <IconEqualizer />
             </button>
           )}
           <button
@@ -188,7 +192,7 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
               handleTrackFavToggle();
             }}
           >
-            {trackFav ? "\u2605" : "\u2606"}
+            {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
           </button>
         </div>
 
@@ -196,16 +200,16 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
 
         <div className="np-transport">
           <button className="np-transport-btn" onClick={() => previousTrack()}>
-            {"\u23EE"}
+            <IconPrevious />
           </button>
           <button
             className="np-transport-btn np-play-btn"
             onClick={() => togglePlayPause()}
           >
-            {status === "playing" ? "\u23F8" : "\u25B6"}
+            {status === "playing" ? <IconPause /> : <IconPlay />}
           </button>
           <button className="np-transport-btn" onClick={() => nextTrack()}>
-            {"\u23ED"}
+            <IconNext />
           </button>
         </div>
       </div>
@@ -221,7 +225,7 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
             </div>
           )}
         </div>
-        <div className="np-queue-chevron">{"\u203A"}</div>
+        <div className="np-queue-chevron"><IconChevronDown /></div>
       </div>
       </div>
 
