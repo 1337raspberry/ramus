@@ -827,6 +827,10 @@ input, textarea {
 
 .detail-scroll {
   height: 100%;
+  overflow: hidden;
+}
+
+.detail-scroll.queue-open {
   overflow-y: auto;
 }
 
