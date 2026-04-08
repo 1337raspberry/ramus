@@ -5,4 +5,3 @@ swift-project/RamusMusicCore/.swiftpm/
 target/
 ui/node_modules/
 ui/dist/
-ramus-tauri/icons/
