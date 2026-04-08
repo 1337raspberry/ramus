@@ -651,6 +651,75 @@ impl AudioPlayer {
         let mut inner = self.inner.lock();
         f(&mut inner.cache)
     }
+
+    // -- Prefetch --
+
+    /// Identify upcoming tracks that should be prefetched (downloaded to cache).
+    ///
+    /// Returns `(rating_key, download_url)` for each track that:
+    /// - Is within `lookahead_depth` of the current position
+    /// - Is not already in the download cache
+    /// - Would use direct play (not HLS transcode)
+    pub fn prefetch_targets(&self) -> Vec<(String, String)> {
+        let inner = self.inner.lock();
+        let depth = inner.config.lookahead_depth as usize;
+        let pos = inner.state.queue_index;
+        let queue = &inner.state.queue;
+
+        let server_url = match inner.server_url.as_ref() {
+            Some(u) => u,
+            None => return Vec::new(),
+        };
+        let token = match inner.token.as_ref() {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
+
+        let mut targets = Vec::new();
+
+        for offset in 1..=depth {
+            let idx = pos + offset;
+            if idx >= queue.len() {
+                break;
+            }
+            let track = &queue[idx];
+
+            // Skip if already cached
+            if inner.cache.get(&track.rating_key).is_some() {
+                continue;
+            }
+
+            // Skip HLS transcode tracks (streamed on demand)
+            if transcode::should_transcode(
+                track.codec.as_deref(),
+                inner.config.playback_mode,
+                inner.is_remote,
+            ) {
+                continue;
+            }
+
+            // Build direct play URL
+            if let Some(part_key) = track.part_key.as_ref() {
+                if let Some(url) =
+                    transcode::build_direct_play_url(server_url, part_key, token)
+                {
+                    targets.push((track.rating_key.clone(), url.to_string()));
+                }
+            }
+        }
+
+        targets
+    }
+
+    /// Get the rating_key of the currently playing track (for cache eviction protection).
+    pub fn current_track_id(&self) -> Option<String> {
+        self.inner
+            .lock()
+            .state
+            .current_track
+            .as_ref()
+            .map(|t| t.rating_key.clone())
+    }
 }
 
 // ---------------------------------------------------------------------------

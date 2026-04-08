@@ -10,6 +10,7 @@ import type {
 } from "./lib/types";
 import { usePlaybackStore } from "./stores/playbackStore";
 import { useLibraryStore } from "./stores/libraryStore";
+import { useSettingsStore } from "./stores/settingsStore";
 import ThreeColumnLayout from "./components/ThreeColumnLayout";
 import SidebarView from "./components/SidebarView";
 import AlbumGridView from "./components/AlbumGridView";
@@ -67,7 +68,10 @@ export default function App() {
   // Check auth on mount
   useEffect(() => {
     isAuthenticated()
-      .then(setAuthed)
+      .then((ok) => {
+        setAuthed(ok);
+        if (ok) useSettingsStore.getState().loadSettings();
+      })
       .catch(() => setAuthed(false));
   }, []);
 

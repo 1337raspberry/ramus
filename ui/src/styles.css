@@ -2147,6 +2147,26 @@ input, textarea {
   color: var(--text-muted);
 }
 
+.settings-error {
+  background: rgba(220, 50, 50, 0.15);
+  border: 1px solid rgba(220, 50, 50, 0.4);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #e88;
+  margin-bottom: 8px;
+}
+
+.settings-genre-warnings {
+  font-size: 11px;
+  color: #ca8a04;
+  padding: 4px 0;
+}
+
+.settings-genre-warning {
+  padding: 1px 0;
+}
+
 /* ----------------------------------------------------------------
    Onboarding
    ---------------------------------------------------------------- */

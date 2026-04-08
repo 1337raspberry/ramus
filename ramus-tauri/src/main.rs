@@ -11,11 +11,12 @@ use tauri::Manager;
 use ramus_core::cache::db::CacheDatabase;
 use ramus_core::cache::sync::SyncEngine;
 use ramus_core::genre::mapper::GenreMapper;
+use ramus_core::models::PlexServer;
 use ramus_core::playback::session::SessionTracker;
 use ramus_core::plex::auth;
 use ramus_core::plex::client::PlexClient;
 use ramus_core::plex::connection::ConnectionMonitor;
-use ramus_core::plex::token_store::TokenStore;
+use ramus_core::plex::token_store::{TokenKey, TokenStore};
 use ramus_core::search::engine::SearchEngine;
 
 use ramus_tauri::commands;
@@ -50,9 +51,10 @@ fn main() {
 
             let client = Arc::new(PlexClient::new(client_identifier));
             let connection_monitor = Arc::new(ConnectionMonitor::new(client.clone()));
+            let http_client = reqwest::Client::new();
 
             // Create real mpv player with event callbacks
-            let player = ramus_tauri::create_mpv_player(app_handle);
+            let player = ramus_tauri::create_mpv_player(app_handle, http_client.clone());
 
             let state = AppState {
                 client: client.clone(),
@@ -64,90 +66,140 @@ fn main() {
                 session_tracker: Arc::new(parking_lot::Mutex::new(SessionTracker::default())),
                 connection_monitor: connection_monitor.clone(),
                 settings: Arc::new(RwLock::new(ramus_core::settings::load())),
-                http_client: reqwest::Client::new(),
+                http_client,
+                discovered_servers: Arc::new(parking_lot::Mutex::new(Vec::new())),
             };
 
-            // Try to restore previous session
+            // Try to restore previous session — set state immediately (no
+            // blocking network call) so the app window appears ready instantly.
+            // A background task verifies connectivity and tests alternatives.
             if let Ok(token_store) = TokenStore::new() {
                 if let Some(config) = auth::stored_server_config(&token_store) {
-                    // Restore auth token on the client
-                    client.set_token(Some(config.access_token.clone()));
-
-                    // Restore server connection
                     if let Some(url_str) = load_server_url() {
                         if let Ok(url) = url::Url::parse(&url_str) {
-                            let token = config.access_token.clone();
-                            let client_id = client.client_identifier.clone();
+                            let settings = state.settings.read().clone();
 
-                            // Connect client synchronously during setup
-                            let rt = tokio::runtime::Runtime::new().unwrap();
-                            let client_c = client.clone();
-                            let url_c = url.clone();
-                            let _ = rt.block_on(async {
-                                client_c.connect(url_c, token.clone()).await
-                            });
+                            // Enforce refuse_http: if the stored URL is HTTP and the
+                            // user has since enabled refuse_http, skip restoration.
+                            if settings.refuse_http && url.scheme() == "http" {
+                                log::warn!(
+                                    "stored server URL is HTTP but refuse_http is enabled — skipping session restore"
+                                );
+                            } else {
+                                let token = config.access_token.clone();
+                                let client_id = client.client_identifier.clone();
 
-                            // Configure player
-                            player.configure(url.clone(), token, client_id);
+                                // Set client state immediately — no network call
+                                client.set_server_url(Some(url.clone()));
+                                client.set_token(Some(token.clone()));
 
-                            // Open cache database
-                            if let Ok(cache_dir) = ramus_core::plex::token_store::config_dir() {
-                                let db_path = cache_dir.join("library_cache.db");
-                                if db_path.exists() {
-                                    if let Ok(db) = CacheDatabase::open(&db_path) {
-                                        let db_arc = Arc::new(db);
+                                // Configure player
+                                player.configure(url.clone(), token, client_id);
 
-                                        // Sync engine
-                                        let sync = SyncEngine::new(db_arc.clone(), client.clone());
-                                        *state.sync_engine.lock() = Some(sync);
+                                // Open cache database
+                                if let Ok(cache_dir) = ramus_core::plex::token_store::config_dir() {
+                                    let db_path = cache_dir.join("library_cache.db");
+                                    if db_path.exists() {
+                                        if let Ok(db) = CacheDatabase::open(&db_path) {
+                                            let db_arc = Arc::new(db);
 
-                                        // Search engine
-                                        let search = SearchEngine::new(db_arc.clone(), None);
-                                        *state.search_engine.write() = Some(search);
+                                            let sync = SyncEngine::new(db_arc.clone(), client.clone());
+                                            *state.sync_engine.lock() = Some(sync);
 
-                                        // Cache handle for queries
-                                        if let Ok(db2) = CacheDatabase::open(&db_path) {
-                                            *state.cache.lock() = Some(db2);
+                                            let search = SearchEngine::new(db_arc.clone(), None);
+                                            *state.search_engine.write() = Some(search);
+
+                                            if let Ok(db2) = CacheDatabase::open(&db_path) {
+                                                *state.cache.lock() = Some(db2);
+                                            }
                                         }
                                     }
                                 }
-                            }
 
-                            // Load genre mapper — use custom genres if previously imported
-                            let settings = state.settings.read().clone();
-                            let loaded_custom = if settings.genre_source == ramus_core::models::GenreSource::Custom {
-                                if let Some(data) = ramus_core::settings::load_custom_genres() {
-                                    if let Ok(mapper) = GenreMapper::from_json_bytes(&data) {
-                                        *state.genre_mapper.write() = Some(mapper);
-                                        true
-                                    } else { false }
-                                } else { false }
-                            } else { false };
-                            if !loaded_custom {
-                                let open_json = include_bytes!("../data/open.json");
-                                if let Ok(mapper) = GenreMapper::from_json_bytes(open_json) {
-                                    *state.genre_mapper.write() = Some(mapper);
+                                // Load genre mapper — prefer custom genres if configured
+                                let custom_mapper = (settings.genre_source == ramus_core::models::GenreSource::Custom)
+                                    .then(|| ramus_core::settings::load_custom_genres())
+                                    .flatten()
+                                    .and_then(|data| GenreMapper::from_json_bytes(&data).ok());
+
+                                let mapper = custom_mapper.or_else(|| {
+                                    let open_json = include_bytes!("../data/open.json");
+                                    GenreMapper::from_json_bytes(open_json).ok()
+                                });
+                                if let Some(m) = mapper {
+                                    *state.genre_mapper.write() = Some(m);
                                 }
-                            }
 
-                            // Start connection monitor
-                            connection_monitor.start(
-                                ramus_core::models::PlexServer {
-                                    machine_identifier: config.machine_identifier,
-                                    name: config.name,
-                                    access_token: config.access_token,
-                                    owned: true,
-                                    connections: vec![],
-                                },
-                                url_str,
-                                String::new(),
-                            );
+                                // Retrieve the plex.tv auth token for monitor re-discovery
+                                let auth_token = token_store
+                                    .read(TokenKey::AuthToken)
+                                    .unwrap_or_default();
+
+                                // Start connection monitor with full server data
+                                let allow_http = !settings.refuse_http;
+                                let plex_server = PlexServer::from(&config);
+                                connection_monitor.set_allow_http(allow_http);
+                                connection_monitor.start(
+                                    plex_server.clone(),
+                                    url_str.clone(),
+                                    auth_token,
+                                );
+
+                                // Background: verify current connection and test alternatives
+                                let bg_client = client.clone();
+                                let bg_url = url.clone();
+                                let bg_token = config.access_token.clone();
+                                let bg_monitor = connection_monitor.clone();
+                                let bg_settings = state.settings.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    // Quick verify the stored URI
+                                    if bg_client
+                                        .test_connection(bg_url.as_str(), &bg_token, None)
+                                        .await
+                                    {
+                                        return;
+                                    }
+
+                                    // Bail if the user logged out while we were probing
+                                    if bg_client.token().is_none() {
+                                        return;
+                                    }
+
+                                    // Read allow_http fresh in case settings changed since launch
+                                    let allow_http = !bg_settings.read().refuse_http;
+
+                                    // Stored URI is down — concurrently test alternatives
+                                    log::info!("stored connection unavailable, testing alternatives");
+                                    let (best, _is_http) = bg_client
+                                        .find_best_connection(&plex_server, allow_http, true)
+                                        .await;
+                                    if let Some(conn) = best {
+                                        if let Ok(new_url) = url::Url::parse(&conn.uri) {
+                                            // Only update if still logged in
+                                            if bg_client.token().is_some() {
+                                                bg_client.set_server_url(Some(new_url));
+                                                log::info!("switched to alternative connection: {}", conn.uri);
+                                                bg_monitor.update_active_uri(conn.uri);
+                                            }
+                                        }
+                                    } else {
+                                        log::warn!("no alternative connections available");
+                                    }
+                                });
+                            }
                         }
                     }
                 }
             }
 
+            // Spawn auto-sync background task
+            let auto_sync_settings = state.settings.clone();
+            let auto_sync_engine = state.sync_engine.clone();
+
             app.manage(state);
+
+            ramus_tauri::auto_sync::spawn(auto_sync_settings, auto_sync_engine);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

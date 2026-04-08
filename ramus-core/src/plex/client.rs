@@ -505,10 +505,16 @@ impl PlexClient {
 
     /// Find best working connection for a server. Tests all concurrently,
     /// returns highest-priority one that succeeds.
+    ///
+    /// When `send_token` is false the probe skips `X-Plex-Token`, avoiding
+    /// device-registration side-effects on servers the user hasn't selected
+    /// (Plex notifies server owners when an authenticated but unknown client
+    /// identifier hits `/identity`).
     pub async fn find_best_connection(
         &self,
         server: &PlexServer,
         allow_http: bool,
+        send_token: bool,
     ) -> (Option<PlexServerConnection>, bool) {
         let sorted: Vec<PlexServerConnection> = if allow_http {
             server.sorted_connections().into_iter().cloned().collect()
@@ -528,7 +534,11 @@ impl PlexClient {
         let mut handles = Vec::new();
         for (i, conn) in sorted.iter().enumerate() {
             let uri = conn.uri.clone();
-            let token = server.access_token.clone();
+            let token = if send_token {
+                Some(server.access_token.clone())
+            } else {
+                None
+            };
             let client_id = self.client_identifier.clone();
             let http = self.http.clone();
 
@@ -540,15 +550,16 @@ impl PlexClient {
                     },
                     Err(_) => return (i, false),
                 };
-                let resp = http
+                let mut req = http
                     .get(url)
                     .timeout(Duration::from_secs(5))
                     .header("Accept", "application/json")
                     .header("X-Plex-Client-Identifier", &client_id)
-                    .header("X-Plex-Product", "ramus")
-                    .header("X-Plex-Token", &token)
-                    .send()
-                    .await;
+                    .header("X-Plex-Product", "ramus");
+                if let Some(t) = &token {
+                    req = req.header("X-Plex-Token", t);
+                }
+                let resp = req.send().await;
                 let ok = matches!(resp, Ok(r) if r.status().as_u16() == 200);
                 (i, ok)
             }));

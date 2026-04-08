@@ -122,6 +122,11 @@ impl ConnectionMonitor {
         self.inner.lock().active_uri.clone()
     }
 
+    /// Update the active URI (e.g. after a background failover).
+    pub fn update_active_uri(&self, uri: String) {
+        self.inner.lock().active_uri = Some(uri);
+    }
+
     /// Whether the monitor is currently evaluating connections.
     pub fn is_evaluating(&self) -> bool {
         self.inner.lock().is_evaluating
@@ -255,7 +260,7 @@ impl ConnectionMonitor {
                 .iter()
                 .find(|s| s.machine_identifier == server.machine_identifier)
             {
-                let (best, is_http) = self.client.find_best_connection(found, allow_http).await;
+                let (best, is_http) = self.client.find_best_connection(found, allow_http, true).await;
                 if let Some(conn) = best {
                     if let Ok(url) = Url::parse(&conn.uri) {
                         let is_local = conn.local;

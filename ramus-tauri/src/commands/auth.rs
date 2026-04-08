@@ -65,21 +65,34 @@ pub async fn poll_oauth(
 #[tauri::command]
 pub async fn discover_servers(state: State<'_, AppState>) -> CmdResult<Vec<PlexServer>> {
     let token = state.client.token().ok_or("Not authenticated")?;
-    state
+    let servers = state
         .client
         .discover_servers(&token)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Cache full server data (with tokens) server-side.
+    // The response is auto-stripped of access_token by serde skip_serializing.
+    *state.discovered_servers.lock() = servers.clone();
+
+    Ok(servers)
 }
 
 #[tauri::command]
 pub async fn test_server(
     state: State<'_, AppState>,
-    server: PlexServer,
+    machine_identifier: String,
 ) -> CmdResult<serde_json::Value> {
-    let allow_http = { !state.settings.read().refuse_http };
+    let server = state
+        .discovered_servers
+        .lock()
+        .iter()
+        .find(|s| s.machine_identifier == machine_identifier)
+        .cloned()
+        .ok_or("Server not found — run discover first")?;
 
-    let (best_conn, is_http) = state.client.find_best_connection(&server, allow_http).await;
+    let allow_http = !state.settings.read().refuse_http;
+    let (best_conn, is_http) = state.client.find_best_connection(&server, allow_http, false).await;
     match best_conn {
         Some(conn) => Ok(serde_json::json!({
             "connected": true,
@@ -98,6 +111,18 @@ pub async fn connect_manual_url(
 ) -> CmdResult<bool> {
     let token = state.client.token().ok_or("Not authenticated")?;
     let parsed = Url::parse(&url).map_err(|e| e.to_string())?;
+
+    // Only allow http/https schemes
+    match parsed.scheme() {
+        "https" => {}
+        "http" => {
+            if state.settings.read().refuse_http {
+                return Err("HTTP connections are disabled in settings".into());
+            }
+        }
+        other => return Err(format!("Unsupported scheme: {other}")),
+    }
+
     state
         .client
         .connect(parsed, token)
@@ -118,31 +143,72 @@ pub async fn find_music_libraries(state: State<'_, AppState>) -> CmdResult<Vec<L
 #[tauri::command]
 pub async fn finalize_onboarding(
     state: State<'_, AppState>,
-    server: PlexServer,
+    machine_identifier: String,
     library_key: String,
     server_url: String,
 ) -> CmdResult<()> {
     let token_store = TokenStore::new().map_err(|e| e.to_string())?;
 
-    // Store server config
+    // Look up the full server (with token) from the discovery cache.
+    // For manual connections ("manual" identifier), construct a minimal server
+    // using the plex.tv auth token.
+    let server = state
+        .discovered_servers
+        .lock()
+        .iter()
+        .find(|s| s.machine_identifier == machine_identifier)
+        .cloned()
+        .unwrap_or_else(|| PlexServer {
+            machine_identifier: machine_identifier.clone(),
+            name: server_url.clone(),
+            access_token: String::new(),
+            owned: true,
+            connections: vec![],
+        });
+
+    let server_token = if server.access_token.is_empty() {
+        state.client.token().ok_or("Not authenticated")?
+    } else {
+        server.access_token.clone()
+    };
+
+    // Retrieve the plex.tv auth token for connection monitor re-discovery
+    let auth_token = token_store
+        .read(TokenKey::AuthToken)
+        .unwrap_or_default();
+
+    // Store server config (includes connections for session restoration)
     let config = ramus_core::models::ServerConfig {
         machine_identifier: server.machine_identifier.clone(),
         name: server.name.clone(),
-        access_token: server.access_token.clone(),
+        access_token: server_token.clone(),
         selected_library_key: Some(library_key.clone()),
+        owned: server.owned,
+        connections: server.connections.clone(),
     };
-    auth::store_server_config(&config, &token_store);
+    if !auth::store_server_config(&config, &token_store) {
+        return Err("Failed to persist server credentials".into());
+    }
+
+    // Validate scheme before persisting or connecting
+    let url = Url::parse(&server_url).map_err(|e| e.to_string())?;
+    match url.scheme() {
+        "https" => {}
+        "http" => {
+            if state.settings.read().refuse_http {
+                return Err("HTTP connections are disabled in settings".into());
+            }
+        }
+        other => return Err(format!("Unsupported scheme: {other}")),
+    }
 
     // Persist server URL for session restoration
     if let Ok(dir) = ramus_core::plex::token_store::config_dir() {
         let _ = std::fs::write(dir.join("server_url.txt"), &server_url);
     }
-
-    // Connect client
-    let url = Url::parse(&server_url).map_err(|e| e.to_string())?;
     state
         .client
-        .connect(url.clone(), server.access_token.clone())
+        .connect(url.clone(), server_token.clone())
         .await
         .map_err(|e| e.to_string())?;
 
@@ -161,16 +227,14 @@ pub async fn finalize_onboarding(
     let search = SearchEngine::new(db_arc.clone(), None);
     *state.search_engine.write() = Some(search);
 
-    // Store cache reference (clone Arc, wrap inner in a new CacheDatabase isn't needed -
-    // we share via the sync_engine and search_engine which hold their own Arcs)
-    // For direct cache queries, open a second handle
+    // Direct cache handle for queries
     let db2 = CacheDatabase::open(&db_path).map_err(|e| e.to_string())?;
     *state.cache.lock() = Some(db2);
 
     // Configure the audio player with server connection details
     state.player.configure(
         url.clone(),
-        server.access_token.clone(),
+        server_token.clone(),
         state.client.client_identifier.clone(),
     );
 
@@ -180,10 +244,15 @@ pub async fn finalize_onboarding(
         *state.genre_mapper.write() = Some(mapper);
     }
 
-    // Start connection monitor
+    // Initialize connection monitor with full server data and correct HTTP policy
+    let allow_http = !state.settings.read().refuse_http;
+    state.connection_monitor.set_allow_http(allow_http);
     state
         .connection_monitor
-        .start(server, server_url, config.access_token);
+        .start(PlexServer::from(&config), server_url, auth_token);
+
+    // Clear the discovery cache — no longer needed
+    state.discovered_servers.lock().clear();
 
     Ok(())
 }
@@ -212,11 +281,12 @@ pub async fn logout(state: State<'_, AppState>) -> CmdResult<()> {
         let _ = std::fs::remove_file(dir.join("server_url.txt"));
     }
 
-    // Clear cache
+    // Clear cache and discovery data
     *state.cache.lock() = None;
     *state.sync_engine.lock() = None;
     *state.search_engine.write() = None;
     *state.genre_mapper.write() = None;
+    state.discovered_servers.lock().clear();
 
     Ok(())
 }

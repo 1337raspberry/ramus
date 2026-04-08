@@ -1,7 +1,9 @@
+pub mod auto_sync;
 pub mod commands;
 pub mod events;
 pub mod mpv_controller;
 pub mod mpv_ffi;
+pub mod prefetch;
 pub mod state;
 
 use std::sync::Arc;
@@ -19,6 +21,7 @@ use crate::mpv_controller::MpvController;
 /// that emit Tauri events.
 pub fn create_mpv_player(
     app_handle: AppHandle,
+    http_client: reqwest::Client,
 ) -> Arc<ramus_core::playback::player::AudioPlayer> {
     let app1 = app_handle.clone();
     let app3 = app_handle.clone();
@@ -72,6 +75,8 @@ pub fn create_mpv_player(
                         queue_index: state.queue_index,
                     },
                 );
+                // Prefetch upcoming tracks
+                prefetch::trigger(p.clone(), http_client.clone());
             }
         })),
         on_pause_change: Some(Box::new(move |paused| {

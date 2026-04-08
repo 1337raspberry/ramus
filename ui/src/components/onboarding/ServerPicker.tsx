@@ -37,7 +37,7 @@ export default function ServerPicker({ onSelect }: Props) {
             next.set(server.machineIdentifier, { testing: true, connected: false });
             return next;
           });
-          testServer(server)
+          testServer(server.machineIdentifier)
             .then((result) => {
               setStatuses((prev) => {
                 const next = new Map(prev);
@@ -87,7 +87,6 @@ export default function ServerPicker({ onSelect }: Props) {
           {
             machineIdentifier: "manual",
             name: manualUrl,
-            accessToken: "",
             owned: true,
             connections: [{ uri: manualUrl, local: false, relay: false, protocol: "http" }],
           },

@@ -54,7 +54,6 @@ export interface ArtistInfo {
 export interface PlexServer {
   machineIdentifier: string;
   name: string;
-  accessToken: string;
   owned: boolean;
   connections: PlexServerConnection[];
 }
@@ -94,8 +93,8 @@ export interface Settings {
   syncIntervalHours: number;
   genreSource: "open" | "custom";
   libraryPadding: number;
-  showTaglines: boolean;
   refuseHttp: boolean;
+  lastSyncTimeSecs: number;
 }
 
 export interface CacheStats {

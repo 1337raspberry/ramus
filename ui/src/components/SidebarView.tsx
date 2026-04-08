@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type SidebarMode } from "../stores/libraryStore";
 import GenreTreeView from "./GenreTreeView";
 import { useGenreDebugStore } from "./GenreDebugPanel";
+import { useSettingsStore } from "../stores/settingsStore";
 
 const TABS: { mode: SidebarMode; label: string }[] = [
   { mode: "genres", label: "Genres" },
@@ -23,9 +24,11 @@ function ArtistList({ artists, selectedArtistId, selectArtist }: {
   const padH = useGenreDebugStore((s) => s.padH);
   const rowHeight = useGenreDebugStore((s) => s.rowHeight);
   const chevronWidth = useGenreDebugStore((s) => s.chevronWidth);
+  const libraryPadding = useSettingsStore((s) => s.libraryPadding);
+  const effectiveRowHeight = Math.max(12, rowHeight + libraryPadding * 2);
   const parentRef = useRef<HTMLDivElement>(null);
 
-  const estimateSize = useCallback(() => rowHeight, [rowHeight]);
+  const estimateSize = useCallback(() => effectiveRowHeight, [effectiveRowHeight]);
   const virtualizer = useVirtualizer({
     count: artists.length,
     getScrollElement: () => parentRef.current,
@@ -35,7 +38,7 @@ function ArtistList({ artists, selectedArtistId, selectArtist }: {
 
   useEffect(() => {
     virtualizer.measure();
-  }, [rowHeight, virtualizer]);
+  }, [effectiveRowHeight, virtualizer]);
 
   if (artists.length === 0) {
     return <div className="empty-state">No artists loaded</div>;
@@ -61,7 +64,7 @@ function ArtistList({ artists, selectedArtistId, selectArtist }: {
                 top: vItem.start,
                 left: 0,
                 right: 0,
-                height: rowHeight,
+                height: effectiveRowHeight,
                 display: "flex",
                 alignItems: "center",
                 paddingLeft: padH,

@@ -37,7 +37,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
     (lib: LibrarySection) => {
       if (!server) return;
       // Finalize onboarding (sets up cache, sync engine, etc.)
-      finalizeOnboarding(server, lib.key, serverUrl)
+      finalizeOnboarding(server.machineIdentifier, lib.key, serverUrl)
         .then(() => setStep("initialSync"))
         .catch(() => {});
     },

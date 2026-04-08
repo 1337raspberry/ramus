@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { GenreNode } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { useGenreDebugStore } from "./GenreDebugPanel";
 import { IconChevronRight } from "./Icons";
 
@@ -45,6 +46,8 @@ export default function GenreTreeView() {
 
   const { chevronSize, chevronWidth, textSize, padH, rowHeight, indentDepth } =
     useGenreDebugStore();
+  const libraryPadding = useSettingsStore((s) => s.libraryPadding);
+  const effectiveRowHeight = Math.max(12, rowHeight + libraryPadding * 2);
 
   const rows = useMemo(
     () => flattenTree(genreTree, expandedGenreIds),
@@ -68,13 +71,13 @@ export default function GenreTreeView() {
   const virtualizer = useVirtualizer({
     count: rows.length + 1,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => rowHeight,
+    estimateSize: () => effectiveRowHeight,
     overscan: 20,
   });
 
   useEffect(() => {
     virtualizer.measure();
-  }, [rowHeight, virtualizer]);
+  }, [effectiveRowHeight, virtualizer]);
 
   if (!genreTree.length) {
     return <div className="empty-state">No genres loaded</div>;
@@ -84,7 +87,7 @@ export default function GenreTreeView() {
     position: "absolute",
     left: 0,
     right: 0,
-    height: rowHeight,
+    height: effectiveRowHeight,
     display: "flex",
     alignItems: "center",
     paddingLeft: padH + depth * indentDepth,

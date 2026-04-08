@@ -5,7 +5,7 @@ use parking_lot::RwLock;
 use ramus_core::cache::db::CacheDatabase;
 use ramus_core::cache::sync::SyncEngine;
 use ramus_core::genre::mapper::GenreMapper;
-use ramus_core::models::Settings;
+use ramus_core::models::{PlexServer, Settings};
 use ramus_core::playback::player::AudioPlayer;
 use ramus_core::playback::session::SessionTracker;
 use ramus_core::plex::client::PlexClient;
@@ -23,4 +23,7 @@ pub struct AppState {
     pub connection_monitor: Arc<ConnectionMonitor>,
     pub settings: Arc<RwLock<Settings>>,
     pub http_client: reqwest::Client,
+    /// Servers from the last `discover_servers` call — keyed by machine_identifier.
+    /// Holds full data including tokens so the frontend never needs them.
+    pub discovered_servers: Arc<parking_lot::Mutex<Vec<PlexServer>>>,
 }
