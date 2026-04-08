@@ -336,7 +336,27 @@ input, textarea {
 .album-grid-header {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
   padding: 8px 16px;
+}
+
+.shuffle-favs-btn {
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.15);
+  border: 1px solid rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.3);
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.15s;
+}
+
+.shuffle-favs-btn:hover {
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.25);
 }
 
 .sort-select {
@@ -808,8 +828,6 @@ input, textarea {
 .detail-scroll {
   height: 100%;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
 }
 
 /* ----------------------------------------------------------------
@@ -819,7 +837,6 @@ input, textarea {
 .now-playing {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
 }
 
 .np-visible {
@@ -827,7 +844,7 @@ input, textarea {
   flex-direction: column;
   padding: 16px;
   box-sizing: border-box;
-  flex: 1 0 auto;
+  min-height: 100%;
   overflow: hidden;
 }
 

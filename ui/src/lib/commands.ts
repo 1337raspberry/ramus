@@ -59,6 +59,9 @@ export const getAllAlbums = () => invoke<Album[]>("get_all_albums");
 export const getFavouriteAlbums = () =>
   invoke<Album[]>("get_favourite_albums");
 
+export const getFavouriteTracks = () =>
+  invoke<Track[]>("get_favourite_tracks");
+
 export const getAlbumsForArtist = (sourceId: string) =>
   invoke<Album[]>("get_albums_for_artist", { sourceId });
 

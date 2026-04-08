@@ -166,6 +166,7 @@ fn main() {
             commands::library::get_albums_for_genre,
             commands::library::get_all_albums,
             commands::library::get_favourite_albums,
+            commands::library::get_favourite_tracks,
             commands::library::get_albums_for_artist,
             commands::library::get_albums_for_artist_name,
             commands::library::get_albums_for_year,
