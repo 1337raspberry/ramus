@@ -257,17 +257,51 @@ pub async fn get_art_url(
     thumb: String,
     size: Option<u32>,
 ) -> CmdResult<String> {
+    let size = size.unwrap_or(300);
+
+    // Fast path: check disk cache
+    {
+        let mut cache = state.image_cache.lock();
+        if let Some(path) = cache.get(&thumb, size) {
+            log::debug!("image cache hit: {thumb} @{size}");
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
+
+    log::debug!("image cache miss: {thumb} @{size}");
+
+    // Cache miss — download from Plex
     let server_url = state.client.server_url().ok_or("Not connected")?;
     let token = state.client.token().ok_or("Not authenticated")?;
-    let size = size.unwrap_or(300);
-    Ok(format!(
+    let url = format!(
         "{}/photo/:/transcode?width={}&height={}&minSize=1&upscale=1&url={}&X-Plex-Token={}",
         server_url.as_str().trim_end_matches('/'),
         size,
         size,
         urlencoding::encode(&thumb),
         token,
-    ))
+    );
+
+    let response = state
+        .http_client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Image download failed: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Image download HTTP {}", response.status()));
+    }
+
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+
+    // Store in cache (re-check for concurrent download race)
+    let path = {
+        let mut cache = state.image_cache.lock();
+        cache.insert(&thumb, size, &bytes).map_err(|e| e.to_string())?
+    };
+
+    Ok(path.to_string_lossy().to_string())
 }
 
 #[tauri::command]

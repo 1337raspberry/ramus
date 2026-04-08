@@ -9,10 +9,6 @@ use crate::state::AppState;
 
 type CmdResult<T> = Result<T, String>;
 
-fn trigger_prefetch(state: &AppState) {
-    crate::prefetch::trigger(state.player.clone(), state.http_client.clone());
-}
-
 #[tauri::command]
 pub async fn play_tracks(
     app: AppHandle,
@@ -45,8 +41,6 @@ pub async fn play_tracks(
             .track_started(track, &state.player.play_session_id());
     }
 
-    trigger_prefetch(&state);
-
     Ok(())
 }
 
@@ -59,14 +53,12 @@ pub async fn toggle_play_pause(state: State<'_, AppState>) -> CmdResult<()> {
 #[tauri::command]
 pub async fn next_track(state: State<'_, AppState>) -> CmdResult<()> {
     state.player.next();
-    trigger_prefetch(&state);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn previous_track(state: State<'_, AppState>) -> CmdResult<()> {
     state.player.previous();
-    trigger_prefetch(&state);
     Ok(())
 }
 
@@ -94,7 +86,6 @@ pub async fn append_to_queue(
     tracks: Vec<Track>,
 ) -> CmdResult<()> {
     state.player.append_to_queue(tracks);
-    trigger_prefetch(&state);
     Ok(())
 }
 
@@ -104,7 +95,6 @@ pub async fn insert_next(
     tracks: Vec<Track>,
 ) -> CmdResult<()> {
     state.player.insert_next(tracks);
-    trigger_prefetch(&state);
     Ok(())
 }
 
@@ -123,7 +113,6 @@ pub async fn jump_to_queue_index(
     index: usize,
 ) -> CmdResult<()> {
     state.player.jump_to_index(index);
-    trigger_prefetch(&state);
     Ok(())
 }
 

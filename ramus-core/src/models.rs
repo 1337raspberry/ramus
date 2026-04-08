@@ -422,6 +422,7 @@ pub struct Settings {
     pub playback_mode: PlaybackMode,
     pub lookahead_depth: u8,
     pub audio_cache_limit_bytes: i64,
+    pub image_cache_limit_bytes: i64,
     pub sync_interval_hours: u32,
     pub genre_source: GenreSource,
     pub library_padding: i8,
@@ -435,6 +436,7 @@ impl Default for Settings {
             playback_mode: PlaybackMode::DirectPlay,
             lookahead_depth: 3,
             audio_cache_limit_bytes: PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES,
+            image_cache_limit_bytes: 1_073_741_824, // 1 GB
             sync_interval_hours: 0,
             genre_source: GenreSource::default(),
             library_padding: 0,

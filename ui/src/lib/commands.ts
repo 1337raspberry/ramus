@@ -1,6 +1,6 @@
 // Typed wrappers around Tauri invoke() for all commands.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type {
   Album,
   ArtistInfo,
@@ -93,8 +93,10 @@ export const getAlbum = (sourceId: string) =>
 
 export const getRandomAlbum = () => invoke<Album | null>("get_random_album");
 
-export const getArtUrl = (thumb: string, size?: number) =>
-  invoke<string>("get_art_url", { thumb, size });
+export const getArtUrl = async (thumb: string, size?: number): Promise<string> => {
+  const filePath = await invoke<string>("get_art_url", { thumb, size });
+  return convertFileSrc(filePath);
+};
 
 export const getAlbumColors = (sourceId: string) =>
   invoke<UltraBlurColors | null>("get_album_colors", { sourceId });
@@ -169,3 +171,8 @@ export const importCustomGenres = (text: string) =>
 
 export const removeCustomGenres = () =>
   invoke<void>("remove_custom_genres");
+
+export const flushImageCache = () => invoke<void>("flush_image_cache");
+
+export const getImageCacheStats = () =>
+  invoke<{ entryCount: number; totalSizeBytes: number }>("get_image_cache_stats");

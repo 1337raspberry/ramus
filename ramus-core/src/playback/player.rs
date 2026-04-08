@@ -280,14 +280,6 @@ impl AudioPlayer {
             inner.duration = 0.0;
             inner.is_loading = false;
 
-            log::info!(
-                "load_queue: {} tracks, start_at={}, session={}, mode={:?}",
-                inner.state.queue.len(),
-                start_at,
-                inner.play_session_id,
-                inner.config.playback_mode,
-            );
-
             inner
                 .state
                 .queue
@@ -716,6 +708,14 @@ impl AudioPlayer {
             }
         }
 
+        if !targets.is_empty() {
+            log::debug!(
+                "prefetch_targets: {} targets, mode={:?}, remote={}",
+                targets.len(),
+                inner.config.playback_mode,
+                inner.is_remote,
+            );
+        }
         targets
     }
 
@@ -737,33 +737,17 @@ impl AudioPlayer {
 fn resolve_url(track: &Track, inner: &PlayerInner) -> Option<String> {
     // Check download cache
     if let Some(path) = inner.cache.get(&track.rating_key) {
-        log::info!(
-            "resolve_url: rk={} → cached file://{}",
-            track.rating_key,
-            path.display()
-        );
         return Some(format!("file://{}", path.display()));
     }
 
     let server_url = inner.server_url.as_ref()?;
     let token = inner.token.as_ref()?;
 
-    let should_transcode = transcode::should_transcode(
+    if transcode::should_transcode(
         track.codec.as_deref(),
         inner.config.playback_mode,
         inner.is_remote,
-    );
-
-    log::info!(
-        "resolve_url: rk={} codec={:?} mode={:?} remote={} → {}",
-        track.rating_key,
-        track.codec,
-        inner.config.playback_mode,
-        inner.is_remote,
-        if should_transcode { "TRANSCODE" } else { "DIRECT" }
-    );
-
-    if should_transcode {
+    ) {
         transcode::build_hls_url(
             server_url,
             token,

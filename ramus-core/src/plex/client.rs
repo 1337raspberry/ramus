@@ -793,18 +793,12 @@ impl PlexClient {
     ) {
         let (base, token) = match self.read_state() {
             Ok(s) => s,
-            Err(_) => {
-                log::warn!("report_timeline: not connected, skipping");
-                return;
-            }
+            Err(_) => return,
         };
 
         let url = match base.join("/:/timeline") {
             Ok(u) => u,
-            Err(e) => {
-                log::warn!("report_timeline: URL join failed: {e}");
-                return;
-            }
+            Err(_) => return,
         };
 
         let rk = rating_key.to_string();
@@ -812,7 +806,7 @@ impl PlexClient {
         let time_str = time_ms.to_string();
         let dur_str = duration_ms.to_string();
 
-        let request = self
+        let _ = self
             .http
             .get(url)
             .query(&[
@@ -830,80 +824,23 @@ impl PlexClient {
             .header("X-Plex-Product", "ramus")
             .header("X-Plex-Platform", Self::platform())
             .header("X-Plex-Device", Self::device())
-            .build();
-
-        let request = match request {
-            Ok(r) => r,
-            Err(e) => {
-                log::warn!("report_timeline: build failed: {e}");
-                return;
-            }
-        };
-
-        log::info!(
-            "report_timeline: {} state={state} time={time_str}ms session={session_identifier}",
-            request.url()
-        );
-
-        let result = self.http.execute(request).await;
-
-        match result {
-            Ok(resp) => {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
-                log::info!("report_timeline: → {status} body={body}");
-            }
-            Err(e) => log::warn!("report_timeline: request failed: {e}"),
-        }
-    }
-
-    /// Debug: log active sessions on the server.
-    pub async fn log_active_sessions(&self) {
-        let (base, token) = match self.read_state() {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-        let url = match base.join("status/sessions") {
-            Ok(u) => u,
-            Err(_) => return,
-        };
-        let result = self
-            .http
-            .get(url)
-            .query(&[("X-Plex-Token", token.as_str())])
-            .header("Accept", "application/json")
             .send()
             .await;
-        match result {
-            Ok(resp) => {
-                let body = resp.text().await.unwrap_or_default();
-                log::info!("active_sessions: {body}");
-            }
-            Err(e) => log::warn!("active_sessions: failed: {e}"),
-        }
     }
 
     /// Mark an item as played on the server. Fire-and-forget.
     pub async fn scrobble(&self, rating_key: &str) {
         let (base, token) = match self.read_state() {
             Ok(s) => s,
-            Err(_) => {
-                log::warn!("scrobble: not connected, skipping");
-                return;
-            }
+            Err(_) => return,
         };
 
         let url = match base.join("/:/scrobble") {
             Ok(u) => u,
-            Err(e) => {
-                log::warn!("scrobble: URL join failed: {e}");
-                return;
-            }
+            Err(_) => return,
         };
 
-        log::debug!("scrobble: rk={rating_key} url={url}");
-
-        let result = self
+        let _ = self
             .http
             .get(url)
             .query(&[
@@ -918,16 +855,6 @@ impl PlexClient {
             .header("X-Plex-Device", Self::device())
             .send()
             .await;
-
-        match result {
-            Ok(resp) => {
-                let status = resp.status();
-                if !status.is_success() {
-                    log::warn!("scrobble: server returned {status}");
-                }
-            }
-            Err(e) => log::warn!("scrobble: request failed: {e}"),
-        }
     }
 
     /// Set user rating on an item. 10.0 = favourite, 0.0 = unfavourite.

@@ -1,3 +1,4 @@
+use serde::Serialize;
 use tauri::State;
 
 use ramus_core::genre::mapper::GenreMapper;
@@ -7,6 +8,13 @@ use ramus_core::models::Settings;
 use crate::state::AppState;
 
 type CmdResult<T> = Result<T, String>;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageCacheStats {
+    pub entry_count: usize,
+    pub total_size_bytes: u64,
+}
 
 #[tauri::command]
 pub async fn get_settings(state: State<'_, AppState>) -> CmdResult<Settings> {
@@ -25,9 +33,29 @@ pub async fn update_settings(
     // Update connection monitor HTTP policy
     state.connection_monitor.set_allow_http(!settings.refuse_http);
 
+    // Update image cache limit
+    state
+        .image_cache
+        .lock()
+        .set_limit(settings.image_cache_limit_bytes as u64);
+
     ramus_core::settings::save(&settings).map_err(|e| e.to_string())?;
     *state.settings.write() = settings;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn flush_image_cache(state: State<'_, AppState>) -> CmdResult<()> {
+    state.image_cache.lock().flush().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_image_cache_stats(state: State<'_, AppState>) -> CmdResult<ImageCacheStats> {
+    let cache = state.image_cache.lock();
+    Ok(ImageCacheStats {
+        entry_count: cache.entry_count(),
+        total_size_bytes: cache.total_size(),
+    })
 }
 
 #[tauri::command]
