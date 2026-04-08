@@ -846,7 +846,7 @@ input, textarea {
 .np-visible {
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  padding: 8px 16px 6px;
   box-sizing: border-box;
   flex-shrink: 0;
   overflow: hidden;
@@ -883,7 +883,7 @@ input, textarea {
   border: none;
   color: var(--text-muted);
   font-size: 18px;
-  padding: 4px 0;
+  padding: 8px 0 0;
   cursor: pointer;
   display: flex;
   justify-content: center;
@@ -1099,21 +1099,6 @@ input, textarea {
   gap: 4px;
 }
 
-/* Queue toggle (legacy) */
-.np-queue-toggle {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 11px;
-  cursor: pointer;
-  padding: 6px 0;
-  text-align: center;
-  transition: color 0.15s;
-}
-
-.np-queue-toggle:hover {
-  color: var(--text-primary);
-}
 
 /* ----------------------------------------------------------------
    Volume Slider
