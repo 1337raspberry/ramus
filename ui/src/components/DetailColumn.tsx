@@ -15,7 +15,13 @@ export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
     obsRef.current?.disconnect();
     if (el) {
       setPanelHeight(el.clientHeight);
-      const obs = new ResizeObserver(() => setPanelHeight(el.clientHeight));
+      const obs = new ResizeObserver(() => {
+        setPanelHeight(el.clientHeight);
+        // Reset scroll on resize so the queue stays below the fold.
+        // Without this, WebKitGTK (Linux) lets scroll position drift
+        // during resize, bringing the Up Next list into view.
+        el.scrollTop = 0;
+      });
       obs.observe(el);
       obsRef.current = obs;
     }
