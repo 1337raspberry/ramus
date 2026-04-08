@@ -107,6 +107,7 @@ impl SearchEngine {
                         track_source_id: None,
                         track_title: None,
                         track_artist: None,
+                        is_favourite: row.is_favourite,
                         score,
                     });
                 }
@@ -130,6 +131,7 @@ impl SearchEngine {
                         track_source_id: None,
                         track_title: None,
                         track_artist: None,
+                        is_favourite: row.is_favourite,
                         score,
                     });
                 }
@@ -155,6 +157,7 @@ impl SearchEngine {
                         track_source_id: None,
                         track_title: None,
                         track_artist: None,
+                        is_favourite: row.is_favourite,
                         score,
                     });
                 }
@@ -181,6 +184,7 @@ impl SearchEngine {
                         track_source_id: None,
                         track_title: None,
                         track_artist: None,
+                        is_favourite: row.is_favourite,
                         score: 0.0,
                     });
                 }
@@ -247,6 +251,7 @@ impl SearchEngine {
                         track_source_id: Some(row.track_source_id),
                         track_title: Some(row.track_title),
                         track_artist: row.track_artist,
+                        is_favourite: row.is_favourite,
                         score,
                     });
                 }
@@ -355,6 +360,7 @@ impl SearchEngine {
                         track_source_id: Some(candidate.track_source_id),
                         track_title: Some(candidate.track_title),
                         track_artist: candidate.track_artist,
+                        is_favourite: candidate.is_favourite,
                         score: 0.0,
                     },
                     similarity,

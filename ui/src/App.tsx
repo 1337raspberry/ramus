@@ -9,9 +9,12 @@ import type {
   PlaybackBufferingPayload,
 } from "./lib/types";
 import { usePlaybackStore } from "./stores/playbackStore";
+import { useLibraryStore } from "./stores/libraryStore";
 import ThreeColumnLayout from "./components/ThreeColumnLayout";
 import SidebarView from "./components/SidebarView";
 import AlbumGridView from "./components/AlbumGridView";
+import AlbumDetailView from "./components/AlbumDetailView";
+import SuggestionView from "./components/SuggestionView";
 import DetailColumn from "./components/DetailColumn";
 import SearchOverlay from "./components/SearchOverlay";
 import EqualizerPanel from "./components/EqualizerPanel";
@@ -55,6 +58,8 @@ export default function App() {
   const [showEQ, setShowEQ] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showColorDebug, setShowColorDebug] = useState(false);
+  const suggestion = useLibraryStore((s) => s.suggestion);
+  const detailAlbum = useLibraryStore((s) => s.detailAlbum);
   const albumColors = usePlaybackStore((s) => s.ultraBlurColors);
   const blurColors = useMemo(() => albumColors ?? initialColors, [albumColors]);
 
@@ -191,7 +196,7 @@ export default function App() {
       <TrafficLights />
       <ThreeColumnLayout
         sidebar={<SidebarView onOpenSettings={() => setShowSettings(true)} />}
-        content={<AlbumGridView />}
+        content={detailAlbum ? <AlbumDetailView /> : suggestion ? <SuggestionView /> : <AlbumGridView />}
         detail={<DetailColumn onOpenEQ={() => setShowEQ(true)} />}
       />
       {showSearch && <SearchOverlay onDismiss={() => setShowSearch(false)} />}

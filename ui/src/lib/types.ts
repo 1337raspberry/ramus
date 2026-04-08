@@ -83,6 +83,7 @@ export interface SearchResult {
   trackSourceId: string | null;
   trackTitle: string | null;
   trackArtist: string | null;
+  isFavourite: boolean;
   score: number;
 }
 

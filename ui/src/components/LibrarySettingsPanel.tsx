@@ -13,6 +13,7 @@ import {
 import type { Settings, CacheStats } from "../lib/types";
 import { listen } from "@tauri-apps/api/event";
 import type { SyncProgress } from "../lib/types";
+import { useLibraryStore } from "../stores/libraryStore";
 
 interface Props {
   onDismiss: () => void;
@@ -88,7 +89,10 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
       reader.onload = () => {
         const text = reader.result as string;
         importCustomGenres(text)
-          .then(() => save({ genreSource: "custom" }))
+          .then(() => {
+            save({ genreSource: "custom" });
+            useLibraryStore.getState().loadGenreTree();
+          })
           .catch(() => {});
       };
       reader.readAsText(file);
@@ -98,7 +102,10 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
 
   const handleRemoveGenres = useCallback(() => {
     removeCustomGenres()
-      .then(() => save({ genreSource: "open" }))
+      .then(() => {
+        save({ genreSource: "open" });
+        useLibraryStore.getState().loadGenreTree();
+      })
       .catch(() => {});
   }, [save]);
 

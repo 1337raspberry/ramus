@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Track, LyricsResult, UltraBlurColors } from "../lib/types";
+import type { Album, Track, LyricsResult, UltraBlurColors } from "../lib/types";
 import {
   getVolume,
   setVolume as setVolumeCmd,
@@ -7,6 +7,7 @@ import {
   fetchLyrics,
   getWaveform,
   getQueue,
+  getAlbum,
   getAlbumGenres,
   getAlbumColors,
   removeFromQueue as removeFromQueueCmd,
@@ -39,6 +40,9 @@ interface PlaybackState {
   // Queue
   queue: Track[];
   showQueue: boolean;
+
+  // Now-playing album metadata (year, studio, etc.)
+  nowPlayingAlbum: Album | null;
 
   // Album genres for now-playing footer
   currentGenres: string[];
@@ -99,6 +103,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   queue: [],
   showQueue: false,
 
+  nowPlayingAlbum: null,
+
   currentGenres: [],
 
   onPlaybackState: (status, track, queueIndex) => {
@@ -127,8 +133,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         })
         .catch((e) => console.warn("[waveform] fetch failed:", e));
 
-      // Fetch genres and colors for the album
+      // Fetch album metadata, genres, and colors for the album
       if (track.albumKey) {
+        getAlbum(track.albumKey)
+          .then((album) => set({ nowPlayingAlbum: album }))
+          .catch(() => set({ nowPlayingAlbum: null }));
         getAlbumGenres(track.albumKey)
           .then((genres) => set({ currentGenres: genres }))
           .catch(() => set({ currentGenres: [] }));
@@ -138,7 +147,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
           })
           .catch(() => {});
       } else {
-        set({ currentGenres: [] });
+        set({ currentGenres: [], nowPlayingAlbum: null });
       }
 
       // Auto-fetch lyrics if pinned
@@ -161,6 +170,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         waveformLevels: null,
         showLyrics: false,
         currentGenres: [],
+        nowPlayingAlbum: null,
         queue: [],
       });
     }

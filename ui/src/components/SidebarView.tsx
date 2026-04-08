@@ -90,9 +90,12 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
   const selectArtist = useLibraryStore((s) => s.selectArtist);
 
-  // Load genre tree on mount
+  // Load genre tree + all albums on mount
   useEffect(() => {
-    useLibraryStore.getState().loadGenreTree();
+    const store = useLibraryStore.getState();
+    store.loadGenreTree();
+    store.loadAllAlbums();
+    useLibraryStore.setState({ selectedGenreId: "__all__" });
   }, []);
 
   return (
@@ -120,11 +123,19 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
           />
         )}
       </div>
-      {onOpenSettings && (
-        <button className="sidebar-settings-btn" onClick={onOpenSettings}>
-          Settings
+      <div className="sidebar-bottom-row">
+        {onOpenSettings && (
+          <button className="sidebar-bottom-btn" onClick={onOpenSettings}>
+            Settings
+          </button>
+        )}
+        <button
+          className="sidebar-bottom-btn sidebar-lucky-btn"
+          onClick={() => useLibraryStore.getState().loadSuggestion()}
+        >
+          Feelin' Lucky
         </button>
-      )}
+      </div>
     </div>
   );
 }

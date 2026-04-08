@@ -37,14 +37,30 @@ pub async fn import_custom_genres(
 ) -> CmdResult<Vec<String>> {
     let (data, warnings) = CustomGenreParser::parse(&text).map_err(|e| e.to_string())?;
     let mapper = GenreMapper::from_json_bytes(&data).map_err(|e| e.to_string())?;
+    // Persist the custom genre JSON to disk
+    ramus_core::settings::save_custom_genres(&data).map_err(|e| e.to_string())?;
+    // Update settings to remember genre source
+    let mut settings = state.settings.read().clone();
+    settings.genre_source = ramus_core::models::GenreSource::Custom;
+    ramus_core::settings::save(&settings).map_err(|e| e.to_string())?;
+    *state.settings.write() = settings;
     *state.genre_mapper.write() = Some(mapper);
     Ok(warnings)
 }
 
 #[tauri::command]
 pub async fn remove_custom_genres(state: State<'_, AppState>) -> CmdResult<()> {
-    // Reset to default open genre mapper (would need to reload from file)
-    // For now, clear the mapper — the frontend should trigger a reload
-    *state.genre_mapper.write() = None;
+    // Delete custom genre file and reset to bundled open.json
+    ramus_core::settings::delete_custom_genres();
+    let mut settings = state.settings.read().clone();
+    settings.genre_source = ramus_core::models::GenreSource::Open;
+    ramus_core::settings::save(&settings).map_err(|e| e.to_string())?;
+    *state.settings.write() = settings;
+    let open_json = include_bytes!("../../data/open.json");
+    if let Ok(mapper) = GenreMapper::from_json_bytes(open_json) {
+        *state.genre_mapper.write() = Some(mapper);
+    } else {
+        *state.genre_mapper.write() = None;
+    }
     Ok(())
 }
