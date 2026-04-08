@@ -43,6 +43,7 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
 
   const nowPlayingAlbum = usePlaybackStore((s) => s.nowPlayingAlbum);
 
+  const [showQueue, setShowQueue] = useState(false);
   const [artSrc, setArtSrc] = useState<string | null>(null);
   const [artErr, setArtErr] = useState(false);
   const lastAccentThumb = useRef<string | null>(null);
@@ -225,12 +226,17 @@ export default function NowPlayingView({ onOpenEQ, panelHeight }: NowPlayingProp
             </div>
           )}
         </div>
-        <div className="np-queue-chevron"><IconChevronDown /></div>
+        <button
+          className={`np-queue-toggle${showQueue ? " expanded" : ""}`}
+          onClick={() => setShowQueue((s) => !s)}
+        >
+          <IconChevronDown />
+        </button>
       </div>
       </div>
 
-      {/* === Queue: below the fold === */}
-      <QueueView />
+      {/* === Queue: toggled by chevron === */}
+      {showQueue && <QueueView />}
     </div>
   );
 }
