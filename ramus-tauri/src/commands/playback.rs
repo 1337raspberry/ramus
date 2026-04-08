@@ -20,6 +20,9 @@ pub async fn play_tracks(
     tracks: Vec<Track>,
     start_at: usize,
 ) -> CmdResult<()> {
+    // Stop the previous session before loading a new queue.
+    state.session_reporter.playback_stopped();
+
     state.player.load_queue(tracks, start_at);
 
     // Emit playback state so the UI updates
@@ -28,10 +31,19 @@ pub async fn play_tracks(
         &app,
         PlaybackStatePayload {
             status: "playing".to_string(),
-            current_track: player_state.current_track,
+            current_track: player_state.current_track.clone(),
             queue_index: player_state.queue_index,
         },
     );
+
+    // Start session for the new track. This is the authoritative call —
+    // the mpv on_playlist_pos_change callback may not fire when the new
+    // queue also starts at index 0 (playlist-pos doesn't change).
+    if let Some(ref track) = player_state.current_track {
+        state
+            .session_reporter
+            .track_started(track, &state.player.play_session_id());
+    }
 
     trigger_prefetch(&state);
 
@@ -61,6 +73,7 @@ pub async fn previous_track(state: State<'_, AppState>) -> CmdResult<()> {
 #[tauri::command]
 pub async fn seek(state: State<'_, AppState>, position: f64) -> CmdResult<()> {
     state.player.seek(position);
+    state.session_reporter.playback_seeked(position);
     Ok(())
 }
 

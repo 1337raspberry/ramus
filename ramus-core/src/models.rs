@@ -50,6 +50,16 @@ pub enum PlaybackStatus {
     Stopped,
 }
 
+impl PlaybackStatus {
+    pub fn as_plex_str(&self) -> &'static str {
+        match self {
+            Self::Playing => "playing",
+            Self::Paused => "paused",
+            Self::Stopped => "stopped",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PlaybackMode {

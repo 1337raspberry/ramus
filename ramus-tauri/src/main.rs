@@ -12,7 +12,6 @@ use ramus_core::cache::db::CacheDatabase;
 use ramus_core::cache::sync::SyncEngine;
 use ramus_core::genre::mapper::GenreMapper;
 use ramus_core::models::PlexServer;
-use ramus_core::playback::session::SessionTracker;
 use ramus_core::plex::auth;
 use ramus_core::plex::client::PlexClient;
 use ramus_core::plex::connection::ConnectionMonitor;
@@ -28,6 +27,10 @@ fn load_server_url() -> Option<String> {
 }
 
 fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp_millis()
+        .init();
+
     tauri::Builder::default()
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -54,7 +57,18 @@ fn main() {
             let http_client = reqwest::Client::new();
 
             // Create real mpv player with event callbacks
-            let player = ramus_tauri::create_mpv_player(app_handle, http_client.clone());
+            let (player, reporter_ref) =
+                ramus_tauri::create_mpv_player(app_handle, http_client.clone());
+
+            // Create session reporter and wire it into the deferred callback slot
+            let session_reporter =
+                ramus_tauri::session_reporter::SessionReporter::new(client.clone(), player.clone());
+            *reporter_ref.lock() = Some(session_reporter.clone());
+
+            // Load saved settings and apply playback config to the player
+            // (player defaults to DirectPlay if not configured)
+            let saved_settings = ramus_core::settings::load();
+            player.update_config(saved_settings.to_playback_config());
 
             let state = AppState {
                 client: client.clone(),
@@ -63,9 +77,9 @@ fn main() {
                 genre_mapper: Arc::new(RwLock::new(None)),
                 search_engine: Arc::new(RwLock::new(None)),
                 sync_engine: Arc::new(parking_lot::Mutex::new(None)),
-                session_tracker: Arc::new(parking_lot::Mutex::new(SessionTracker::default())),
+                session_reporter: session_reporter.clone(),
                 connection_monitor: connection_monitor.clone(),
-                settings: Arc::new(RwLock::new(ramus_core::settings::load())),
+                settings: Arc::new(RwLock::new(saved_settings)),
                 http_client,
                 discovered_servers: Arc::new(parking_lot::Mutex::new(Vec::new())),
             };
@@ -198,6 +212,9 @@ fn main() {
 
             app.manage(state);
 
+            // Start periodic session reporting loop (deferred until runtime is live)
+            session_reporter.ensure_loop_spawned();
+
             ramus_tauri::auto_sync::spawn(auto_sync_settings, auto_sync_engine);
 
             Ok(())
@@ -261,6 +278,13 @@ fn main() {
             commands::settings::import_custom_genres,
             commands::settings::remove_custom_genres,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    state.session_reporter.stop_sync();
+                }
+            }
+        });
 }

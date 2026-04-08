@@ -4,6 +4,7 @@ pub mod events;
 pub mod mpv_controller;
 pub mod mpv_ffi;
 pub mod prefetch;
+pub mod session_reporter;
 pub mod state;
 
 use std::sync::Arc;
@@ -17,12 +18,15 @@ use crate::events::{
     PlaybackBufferingPayload, PlaybackPositionPayload, PlaybackStatePayload,
 };
 use crate::mpv_controller::MpvController;
+use crate::session_reporter::ReporterRef;
+
 /// Create an AudioPlayer backed by real libmpv with event callbacks
-/// that emit Tauri events.
+/// that emit Tauri events. Returns the player and a deferred
+/// `SessionReporter` slot that must be populated after construction.
 pub fn create_mpv_player(
     app_handle: AppHandle,
     http_client: reqwest::Client,
-) -> Arc<ramus_core::playback::player::AudioPlayer> {
+) -> (Arc<ramus_core::playback::player::AudioPlayer>, ReporterRef) {
     let app1 = app_handle.clone();
     let app3 = app_handle.clone();
     let app4 = app_handle.clone();
@@ -43,6 +47,12 @@ pub fn create_mpv_player(
     let pr7 = player_ref.clone();
     let pr8 = player_ref.clone();
     let pr9 = player_ref.clone();
+
+    // Same deferred pattern for the session reporter.
+    let reporter_ref: ReporterRef = Arc::new(parking_lot::Mutex::new(None));
+    let sr1 = reporter_ref.clone();
+    let sr2 = reporter_ref.clone();
+    let sr3 = reporter_ref.clone();
 
     let callbacks = Arc::new(MpvCallbacks {
         on_position_change: Some(Box::new(move |pos| {
@@ -65,18 +75,41 @@ pub fn create_mpv_player(
         })),
         on_playlist_pos_change: Some(Box::new(move |pos| {
             if let Some(ref p) = *pr3.lock() {
+                // Capture previous track before state update for scrobble
+                let prev_track = p.state().current_track.clone();
+
                 p.handle_playlist_pos_change(pos);
                 let state = p.state();
                 emit_playback_state(
                     &app3,
                     PlaybackStatePayload {
                         status: format!("{:?}", state.status).to_lowercase(),
-                        current_track: state.current_track,
+                        current_track: state.current_track.clone(),
                         queue_index: state.queue_index,
                     },
                 );
                 // Prefetch upcoming tracks
                 prefetch::trigger(p.clone(), http_client.clone());
+
+                // Session reporting for natural track advance only.
+                // When prev == current (same rating_key), this is a load_queue
+                // re-entry — play_tracks already handled track_started.
+                if let Some(ref reporter) = *sr1.lock() {
+                    if let Some(ref prev) = prev_track {
+                        let same_track = state
+                            .current_track
+                            .as_ref()
+                            .is_some_and(|cur| cur.rating_key == prev.rating_key);
+                        if !same_track {
+                            reporter.track_ended(prev);
+                            if let Some(ref track) = state.current_track {
+                                reporter.track_started(track, &p.play_session_id());
+                            }
+                        }
+                    } else {
+                        // No previous track (first play) — play_tracks handles this
+                    }
+                }
             }
         })),
         on_pause_change: Some(Box::new(move |paused| {
@@ -95,6 +128,15 @@ pub fn create_mpv_player(
                         queue_index: state.queue_index,
                     },
                 );
+
+                // Session reporting
+                if let Some(ref reporter) = *sr2.lock() {
+                    if paused {
+                        reporter.playback_paused();
+                    } else {
+                        reporter.playback_resumed();
+                    }
+                }
             }
         })),
         on_buffering_change: Some(Box::new(move |buffering| {
@@ -124,6 +166,13 @@ pub fn create_mpv_player(
         })),
         on_idle_active: Some(Box::new(move || {
             if let Some(ref p) = *pr7.lock() {
+                // Scrobble the last playing track before reporting stopped
+                if let Some(ref reporter) = *sr3.lock() {
+                    if let Some(ref track) = p.state().current_track {
+                        reporter.track_ended(track);
+                    }
+                }
+
                 p.handle_idle_active();
                 emit_playback_state(
                     &app7,
@@ -133,6 +182,10 @@ pub fn create_mpv_player(
                         queue_index: 0,
                     },
                 );
+
+                if let Some(ref reporter) = *sr3.lock() {
+                    reporter.playback_stopped();
+                }
             }
         })),
         on_file_loaded: Some(Box::new(move || {
@@ -155,6 +208,6 @@ pub fn create_mpv_player(
     // Wire up the player reference for callbacks
     *player_ref.lock() = Some(player.clone());
 
-    player
+    (player, reporter_ref)
 }
 
