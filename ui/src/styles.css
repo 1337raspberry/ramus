@@ -827,9 +827,7 @@ input, textarea {
 
 .detail-scroll {
   height: 100%;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  overflow-y: auto;
 }
 
 /* ----------------------------------------------------------------
@@ -839,8 +837,6 @@ input, textarea {
 .now-playing {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 0;
 }
 
 .np-visible {
@@ -848,8 +844,7 @@ input, textarea {
   flex-direction: column;
   padding: 16px;
   box-sizing: border-box;
-  flex: 1 1 0;
-  min-height: 0;
+  flex-shrink: 0;
   overflow: hidden;
 }
 
@@ -1333,10 +1328,6 @@ input, textarea {
 .queue-view {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 8px;
-  flex-shrink: 0;
-  max-height: 40%;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 
@@ -1368,9 +1359,6 @@ input, textarea {
 .queue-list {
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  flex: 1;
-  min-height: 0;
 }
 
 .queue-row {
