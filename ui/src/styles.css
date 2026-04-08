@@ -75,6 +75,10 @@ body, #root {
   -moz-osx-font-smoothing: grayscale;
 }
 
+button, input, select, textarea {
+  font-family: inherit;
+}
+
 /* Hide scrollbars globally */
 ::-webkit-scrollbar {
   display: none;
