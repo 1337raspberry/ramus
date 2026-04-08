@@ -206,6 +206,8 @@ impl PlexServerConnection {
 pub struct PlexServer {
     pub machine_identifier: String,
     pub name: String,
+    /// Excluded from serialization — tokens stay server-side, never sent to the frontend.
+    #[serde(skip_serializing, default)]
     pub access_token: String,
     pub owned: bool,
     pub connections: Vec<PlexServerConnection>,
@@ -234,16 +236,32 @@ pub struct ServerConfig {
     pub name: String,
     pub access_token: String,
     pub selected_library_key: Option<String>,
+    pub owned: bool,
+    pub connections: Vec<PlexServerConnection>,
+}
+
+impl From<&ServerConfig> for PlexServer {
+    fn from(config: &ServerConfig) -> Self {
+        PlexServer {
+            machine_identifier: config.machine_identifier.clone(),
+            name: config.name.clone(),
+            access_token: config.access_token.clone(),
+            owned: config.owned,
+            connections: config.connections.clone(),
+        }
+    }
 }
 
 impl Serialize for ServerConfig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let field_count = if self.selected_library_key.is_some() { 3 } else { 2 };
+        let field_count = 4 + usize::from(self.selected_library_key.is_some());
         let mut state = serializer.serialize_struct("ServerConfig", field_count)?;
         state.serialize_field("machineIdentifier", &self.machine_identifier)?;
         state.serialize_field("name", &self.name)?;
         // access_token intentionally excluded — stored in encrypted token file
+        state.serialize_field("owned", &self.owned)?;
+        state.serialize_field("connections", &self.connections)?;
         if let Some(ref key) = self.selected_library_key {
             state.serialize_field("selectedLibraryKey", key)?;
         }
@@ -261,6 +279,10 @@ impl<'de> Deserialize<'de> for ServerConfig {
             #[serde(default)]
             access_token: String,
             selected_library_key: Option<String>,
+            #[serde(default)]
+            owned: bool,
+            #[serde(default)]
+            connections: Vec<PlexServerConnection>,
         }
         let raw = Raw::deserialize(deserializer)?;
         Ok(ServerConfig {
@@ -268,6 +290,8 @@ impl<'de> Deserialize<'de> for ServerConfig {
             name: raw.name,
             access_token: raw.access_token,
             selected_library_key: raw.selected_library_key,
+            owned: raw.owned,
+            connections: raw.connections,
         })
     }
 }
@@ -390,9 +414,9 @@ pub struct Settings {
     pub audio_cache_limit_bytes: i64,
     pub sync_interval_hours: u32,
     pub genre_source: GenreSource,
-    pub library_padding: u8,
-    pub show_taglines: bool,
+    pub library_padding: i8,
     pub refuse_http: bool,
+    pub last_sync_time_secs: i64,
 }
 
 impl Default for Settings {
@@ -403,9 +427,9 @@ impl Default for Settings {
             audio_cache_limit_bytes: PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES,
             sync_interval_hours: 0,
             genre_source: GenreSource::default(),
-            library_padding: 6,
-            show_taglines: true,
+            library_padding: 0,
             refuse_http: false,
+            last_sync_time_secs: 0,
         }
     }
 }
@@ -651,6 +675,8 @@ mod tests {
             name: "My Server".into(),
             access_token: "secret-token".into(),
             selected_library_key: Some("lib1".into()),
+            owned: true,
+            connections: vec![],
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("secret-token"));
@@ -667,6 +693,8 @@ mod tests {
         assert_eq!(config.name, "Server");
         assert_eq!(config.access_token, "");
         assert_eq!(config.selected_library_key, None);
+        assert!(!config.owned);
+        assert!(config.connections.is_empty());
     }
 
     #[test]
@@ -676,6 +704,13 @@ mod tests {
             name: "Server".into(),
             access_token: "secret".into(),
             selected_library_key: Some("lib".into()),
+            owned: true,
+            connections: vec![PlexServerConnection {
+                uri: "https://192.168.1.1:32400".into(),
+                local: true,
+                relay: false,
+                protocol: "https".into(),
+            }],
         };
         let json = serde_json::to_string(&original).unwrap();
         let restored: ServerConfig = serde_json::from_str(&json).unwrap();
@@ -684,6 +719,9 @@ mod tests {
         assert_eq!(restored.name, "Server");
         assert_eq!(restored.access_token, "");
         assert_eq!(restored.selected_library_key, Some("lib".into()));
+        assert!(restored.owned);
+        assert_eq!(restored.connections.len(), 1);
+        assert_eq!(restored.connections[0].uri, "https://192.168.1.1:32400");
     }
 
     // -- PlayerState default --

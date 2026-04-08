@@ -253,6 +253,8 @@ mod tests {
             name: "My Plex".into(),
             access_token: "secret-token".into(),
             selected_library_key: Some("lib-1".into()),
+            owned: true,
+            connections: vec![],
         };
 
         // Write config file to same temp dir (override path for test)

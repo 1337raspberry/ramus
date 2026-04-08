@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getSettings,
   updateSettings,
@@ -14,6 +14,7 @@ import type { Settings, CacheStats } from "../lib/types";
 import { listen } from "@tauri-apps/api/event";
 import type { SyncProgress } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
+import { useSettingsStore } from "../stores/settingsStore";
 
 interface Props {
   onDismiss: () => void;
@@ -25,16 +26,26 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
   const [stats, setStats] = useState<CacheStats | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [genreWarnings, setGenreWarnings] = useState<string[]>([]);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showError = useCallback((msg: string) => {
+    setError(msg);
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = setTimeout(() => setError(null), 5000);
+  }, []);
 
   // Load settings and stats on mount
   useEffect(() => {
     getSettings()
       .then(setSettings)
-      .catch(() => {});
+      .catch((e) => showError(`Failed to load settings: ${e}`));
     getCacheStats()
       .then(setStats)
-      .catch(() => {});
-  }, []);
+      .catch((e) => showError(`Failed to load cache stats: ${e}`));
+  }, [showError]);
 
   // Listen for sync progress
   useEffect(() => {
@@ -42,9 +53,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
       setSyncProgress(event.payload);
       if (event.payload.phase === "done") {
         setSyncing(null);
-        getCacheStats()
-          .then(setStats)
-          .catch(() => {});
+        getCacheStats().then(setStats).catch(() => {});
       }
     });
     return () => {
@@ -52,14 +61,32 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
     };
   }, []);
 
+  // Cleanup timers
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    };
+  }, []);
+
   const save = useCallback(
     (patch: Partial<Settings>) => {
       if (!settings) return;
+      const prev = settings;
       const next = { ...settings, ...patch };
       setSettings(next);
-      updateSettings(next).catch(() => {});
+
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        updateSettings(next)
+          .then(() => useSettingsStore.setState(next))
+          .catch((e) => {
+            setSettings(prev);
+            showError(`Failed to save settings: ${e}`);
+          });
+      }, 300);
     },
-    [settings]
+    [settings, showError]
   );
 
   const handleSync = useCallback(
@@ -72,13 +99,15 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
           : type === "incremental"
             ? startIncrementalSync
             : startGenreSync;
-      fn().catch(() => setSyncing(null));
+      fn().catch((e) => {
+        setSyncing(null);
+        showError(`Sync failed: ${e}`);
+      });
     },
-    []
+    [showError]
   );
 
   const handleImportGenres = useCallback(() => {
-    // Create a file input to read text
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".txt,.text";
@@ -89,31 +118,43 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
       reader.onload = () => {
         const text = reader.result as string;
         importCustomGenres(text)
-          .then(() => {
-            save({ genreSource: "custom" });
+          .then((warnings) => {
+            if (warnings.length > 0) setGenreWarnings(warnings);
+            // Backend already updated genreSource — re-fetch to sync
+            return getSettings();
+          })
+          .then((fresh) => {
+            setSettings(fresh);
+            useSettingsStore.setState(fresh);
             useLibraryStore.getState().loadGenreTree();
           })
-          .catch(() => {});
+          .catch((e) => showError(`Failed to import genres: ${e}`));
       };
       reader.readAsText(file);
     };
     input.click();
-  }, [save]);
+  }, [showError]);
 
   const handleRemoveGenres = useCallback(() => {
     removeCustomGenres()
       .then(() => {
-        save({ genreSource: "open" });
+        // Backend already updated genreSource — re-fetch to sync
+        return getSettings();
+      })
+      .then((fresh) => {
+        setSettings(fresh);
+        useSettingsStore.setState(fresh);
+        setGenreWarnings([]);
         useLibraryStore.getState().loadGenreTree();
       })
-      .catch(() => {});
-  }, [save]);
+      .catch((e) => showError(`Failed to remove genres: ${e}`));
+  }, [showError]);
 
   const handleSignOut = useCallback(() => {
     logout()
       .then(() => onSignOut())
-      .catch(() => {});
-  }, [onSignOut]);
+      .catch((e) => showError(`Sign out failed: ${e}`));
+  }, [onSignOut, showError]);
 
   // Close on Escape
   useEffect(() => {
@@ -144,6 +185,8 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
         </div>
 
         <div className="settings-body">
+          {error && <div className="settings-error">{error}</div>}
+
           {/* Playback */}
           <div className="settings-section-header">PLAYBACK</div>
 
@@ -174,15 +217,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
           </label>
 
           <label className="settings-row">
-            <span>Show greeting messages</span>
-            <input
-              type="checkbox"
-              checked={settings.showTaglines}
-              onChange={(e) => save({ showTaglines: e.target.checked })}
-            />
-          </label>
-
-          <label className="settings-row">
             <span>Audio cache limit (GB)</span>
             <input
               type="number"
@@ -192,6 +226,10 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
               step={0.1}
               value={(settings.audioCacheLimitBytes / 1_073_741_824).toFixed(1)}
               onChange={(e) => {
+                const gb = Math.max(0.1, Math.min(50, Number(e.target.value)));
+                save({ audioCacheLimitBytes: Math.round(gb * 1_073_741_824) });
+              }}
+              onBlur={(e) => {
                 const gb = Math.max(0.1, Math.min(50, Number(e.target.value)));
                 save({ audioCacheLimitBytes: Math.round(gb * 1_073_741_824) });
               }}
@@ -219,11 +257,11 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
           </label>
 
           <label className="settings-row">
-            <span>Library padding</span>
+            <span>Library padding ({settings.libraryPadding + 8})</span>
             <input
               type="range"
-              min={4}
-              max={10}
+              min={-8}
+              max={8}
               value={settings.libraryPadding}
               onChange={(e) => save({ libraryPadding: Number(e.target.value) })}
             />
@@ -288,6 +326,14 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
               )}
             </div>
           </div>
+
+          {genreWarnings.length > 0 && (
+            <div className="settings-genre-warnings">
+              {genreWarnings.map((w, i) => (
+                <div key={i} className="settings-genre-warning">{w}</div>
+              ))}
+            </div>
+          )}
 
           {/* Security */}
           <div className="settings-section-header">SECURITY</div>

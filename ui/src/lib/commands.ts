@@ -25,10 +25,10 @@ export const pollOauth = (pinId: number) =>
 export const discoverServers = () =>
   invoke<PlexServer[]>("discover_servers");
 
-export const testServer = (server: PlexServer) =>
+export const testServer = (machineIdentifier: string) =>
   invoke<{ connected: boolean; uri?: string; local?: boolean; isHttp?: boolean }>(
     "test_server",
-    { server }
+    { machineIdentifier }
   );
 
 export const connectManualUrl = (url: string) =>
@@ -38,10 +38,10 @@ export const findMusicLibraries = () =>
   invoke<LibrarySection[]>("find_music_libraries");
 
 export const finalizeOnboarding = (
-  server: PlexServer,
+  machineIdentifier: string,
   libraryKey: string,
   serverUrl: string
-) => invoke<void>("finalize_onboarding", { server, libraryKey, serverUrl });
+) => invoke<void>("finalize_onboarding", { machineIdentifier, libraryKey, serverUrl });
 
 export const isAuthenticated = () => invoke<boolean>("is_authenticated");
 
