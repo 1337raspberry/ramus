@@ -65,8 +65,9 @@ export default function NowPlayingView({ onOpenEQ, panelHeight, showQueue, onTog
     const img = e.currentTarget;
     if (lastAccentThumb.current === thumb) return;
     lastAccentThumb.current = thumb;
+    const capturedThumb = thumb;
     extractPalette(img).then((palette) => {
-      if (!palette) return;
+      if (!palette || lastAccentThumb.current !== capturedThumb) return;
       const [r, g, b] = accentFromPalette(palette);
       document.documentElement.style.setProperty("--accent-r", String(r));
       document.documentElement.style.setProperty("--accent-g", String(g));

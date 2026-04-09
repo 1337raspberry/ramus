@@ -78,7 +78,7 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
           toggleAlbumFav(album);
         }}
       >
-        {album.isFavourite ? <IconStarFilled /> : <IconStarEmpty />}
+        {album.isFavourite ? <IconStarFilled size="1.5em" /> : <IconStarEmpty size="1.5em" />}
       </button>
     </div>
   );

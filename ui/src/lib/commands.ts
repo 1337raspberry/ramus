@@ -176,6 +176,9 @@ export const importCustomGenres = (text: string) =>
 export const removeCustomGenres = () =>
   invoke<void>("remove_custom_genres");
 
+export const hasCustomGenres = () =>
+  invoke<boolean>("has_custom_genres");
+
 export const flushImageCache = () => invoke<void>("flush_image_cache");
 
 export const getImageCacheStats = () =>

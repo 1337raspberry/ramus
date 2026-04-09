@@ -288,6 +288,7 @@ fn main() {
             commands::settings::update_settings,
             commands::settings::import_custom_genres,
             commands::settings::remove_custom_genres,
+            commands::settings::has_custom_genres,
             commands::settings::flush_image_cache,
             commands::settings::get_image_cache_stats,
         ])

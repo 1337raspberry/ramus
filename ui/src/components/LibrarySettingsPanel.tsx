@@ -8,6 +8,7 @@ import {
   startGenreSync,
   importCustomGenres,
   removeCustomGenres,
+  hasCustomGenres as checkCustomGenres,
   logout,
 } from "../lib/commands";
 import type { Settings, CacheStats } from "../lib/types";
@@ -55,6 +56,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [genreWarnings, setGenreWarnings] = useState<string[]>([]);
+  const [hasCustomGenres, setHasCustomGenres] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -69,6 +71,9 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
     getSettings()
       .then(setSettings)
       .catch((e) => showError(`Failed to load settings: ${e}`));
+    checkCustomGenres()
+      .then(setHasCustomGenres)
+      .catch(() => {});
     getCacheStats()
       .then(setStats)
       .catch((e) => showError(`Failed to load cache stats: ${e}`));
@@ -147,6 +152,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
         importCustomGenres(text)
           .then((warnings) => {
             if (warnings.length > 0) setGenreWarnings(warnings);
+            setHasCustomGenres(true);
             // Backend already updated genreSource — re-fetch to sync
             return getSettings();
           })
@@ -165,6 +171,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
   const handleRemoveGenres = useCallback(() => {
     removeCustomGenres()
       .then(() => {
+        setHasCustomGenres(false);
         // Backend already updated genreSource — re-fetch to sync
         return getSettings();
       })
@@ -363,12 +370,39 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
           <div className="settings-section-header">GENRES</div>
 
           <div className="settings-row">
-            <span>Source: {settings.genreSource === "custom" ? "Custom" : "Wikidata (CC0)"}</span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                className={`settings-btn${settings.genreSource === "open" ? " active" : ""}`}
+                onClick={() => {
+                  const next = { ...settings, genreSource: "open" as const };
+                  setSettings(next);
+                  updateSettings(next)
+                    .then(() => { useSettingsStore.setState(next); useLibraryStore.getState().loadGenreTree(); })
+                    .catch((e) => showError(`Failed to switch genre source: ${e}`));
+                }}
+              >
+                Open Source
+              </button>
+              <button
+                className={`settings-btn${settings.genreSource === "custom" ? " active" : ""}`}
+                disabled={!hasCustomGenres}
+                title={!hasCustomGenres ? "Import custom genres first" : undefined}
+                onClick={() => {
+                  const next = { ...settings, genreSource: "custom" as const };
+                  setSettings(next);
+                  updateSettings(next)
+                    .then(() => { useSettingsStore.setState(next); useLibraryStore.getState().loadGenreTree(); })
+                    .catch((e) => showError(`Failed to switch genre source: ${e}`));
+                }}
+              >
+                Custom
+              </button>
+            </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="settings-btn" onClick={handleImportGenres}>
                 Import...
               </button>
-              {settings.genreSource === "custom" && (
+              {hasCustomGenres && settings.genreSource === "custom" && (
                 <button className="settings-btn" onClick={handleRemoveGenres}>
                   Remove
                 </button>

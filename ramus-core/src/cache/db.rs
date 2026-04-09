@@ -140,7 +140,6 @@ impl CacheDatabase {
                 rating DOUBLE,
                 studio TEXT,
                 ultraBlurColors TEXT,
-                chromaticity REAL,
                 vibrantPalette TEXT,
                 addedAt INTEGER,
                 lastViewedAt INTEGER
