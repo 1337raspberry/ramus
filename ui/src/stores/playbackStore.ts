@@ -116,6 +116,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       status: status as PlaybackState["status"],
       currentTrack: track,
       queueIndex,
+      ...(trackChanged ? { position: 0, duration: 0 } : {}),
     });
 
     if (trackChanged && track) {
