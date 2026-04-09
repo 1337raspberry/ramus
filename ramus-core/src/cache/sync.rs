@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use tokio::sync::Semaphore;
 
-use crate::cache::db::{AlbumUpsertRow, CacheDatabase, CacheError, TrackUpsertRow};
+use crate::cache::db::{CacheDatabase, CacheError};
+use crate::cache::upsert::{AlbumUpsertRow, TrackUpsertRow};
 use crate::plex::client::{MediaItem, PlexClient, PlexClientError};
 
 // --- Progress ---
@@ -583,11 +584,7 @@ async fn process_album_deep_sync(
     let metadata = client.fetch_item_metadata(source_id).await?;
     let genres = metadata.genre.unwrap_or_default();
 
-    let mut genre_ids = Vec::new();
-    for g in &genres {
-        let genre_id = cache.upsert_genre(&g.tag)?;
-        genre_ids.push(genre_id);
-    }
+    let genre_names: Vec<String> = genres.into_iter().map(|g| g.tag).collect();
 
     let colors_json = metadata
         .ultra_blur_colors
@@ -596,7 +593,7 @@ async fn process_album_deep_sync(
 
     cache.update_album_deep_metadata(
         album_id,
-        &genre_ids,
+        &genre_names,
         metadata.user_rating,
         metadata.studio.as_deref(),
         colors_json.as_deref(),

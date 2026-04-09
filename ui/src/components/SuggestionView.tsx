@@ -105,6 +105,15 @@ export default function SuggestionView() {
   const handleArtLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
       if (status !== "stopped") return;
+      // Skip if palette was already loaded from the DB cache
+      const existing = usePlaybackStore.getState().vibrantPalette;
+      if (existing) {
+        const [r, g, b] = accentFromPalette(existing);
+        document.documentElement.style.setProperty("--accent-r", String(r));
+        document.documentElement.style.setProperty("--accent-g", String(g));
+        document.documentElement.style.setProperty("--accent-b", String(b));
+        return;
+      }
       extractPalette(e.currentTarget).then((palette) => {
         if (!palette) return;
         const [r, g, b] = accentFromPalette(palette);

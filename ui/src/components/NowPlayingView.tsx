@@ -83,6 +83,15 @@ export default function NowPlayingView({
       if (lastAccentThumb.current === thumb) return;
       lastAccentThumb.current = thumb;
       const capturedThumb = thumb;
+      // Skip palette extraction if already cached from getAlbumColors
+      const existing = usePlaybackStore.getState().vibrantPalette;
+      if (existing) {
+        const [r, g, b] = accentFromPalette(existing);
+        document.documentElement.style.setProperty("--accent-r", String(r));
+        document.documentElement.style.setProperty("--accent-g", String(g));
+        document.documentElement.style.setProperty("--accent-b", String(b));
+        return;
+      }
       extractPalette(img).then((palette) => {
         if (!palette || lastAccentThumb.current !== capturedThumb) return;
         const [r, g, b] = accentFromPalette(palette);
