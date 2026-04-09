@@ -17,14 +17,25 @@ ramus/
 ├── ramus-core/          # Rust library crate — all business logic
 │   └── src/
 │       ├── models.rs    # Shared types (Album, Track, PlayerState, etc.)
+│       ├── settings.rs  # Settings I/O (load/save to disk)
+│       ├── util.rs      # Shared utilities (FTS5/LIKE escaping, percent-encoding, codec checks)
 │       ├── plex/        # HTTP client, OAuth, token store, connection monitor
 │       ├── playback/    # mpv wrapper, audio player, queue, EQ, lyrics, waveform, session reporting
-│       ├── cache/       # rusqlite SQLite (WAL, FTS5), sync engine
+│       ├── cache/       # rusqlite SQLite (WAL, FTS5), sync engine, image cache
 │       ├── search/      # Query parser (operator syntax), search engine
 │       └── genre/       # Genre tree, fuzzy mapper, custom genre parser
-├── ramus-tauri/         # Tauri 2 app shell — commands, events, state management
+├── ramus-tauri/         # Tauri 2 app shell
+│   └── src/
+│       ├── commands/    # Tauri IPC command handlers (auth, library, playback, search, settings, sync)
+│       ├── events.rs    # Event emission helpers (playback-state, accent-color, sync-progress, etc.)
+│       ├── state.rs     # AppState — Arc-wrapped shared state
+│       ├── mpv_ffi.rs   # Raw libmpv C FFI bindings
+│       ├── mpv_controller.rs  # High-level MpvPlayer implementation over FFI
+│       ├── session_reporter.rs # Scrobble + timeline reporting orchestration
+│       ├── prefetch.rs  # Background audio cache prefetch
+│       └── auto_sync.rs # Background periodic sync scheduler
 ├── ui/                  # React frontend — Vite + TypeScript + Zustand
-└── scripts/             # build_open_genres.py (Wikidata SPARQL → genre JSON)
+└── swift-project/       # Original Swift/SwiftUI reference implementation
 ```
 
 ## Build & Test Commands
@@ -61,7 +72,7 @@ cd ui && npm run build                      # Production build (tsc + vite)
 - **Plex API durations are in milliseconds** — convert to seconds at the boundary.
 - **Search operator syntax** (`/genre`, `@artist`, `!track`, `%album`, `year:>2000`, `fav:`) segments on `" AND "` (case-sensitive uppercase). Without AND, entire input belongs to the first operator.
 - **FTS5 escaping**: strip `"*():^{}`, replace `-` with space (FTS5 NOT operator).
-- **Genre tree** uses Wikidata hierarchy (`open.json`, ~40k lines). Fuzzy matching (threshold 0.4) handles Plex genre name variations. Match results are cached.
+- **Genre tree** uses beets MIT-licensed hierarchy (`open.json`, ~4k lines, 792 genres in 21 categories). A `GenreSource` setting toggles between the open-source tree and user-imported custom genres. Fuzzy matching handles Plex genre name variations. Match results are cached.
 - **EQ filter string** must use POSIX locale for float formatting — comma decimal separators break lavfi. Clear filters with `af=no` (not empty string).
 - **Transcode endpoint** is `/music/:/transcode/universal/start.m3u8` — NOT `/audio/:/transcode/...`. Requires `X-Plex-Platform: Chrome` header.
 - **`loadfile "replace"` implicitly stops** — do NOT call `mpv.stop()` before `load_queue`, it races with playlist setup.
@@ -168,7 +179,7 @@ Full schema is in Appendix A of `IMPLEMENTATION_PLAN.md`. Tables: `artists`, `al
 
 ## Tauri IPC
 
-Events flow Rust → frontend via `app.emit()`. Commands flow frontend → Rust via `#[tauri::command]`. `AppState` holds `Arc`-wrapped shared state (`PlexClient`, `CacheDatabase`, `AudioPlayer`, `GenreMapper`, `SearchEngine`, `SyncEngine`, `SessionReporter`, `ConnectionMonitor`, `Settings`).
+Events flow Rust → frontend via `app.emit()`. Commands flow frontend → Rust via `#[tauri::command]`. `AppState` holds `Arc`-wrapped shared state (`PlexClient`, `CacheDatabase`, `AudioPlayer`, `GenreMapper`, `SearchEngine`, `SyncEngine`, `SessionReporter`, `ConnectionMonitor`, `Settings`, `ImageCache`, `reqwest::Client`, `discovered_servers`).
 
 ## Frontend Patterns
 
