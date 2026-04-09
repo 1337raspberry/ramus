@@ -4,7 +4,7 @@ use std::time::Duration;
 use reqwest::Client;
 use serde::Deserialize;
 
-use crate::models::ServerConfig;
+use crate::models::{PlexServerConnection, ServerConfig};
 use crate::plex::token_store::{config_dir, TokenKey, TokenStore};
 
 // --- Errors ---
@@ -165,6 +165,39 @@ pub fn store_server_config(config: &ServerConfig, token_store: &TokenStore) -> b
     }
 }
 
+/// Patch fields in the stored server config JSON without touching the token.
+/// Only provided (Some) values are updated; None fields are left unchanged.
+pub fn patch_stored_config(
+    connections: Option<&[PlexServerConnection]>,
+    active_uri: Option<&str>,
+) {
+    let path = match server_config_path() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    let data = match std::fs::read_to_string(&path) {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+    let mut doc: serde_json::Value = match serde_json::from_str(&data) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if let Some(obj) = doc.as_object_mut() {
+        if let Some(conns) = connections {
+            if let Ok(val) = serde_json::to_value(conns) {
+                obj.insert("connections".to_string(), val);
+            }
+        }
+        if let Some(uri) = active_uri {
+            obj.insert("activeUri".to_string(), serde_json::Value::String(uri.to_string()));
+        }
+    }
+    if let Ok(json) = serde_json::to_string(&doc) {
+        let _ = std::fs::write(&path, json);
+    }
+}
+
 /// Retrieve stored server config, reconstituting the access token from the token store.
 pub fn stored_server_config(token_store: &TokenStore) -> Option<ServerConfig> {
     let path = server_config_path().ok()?;
@@ -245,6 +278,7 @@ mod tests {
             selected_library_key: Some("lib-1".into()),
             owned: true,
             connections: vec![],
+            active_uri: Some("https://example.plex.direct:32400".into()),
         };
 
         // Write config file to same temp dir (override path for test)

@@ -21,10 +21,6 @@ use ramus_core::search::engine::SearchEngine;
 use ramus_tauri::commands;
 use ramus_tauri::state::AppState;
 
-fn load_server_url() -> Option<String> {
-    let dir = ramus_core::plex::token_store::config_dir().ok()?;
-    std::fs::read_to_string(dir.join("server_url.txt")).ok()
-}
 
 fn main() {
     env_logger::Builder::from_env(
@@ -100,7 +96,7 @@ fn main() {
             // verifies connectivity and tests alternative connections.
             if let Ok(token_store) = TokenStore::new() {
                 if let Some(config) = auth::stored_server_config(&token_store) {
-                    if let Some(url_str) = load_server_url() {
+                    if let Some(url_str) = config.active_uri.clone() {
                         if let Ok(url) = url::Url::parse(&url_str) {
                             let settings = state.settings.read().clone();
 
@@ -160,6 +156,7 @@ fn main() {
                                 let allow_http = !settings.refuse_http;
                                 let plex_server = PlexServer::from(&config);
                                 connection_monitor.set_allow_http(allow_http);
+                                let bg_auth_token = auth_token.clone();
                                 connection_monitor.start(
                                     plex_server.clone(),
                                     url_str.clone(),
@@ -173,11 +170,14 @@ fn main() {
                                 let bg_monitor = connection_monitor.clone();
                                 let bg_settings = state.settings.clone();
                                 tauri::async_runtime::spawn(async move {
+                                    log::debug!("testing stored connection: {}", bg_url);
+
                                     // Verify the stored URI is reachable
                                     if bg_client
-                                        .test_connection(bg_url.as_str(), &bg_token, None)
+                                        .test_connection(bg_url.as_str(), &bg_token, Some(std::time::Duration::from_secs(3)))
                                         .await
                                     {
+                                        log::debug!("stored connection ok");
                                         return;
                                     }
 
@@ -189,22 +189,78 @@ fn main() {
                                     // Re-read in case settings changed since launch
                                     let allow_http = !bg_settings.read().refuse_http;
 
-                                    // Stored URI is down; test alternatives concurrently
-                                    log::info!("stored connection unavailable, testing alternatives");
+                                    // Stored URI is down; log cached connections for diagnosis
+                                    log::info!(
+                                        "stored connection unavailable ({}), testing {} cached alternative(s) (allow_http={})",
+                                        bg_url,
+                                        plex_server.connections.len(),
+                                        allow_http,
+                                    );
+                                    for (i, conn) in plex_server.connections.iter().enumerate() {
+                                        log::debug!(
+                                            "  cached[{}]: {} (local={}, relay={}, proto={}, priority={})",
+                                            i, conn.uri, conn.local, conn.relay, conn.protocol, conn.priority(),
+                                        );
+                                    }
+
                                     let (best, _is_http) = bg_client
                                         .find_best_connection(&plex_server, allow_http, true)
                                         .await;
                                     if let Some(conn) = best {
                                         if let Ok(new_url) = url::Url::parse(&conn.uri) {
-                                            // Only apply if still logged in
                                             if bg_client.token().is_some() {
                                                 bg_client.set_server_url(Some(new_url));
                                                 log::info!("switched to alternative connection: {}", conn.uri);
+                                                ramus_core::plex::auth::patch_stored_config(None, Some(&conn.uri));
                                                 bg_monitor.update_active_uri(conn.uri);
                                             }
                                         }
+                                        return;
+                                    }
+
+                                    // Cached connections exhausted — re-discover from plex.tv
+                                    log::info!("no cached alternatives, re-discovering from plex.tv");
+                                    if let Ok(servers) = bg_client.discover_servers(&bg_auth_token).await {
+                                        if let Some(found) = servers
+                                            .iter()
+                                            .find(|s| s.machine_identifier == plex_server.machine_identifier)
+                                        {
+                                            log::debug!(
+                                                "re-discovered server with {} connection(s)",
+                                                found.connections.len(),
+                                            );
+                                            let (best, _is_http) = bg_client
+                                                .find_best_connection(found, allow_http, true)
+                                                .await;
+                                            if let Some(conn) = best {
+                                                if let Ok(new_url) = url::Url::parse(&conn.uri) {
+                                                    if bg_client.token().is_some() {
+                                                        bg_client.set_server_url(Some(new_url));
+                                                        log::info!("switched to re-discovered connection: {}", conn.uri);
+                                                        bg_monitor.update_active_uri(conn.uri.clone());
+                                                        // Update monitor and disk cache
+                                                        bg_monitor.update_server(found.clone());
+                                                        ramus_core::plex::auth::patch_stored_config(
+                                                            Some(&found.connections),
+                                                            Some(&conn.uri),
+                                                        );
+                                                    }
+                                                }
+                                            } else {
+                                                log::warn!(
+                                                    "re-discovered server but all {} connection(s) failed",
+                                                    found.connections.len(),
+                                                );
+                                            }
+                                        } else {
+                                            log::warn!(
+                                                "server {} not found in {} re-discovered server(s)",
+                                                plex_server.machine_identifier,
+                                                servers.len(),
+                                            );
+                                        }
                                     } else {
-                                        log::warn!("no alternative connections available");
+                                        log::warn!("plex.tv re-discovery failed");
                                     }
                                 });
                             }

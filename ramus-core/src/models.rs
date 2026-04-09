@@ -251,6 +251,7 @@ pub struct ServerConfig {
     pub selected_library_key: Option<String>,
     pub owned: bool,
     pub connections: Vec<PlexServerConnection>,
+    pub active_uri: Option<String>,
 }
 
 impl From<&ServerConfig> for PlexServer {
@@ -268,7 +269,9 @@ impl From<&ServerConfig> for PlexServer {
 impl Serialize for ServerConfig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let field_count = 4 + usize::from(self.selected_library_key.is_some());
+        let field_count = 4
+            + usize::from(self.selected_library_key.is_some())
+            + usize::from(self.active_uri.is_some());
         let mut state = serializer.serialize_struct("ServerConfig", field_count)?;
         state.serialize_field("machineIdentifier", &self.machine_identifier)?;
         state.serialize_field("name", &self.name)?;
@@ -277,6 +280,9 @@ impl Serialize for ServerConfig {
         state.serialize_field("connections", &self.connections)?;
         if let Some(ref key) = self.selected_library_key {
             state.serialize_field("selectedLibraryKey", key)?;
+        }
+        if let Some(ref uri) = self.active_uri {
+            state.serialize_field("activeUri", uri)?;
         }
         state.end()
     }
@@ -296,6 +302,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
             owned: bool,
             #[serde(default)]
             connections: Vec<PlexServerConnection>,
+            active_uri: Option<String>,
         }
         let raw = Raw::deserialize(deserializer)?;
         Ok(ServerConfig {
@@ -305,6 +312,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
             selected_library_key: raw.selected_library_key,
             owned: raw.owned,
             connections: raw.connections,
+            active_uri: raw.active_uri,
         })
     }
 }
@@ -676,6 +684,7 @@ mod tests {
             selected_library_key: Some("lib1".into()),
             owned: true,
             connections: vec![],
+            active_uri: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         assert!(!json.contains("secret-token"));
@@ -694,6 +703,7 @@ mod tests {
         assert_eq!(config.selected_library_key, None);
         assert!(!config.owned);
         assert!(config.connections.is_empty());
+        assert_eq!(config.active_uri, None);
     }
 
     #[test]
@@ -710,6 +720,7 @@ mod tests {
                 relay: false,
                 protocol: "https".into(),
             }],
+            active_uri: Some("https://192.168.1.1:32400".into()),
         };
         let json = serde_json::to_string(&original).unwrap();
         let restored: ServerConfig = serde_json::from_str(&json).unwrap();

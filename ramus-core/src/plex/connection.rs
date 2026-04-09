@@ -121,6 +121,11 @@ impl ConnectionMonitor {
         self.inner.lock().active_uri = Some(uri);
     }
 
+    /// Replace the cached server (e.g. after re-discovery brings fresh connections).
+    pub fn update_server(&self, server: PlexServer) {
+        self.inner.lock().cached_server = Some(server);
+    }
+
     /// Whether the monitor is currently evaluating connections.
     pub fn is_evaluating(&self) -> bool {
         self.inner.lock().is_evaluating
@@ -207,6 +212,7 @@ impl ConnectionMonitor {
         };
 
         // 1. Fast path: test current connection
+        log::debug!("monitor: testing active URI: {}", active_uri);
         if matches_http_policy(&active_uri, allow_http)
             && self
                 .client
@@ -215,6 +221,7 @@ impl ConnectionMonitor {
         {
             return EvalResult::Unchanged;
         }
+        log::debug!("monitor: active URI failed, trying {} cached connection(s)", server.connections.len());
 
         // 2. Try cached connections in priority order
         for conn in server.sorted_connections() {
@@ -222,9 +229,11 @@ impl ConnectionMonitor {
                 continue;
             }
             if !allow_http && conn.protocol != "https" {
+                log::debug!("monitor: skipping HTTP connection (refuse_http): {}", conn.uri);
                 continue;
             }
 
+            log::debug!("monitor: testing cached: {} (local={}, relay={})", conn.uri, conn.local, conn.relay);
             if self
                 .client
                 .test_connection(&conn.uri, &server.access_token, Some(CACHED_TIMEOUT))
@@ -238,46 +247,75 @@ impl ConnectionMonitor {
                 let is_http = conn.protocol != "https";
 
                 self.inner.lock().active_uri = Some(conn.uri.clone());
+                crate::plex::auth::patch_stored_config(None, Some(&conn.uri));
 
+                log::info!("monitor: switched to cached connection: {}", conn.uri);
                 return EvalResult::Changed {
                     url,
                     token: server.access_token.clone(),
                     is_local,
                     is_http,
                 };
+            } else {
+                log::debug!("monitor: cached connection failed: {}", conn.uri);
             }
         }
 
         // 3. Re-discover from plex.tv
-        if let Ok(servers) = self.client.discover_servers(&auth_token).await {
-            if let Some(found) = servers
-                .iter()
-                .find(|s| s.machine_identifier == server.machine_identifier)
-            {
-                let (best, is_http) = self.client.find_best_connection(found, allow_http, true).await;
-                if let Some(conn) = best {
-                    if let Ok(url) = Url::parse(&conn.uri) {
-                        let is_local = conn.local;
+        log::info!("monitor: all cached connections failed, re-discovering from plex.tv");
+        match self.client.discover_servers(&auth_token).await {
+            Ok(servers) => {
+                if let Some(found) = servers
+                    .iter()
+                    .find(|s| s.machine_identifier == server.machine_identifier)
+                {
+                    log::debug!(
+                        "monitor: re-discovered server with {} connection(s)",
+                        found.connections.len(),
+                    );
+                    let (best, is_http) = self.client.find_best_connection(found, allow_http, true).await;
+                    if let Some(conn) = best {
+                        if let Ok(url) = Url::parse(&conn.uri) {
+                            let is_local = conn.local;
 
-                        // Update cached server with fresh data and new active URI
-                        {
-                            let mut inner = self.inner.lock();
-                            inner.cached_server = Some(found.clone());
-                            inner.active_uri = Some(conn.uri.clone());
+                            // Update cached server with fresh data and new active URI
+                            {
+                                let mut inner = self.inner.lock();
+                                inner.cached_server = Some(found.clone());
+                                inner.active_uri = Some(conn.uri.clone());
+                            }
+                            // Persist fresh connections and active URI to disk
+                            crate::plex::auth::patch_stored_config(
+                                Some(&found.connections),
+                                Some(&conn.uri),
+                            );
+
+                            log::info!("monitor: switched to re-discovered connection: {}", conn.uri);
+                            return EvalResult::Changed {
+                                url,
+                                token: found.access_token.clone(),
+                                is_local,
+                                is_http,
+                            };
                         }
-
-                        return EvalResult::Changed {
-                            url,
-                            token: found.access_token.clone(),
-                            is_local,
-                            is_http,
-                        };
+                    } else {
+                        log::warn!("monitor: re-discovered server but all {} connections failed", found.connections.len());
                     }
+                } else {
+                    log::warn!(
+                        "monitor: server {} not found in {} re-discovered server(s)",
+                        server.machine_identifier,
+                        servers.len(),
+                    );
                 }
+            }
+            Err(e) => {
+                log::warn!("monitor: plex.tv re-discovery failed: {}", e);
             }
         }
 
         // All tiers failed
+        log::warn!("monitor: all connection tiers exhausted");
         EvalResult::Lost
     }
 }

@@ -176,18 +176,6 @@ pub async fn finalize_onboarding(
         .unwrap_or_default();
 
     // Persist server config (includes connections for session restoration)
-    let config = ramus_core::models::ServerConfig {
-        machine_identifier: server.machine_identifier.clone(),
-        name: server.name.clone(),
-        access_token: server_token.clone(),
-        selected_library_key: Some(library_key.clone()),
-        owned: server.owned,
-        connections: server.connections.clone(),
-    };
-    if !auth::store_server_config(&config, &token_store) {
-        return Err("Failed to persist server credentials".into());
-    }
-
     // Validate URL scheme
     let url = Url::parse(&server_url).map_err(|e| e.to_string())?;
     match url.scheme() {
@@ -200,9 +188,17 @@ pub async fn finalize_onboarding(
         other => return Err(format!("Unsupported scheme: {other}")),
     }
 
-    // Persist server URL for session restoration on next launch
-    if let Ok(dir) = ramus_core::plex::token_store::config_dir() {
-        let _ = std::fs::write(dir.join("server_url.txt"), &server_url);
+    let config = ramus_core::models::ServerConfig {
+        machine_identifier: server.machine_identifier.clone(),
+        name: server.name.clone(),
+        access_token: server_token.clone(),
+        selected_library_key: Some(library_key.clone()),
+        owned: server.owned,
+        connections: server.connections.clone(),
+        active_uri: Some(server_url.clone()),
+    };
+    if !auth::store_server_config(&config, &token_store) {
+        return Err("Failed to persist server credentials".into());
     }
     state
         .client
@@ -270,11 +266,6 @@ pub async fn logout(state: State<'_, AppState>) -> CmdResult<()> {
         token_store.delete(TokenKey::AuthToken);
         token_store.delete(TokenKey::ServerToken);
         auth::delete_server_config(&token_store);
-    }
-
-    // Clear persisted server URL
-    if let Ok(dir) = ramus_core::plex::token_store::config_dir() {
-        let _ = std::fs::remove_file(dir.join("server_url.txt"));
     }
 
     // Clear cache and discovery data
