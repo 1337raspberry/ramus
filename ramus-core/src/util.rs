@@ -16,7 +16,7 @@ pub fn escape_fts5(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
         match ch {
-            '"' | '*' | '(' | ')' | ':' | '^' | '{' | '}' => {}
+            '"' | '*' | '(' | ')' | ':' | '^' | '{' | '}' | '+' => {}
             '-' => out.push(' '),
             _ => out.push(ch),
         }

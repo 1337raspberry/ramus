@@ -1,3 +1,8 @@
 pub mod db;
+pub mod colors;
+pub mod genre;
 pub mod image_cache;
+pub mod search_queries;
 pub mod sync;
+pub mod sync_state;
+pub mod upsert;

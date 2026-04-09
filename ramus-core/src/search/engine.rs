@@ -392,6 +392,7 @@ fn match_score(value: &str, query: &str) -> f64 {
 mod tests {
     use super::*;
     use crate::cache::db::{AlbumUpsertRow, TrackUpsertRow};
+    use crate::search::parser::QueryParser;
 
     fn setup() -> (Arc<CacheDatabase>, SearchEngine) {
         let db = Arc::new(CacheDatabase::open_in_memory().unwrap());

@@ -207,7 +207,9 @@ pub async fn toggle_album_favourite(
         .client
         .rate_item(&source_id, rating)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    with_cache(&state, |db| db.update_album_rating(&source_id, Some(rating)))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -221,7 +223,9 @@ pub async fn toggle_track_favourite(
         .client
         .rate_item(&source_id, rating)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    with_cache(&state, |db| db.update_track_rating(&source_id, Some(rating)))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -242,13 +246,7 @@ pub async fn get_album(
 
 #[tauri::command]
 pub async fn get_random_album(state: State<'_, AppState>) -> CmdResult<Option<Album>> {
-    let albums = with_cache(&state, |db| db.all_albums())?;
-    if albums.is_empty() {
-        return Ok(None);
-    }
-    use rand::Rng;
-    let idx = rand::thread_rng().gen_range(0..albums.len());
-    Ok(Some(albums[idx].clone()))
+    with_cache(&state, |db| db.random_album())
 }
 
 #[tauri::command]
@@ -274,20 +272,20 @@ pub async fn get_art_url(
     let server_url = state.client.server_url().ok_or("Not connected")?;
     let token = state.client.token().ok_or("Not authenticated")?;
     let url = format!(
-        "{}/photo/:/transcode?width={}&height={}&minSize=1&upscale=1&url={}&X-Plex-Token={}",
+        "{}/photo/:/transcode?width={}&height={}&minSize=1&upscale=1&url={}",
         server_url.as_str().trim_end_matches('/'),
         size,
         size,
         urlencoding::encode(&thumb),
-        token,
     );
 
     let response = state
         .http_client
         .get(&url)
+        .header("X-Plex-Token", &token)
         .send()
         .await
-        .map_err(|e| format!("Image download failed: {e}"))?;
+        .map_err(|_| "Image download failed".to_string())?;
 
     if !response.status().is_success() {
         return Err(format!("Image download HTTP {}", response.status()));

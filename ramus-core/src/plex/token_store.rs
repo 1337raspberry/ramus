@@ -160,9 +160,14 @@ impl TokenStore {
     fn save_all(&self, tokens: &HashMap<String, String>) -> Result<(), TokenStoreError> {
         let path = self.token_file();
 
-        // Ensure directory exists
+        // Ensure directory exists with restrictive permissions
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
+            }
         }
 
         let key_bytes = self.encryption_key()?;
