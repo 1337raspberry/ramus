@@ -2104,6 +2104,12 @@ input, textarea {
   cursor: not-allowed;
 }
 
+.settings-btn.active {
+  background: var(--accent-20);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .settings-signout {
   color: #e55;
   border-color: #e55;

@@ -37,23 +37,26 @@ export async function extractPalette(img: HTMLImageElement): Promise<VibrantPale
 
 /** Pick the best accent color from a palette. Enforces minimum lightness for UI visibility. */
 export function accentFromPalette(p: VibrantPalette): [number, number, number] {
-  const hex = p.vibrant ?? p.lightVibrant ?? p.muted ?? p.darkVibrant ?? p.lightMuted ?? p.darkMuted;
-  if (!hex) return [140, 140, 140]; // fallback neutral gray
-
-  const rgb = hexToRgb(hex);
-  // Enforce minimum lightness for readability as accent
-  const max = Math.max(rgb[0], rgb[1], rgb[2]) / 255;
-  const min = Math.min(rgb[0], rgb[1], rgb[2]) / 255;
-  const l = (max + min) / 2;
-  if (l >= MIN_ACCENT_LIGHTNESS) return rgb;
-
-  // Boost lightness while preserving hue/saturation
-  const factor = MIN_ACCENT_LIGHTNESS / Math.max(l, 0.01);
-  return [
-    Math.min(255, Math.round(rgb[0] * factor)),
-    Math.min(255, Math.round(rgb[1] * factor)),
-    Math.min(255, Math.round(rgb[2] * factor)),
-  ];
+  const candidates = [p.vibrant, p.lightVibrant, p.muted, p.darkVibrant, p.lightMuted, p.darkMuted];
+  for (const hex of candidates) {
+    if (!hex) continue;
+    const rgb = hexToRgb(hex);
+    const max = Math.max(rgb[0], rgb[1], rgb[2]) / 255;
+    const min = Math.min(rgb[0], rgb[1], rgb[2]) / 255;
+    const l = (max + min) / 2;
+    if (l >= MIN_ACCENT_LIGHTNESS) return rgb;
+    // Boost lightness while preserving hue
+    const factor = MIN_ACCENT_LIGHTNESS / Math.max(l, 0.01);
+    const boosted: [number, number, number] = [
+      Math.min(255, Math.round(rgb[0] * factor)),
+      Math.min(255, Math.round(rgb[1] * factor)),
+      Math.min(255, Math.round(rgb[2] * factor)),
+    ];
+    // If boost produced a usable color (not near-black), use it
+    if (Math.max(...boosted) > 50) return boosted;
+    // Otherwise try next candidate
+  }
+  return [140, 140, 140];
 }
 
 /** Map palette swatches to 4 ultrablur corner colors. */

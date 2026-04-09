@@ -26,6 +26,8 @@ pub async fn update_settings(
     state: State<'_, AppState>,
     settings: Settings,
 ) -> CmdResult<()> {
+    let prev_genre_source = state.settings.read().genre_source.clone();
+
     // Update player config if playback settings changed
     let config = settings.to_playback_config();
     state.player.update_config(config);
@@ -39,9 +41,35 @@ pub async fn update_settings(
         .lock()
         .set_limit(settings.image_cache_limit_bytes as u64);
 
+    // Reload genre mapper if genre source changed
+    if settings.genre_source != prev_genre_source {
+        match settings.genre_source {
+            ramus_core::models::GenreSource::Custom => {
+                if let Some(data) = ramus_core::settings::load_custom_genres() {
+                    if let Ok(mapper) = GenreMapper::from_json_bytes(&data) {
+                        *state.genre_mapper.write() = Some(mapper);
+                    }
+                }
+            }
+            ramus_core::models::GenreSource::Open => {
+                let open_json = include_bytes!("../../data/open.json");
+                if let Ok(mapper) = GenreMapper::from_json_bytes(open_json) {
+                    *state.genre_mapper.write() = Some(mapper);
+                } else {
+                    *state.genre_mapper.write() = None;
+                }
+            }
+        }
+    }
+
     ramus_core::settings::save(&settings).map_err(|e| e.to_string())?;
     *state.settings.write() = settings;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn has_custom_genres() -> CmdResult<bool> {
+    Ok(ramus_core::settings::load_custom_genres().is_some())
 }
 
 #[tauri::command]
