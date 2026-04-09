@@ -5,9 +5,7 @@ use ramus_core::cache::sync::SyncProgress;
 use ramus_core::models::Track;
 use ramus_core::playback::lyrics::LyricsResult;
 
-// ---------------------------------------------------------------------------
-// Event payloads
-// ---------------------------------------------------------------------------
+// --- Event payloads ---
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,9 +51,7 @@ pub struct AccentColorPayload {
     pub b: u8,
 }
 
-// ---------------------------------------------------------------------------
-// Event emission helpers
-// ---------------------------------------------------------------------------
+// --- Event emission helpers ---
 
 pub fn emit_playback_state(app: &AppHandle, payload: PlaybackStatePayload) {
     let _ = app.emit("playback-state", payload);

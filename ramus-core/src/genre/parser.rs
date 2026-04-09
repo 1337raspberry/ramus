@@ -1,8 +1,6 @@
 use serde::Serialize;
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
+// --- Errors ---
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum CustomGenreParseError {
@@ -26,17 +24,13 @@ pub enum CustomGenreParseError {
     SerializeError(String),
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+// --- Constants ---
 
 pub const MAX_FILE_SIZE: usize = 1_048_576;
 pub const MAX_LINE_COUNT: usize = 50_000;
 pub const MAX_NAME_LENGTH: usize = 200;
 
-// ---------------------------------------------------------------------------
-// Parser
-// ---------------------------------------------------------------------------
+// --- Parser ---
 
 pub struct CustomGenreParser;
 
@@ -149,9 +143,7 @@ impl CustomGenreParser {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Indent Detection
-// ---------------------------------------------------------------------------
+// --- Indent Detection ---
 
 #[derive(Debug)]
 enum IndentUnit {
@@ -197,9 +189,7 @@ fn measure_indent<'a>(line: &'a str, unit: &IndentUnit) -> (usize, &'a str) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Line Parsing
-// ---------------------------------------------------------------------------
+// --- Line Parsing ---
 
 fn parse_line(content: &str, line_number: usize) -> Result<(String, Option<String>), CustomGenreParseError> {
     let bracket_start = match content.find('[') {
@@ -229,9 +219,7 @@ fn parse_line(content: &str, line_number: usize) -> Result<(String, Option<Strin
     Ok((name, description))
 }
 
-// ---------------------------------------------------------------------------
-// Tree Building
-// ---------------------------------------------------------------------------
+// --- Tree Building ---
 
 #[derive(Debug)]
 struct ParseNode {
@@ -309,9 +297,7 @@ fn build_tree(
 
 use std::collections::HashSet;
 
-// ---------------------------------------------------------------------------
-// Sanitization
-// ---------------------------------------------------------------------------
+// --- Sanitization ---
 
 /// Strip null bytes, C0 control characters (0x00–0x1F except tab 0x09),
 /// DEL (0x7F), and C1 control characters (0x80–0x9F). Preserves all Unicode.
@@ -337,9 +323,7 @@ fn strip_control_characters(input: &str) -> String {
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// JSON Output
-// ---------------------------------------------------------------------------
+// --- JSON Output ---
 
 #[derive(Serialize)]
 struct GenreFileJson {
@@ -367,9 +351,7 @@ fn node_to_json(node: &ParseNode) -> GenreRawJson {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -382,7 +364,7 @@ mod tests {
         (mapper, warnings)
     }
 
-    // -- Happy Path --
+    // --- Happy Path ---
 
     #[test]
     fn test_basic_hierarchy() {
@@ -452,7 +434,7 @@ mod tests {
         );
     }
 
-    // -- Descriptions --
+    // --- Descriptions ---
 
     #[test]
     fn test_optional_descriptions() {
@@ -491,7 +473,7 @@ mod tests {
         assert!(shoegaze.children.is_none());
     }
 
-    // -- Validation Errors --
+    // --- Validation Errors ---
 
     #[test]
     fn test_empty_file() {
@@ -562,7 +544,7 @@ mod tests {
         assert_eq!(err, CustomGenreParseError::NoRootGenresFound);
     }
 
-    // -- Warnings --
+    // --- Warnings ---
 
     #[test]
     fn test_duplicate_name_warning() {
@@ -590,7 +572,7 @@ mod tests {
         );
     }
 
-    // -- Edge Cases --
+    // --- Edge Cases ---
 
     #[test]
     fn test_blank_lines_ignored() {

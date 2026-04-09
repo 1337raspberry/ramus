@@ -6,9 +6,7 @@ use tokio::sync::Semaphore;
 use crate::cache::db::{AlbumUpsertRow, CacheDatabase, CacheError, TrackUpsertRow};
 use crate::plex::client::{MediaItem, PlexClient, PlexClientError};
 
-// ---------------------------------------------------------------------------
-// Progress
-// ---------------------------------------------------------------------------
+// --- Progress ---
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,9 +37,7 @@ impl SyncProgress {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
+// --- Errors ---
 
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
@@ -51,9 +47,7 @@ pub enum SyncError {
     Cache(#[from] CacheError),
 }
 
-// ---------------------------------------------------------------------------
-// SyncEngine
-// ---------------------------------------------------------------------------
+// --- SyncEngine ---
 
 const BATCH_SIZE: usize = 500;
 const DEEP_GENRE_CONCURRENCY: usize = 8;
@@ -150,9 +144,7 @@ impl SyncEngine {
         Ok(())
     }
 
-    // -----------------------------------------------------------------------
-    // Core sync (Phases 1-3)
-    // -----------------------------------------------------------------------
+    // --- Core sync (Phases 1-3) ---
 
     async fn core_sync(
         &self,
@@ -231,9 +223,7 @@ impl SyncEngine {
         Ok((album_map, changed_source_ids))
     }
 
-    // -----------------------------------------------------------------------
-    // Phase 1: Artists
-    // -----------------------------------------------------------------------
+    // --- Phase 1: Artists ---
 
     fn sync_artists(
         &self,
@@ -291,9 +281,7 @@ impl SyncEngine {
         Ok(map)
     }
 
-    // -----------------------------------------------------------------------
-    // Phase 2: Albums
-    // -----------------------------------------------------------------------
+    // --- Phase 2: Albums ---
 
     fn sync_albums(
         &self,
@@ -393,9 +381,7 @@ impl SyncEngine {
         Ok((map, changed_ids))
     }
 
-    // -----------------------------------------------------------------------
-    // Phase 3: Tracks
-    // -----------------------------------------------------------------------
+    // --- Phase 3: Tracks ---
 
     fn sync_tracks(
         &self,
@@ -505,9 +491,7 @@ impl SyncEngine {
         Ok(())
     }
 
-    // -----------------------------------------------------------------------
-    // Phase 4: Deep Genre Sync
-    // -----------------------------------------------------------------------
+    // --- Phase 4: Deep Genre Sync ---
 
     async fn deep_genre_sync(
         &self,
@@ -621,9 +605,7 @@ async fn process_album_deep_sync(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {

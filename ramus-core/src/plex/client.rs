@@ -10,9 +10,7 @@ use url::Url;
 
 use crate::models::{LibrarySection, PlexServer, PlexServerConnection, UltraBlurColors};
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
+// --- Errors ---
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlexClientError {
@@ -32,9 +30,7 @@ pub enum PlexClientError {
     NoSecureConnection,
 }
 
-// ---------------------------------------------------------------------------
-// Plex API Response Models (internal JSON deserialization)
-// ---------------------------------------------------------------------------
+// --- Plex API Response Models (internal JSON deserialization) ---
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,7 +94,7 @@ pub struct StreamInfo {
     pub provider: Option<String>,
 }
 
-// Custom deserialize for StreamInfo: `timed` can be JSON bool OR int.
+// `timed` can be a JSON bool or int; custom Deserialize handles both.
 impl<'de> Deserialize<'de> for StreamInfo {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
@@ -142,7 +138,7 @@ pub struct LevelSample {
     pub v: f32,
 }
 
-// -- Response wrappers (Plex wraps everything in MediaContainer) --
+// -- Response wrappers (Plex wraps all responses in MediaContainer) --
 
 #[derive(Debug, Deserialize)]
 pub struct MediaContainerResponse {
@@ -168,7 +164,7 @@ struct LibrarySectionsContainer {
     directory: Option<Vec<LibrarySectionRaw>>,
 }
 
-/// Internal raw representation — Plex uses `type` as the key name.
+/// Raw representation — Plex uses `type` as the field name.
 #[derive(Debug, Deserialize)]
 struct LibrarySectionRaw {
     key: String,
@@ -189,7 +185,7 @@ struct LevelsContainer {
     level: Option<Vec<LevelSample>>,
 }
 
-// -- plex.tv server discovery response --
+// -- plex.tv server discovery responses --
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -212,9 +208,7 @@ struct PlexResourceConnectionResponse {
     protocol: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// PlexClient
-// ---------------------------------------------------------------------------
+// --- PlexClient ---
 
 type ReconnectCallback =
     Arc<dyn Fn() -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>;
@@ -876,9 +870,7 @@ impl PlexClient {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {

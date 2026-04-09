@@ -15,9 +15,7 @@ use crate::models::{PlaybackConfig, PlaybackStatus, PlayerState, Track};
 use crate::playback::mpv::{FileEndReason, LoadMode, MpvPlayer};
 use crate::playback::transcode;
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+// --- Constants ---
 
 /// 10-band EQ center frequencies in Hz.
 pub const EQ_FREQUENCIES: [u32; 10] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -30,9 +28,7 @@ const ALLOWED_EXTENSIONS: &[&str] = &[
 /// Threshold in seconds: if position > this, `previous()` restarts instead of going back.
 const PREVIOUS_RESTART_THRESHOLD: f64 = 3.0;
 
-// ---------------------------------------------------------------------------
-// EQ filter string
-// ---------------------------------------------------------------------------
+// --- EQ filter string ---
 
 /// Build an mpv `af` lavfi equalizer filter string from 10 gain values.
 ///
@@ -51,9 +47,7 @@ pub fn build_eq_filter_string(bands: &[f32; 10]) -> String {
     format!("lavfi=[{}]", filters.join(","))
 }
 
-// ---------------------------------------------------------------------------
-// Filename sanitization
-// ---------------------------------------------------------------------------
+// --- Filename sanitization ---
 
 /// Sanitize a string for use as a filename. Only `[a-zA-Z0-9_-]` are kept.
 pub fn sanitize_filename(s: &str) -> String {
@@ -67,9 +61,7 @@ pub fn is_allowed_extension(ext: &str) -> bool {
     ALLOWED_EXTENSIONS.contains(&ext.to_lowercase().as_str())
 }
 
-// ---------------------------------------------------------------------------
-// DownloadCache (LRU)
-// ---------------------------------------------------------------------------
+// --- DownloadCache (LRU) ---
 
 /// LRU download cache tracking cached audio files.
 ///
@@ -169,9 +161,7 @@ impl DownloadCache {
     }
 }
 
-// ---------------------------------------------------------------------------
-// AudioPlayer
-// ---------------------------------------------------------------------------
+// --- AudioPlayer ---
 
 /// Observable state snapshot for the frontend.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -233,7 +223,7 @@ impl AudioPlayer {
         }
     }
 
-    // -- Configuration --
+    // --- Configuration ---
 
     /// Set server connection details.
     pub fn configure(&self, server_url: Url, token: String, client_identifier: String) {
@@ -258,7 +248,7 @@ impl AudioPlayer {
         inner.config = config;
     }
 
-    // -- Queue operations --
+    // --- Queue operations ---
 
     /// Replace the queue and start playback at the given index.
     ///
@@ -525,7 +515,7 @@ impl AudioPlayer {
         }
     }
 
-    // -- State queries --
+    // --- State queries ---
 
     /// Snapshot the full player state for the frontend.
     pub fn snapshot(&self) -> AudioPlayerState {
@@ -562,7 +552,7 @@ impl AudioPlayer {
         self.inner.lock().play_session_id.clone()
     }
 
-    // -- mpv event handlers --
+    // --- mpv event handlers ---
 
     /// Handle mpv position change (called by event loop, ~30fps).
     pub fn handle_position_change(&self, pos: f64) {
@@ -641,7 +631,7 @@ impl AudioPlayer {
         inner.position = 0.0;
     }
 
-    // -- Cache access (for external download manager) --
+    // --- Cache access (for external download manager) ---
 
     /// Access the download cache under the player lock.
     pub fn with_cache<F, R>(&self, f: F) -> R
@@ -652,7 +642,7 @@ impl AudioPlayer {
         f(&mut inner.cache)
     }
 
-    // -- Prefetch --
+    // --- Prefetch ---
 
     /// Identify upcoming tracks that should be prefetched (downloaded to cache).
     ///
@@ -730,9 +720,7 @@ impl AudioPlayer {
     }
 }
 
-// ---------------------------------------------------------------------------
-// URL resolution (free function to avoid lock concerns)
-// ---------------------------------------------------------------------------
+// --- URL resolution (free function to avoid lock concerns) ---
 
 fn resolve_url(track: &Track, inner: &PlayerInner) -> Option<String> {
     // Check download cache
@@ -762,9 +750,7 @@ fn resolve_url(track: &Track, inner: &PlayerInner) -> Option<String> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -772,7 +758,7 @@ mod tests {
     use crate::playback::mpv::MpvPlayer;
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    // -- Mock MpvPlayer --
+    // --- Mock MpvPlayer ---
 
     #[derive(Debug, Clone)]
     #[allow(dead_code)] // Fields read via Debug/pattern matching in assertions
@@ -861,7 +847,7 @@ mod tests {
         }
     }
 
-    // -- Test helpers --
+    // --- Test helpers ---
 
     fn make_test_track(key: &str) -> Track {
         Track {
@@ -893,7 +879,7 @@ mod tests {
         (player, mpv)
     }
 
-    // -- EQ filter string tests --
+    // --- EQ filter string tests ---
 
     #[test]
     fn test_eq_filter_string_all_zeros() {
@@ -953,7 +939,7 @@ mod tests {
         assert_eq!(EQ_FREQUENCIES[9], 16000);
     }
 
-    // -- Filename sanitization tests --
+    // --- Filename sanitization tests ---
 
     #[test]
     fn test_sanitize_filename_keeps_safe_chars() {
@@ -989,7 +975,7 @@ mod tests {
         assert!(!is_allowed_extension(""));
     }
 
-    // -- DownloadCache tests --
+    // --- DownloadCache tests ---
 
     #[test]
     fn test_cache_insert_and_get() {
@@ -1083,7 +1069,7 @@ mod tests {
         assert_eq!(cache.total_size(), 200);
     }
 
-    // -- Queue operation tests --
+    // --- Queue operation tests ---
 
     #[test]
     fn test_load_queue() {
@@ -1483,7 +1469,7 @@ mod tests {
         assert!(new_calls.iter().any(|c| matches!(c, MockCall::Stop)));
     }
 
-    // -- Equalizer integration tests --
+    // --- Equalizer integration tests ---
 
     #[test]
     fn test_apply_equalizer_enabled() {
@@ -1513,7 +1499,7 @@ mod tests {
             .any(|c| matches!(c, MockCall::SetAudioFilters(s) if s == "no")));
     }
 
-    // -- Callback handler tests --
+    // --- Callback handler tests ---
 
     #[test]
     fn test_handle_position_change() {
@@ -1623,7 +1609,7 @@ mod tests {
         assert!((snapshot.buffered_fraction - 0.5).abs() < 0.01);
     }
 
-    // -- URL resolution tests --
+    // --- URL resolution tests ---
 
     #[test]
     fn test_load_queue_resolves_direct_play_urls() {

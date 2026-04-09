@@ -24,7 +24,6 @@ export default function AlbumDetailView() {
   const [artErr, setArtErr] = useState(false);
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
 
-  // Fetch art
   useEffect(() => {
     if (!album?.thumb) {
       setArtSrc(null);
@@ -66,7 +65,6 @@ export default function AlbumDetailView() {
   const totalDuration = tracks.reduce((sum, t) => sum + t.duration, 0);
   const codec = tracks.length ? formatCodec(tracks[0].codec, tracks[0].bitrate) : null;
 
-  // Group tracks by disc if multi-disc
   const hasMultipleDiscs = tracks.some((t) => (t.discNumber ?? 1) > 1);
 
   return (

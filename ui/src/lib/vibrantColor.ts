@@ -1,8 +1,4 @@
-/**
- * Color extraction from album art using node-vibrant.
- * Provides categorized swatches (Vibrant, Muted, DarkVibrant, etc.)
- * for both accent color and ultrablur background.
- */
+/** Color extraction from album art using node-vibrant. */
 
 import { Vibrant } from "node-vibrant/browser";
 import type { UltraBlurColors } from "./types";
@@ -52,16 +48,13 @@ export function accentFromPalette(p: VibrantPalette): [number, number, number] {
       Math.min(255, Math.round(rgb[1] * factor)),
       Math.min(255, Math.round(rgb[2] * factor)),
     ];
-    // If boost produced a usable color (not near-black), use it
     if (Math.max(...boosted) > 50) return boosted;
-    // Otherwise try next candidate
   }
   return [140, 140, 140];
 }
 
 /** Map palette swatches to 4 ultrablur corner colors. */
 export function blurColorsFromPalette(p: VibrantPalette): UltraBlurColors {
-  // Pick the best available swatch for each corner, with fallback chains
   const fallback = p.darkMuted ?? p.muted ?? p.darkVibrant ?? "333333";
   return {
     topLeft: stripHash(p.darkMuted ?? p.muted ?? fallback),

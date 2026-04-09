@@ -7,9 +7,7 @@ use serde::Deserialize;
 use crate::models::ServerConfig;
 use crate::plex::token_store::{config_dir, TokenKey, TokenStore};
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
+// --- Errors ---
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlexAuthError {
@@ -27,9 +25,7 @@ pub enum PlexAuthError {
     Json(#[from] serde_json::Error),
 }
 
-// ---------------------------------------------------------------------------
-// PIN Response
-// ---------------------------------------------------------------------------
+// --- PIN Response ---
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PinResponse {
@@ -39,9 +35,7 @@ pub struct PinResponse {
     pub auth_token: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// PlexAuth
-// ---------------------------------------------------------------------------
+// --- PlexAuth ---
 
 pub struct PlexAuth {
     http: Client,
@@ -135,9 +129,7 @@ impl PlexAuth {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Server Config Persistence
-// ---------------------------------------------------------------------------
+// --- Server Config Persistence ---
 
 const SERVER_CONFIG_FILE: &str = "server_config.json";
 
@@ -198,9 +190,7 @@ pub fn delete_server_config(token_store: &TokenStore) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {

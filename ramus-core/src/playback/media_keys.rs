@@ -6,9 +6,7 @@
 
 use crate::models::Track;
 
-// ---------------------------------------------------------------------------
-// MediaMetadata
-// ---------------------------------------------------------------------------
+// --- MediaMetadata ---
 
 /// Metadata for OS-level Now Playing / media key display.
 #[derive(Debug, Clone, PartialEq)]
@@ -48,9 +46,7 @@ impl MediaMetadata {
     }
 }
 
-// ---------------------------------------------------------------------------
-// MediaKeyEvent
-// ---------------------------------------------------------------------------
+// --- MediaKeyEvent ---
 
 /// Events received from OS-level media key controls.
 #[derive(Debug, Clone, PartialEq)]
@@ -64,9 +60,7 @@ pub enum MediaKeyEvent {
     Seek(f64),
 }
 
-// ---------------------------------------------------------------------------
-// MediaKeyHandler trait
-// ---------------------------------------------------------------------------
+// --- MediaKeyHandler trait ---
 
 /// Trait for platform-specific media key handlers.
 ///
@@ -82,9 +76,7 @@ pub trait MediaKeyHandler: Send + Sync {
     fn clear(&self);
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {

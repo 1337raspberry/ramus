@@ -1,6 +1,4 @@
-/* ----------------------------------------------------------------
-   ramus — global styles & CSS foundation
-   ---------------------------------------------------------------- */
+/* --- Global Styles --- */
 
 @font-face {
   font-family: "Inter";
@@ -92,7 +90,6 @@ textarea {
   scrollbar-width: none;
 }
 
-/* Selection */
 ::selection {
   background: var(--accent-35);
 }
@@ -111,9 +108,7 @@ textarea {
   user-select: text;
 }
 
-/* ----------------------------------------------------------------
-   UltraBlur background
-   ---------------------------------------------------------------- */
+/* --- UltraBlur Background --- */
 
 .ultrablur-bg {
   position: fixed;
@@ -150,9 +145,7 @@ textarea {
   right: 0;
 }
 
-/* ----------------------------------------------------------------
-   Window drag region
-   ---------------------------------------------------------------- */
+/* --- Window Drag Region --- */
 
 .drag-region {
   position: fixed;
@@ -200,9 +193,7 @@ textarea {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* ----------------------------------------------------------------
-   Glass morphism utility
-   ---------------------------------------------------------------- */
+/* --- Glass Morphism --- */
 
 .glass {
   background: var(--bg-glass);
@@ -210,9 +201,7 @@ textarea {
   -webkit-backdrop-filter: blur(20px);
 }
 
-/* ----------------------------------------------------------------
-   Layout
-   ---------------------------------------------------------------- */
+/* --- Layout --- */
 
 .three-column-layout {
   display: grid;
@@ -248,9 +237,7 @@ textarea {
   overflow-y: hidden;
 }
 
-/* ----------------------------------------------------------------
-   Divider (draggable column resize)
-   ---------------------------------------------------------------- */
+/* --- Column Divider --- */
 
 .column-divider {
   width: 5px;
@@ -266,9 +253,7 @@ textarea {
   background: transparent;
 }
 
-/* ----------------------------------------------------------------
-   Sidebar tabs
-   ---------------------------------------------------------------- */
+/* --- Sidebar Tabs --- */
 
 .sidebar-tabs {
   display: flex;
@@ -303,9 +288,7 @@ textarea {
   border-bottom-color: var(--accent);
 }
 
-/* ----------------------------------------------------------------
-   Genre tree
-   ---------------------------------------------------------------- */
+/* --- Genre Tree --- */
 
 .genre-row {
   transition: background 0.1s;
@@ -348,9 +331,7 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
-/* ----------------------------------------------------------------
-   Album grid
-   ---------------------------------------------------------------- */
+/* --- Album Grid --- */
 
 .album-grid-header {
   display: flex;
@@ -527,9 +508,7 @@ textarea {
   opacity: 1 !important;
 }
 
-/* ----------------------------------------------------------------
-   Album Detail View
-   ---------------------------------------------------------------- */
+/* --- Album Detail View --- */
 
 .adv-root {
   display: flex;
@@ -841,9 +820,7 @@ textarea {
   color: var(--text-muted);
 }
 
-/* ----------------------------------------------------------------
-   Detail column scroll
-   ---------------------------------------------------------------- */
+/* --- Detail Column --- */
 
 .detail-scroll {
   height: 100%;
@@ -854,9 +831,7 @@ textarea {
   overflow-y: auto;
 }
 
-/* ----------------------------------------------------------------
-   Now Playing
-   ---------------------------------------------------------------- */
+/* --- Now Playing --- */
 
 .now-playing {
   display: flex;
@@ -1039,7 +1014,6 @@ textarea {
   }
 }
 
-/* Track row */
 .np-track-row {
   display: flex;
   align-items: center;
@@ -1055,7 +1029,6 @@ textarea {
   white-space: nowrap;
 }
 
-/* Transport */
 .np-transport {
   display: flex;
   align-items: center;
@@ -1097,7 +1070,6 @@ textarea {
   min-height: 48px;
 }
 
-/* Footer */
 .np-footer {
   display: flex;
   flex-direction: column;
@@ -1119,9 +1091,7 @@ textarea {
   gap: 4px;
 }
 
-/* ----------------------------------------------------------------
-   Volume Slider
-   ---------------------------------------------------------------- */
+/* --- Volume Slider --- */
 
 .volume-slider {
   position: relative;
@@ -1159,9 +1129,7 @@ textarea {
   pointer-events: none;
 }
 
-/* ----------------------------------------------------------------
-   Waveform Seek Bar
-   ---------------------------------------------------------------- */
+/* --- Waveform Seek Bar --- */
 
 .waveform-container {
   display: flex;
@@ -1196,9 +1164,7 @@ textarea {
   font-family: var(--font-mono);
 }
 
-/* ----------------------------------------------------------------
-   Lyrics View
-   ---------------------------------------------------------------- */
+/* --- Lyrics View --- */
 
 .lyrics-overlay {
   position: relative;
@@ -1306,9 +1272,7 @@ textarea {
   -webkit-backdrop-filter: blur(20px);
 }
 
-/* ----------------------------------------------------------------
-   Flow Layout (Genre Pills)
-   ---------------------------------------------------------------- */
+/* --- Flow Layout (Genre Pills) --- */
 
 .flow-layout {
   display: flex;
@@ -1331,9 +1295,7 @@ textarea {
   opacity: 0.7;
 }
 
-/* ----------------------------------------------------------------
-   Queue View
-   ---------------------------------------------------------------- */
+/* --- Queue View --- */
 
 .queue-view {
   background: rgba(255, 255, 255, 0.05);
@@ -1469,9 +1431,7 @@ textarea {
   color: var(--text-primary);
 }
 
-/* ----------------------------------------------------------------
-   Sidebar bottom row (Settings + Feelin' Lucky)
-   ---------------------------------------------------------------- */
+/* --- Sidebar Bottom Row --- */
 
 .sidebar-bottom-row {
   display: flex;
@@ -1498,9 +1458,7 @@ textarea {
   border-left: 1px solid var(--border);
 }
 
-/* ----------------------------------------------------------------
-   Suggestion View
-   ---------------------------------------------------------------- */
+/* --- Suggestion View --- */
 
 .suggestion-view {
   display: flex;
@@ -1583,9 +1541,7 @@ textarea {
   text-align: right;
 }
 
-/* ----------------------------------------------------------------
-   EQ button in Now Playing
-   ---------------------------------------------------------------- */
+/* --- EQ Button --- */
 
 .np-eq-btn {
   background: none;
@@ -1604,9 +1560,7 @@ textarea {
   color: var(--accent);
 }
 
-/* ----------------------------------------------------------------
-   Search Overlay
-   ---------------------------------------------------------------- */
+/* --- Search Overlay --- */
 
 .search-backdrop {
   position: fixed;
@@ -1828,9 +1782,7 @@ textarea {
   background: var(--bg-hover);
 }
 
-/* ----------------------------------------------------------------
-   Equalizer Panel
-   ---------------------------------------------------------------- */
+/* --- Equalizer Panel --- */
 
 .eq-backdrop {
   position: fixed;
@@ -2002,9 +1954,7 @@ textarea {
   color: var(--text-primary);
 }
 
-/* ----------------------------------------------------------------
-   Settings Panel
-   ---------------------------------------------------------------- */
+/* --- Settings Panel --- */
 
 .settings-backdrop {
   position: fixed;
@@ -2196,9 +2146,7 @@ textarea {
   padding: 1px 0;
 }
 
-/* ----------------------------------------------------------------
-   Onboarding
-   ---------------------------------------------------------------- */
+/* --- Onboarding --- */
 
 .onboarding-container {
   display: flex;
@@ -2349,7 +2297,6 @@ textarea {
   margin-top: 8px;
 }
 
-/* Server list */
 .server-list {
   width: 100%;
   display: flex;
@@ -2429,7 +2376,6 @@ textarea {
   border-color: var(--accent);
 }
 
-/* Library list */
 .library-list {
   width: 100%;
   display: flex;
@@ -2471,7 +2417,6 @@ textarea {
   font-weight: 700;
 }
 
-/* Sync progress */
 .sync-progress-container {
   width: 100%;
   display: flex;
@@ -2504,9 +2449,7 @@ textarea {
   color: var(--text-muted);
 }
 
-/* ----------------------------------------------------------------
-   Placeholder / empty state
-   ---------------------------------------------------------------- */
+/* --- Empty State --- */
 
 .empty-state {
   display: flex;

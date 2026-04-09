@@ -15,9 +15,7 @@ use ramus_core::playback::mpv::{
 
 use crate::mpv_ffi::*;
 
-// ---------------------------------------------------------------------------
-// Thread-safe wrapper for the raw mpv handle
-// ---------------------------------------------------------------------------
+// --- Thread-safe wrapper for the raw mpv handle ---
 
 struct MpvHandle(*mut mpv_handle);
 unsafe impl Send for MpvHandle {}
@@ -29,9 +27,7 @@ impl MpvHandle {
     }
 }
 
-// ---------------------------------------------------------------------------
-// MpvController
-// ---------------------------------------------------------------------------
+// --- MpvController ---
 
 pub struct MpvController {
     handle: Arc<MpvHandle>,
@@ -40,12 +36,12 @@ pub struct MpvController {
 }
 
 impl MpvController {
-    /// Create and initialize a new mpv instance.
-    /// Spawns a background event loop thread that dispatches `callbacks`.
+    /// Create and initialize a new mpv instance with a background event
+    /// loop thread that dispatches `callbacks`.
     pub fn new(callbacks: Arc<MpvCallbacks>) -> Result<Self, String> {
         unsafe {
             // mpv requires LC_NUMERIC=C for POSIX float formatting (e.g. EQ filters).
-            // On Linux desktops with non-C locales, mpv_create() returns null without this.
+            // Without this, mpv_create() returns null on Linux with non-C locales.
             #[cfg(target_os = "linux")]
             {
                 let c_locale = std::ffi::CString::new("C").unwrap();
@@ -58,7 +54,7 @@ impl MpvController {
                 return Err("mpv_create() returned null".into());
             }
 
-            // Set audio-only options
+            // Apply audio-only options
             let options = ramus_core::playback::mpv::default_mpv_options();
             for (key, val) in &options {
                 let k = CString::new(*key).unwrap();
@@ -76,7 +72,7 @@ impl MpvController {
                 ));
             }
 
-            // Observe properties
+            // Register property observers
             let props = ramus_core::playback::mpv::observed_properties();
             for (name, id) in &props {
                 let n = CString::new(*name).unwrap();
@@ -90,7 +86,7 @@ impl MpvController {
                 mpv_observe_property(ctx, *id as u64, n.as_ptr(), fmt);
             }
 
-            // Set initial volume
+            // Default volume
             let vol_name = CString::new("volume").unwrap();
             let mut vol: f64 = 50.0;
             mpv_set_property(
@@ -103,7 +99,7 @@ impl MpvController {
             let handle = Arc::new(MpvHandle(ctx));
             let shutdown = Arc::new(AtomicBool::new(false));
 
-            // Spawn event loop
+            // Spawn background event loop
             let handle_clone = handle.clone();
             let shutdown_clone = shutdown.clone();
             let event_thread = thread::Builder::new()
@@ -177,7 +173,6 @@ impl MpvPlayer for MpvController {
     }
 
     fn load_file_at(&self, url: &str, index: i64) {
-        // loadfile <url> insert-at <index>
         self.command(&["loadfile", url, "insert-at", &index.to_string()]);
     }
 
@@ -238,9 +233,8 @@ impl MpvPlayer for MpvController {
 impl Drop for MpvController {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Release);
-        // Send quit command to unblock mpv_wait_event
+        // Unblock mpv_wait_event so the event loop thread exits
         self.command(&["quit"]);
-        // The event loop thread will exit when it sees shutdown or MPV_EVENT_SHUTDOWN
         if let Some(t) = self._event_thread.take() {
             let _ = t.join();
         }
@@ -250,9 +244,7 @@ impl Drop for MpvController {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Event loop (runs on background thread)
-// ---------------------------------------------------------------------------
+// --- Event loop (runs on background thread) ---
 
 fn event_loop(
     handle: Arc<MpvHandle>,

@@ -5,9 +5,7 @@ use crate::cache::db::CacheDatabase;
 use crate::models::{RangeField, SearchResult, SearchResultKind};
 use crate::search::parser::ParsedQuery;
 
-// ---------------------------------------------------------------------------
-// Genre expansion trait (decouples from GenreMapper)
-// ---------------------------------------------------------------------------
+// --- Genre expansion trait (decouples from GenreMapper) ---
 
 /// Trait for expanding a genre name into all descendant genre names.
 /// Implemented by GenreMapper in the genre module.
@@ -15,9 +13,7 @@ pub trait GenreExpander: Send + Sync {
     fn expand_genre(&self, name: &str) -> Option<HashSet<String>>;
 }
 
-// ---------------------------------------------------------------------------
-// SearchEngine
-// ---------------------------------------------------------------------------
+// --- SearchEngine ---
 
 pub struct SearchEngine {
     db: Arc<CacheDatabase>,
@@ -77,9 +73,7 @@ impl SearchEngine {
         Ok(results)
     }
 
-    // -----------------------------------------------------------------------
-    // Album Search
-    // -----------------------------------------------------------------------
+    // --- Album Search ---
 
     fn search_albums(
         &self,
@@ -196,9 +190,7 @@ impl SearchEngine {
         Ok(results)
     }
 
-    // -----------------------------------------------------------------------
-    // Track Search
-    // -----------------------------------------------------------------------
+    // --- Track Search ---
 
     fn search_tracks(
         &self,
@@ -269,9 +261,7 @@ impl SearchEngine {
         Ok(results)
     }
 
-    // -----------------------------------------------------------------------
-    // Private
-    // -----------------------------------------------------------------------
+    // --- Private ---
 
     fn resolve_album_constraints(
         &self,
@@ -396,9 +386,7 @@ fn match_score(value: &str, query: &str) -> f64 {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -553,7 +541,7 @@ mod tests {
         db.set_album_genres(kid_a_id, &[rock_id, electronic_id]).unwrap();
     }
 
-    // -- Album Search Tests --
+    // --- Album Search Tests ---
 
     #[test]
     fn test_free_text_search_returns_albums_and_tracks() {
@@ -647,7 +635,7 @@ mod tests {
         assert!(results.iter().all(|r| r.album_title == "Kid A"));
     }
 
-    // -- Track Search Tests --
+    // --- Track Search Tests ---
 
     #[test]
     fn test_track_search_returns_tracks_only() {

@@ -83,7 +83,7 @@ impl ImageCache {
             return None;
         }
 
-        // Touch: move to MRU
+        // Move to most-recently-used position
         self.access_order.retain(|k| k != &key);
         self.access_order.push(key);
 
@@ -150,7 +150,7 @@ impl ImageCache {
         self.entries.len()
     }
 
-    // -- internals --
+    // --- Internals ---
 
     fn evict_if_needed(&mut self) {
         while self.total_size() > self.limit_bytes && !self.access_order.is_empty() {
@@ -172,9 +172,7 @@ impl ImageCache {
     }
 }
 
-// ---------------------------------------------------------------------------
-// hex encoding (avoid adding a dependency for this)
-// ---------------------------------------------------------------------------
+// --- Hex encoding (avoids adding a dependency) ---
 
 fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
@@ -184,16 +182,14 @@ fn hex_encode(bytes: &[u8]) -> String {
     s
 }
 
-// Use our local hex_encode in cache_key
+// Shim module to use local hex_encode in cache_key
 mod hex {
     pub fn encode(bytes: impl AsRef<[u8]>) -> String {
         super::hex_encode(bytes.as_ref())
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {

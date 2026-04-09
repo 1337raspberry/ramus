@@ -16,7 +16,7 @@ import {
 } from "../lib/commands";
 
 interface PlaybackState {
-  // Playback
+  // --- Playback ---
   status: "stopped" | "playing" | "paused";
   currentTrack: Track | null;
   queueIndex: number;
@@ -26,35 +26,33 @@ interface PlaybackState {
   bufferedFraction: number;
   volume: number;
 
-  // Lyrics
+  // --- Lyrics ---
   lyrics: LyricsResult | null;
   lyricsLoading: boolean;
   showLyrics: boolean;
   lyricsPinned: boolean;
 
-  // Waveform
+  // --- Waveform ---
   waveformLevels: number[] | null;
 
-  // UltraBlur
+  // --- UltraBlur ---
   ultraBlurColors: UltraBlurColors | null;
   vibrantPalette: VibrantPalette | null;
 
-  // Queue
+  // --- Queue ---
   queue: Track[];
   showQueue: boolean;
 
-  // Now-playing album metadata (year, studio, etc.)
+  // --- Now Playing Metadata ---
   nowPlayingAlbum: Album | null;
-
-  // Album genres for now-playing footer
   currentGenres: string[];
 
-  // Event handlers (called from App.tsx)
+  // --- Event Handlers ---
   onPlaybackState: (status: string, track: Track | null, queueIndex: number) => void;
   onPlaybackPosition: (position: number, duration: number) => void;
   onBuffering: (isBuffering: boolean, bufferedFraction: number) => void;
 
-  // Actions
+  // --- Actions ---
   seek: (seconds: number) => void;
   seekFraction: (fraction: number) => void;
   changeVolume: (volume: number) => void;
@@ -121,10 +119,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     });
 
     if (trackChanged && track) {
-      // Reset lyrics/waveform/palette for new track
       set({ lyrics: null, waveformLevels: null, lyricsLoading: false, vibrantPalette: null });
 
-      // Fetch waveform
       getWaveform(track.ratingKey)
         .then((levels) => {
           if (levels) {
@@ -136,7 +132,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         })
         .catch((e) => console.warn("[waveform] fetch failed:", e));
 
-      // Fetch album metadata, genres, and colors for the album
       if (track.albumKey) {
         getAlbum(track.albumKey)
           .then((album) => set({ nowPlayingAlbum: album }))
@@ -168,7 +163,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
           .catch(() => set({ lyricsLoading: false }));
       }
 
-      // Refresh queue
       getQueue()
         .then((queue) => set({ queue }))
         .catch(() => {});
@@ -217,9 +211,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     try {
       const vol = await getVolume();
       set({ volume: vol });
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   toggleLyrics: () => {

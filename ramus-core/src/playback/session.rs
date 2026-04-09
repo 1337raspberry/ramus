@@ -11,9 +11,7 @@ pub const SCROBBLE_THRESHOLD: f64 = 0.9;
 /// Periodic report interval in seconds.
 pub const REPORT_INTERVAL_SECS: u64 = 10;
 
-// ---------------------------------------------------------------------------
-// TimelineState
-// ---------------------------------------------------------------------------
+// --- TimelineState ---
 
 /// Timeline state payload for Plex session reporting.
 /// Positions are in milliseconds (Plex API convention).
@@ -41,9 +39,7 @@ impl TimelineState {
     }
 }
 
-// ---------------------------------------------------------------------------
-// SessionTracker
-// ---------------------------------------------------------------------------
+// --- SessionTracker ---
 
 /// Tracks session reporting state for Plex timeline updates.
 ///
@@ -211,9 +207,7 @@ impl Default for SessionTracker {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {

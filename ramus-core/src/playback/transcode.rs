@@ -3,9 +3,7 @@ use url::Url;
 use crate::models::PlaybackMode;
 use crate::util::{is_lossless_codec, percent_decode, percent_encode};
 
-// ---------------------------------------------------------------------------
-// Transcode decision
-// ---------------------------------------------------------------------------
+// --- Transcode decision ---
 
 /// Determine whether a track should be transcoded based on playback mode,
 /// codec, and connection type.
@@ -25,9 +23,7 @@ pub fn should_transcode(codec: Option<&str>, mode: PlaybackMode, is_remote: bool
     }
 }
 
-// ---------------------------------------------------------------------------
-// URL builders
-// ---------------------------------------------------------------------------
+// --- URL builders ---
 
 /// Build a direct-play URL: server base + part key + token as query param.
 ///
@@ -82,15 +78,13 @@ pub fn build_hls_url(
 }
 
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // -- should_transcode --
+    // --- should_transcode ---
 
     #[test]
     fn test_direct_play_never_transcodes() {
@@ -153,7 +147,7 @@ mod tests {
         assert!(should_transcode(Some("Alac"), PlaybackMode::TranscodeLossless, false));
     }
 
-    // -- build_direct_play_url --
+    // --- build_direct_play_url ---
 
     #[test]
     fn test_direct_play_url_includes_token() {
@@ -187,7 +181,7 @@ mod tests {
         );
     }
 
-    // -- build_hls_url --
+    // --- build_hls_url ---
 
     #[test]
     fn test_hls_url_has_required_parameters() {

@@ -113,7 +113,6 @@ export default function App() {
       store.onBuffering(isBuffering, bufferedFraction);
     });
 
-    // Load initial volume
     store.loadVolume();
 
     return () => {

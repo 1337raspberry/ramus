@@ -6,9 +6,7 @@ pub type PlexID = String;
 /// Duration in seconds (TimeInterval equivalent).
 pub type Duration = f64;
 
-// ---------------------------------------------------------------------------
-// Range Operators (used by Search + Cache)
-// ---------------------------------------------------------------------------
+// --- Range Operators (used by Search + Cache) ---
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RangeOp {
@@ -38,9 +36,7 @@ pub enum RangeField {
     Rating,
 }
 
-// ---------------------------------------------------------------------------
-// Playback enums
-// ---------------------------------------------------------------------------
+// --- Playback enums ---
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,9 +71,7 @@ pub enum SearchResultKind {
     Track,
 }
 
-// ---------------------------------------------------------------------------
-// UltraBlurColors
-// ---------------------------------------------------------------------------
+// --- UltraBlurColors ---
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,9 +102,7 @@ pub struct AlbumColorInfo {
     pub palette: Option<VibrantPalette>,
 }
 
-// ---------------------------------------------------------------------------
-// Album
-// ---------------------------------------------------------------------------
+// --- Album ---
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -135,9 +127,7 @@ impl Album {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Track
-// ---------------------------------------------------------------------------
+// --- Track ---
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -197,9 +187,7 @@ impl Track {
     }
 }
 
-// ---------------------------------------------------------------------------
-// PlexServerConnection
-// ---------------------------------------------------------------------------
+// --- PlexServerConnection ---
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -226,9 +214,7 @@ impl PlexServerConnection {
     }
 }
 
-// ---------------------------------------------------------------------------
-// PlexServer
-// ---------------------------------------------------------------------------
+// --- PlexServer ---
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -255,9 +241,7 @@ impl PlexServer {
     }
 }
 
-// ---------------------------------------------------------------------------
-// ServerConfig (custom serde: access_token excluded from serialization)
-// ---------------------------------------------------------------------------
+// --- ServerConfig (custom serde: access_token excluded from serialization) ---
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServerConfig {
@@ -325,9 +309,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
     }
 }
 
-// ---------------------------------------------------------------------------
-// PlayerState
-// ---------------------------------------------------------------------------
+// --- PlayerState ---
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -351,9 +333,7 @@ impl Default for PlayerState {
     }
 }
 
-// ---------------------------------------------------------------------------
-// PlaybackConfig
-// ---------------------------------------------------------------------------
+// --- PlaybackConfig ---
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -385,9 +365,7 @@ impl Default for PlaybackConfig {
     }
 }
 
-// ---------------------------------------------------------------------------
-// SearchResult
-// ---------------------------------------------------------------------------
+// --- SearchResult ---
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -406,9 +384,7 @@ pub struct SearchResult {
     pub score: f64,
 }
 
-// ---------------------------------------------------------------------------
-// ArtistInfo (serializable artist for frontend)
-// ---------------------------------------------------------------------------
+// --- ArtistInfo ---
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -419,9 +395,7 @@ pub struct ArtistInfo {
     pub art_url: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// GenreSource
-// ---------------------------------------------------------------------------
+// --- GenreSource ---
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -431,9 +405,7 @@ pub enum GenreSource {
     Custom,
 }
 
-// ---------------------------------------------------------------------------
-// Settings
-// ---------------------------------------------------------------------------
+// --- Settings ---
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -475,9 +447,7 @@ impl Settings {
     }
 }
 
-// ---------------------------------------------------------------------------
-// LibrarySection
-// ---------------------------------------------------------------------------
+// --- LibrarySection ---
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -487,9 +457,7 @@ pub struct LibrarySection {
     pub section_type: String,
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {

@@ -41,7 +41,7 @@ async fn auto_sync_loop(
             continue;
         }
 
-        // Time to sync — grab the sync engine (scoped to drop guard before await)
+        // Acquire sync engine lock. Scoped so the guard drops before the await point.
         let (cache, client) = {
             let engine_lock = sync_engine.lock();
             let Some(engine) = engine_lock.as_ref() else {
@@ -50,7 +50,7 @@ async fn auto_sync_loop(
             (engine.cache.clone(), engine.client.clone())
         };
 
-        // Get library key
+        // Retrieve library key from stored config
         let Ok(token_store) = ramus_core::plex::token_store::TokenStore::new() else {
             continue;
         };

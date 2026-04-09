@@ -16,12 +16,12 @@ pub async fn play_tracks(
     tracks: Vec<Track>,
     start_at: usize,
 ) -> CmdResult<()> {
-    // Stop the previous session before loading a new queue.
+    // Report previous session stopped before loading a new queue
     state.session_reporter.playback_stopped();
 
     state.player.load_queue(tracks, start_at);
 
-    // Emit playback state so the UI updates
+    // Emit playback state for UI update
     let player_state = state.player.state();
     emit_playback_state(
         &app,
@@ -32,9 +32,9 @@ pub async fn play_tracks(
         },
     );
 
-    // Start session for the new track. This is the authoritative call —
-    // the mpv on_playlist_pos_change callback may not fire when the new
-    // queue also starts at index 0 (playlist-pos doesn't change).
+    // Authoritative track_started call. The mpv on_playlist_pos_change
+    // callback may not fire when the new queue also starts at index 0
+    // (playlist-pos doesn't change).
     if let Some(ref track) = player_state.current_track {
         state
             .session_reporter
@@ -136,13 +136,13 @@ pub async fn fetch_lyrics(
     state: State<'_, AppState>,
     rating_key: String,
 ) -> CmdResult<Option<LyricsResult>> {
-    // Try Plex first: fetch lyrics stream info
+    // Try Plex lyrics first, fall back to LRCLIB
     match state.client.fetch_lyrics_stream(&rating_key).await {
         Ok(Some(stream)) => {
             if let Some(ref key) = stream.key {
                 if lyrics::validate_lyrics_path(key) {
                     if let Ok(data) = state.client.download_lyrics_data(key).await {
-                        // Determine format from key extension
+                        // Parse based on key extension
                         if key.ends_with(".lrc") {
                             let text = String::from_utf8_lossy(&data);
                             let lines = lyrics::parse_lrc(&text);
@@ -154,7 +154,6 @@ pub async fn fetch_lyrics(
                                 }));
                             }
                         } else {
-                            // Try JSON format
                             if let Some(lines) = lyrics::parse_plex_json_lyrics(&data) {
                                 if !lines.is_empty() {
                                     let is_synced = lines.iter().any(|l| l.timestamp.is_some());
@@ -174,7 +173,7 @@ pub async fn fetch_lyrics(
         Err(_) => {}
     }
 
-    // Fall back to LRCLIB
+    // LRCLIB fallback
     let player_state = state.player.state();
     if let Some(ref track) = player_state.current_track {
         if let Some(result) = lyrics::fetch_from_lrclib(
@@ -198,7 +197,7 @@ pub async fn get_waveform(
     state: State<'_, AppState>,
     rating_key: String,
 ) -> CmdResult<Option<Vec<f32>>> {
-    // Fetch audio stream (type 2) to get stream ID for levels endpoint
+    // Fetch audio stream to get stream ID for the levels endpoint
     let stream = match state.client.fetch_audio_stream(&rating_key).await {
         Ok(Some(s)) => s,
         _ => return Ok(None),

@@ -30,7 +30,7 @@ where
 pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeResponse> {
     let genre_album_sets = with_cache(&state, |db| db.genre_album_sets())?;
 
-    // Deduplicated total: union of all album IDs across all genres
+    // Deduplicated total: union of all album IDs across genres
     let total_album_count = {
         let mut all: std::collections::HashSet<i64> = std::collections::HashSet::new();
         for ids in genre_album_sets.values() {
@@ -43,7 +43,7 @@ pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeRe
     let tree = if let Some(mapper) = mapper.as_ref() {
         mapper.build_display_tree(&genre_album_sets)
     } else {
-        // Fallback: flat genre list when mapper isn't loaded
+        // Fallback: flat genre list when mapper is not loaded
         let mut nodes: Vec<GenreNode> = genre_album_sets
             .iter()
             .map(|(name, ids)| GenreNode {
@@ -67,7 +67,7 @@ pub async fn get_albums_for_genre(
     state: State<'_, AppState>,
     genre: String,
 ) -> CmdResult<Vec<Album>> {
-    // Expand parent genres to include all descendants
+    // Expand parent genre to include all descendant genres
     let mapper = state.genre_mapper.read();
     let names: Vec<String> = if let Some(mapper) = mapper.as_ref() {
         if let Some(expanded) = mapper.expand_genre(&genre) {
@@ -147,11 +147,11 @@ pub async fn get_all_artists(state: State<'_, AppState>) -> CmdResult<Vec<Artist
 
 #[tauri::command]
 pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeResponse> {
-    // Get favourite album IDs, then build genre sets restricted to favourites
+    // Build genre sets restricted to favourite albums
     let fav_ids = with_cache(&state, |db| db.album_ids_for_favourites())?;
     let all_sets = with_cache(&state, |db| db.genre_album_sets())?;
 
-    // Filter genre album sets to only include favourite album IDs
+    // Intersect genre album sets with favourite IDs
     let filtered: std::collections::HashMap<String, std::collections::HashSet<i64>> = all_sets
         .into_iter()
         .filter_map(|(genre, ids)| {
@@ -165,7 +165,7 @@ pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<G
         })
         .collect();
 
-    // Deduplicated total: union of all favourite album IDs that appear in any genre
+    // Deduplicated total: union of favourite album IDs across genres
     let total_album_count = {
         let mut all: std::collections::HashSet<i64> = std::collections::HashSet::new();
         for ids in filtered.values() {
@@ -259,7 +259,7 @@ pub async fn get_art_url(
 ) -> CmdResult<String> {
     let size = size.unwrap_or(300);
 
-    // Fast path: check disk cache
+    // Check disk cache first
     {
         let mut cache = state.image_cache.lock();
         if let Some(path) = cache.get(&thumb, size) {
@@ -270,7 +270,7 @@ pub async fn get_art_url(
 
     log::debug!("image cache miss: {thumb} @{size}");
 
-    // Cache miss — download from Plex
+    // Cache miss; download from Plex
     let server_url = state.client.server_url().ok_or("Not connected")?;
     let token = state.client.token().ok_or("Not authenticated")?;
     let url = format!(
@@ -295,7 +295,7 @@ pub async fn get_art_url(
 
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
 
-    // Store in cache (re-check for concurrent download race)
+    // Store in cache (handles concurrent download race internally)
     let path = {
         let mut cache = state.image_cache.lock();
         cache.insert(&thumb, size, &bytes).map_err(|e| e.to_string())?

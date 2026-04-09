@@ -28,7 +28,6 @@ export default function OAuthSignIn({ onSuccess }: Props) {
     }
   }, []);
 
-  // Poll for OAuth completion
   useEffect(() => {
     if (!polling || pinId === null) return;
 
@@ -41,7 +40,7 @@ export default function OAuthSignIn({ onSuccess }: Props) {
           onSuccess();
         }
       } catch {
-        // Keep polling
+        // Poll continues until token is granted or timeout
       }
     }, 2000);
 

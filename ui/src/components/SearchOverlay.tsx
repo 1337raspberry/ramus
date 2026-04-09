@@ -102,7 +102,6 @@ export default function SearchOverlay({ onDismiss }: Props) {
     inputRef.current?.focus();
   }, []);
 
-  // Close dropdown on outside click
   useEffect(() => {
     if (!openMenuId) return;
     const handler = (e: MouseEvent) => {
@@ -114,7 +113,6 @@ export default function SearchOverlay({ onDismiss }: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, [openMenuId]);
 
-  // Debounced search
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!query.trim()) {
@@ -141,7 +139,6 @@ export default function SearchOverlay({ onDismiss }: Props) {
     (result: SearchResult) => {
       onDismiss();
       if (result.kind === "album") {
-        // Open album detail view
         const store = useLibraryStore.getState();
         store.openAlbumDetail({
           ratingKey: result.albumSourceId,
@@ -156,7 +153,6 @@ export default function SearchOverlay({ onDismiss }: Props) {
           lastViewedAt: null,
         });
       } else if (result.trackSourceId) {
-        // Play the individual track
         playTracks([buildTrack(result)], 0).catch(() => {});
       }
     },

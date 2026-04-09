@@ -20,9 +20,9 @@ use crate::events::{
 use crate::mpv_controller::MpvController;
 use crate::session_reporter::ReporterRef;
 
-/// Create an AudioPlayer backed by real libmpv with event callbacks
-/// that emit Tauri events. Returns the player and a deferred
-/// `SessionReporter` slot that must be populated after construction.
+/// Create an AudioPlayer backed by libmpv with Tauri event callbacks.
+/// Returns the player and a deferred `SessionReporter` slot that must
+/// be populated after construction.
 pub fn create_mpv_player(
     app_handle: AppHandle,
     http_client: reqwest::Client,
@@ -34,8 +34,8 @@ pub fn create_mpv_player(
     let app6 = app_handle.clone();
     let app7 = app_handle.clone();
 
-    // We need a reference to the player inside callbacks, but the player
-    // holds the MpvController. Use a shared Arc that we populate after construction.
+    // The player is needed inside callbacks but holds the MpvController.
+    // Use a shared Arc populated after construction to break the cycle.
     let player_ref: Arc<parking_lot::Mutex<Option<Arc<ramus_core::playback::player::AudioPlayer>>>> =
         Arc::new(parking_lot::Mutex::new(None));
     let pr1 = player_ref.clone();
@@ -48,7 +48,7 @@ pub fn create_mpv_player(
     let pr8 = player_ref.clone();
     let pr9 = player_ref.clone();
 
-    // Same deferred pattern for the session reporter.
+    // Deferred session reporter, populated after player construction.
     let reporter_ref: ReporterRef = Arc::new(parking_lot::Mutex::new(None));
     let sr1 = reporter_ref.clone();
     let sr2 = reporter_ref.clone();
@@ -75,7 +75,7 @@ pub fn create_mpv_player(
         })),
         on_playlist_pos_change: Some(Box::new(move |pos| {
             if let Some(ref p) = *pr3.lock() {
-                // Capture previous track before state update for scrobble
+                // Capture previous track before state update for scrobble reporting
                 let prev_track = p.state().current_track.clone();
 
                 p.handle_playlist_pos_change(pos);
@@ -88,12 +88,11 @@ pub fn create_mpv_player(
                         queue_index: state.queue_index,
                     },
                 );
-                // Prefetch upcoming tracks
-                prefetch::trigger(p.clone(), http_client.clone());
+                            prefetch::trigger(p.clone(), http_client.clone());
 
                 // Session reporting for natural track advance only.
-                // When prev == current (same rating_key), this is a load_queue
-                // re-entry — play_tracks already handled track_started.
+                // Same rating_key as previous track indicates a queue reload;
+                // play_tracks already handled track_started in that case.
                 if let Some(ref reporter) = *sr1.lock() {
                     if let Some(ref prev) = prev_track {
                         let same_track = state
@@ -106,8 +105,6 @@ pub fn create_mpv_player(
                                 reporter.track_started(track, &p.play_session_id());
                             }
                         }
-                    } else {
-                        // No previous track (first play) — play_tracks handles this
                     }
                 }
             }
@@ -129,7 +126,6 @@ pub fn create_mpv_player(
                     },
                 );
 
-                // Session reporting
                 if let Some(ref reporter) = *sr2.lock() {
                     if paused {
                         reporter.playback_paused();
@@ -166,7 +162,7 @@ pub fn create_mpv_player(
         })),
         on_idle_active: Some(Box::new(move || {
             if let Some(ref p) = *pr7.lock() {
-                // Scrobble the last playing track before reporting stopped
+                // Scrobble the last playing track before transitioning to stopped
                 if let Some(ref reporter) = *sr3.lock() {
                     if let Some(ref track) = p.state().current_track {
                         reporter.track_ended(track);
@@ -205,7 +201,7 @@ pub fn create_mpv_player(
         Arc::new(mpv),
     ));
 
-    // Wire up the player reference for callbacks
+    // Populate the deferred player reference for callbacks
     *player_ref.lock() = Some(player.clone());
 
     (player, reporter_ref)

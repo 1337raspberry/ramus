@@ -5,9 +5,8 @@ use ramus_core::playback::player::{is_allowed_extension, sanitize_filename, Audi
 
 /// Spawn background prefetch tasks for upcoming tracks in the queue.
 ///
-/// Identifies tracks that need downloading via `player.prefetch_targets()`,
-/// then spawns async download tasks for each. Downloads are saved to the
-/// audio cache directory and registered in the player's LRU cache.
+/// Downloads are saved to the audio cache directory and registered
+/// in the player's LRU cache.
 pub fn trigger(player: Arc<AudioPlayer>, http_client: reqwest::Client) {
     let targets = player.prefetch_targets();
     if targets.is_empty() {
@@ -20,11 +19,11 @@ pub fn trigger(player: Arc<AudioPlayer>, http_client: reqwest::Client) {
     };
 
     tauri::async_runtime::spawn(async move {
-        // Brief delay to let the server finish setting up the current stream
+        // Brief delay so the server finishes setting up the current stream
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
         for (track_id, url) in targets {
-            // Re-check cache in case another trigger already downloaded this
+            // Skip if another prefetch trigger already cached this track
             let cached = player.with_cache(|c| c.get(&track_id).is_some());
             if cached {
                 continue;
@@ -45,7 +44,7 @@ async fn download_and_cache(
     track_id: &str,
     url: &str,
 ) -> Result<(), String> {
-    // Double-check it wasn't cached while we were waiting to start
+    // Verify the item was not cached concurrently
     let already_cached = player.with_cache(|c| c.get(track_id).is_some());
     if already_cached {
         return Ok(());
@@ -56,7 +55,6 @@ async fn download_and_cache(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Determine file extension from URL path
     let ext = url::Url::parse(url)
         .ok()
         .and_then(|u| {
@@ -71,7 +69,6 @@ async fn download_and_cache(
     let filename = format!("{}_{}.{}", sanitize_filename(track_id), track_id.len(), ext);
     let file_path = cache_dir.join(&filename);
 
-    // Download
     let response = client
         .get(url)
         .send()
@@ -85,19 +82,18 @@ async fn download_and_cache(
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
     let size = bytes.len() as u64;
 
-    // Write to disk
     tokio::fs::write(&file_path, &bytes)
         .await
         .map_err(|e| e.to_string())?;
 
-    // Register in cache and evict old entries
+    // Register in LRU cache and evict over-limit entries
     let current_id = player.current_track_id();
     let evicted = player.with_cache(|cache| {
         cache.insert(track_id.to_string(), file_path, size);
         cache.evict_if_needed(current_id.as_deref())
     });
 
-    // Clean up evicted files from disk
+    // Remove evicted files from disk
     for path in evicted {
         let _ = tokio::fs::remove_file(&path).await;
     }

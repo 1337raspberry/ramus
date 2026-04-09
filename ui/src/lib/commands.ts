@@ -16,7 +16,7 @@ import type {
 } from "./types";
 import type { VibrantPalette } from "./vibrantColor";
 
-// -- Auth --
+// --- Auth ---
 
 export const startOauth = () => invoke<string>("start_oauth");
 
@@ -43,7 +43,7 @@ export const isAuthenticated = () => invoke<boolean>("is_authenticated");
 
 export const logout = () => invoke<void>("logout");
 
-// -- Library --
+// --- Library ---
 
 export const getGenreTree = () => invoke<GenreTreeResponse>("get_genre_tree");
 
@@ -99,7 +99,7 @@ export const setAlbumPalette = (sourceId: string, palette: VibrantPalette) =>
 
 export const getCacheStats = () => invoke<CacheStats>("get_cache_stats");
 
-// -- Playback --
+// --- Playback ---
 
 export const playTracks = (tracks: Track[], startAt: number) =>
   invoke<void>("play_tracks", { tracks, startAt });
@@ -135,12 +135,12 @@ export const fetchLyrics = (ratingKey: string) =>
 export const getWaveform = (ratingKey: string) =>
   invoke<number[] | null>("get_waveform", { ratingKey });
 
-// -- Search --
+// --- Search ---
 
 export const search = (query: string, limit?: number) =>
   invoke<SearchResult[]>("search", { query, limit });
 
-// -- Sync --
+// --- Sync ---
 
 export const startFullSync = () => invoke<void>("start_full_sync");
 
@@ -148,7 +148,7 @@ export const startIncrementalSync = () => invoke<void>("start_incremental_sync")
 
 export const startGenreSync = () => invoke<void>("start_genre_sync");
 
-// -- Settings --
+// --- Settings ---
 
 export const getSettings = () => invoke<Settings>("get_settings");
 

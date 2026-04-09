@@ -21,11 +21,11 @@ export type SidebarMode = "genres" | "favourites" | "artists";
 export type AlbumSortOrder = "alphabetical" | "latestAdded" | "recentlyPlayed" | "random";
 
 interface LibraryState {
-  // Sidebar
+  // --- Sidebar ---
   sidebarMode: SidebarMode;
   setSidebarMode: (mode: SidebarMode) => void;
 
-  // Genre tree
+  // --- Genre Tree ---
   genreTree: GenreNode[];
   totalAlbumCount: number;
   expandedGenreIds: Set<string>;
@@ -37,13 +37,13 @@ interface LibraryState {
   collapseAll: () => void;
   selectGenre: (node: GenreNode) => void;
 
-  // Artists
+  // --- Artists ---
   artists: ArtistInfo[];
   selectedArtistId: string | null;
   loadArtists: () => Promise<void>;
   selectArtist: (sourceId: string) => void;
 
-  // Albums
+  // --- Albums ---
   albums: Album[];
   albumSortOrder: AlbumSortOrder;
   setAlbumSortOrder: (order: AlbumSortOrder) => void;
@@ -55,24 +55,24 @@ interface LibraryState {
   loadAlbumsForYear: (year: number) => Promise<void>;
   shuffleAlbums: () => void;
 
-  // Selected album & tracks
+  // --- Selected Album & Tracks ---
   selectedAlbum: Album | null;
   tracks: Track[];
   selectAlbum: (album: Album) => Promise<void>;
   clearSelectedAlbum: () => void;
 
-  // Suggestion
+  // --- Suggestion ---
   suggestion: Album | null;
   loadSuggestion: () => Promise<void>;
   clearSuggestion: () => void;
 
-  // Album detail view
+  // --- Album Detail ---
   detailAlbum: Album | null;
   detailTracks: Track[];
   openAlbumDetail: (album: Album) => Promise<void>;
   closeAlbumDetail: () => void;
 
-  // Actions
+  // --- Actions ---
   toggleAlbumFav: (album: Album) => Promise<void>;
   toggleTrackFav: (track: Track) => Promise<void>;
   playAlbum: (album: Album, startAt?: number) => Promise<void>;
@@ -112,7 +112,7 @@ function collectAllIds(nodes: GenreNode[]): Set<string> {
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
-  // Sidebar
+  // --- Sidebar ---
   sidebarMode: "genres",
   setSidebarMode: (mode) => {
     set({ sidebarMode: mode, suggestion: null, detailAlbum: null });
@@ -129,7 +129,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
   },
 
-  // Genre tree
+  // --- Genre Tree ---
   genreTree: [],
   totalAlbumCount: 0,
   expandedGenreIds: new Set(),
@@ -168,7 +168,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   selectGenre: (node) => {
     set({ selectedGenreId: node.id, suggestion: null, detailAlbum: null });
     if (get().sidebarMode === "favourites") {
-      // Load albums for genre then filter to favourites only
       getAlbumsForGenre(node.name)
         .then((albums) => {
           const favs = albums.filter((a) => a.isFavourite);
@@ -180,7 +179,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
   },
 
-  // Artists
+  // --- Artists ---
   artists: [],
   selectedArtistId: null,
 
@@ -188,9 +187,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     try {
       const artists = await getAllArtists();
       set({ artists });
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   selectArtist: (sourceId) => {
@@ -198,7 +195,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     get().loadAlbumsForArtist(sourceId);
   },
 
-  // Albums
+  // --- Albums ---
   albums: [],
   albumSortOrder: (localStorage.getItem("ramus-album-sort") as AlbumSortOrder) || "alphabetical",
 
@@ -214,36 +211,28 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     try {
       const albums = await getAlbumsForGenre(genre);
       set((state) => ({ albums: sortAlbums(albums, state.albumSortOrder) }));
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   loadAllAlbums: async () => {
     try {
       const albums = await getAllAlbums();
       set((state) => ({ albums: sortAlbums(albums, state.albumSortOrder) }));
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   loadFavouriteAlbums: async () => {
     try {
       const albums = await getFavouriteAlbums();
       set((state) => ({ albums: sortAlbums(albums, state.albumSortOrder) }));
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   loadAlbumsForArtist: async (sourceId) => {
     try {
       const albums = await getAlbumsForArtist(sourceId);
       set((state) => ({ albums: sortAlbums(albums, state.albumSortOrder) }));
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   loadAlbumsForArtistName: async (name) => {
@@ -254,9 +243,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         detailAlbum: null,
         suggestion: null,
       }));
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   loadAlbumsForYear: async (year) => {
@@ -267,28 +254,24 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         detailAlbum: null,
         suggestion: null,
       }));
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   shuffleAlbums: () => set((state) => ({ albums: sortAlbums(state.albums, "random") })),
 
-  // Suggestion
+  // --- Suggestion ---
   suggestion: null,
 
   loadSuggestion: async () => {
     try {
       const album = await getRandomAlbum();
       if (album) set({ suggestion: album });
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   clearSuggestion: () => set({ suggestion: null }),
 
-  // Album detail view
+  // --- Album Detail ---
   detailAlbum: null,
   detailTracks: [],
 
@@ -304,7 +287,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   closeAlbumDetail: () => set({ detailAlbum: null, detailTracks: [] }),
 
-  // Selected album & tracks
+  // --- Selected Album & Tracks ---
   selectedAlbum: null,
   tracks: [],
 
@@ -320,7 +303,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   clearSelectedAlbum: () => set({ selectedAlbum: null, tracks: [] }),
 
-  // Actions
+  // --- Actions ---
   toggleAlbumFav: async (album) => {
     const next = !album.isFavourite;
     try {
@@ -338,9 +321,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             ? { ...state.detailAlbum, isFavourite: next }
             : state.detailAlbum,
       }));
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   toggleTrackFav: async (track) => {
@@ -355,9 +336,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t,
         ),
       }));
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   playAlbum: async (album, startAt = 0) => {
@@ -368,9 +347,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         set({ selectedAlbum: album, tracks });
       }
       await playTracks(tracks, startAt);
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   playRandomAlbum: async () => {
@@ -380,8 +357,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         await get().selectAlbum(album);
         await get().playAlbum(album);
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 }));

@@ -8,9 +8,7 @@ use parking_lot::Mutex;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
-// ---------------------------------------------------------------------------
-// Token Keys
-// ---------------------------------------------------------------------------
+// --- Token Keys ---
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKey {
@@ -27,9 +25,7 @@ impl TokenKey {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
+// --- Errors ---
 
 #[derive(Debug, thiserror::Error)]
 pub enum TokenStoreError {
@@ -47,9 +43,7 @@ pub enum TokenStoreError {
     Json(#[from] serde_json::Error),
 }
 
-// ---------------------------------------------------------------------------
-// TokenStore
-// ---------------------------------------------------------------------------
+// --- TokenStore ---
 
 /// Encrypted file-based token storage.
 ///
@@ -203,9 +197,7 @@ impl TokenStore {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Platform config directory
-// ---------------------------------------------------------------------------
+// --- Platform config directory ---
 
 fn default_config_dir() -> Result<PathBuf, TokenStoreError> {
     directories::ProjectDirs::from("com", "raspsoft", "ramus")
@@ -218,9 +210,7 @@ pub fn config_dir() -> Result<PathBuf, TokenStoreError> {
     default_config_dir()
 }
 
-// ---------------------------------------------------------------------------
-// Hardware UUID (platform-specific)
-// ---------------------------------------------------------------------------
+// --- Hardware UUID (platform-specific) ---
 
 #[cfg(target_os = "macos")]
 fn hardware_uuid() -> Result<String, TokenStoreError> {
@@ -300,9 +290,7 @@ fn hardware_uuid() -> Result<String, TokenStoreError> {
     Err(TokenStoreError::NoHardwareUUID)
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {

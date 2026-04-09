@@ -38,7 +38,7 @@ pub async fn start_full_sync(
     let engine_lock = state.sync_engine.lock();
     let engine = engine_lock.as_ref().ok_or("Sync engine not initialized")?;
 
-    // Clone the Arc'd internals we need for the spawned task
+    // Clone internals needed for the spawned task
     let cache = engine.cache.clone();
     let client = engine.client.clone();
     drop(engine_lock);
