@@ -119,48 +119,6 @@ def parse_yaml_tree(content: str) -> list[dict]:
     return root_children
 
 
-def apply_overrides(tree: list[dict], overrides_path: str) -> list[dict]:
-    """Apply manual overrides from genre_overrides.json.
-
-    Supported keys:
-      force_remove: list of genre names to delete (case-insensitive)
-      rename: dict of old_name -> new_name
-      force_description: dict of name -> description
-    """
-    if not os.path.exists(overrides_path):
-        return tree
-
-    with open(overrides_path) as f:
-        overrides = json.load(f)
-
-    if not any(overrides.get(k) for k in ("force_remove", "rename", "force_description")):
-        return tree
-
-    print(f"Applying overrides from {os.path.basename(overrides_path)}...")
-
-    remove_set = {n.lower() for n in overrides.get("force_remove", [])}
-    rename_map = {k.lower(): v for k, v in overrides.get("rename", {}).items()}
-    desc_map = {k.lower(): v for k, v in overrides.get("force_description", {}).items()}
-
-    def process(nodes: list[dict]) -> list[dict]:
-        result = []
-        for n in nodes:
-            key = n["name"].lower()
-            if key in remove_set:
-                print(f"  Removed: {n['name']}")
-                continue
-            if key in rename_map:
-                print(f"  Renamed: {n['name']} → {rename_map[key]}")
-                n["name"] = rename_map[key]
-            if key in desc_map:
-                n["short_summary"] = desc_map[key]
-            if n.get("children"):
-                n["children"] = process(n["children"])
-            result.append(n)
-        return result
-
-    return process(tree)
-
 
 def count_genres(nodes: list[dict]) -> int:
     """Count total genres in the tree."""
@@ -223,10 +181,6 @@ def main():
     # Parse into tree
     print("Parsing genre tree...")
     tree = parse_yaml_tree(content)
-
-    # Apply overrides
-    overrides_path = os.path.join(script_dir, "genre_overrides.json")
-    tree = apply_overrides(tree, overrides_path)
 
     total = count_genres(tree)
     print(f"Final tree: {len(tree)} top-level categories, {total} total genres")
