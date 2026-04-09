@@ -12,11 +12,7 @@ interface FlatRow {
   hasChildren: boolean;
 }
 
-function flattenTree(
-  nodes: GenreNode[],
-  expanded: Set<string>,
-  depth = 0
-): FlatRow[] {
+function flattenTree(nodes: GenreNode[], expanded: Set<string>, depth = 0): FlatRow[] {
   const rows: FlatRow[] = [];
   for (const node of nodes) {
     const hasChildren = !!node.children?.length;
@@ -51,7 +47,7 @@ export default function GenreTreeView() {
 
   const rows = useMemo(
     () => flattenTree(genreTree, expandedGenreIds),
-    [genreTree, expandedGenreIds]
+    [genreTree, expandedGenreIds],
   );
 
   const allExpanded = useMemo(() => {
@@ -177,9 +173,7 @@ export default function GenreTreeView() {
               )}
               <span className="genre-name">{row.node.name}</span>
               {row.node.deduplicatedTotalCount > 0 && (
-                <span className="genre-count">
-                  {row.node.deduplicatedTotalCount}
-                </span>
+                <span className="genre-count">{row.node.deduplicatedTotalCount}</span>
               )}
             </div>
           );

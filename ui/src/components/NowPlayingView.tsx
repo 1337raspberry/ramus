@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
-import { getArtUrl, toggleAlbumFavourite, toggleTrackFavourite, setAlbumPalette } from "../lib/commands";
+import {
+  getArtUrl,
+  toggleAlbumFavourite,
+  toggleTrackFavourite,
+  setAlbumPalette,
+} from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import { formatCodec } from "../lib/format";
 import WaveformSeekBar from "./WaveformSeekBar";
@@ -11,8 +16,15 @@ import LyricsView from "./LyricsView";
 import QueueView from "./QueueView";
 import { togglePlayPause, nextTrack, previousTrack } from "../lib/commands";
 import {
-  IconStarFilled, IconStarEmpty, IconMusicNote, IconEqualizer,
-  IconPrevious, IconPause, IconPlay, IconNext, IconChevronDown,
+  IconStarFilled,
+  IconStarEmpty,
+  IconMusicNote,
+  IconEqualizer,
+  IconPrevious,
+  IconPause,
+  IconPlay,
+  IconNext,
+  IconChevronDown,
 } from "./Icons";
 
 interface NowPlayingProps {
@@ -22,7 +34,12 @@ interface NowPlayingProps {
   onToggleQueue: () => void;
 }
 
-export default function NowPlayingView({ onOpenEQ, panelHeight, showQueue, onToggleQueue }: NowPlayingProps) {
+export default function NowPlayingView({
+  onOpenEQ,
+  panelHeight,
+  showQueue,
+  onToggleQueue,
+}: NowPlayingProps) {
   const track = usePlaybackStore((s) => s.currentTrack);
   const status = usePlaybackStore((s) => s.status);
   const lyrics = usePlaybackStore((s) => s.lyrics);
@@ -49,37 +66,45 @@ export default function NowPlayingView({ onOpenEQ, panelHeight, showQueue, onTog
     setArtSrc(null);
     let cancelled = false;
     getArtUrl(thumb, 600)
-      .then((url) => { if (!cancelled) setArtSrc(url); })
-      .catch(() => { if (!cancelled) setArtErr(true); });
-    return () => { cancelled = true; };
+      .then((url) => {
+        if (!cancelled) setArtSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setArtErr(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [thumb]);
 
-  const handleArtLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    if (lastAccentThumb.current === thumb) return;
-    lastAccentThumb.current = thumb;
-    const capturedThumb = thumb;
-    extractPalette(img).then((palette) => {
-      if (!palette || lastAccentThumb.current !== capturedThumb) return;
-      const [r, g, b] = accentFromPalette(palette);
-      document.documentElement.style.setProperty("--accent-r", String(r));
-      document.documentElement.style.setProperty("--accent-g", String(g));
-      document.documentElement.style.setProperty("--accent-b", String(b));
-      const blurColors = blurColorsFromPalette(palette);
-      usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
-      if (track?.albumKey) {
-        setAlbumPalette(track.albumKey, palette).catch(() => {});
-      }
-    });
-  }, [thumb, track?.albumKey]);
+  const handleArtLoad = useCallback(
+    (e: React.SyntheticEvent<HTMLImageElement>) => {
+      const img = e.currentTarget;
+      if (lastAccentThumb.current === thumb) return;
+      lastAccentThumb.current = thumb;
+      const capturedThumb = thumb;
+      extractPalette(img).then((palette) => {
+        if (!palette || lastAccentThumb.current !== capturedThumb) return;
+        const [r, g, b] = accentFromPalette(palette);
+        document.documentElement.style.setProperty("--accent-r", String(r));
+        document.documentElement.style.setProperty("--accent-g", String(g));
+        document.documentElement.style.setProperty("--accent-b", String(b));
+        const blurColors = blurColorsFromPalette(palette);
+        usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
+        if (track?.albumKey) {
+          setAlbumPalette(track.albumKey, palette).catch(() => {});
+        }
+      });
+    },
+    [thumb, track?.albumKey],
+  );
 
   if (!track) return null;
 
   const albumTitle = track.albumTitle;
   const artistName = track.artistName;
   const hasTrackArtist =
-    track.trackArtist &&
-    track.trackArtist.toLowerCase() !== track.artistName.toLowerCase();
+    track.trackArtist && track.trackArtist.toLowerCase() !== track.artistName.toLowerCase();
   const year = nowPlayingAlbum?.year;
   const studio = nowPlayingAlbum?.studio;
   const codec = formatCodec(track.codec, track.bitrate);
@@ -118,122 +143,122 @@ export default function NowPlayingView({ onOpenEQ, panelHeight, showQueue, onTog
     <div className="now-playing">
       {/* Visible area — exactly fills the panel */}
       <div className="np-visible" style={panelHeight ? { height: panelHeight } : undefined}>
-      {/* === TOP: Artist, Album, Year === */}
-      <div className="np-top">
-        <div className="np-header">
-          <div className="np-artist np-clickable" onClick={handleArtistClick}>
-            {hasTrackArtist
-              ? `${artistName} (${track.trackArtist})`
-              : artistName}
-          </div>
-          <div className="np-album-row">
-            <span className="np-album-title np-clickable" onClick={handleAlbumClick}>{albumTitle}</span>
-            <button
-              className={`np-fav-btn${albumFav ? " active" : ""}`}
-              onClick={handleAlbumFavToggle}
-            >
-              {albumFav ? <IconStarFilled /> : <IconStarEmpty />}
-            </button>
-          </div>
-          {year && <div className="np-year np-clickable" onClick={handleYearClick}>{year}</div>}
-        </div>
-      </div>
-
-      {/* === MIDDLE: Art, track, waveform, transport === */}
-      <div className="np-middle">
-        <div className="np-art-wrapper">
-          <div
-            className="np-art-container"
-            onClick={toggleLyrics}
-          >
-            {artSrc && !artErr ? (
-              <img
-                className="np-art"
-                src={artSrc}
-                alt={albumTitle}
-                crossOrigin="anonymous"
-                onLoad={handleArtLoad}
-                onError={() => setArtErr(true)}
-              />
-            ) : (
-              <div className="np-art-placeholder"><IconMusicNote /></div>
-            )}
-            {showLyrics && (
-              <div className="np-lyrics-overlay">
-                {lyrics ? (
-                  <LyricsView
-                    lyrics={lyrics}
-                    isPinned={lyricsPinned}
-                    onTogglePin={toggleLyricsPinned}
-                    onSeek={seek}
-                    onDismiss={toggleLyrics}
-                  />
-                ) : lyricsLoading ? (
-                  <div className="lyrics-loading">loading lyrics...</div>
-                ) : (
-                  <div className="lyrics-empty">No lyrics available</div>
-                )}
+        {/* === TOP: Artist, Album, Year === */}
+        <div className="np-top">
+          <div className="np-header">
+            <div className="np-artist np-clickable" onClick={handleArtistClick}>
+              {hasTrackArtist ? `${artistName} (${track.trackArtist})` : artistName}
+            </div>
+            <div className="np-album-row">
+              <span className="np-album-title np-clickable" onClick={handleAlbumClick}>
+                {albumTitle}
+              </span>
+              <button
+                className={`np-fav-btn${albumFav ? " active" : ""}`}
+                onClick={handleAlbumFavToggle}
+              >
+                {albumFav ? <IconStarFilled /> : <IconStarEmpty />}
+              </button>
+            </div>
+            {year && (
+              <div className="np-year np-clickable" onClick={handleYearClick}>
+                {year}
               </div>
             )}
           </div>
         </div>
 
-        <VolumeSlider value={volume} onChange={changeVolume} />
-
-        <div className="np-track-row">
-          <span className="np-track-title">{track.title}</span>
-          {onOpenEQ && (
-            <button className="np-eq-btn" onClick={onOpenEQ} title="Equalizer">
-              <IconEqualizer />
-            </button>
-          )}
-          <button
-            className={`np-fav-btn${trackFav ? " active" : ""}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleTrackFavToggle();
-            }}
-          >
-            {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
-          </button>
-        </div>
-
-        <WaveformSeekBar />
-
-        <div className="np-transport">
-          <button className="np-transport-btn" onClick={() => previousTrack()}>
-            <IconPrevious />
-          </button>
-          <button
-            className="np-transport-btn np-play-btn"
-            onClick={() => togglePlayPause()}
-          >
-            {status === "playing" ? <IconPause /> : <IconPlay />}
-          </button>
-          <button className="np-transport-btn" onClick={() => nextTrack()}>
-            <IconNext />
-          </button>
-        </div>
-      </div>
-
-      {/* === BOTTOM: Genres, studio/codec, queue chevron === */}
-      <div className="np-bottom">
-        <div className="np-footer">
-          <FlowLayout genres={currentGenres} onGenreClick={handleGenreClick} />
-          {(studio || codec) && (
-            <div className="np-meta-row">
-              {studio && <span className="np-studio">{studio}</span>}
-              {codec && <span className="np-format">{codec}</span>}
+        {/* === MIDDLE: Art, track, waveform, transport === */}
+        <div className="np-middle">
+          <div className="np-art-wrapper">
+            <div className="np-art-container" onClick={toggleLyrics}>
+              {artSrc && !artErr ? (
+                <img
+                  className="np-art"
+                  src={artSrc}
+                  alt={albumTitle}
+                  crossOrigin="anonymous"
+                  onLoad={handleArtLoad}
+                  onError={() => setArtErr(true)}
+                />
+              ) : (
+                <div className="np-art-placeholder">
+                  <IconMusicNote />
+                </div>
+              )}
+              {showLyrics && (
+                <div className="np-lyrics-overlay">
+                  {lyrics ? (
+                    <LyricsView
+                      lyrics={lyrics}
+                      isPinned={lyricsPinned}
+                      onTogglePin={toggleLyricsPinned}
+                      onSeek={seek}
+                      onDismiss={toggleLyrics}
+                    />
+                  ) : lyricsLoading ? (
+                    <div className="lyrics-loading">loading lyrics...</div>
+                  ) : (
+                    <div className="lyrics-empty">No lyrics available</div>
+                  )}
+                </div>
+              )}
             </div>
-          )}
+          </div>
+
+          <VolumeSlider value={volume} onChange={changeVolume} />
+
+          <div className="np-track-row">
+            <span className="np-track-title">{track.title}</span>
+            {onOpenEQ && (
+              <button className="np-eq-btn" onClick={onOpenEQ} title="Equalizer">
+                <IconEqualizer />
+              </button>
+            )}
+            <button
+              className={`np-fav-btn${trackFav ? " active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleTrackFavToggle();
+              }}
+            >
+              {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
+            </button>
+          </div>
+
+          <WaveformSeekBar />
+
+          <div className="np-transport">
+            <button className="np-transport-btn" onClick={() => previousTrack()}>
+              <IconPrevious />
+            </button>
+            <button className="np-transport-btn np-play-btn" onClick={() => togglePlayPause()}>
+              {status === "playing" ? <IconPause /> : <IconPlay />}
+            </button>
+            <button className="np-transport-btn" onClick={() => nextTrack()}>
+              <IconNext />
+            </button>
+          </div>
         </div>
-        <button
-          className={`np-queue-toggle${showQueue ? " expanded" : ""}`}
-          onClick={onToggleQueue}
-        >
-          <IconChevronDown />
-        </button>
-      </div>
+
+        {/* === BOTTOM: Genres, studio/codec, queue chevron === */}
+        <div className="np-bottom">
+          <div className="np-footer">
+            <FlowLayout genres={currentGenres} onGenreClick={handleGenreClick} />
+            {(studio || codec) && (
+              <div className="np-meta-row">
+                {studio && <span className="np-studio">{studio}</span>}
+                {codec && <span className="np-format">{codec}</span>}
+              </div>
+            )}
+          </div>
+          <button
+            className={`np-queue-toggle${showQueue ? " expanded" : ""}`}
+            onClick={onToggleQueue}
+          >
+            <IconChevronDown />
+          </button>
+        </div>
       </div>
 
       {/* === Queue: toggled by chevron === */}

@@ -47,9 +47,7 @@ export default function LibraryPicker({ server, onSelect }: Props) {
           >
             <span className="library-icon">{"\uD83C\uDFB5"}</span>
             <span className="library-name">{lib.title}</span>
-            {selectedKey === lib.key && (
-              <span className="library-check">{"\u2713"}</span>
-            )}
+            {selectedKey === lib.key && <span className="library-check">{"\u2713"}</span>}
           </div>
         ))}
       </div>

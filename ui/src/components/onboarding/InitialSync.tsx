@@ -33,10 +33,7 @@ export default function InitialSync({ onComplete, onSkip }: Props) {
     startFullSync().catch(() => setSyncing(false));
   };
 
-  const fraction =
-    progress && progress.total > 0
-      ? progress.current / progress.total
-      : 0;
+  const fraction = progress && progress.total > 0 ? progress.current / progress.total : 0;
 
   const phaseLabel = progress
     ? {
@@ -60,10 +57,7 @@ export default function InitialSync({ onComplete, onSkip }: Props) {
       {syncing && progress && (
         <div className="sync-progress-container">
           <div className="sync-progress-bar-bg">
-            <div
-              className="sync-progress-bar-fill"
-              style={{ width: `${fraction * 100}%` }}
-            />
+            <div className="sync-progress-bar-fill" style={{ width: `${fraction * 100}%` }} />
           </div>
           <div className="sync-progress-label">{phaseLabel}</div>
           <div className="sync-progress-detail">{progress.detail}</div>

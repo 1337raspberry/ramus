@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
-import { getArtUrl, getAlbumColors, getAlbumGenres, getTracksForAlbum, setAlbumPalette } from "../lib/commands";
+import {
+  getArtUrl,
+  getAlbumColors,
+  getAlbumGenres,
+  getTracksForAlbum,
+  setAlbumPalette,
+} from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import { formatCodec } from "../lib/format";
 import FlowLayout from "./FlowLayout";
@@ -20,34 +26,55 @@ export default function SuggestionView() {
 
   // Fetch art URL
   useEffect(() => {
-    if (!album?.thumb) { setArtSrc(null); return; }
+    if (!album?.thumb) {
+      setArtSrc(null);
+      return;
+    }
     setArtErr(false);
     setArtSrc(null);
     let cancelled = false;
     getArtUrl(album.thumb, 600)
-      .then((url) => { if (!cancelled) setArtSrc(url); })
-      .catch(() => { if (!cancelled) setArtErr(true); });
-    return () => { cancelled = true; };
+      .then((url) => {
+        if (!cancelled) setArtSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setArtErr(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [album?.thumb]);
 
   // Fetch genres
   useEffect(() => {
-    if (!album) { setGenres([]); return; }
+    if (!album) {
+      setGenres([]);
+      return;
+    }
     // Use album.genres if available, otherwise fetch
     if (album.genres.length) {
       setGenres(album.genres);
     } else {
       let cancelled = false;
       getAlbumGenres(album.ratingKey)
-        .then((g) => { if (!cancelled) setGenres(g); })
-        .catch(() => { if (!cancelled) setGenres([]); });
-      return () => { cancelled = true; };
+        .then((g) => {
+          if (!cancelled) setGenres(g);
+        })
+        .catch(() => {
+          if (!cancelled) setGenres([]);
+        });
+      return () => {
+        cancelled = true;
+      };
     }
   }, [album]);
 
   // Fetch codec from first track
   useEffect(() => {
-    if (!album) { setCodec(null); return; }
+    if (!album) {
+      setCodec(null);
+      return;
+    }
     let cancelled = false;
     getTracksForAlbum(album.ratingKey)
       .then((tracks) => {
@@ -56,7 +83,9 @@ export default function SuggestionView() {
         }
       })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [album]);
 
   // Set ultrablur + accent when nothing is playing (from cached palette/colors)
@@ -76,21 +105,24 @@ export default function SuggestionView() {
       .catch(() => {});
   }, [album, status]);
 
-  const handleArtLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
-    if (status !== "stopped") return;
-    extractPalette(e.currentTarget).then((palette) => {
-      if (!palette) return;
-      const [r, g, b] = accentFromPalette(palette);
-      document.documentElement.style.setProperty("--accent-r", String(r));
-      document.documentElement.style.setProperty("--accent-g", String(g));
-      document.documentElement.style.setProperty("--accent-b", String(b));
-      const blurColors = blurColorsFromPalette(palette);
-      usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
-      if (album) {
-        setAlbumPalette(album.ratingKey, palette).catch(() => {});
-      }
-    });
-  }, [status, album]);
+  const handleArtLoad = useCallback(
+    (e: React.SyntheticEvent<HTMLImageElement>) => {
+      if (status !== "stopped") return;
+      extractPalette(e.currentTarget).then((palette) => {
+        if (!palette) return;
+        const [r, g, b] = accentFromPalette(palette);
+        document.documentElement.style.setProperty("--accent-r", String(r));
+        document.documentElement.style.setProperty("--accent-g", String(g));
+        document.documentElement.style.setProperty("--accent-b", String(b));
+        const blurColors = blurColorsFromPalette(palette);
+        usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
+        if (album) {
+          setAlbumPalette(album.ratingKey, palette).catch(() => {});
+        }
+      });
+    },
+    [status, album],
+  );
 
   const handleClick = useCallback(() => {
     if (!album) return;
@@ -123,12 +155,15 @@ export default function SuggestionView() {
               onError={() => setArtErr(true)}
             />
           ) : (
-            <div className="suggestion-art-placeholder"><IconMusicNote /></div>
+            <div className="suggestion-art-placeholder">
+              <IconMusicNote />
+            </div>
           )}
         </div>
         <div className="suggestion-info">
           <div className="suggestion-title">
-            {album.artistName} &mdash; {album.title}{yearStr}
+            {album.artistName} &mdash; {album.title}
+            {yearStr}
           </div>
         </div>
       </div>

@@ -21,20 +21,28 @@ function ImageCacheRow() {
   const [stats, setStats] = useState<{ entryCount: number; totalSizeBytes: number } | null>(null);
   const refresh = useCallback(() => {
     import("../lib/commands").then(({ getImageCacheStats }) =>
-      getImageCacheStats().then(setStats).catch(() => {})
+      getImageCacheStats()
+        .then(setStats)
+        .catch(() => {}),
     );
   }, []);
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
   const mb = stats ? (stats.totalSizeBytes / 1_048_576).toFixed(1) : "—";
   const count = stats?.entryCount ?? 0;
   return (
     <div className="settings-row">
-      <span>{count} images, {mb} MB</span>
+      <span>
+        {count} images, {mb} MB
+      </span>
       <button
         className="settings-btn"
         onClick={() => {
           import("../lib/commands").then(({ flushImageCache }) =>
-            flushImageCache().then(refresh).catch(() => {})
+            flushImageCache()
+              .then(refresh)
+              .catch(() => {}),
           );
         }}
       >
@@ -85,7 +93,9 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
       setSyncProgress(event.payload);
       if (event.payload.phase === "done") {
         setSyncing(null);
-        getCacheStats().then(setStats).catch(() => {});
+        getCacheStats()
+          .then(setStats)
+          .catch(() => {});
       }
     });
     return () => {
@@ -118,7 +128,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
           });
       }, 300);
     },
-    [settings, showError]
+    [settings, showError],
   );
 
   const handleSync = useCallback(
@@ -136,7 +146,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
         showError(`Sync failed: ${e}`);
       });
     },
-    [showError]
+    [showError],
   );
 
   const handleImportGenres = useCallback(() => {
@@ -229,9 +239,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
             <select
               className="sort-select"
               value={settings.playbackMode}
-              onChange={(e) =>
-                save({ playbackMode: e.target.value as Settings["playbackMode"] })
-              }
+              onChange={(e) => save({ playbackMode: e.target.value as Settings["playbackMode"] })}
             >
               <option value="directPlay">Direct Play</option>
               <option value="transcodeLosslessRemote">Transcode Lossless if Remote</option>
@@ -361,8 +369,8 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
 
           {stats && stats.trackCount > 0 && (
             <div className="settings-stats">
-              {stats.artistCount} artists, {stats.albumCount} albums, {stats.trackCount}{" "}
-              tracks, {stats.genreCount} genres
+              {stats.artistCount} artists, {stats.albumCount} albums, {stats.trackCount} tracks,{" "}
+              {stats.genreCount} genres
             </div>
           )}
 
@@ -377,7 +385,10 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
                   const next = { ...settings, genreSource: "open" as const };
                   setSettings(next);
                   updateSettings(next)
-                    .then(() => { useSettingsStore.setState(next); useLibraryStore.getState().loadGenreTree(); })
+                    .then(() => {
+                      useSettingsStore.setState(next);
+                      useLibraryStore.getState().loadGenreTree();
+                    })
                     .catch((e) => showError(`Failed to switch genre source: ${e}`));
                 }}
               >
@@ -391,7 +402,10 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
                   const next = { ...settings, genreSource: "custom" as const };
                   setSettings(next);
                   updateSettings(next)
-                    .then(() => { useSettingsStore.setState(next); useLibraryStore.getState().loadGenreTree(); })
+                    .then(() => {
+                      useSettingsStore.setState(next);
+                      useLibraryStore.getState().loadGenreTree();
+                    })
                     .catch((e) => showError(`Failed to switch genre source: ${e}`));
                 }}
               >
@@ -413,7 +427,9 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
           {genreWarnings.length > 0 && (
             <div className="settings-genre-warnings">
               {genreWarnings.map((w, i) => (
-                <div key={i} className="settings-genre-warning">{w}</div>
+                <div key={i} className="settings-genre-warning">
+                  {w}
+                </div>
               ))}
             </div>
           )}
@@ -433,10 +449,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
           {/* Account */}
           <div className="settings-section-header">ACCOUNT</div>
 
-          <button
-            className="settings-btn settings-signout"
-            onClick={handleSignOut}
-          >
+          <button className="settings-btn settings-signout" onClick={handleSignOut}>
             Sign Out
           </button>
         </div>

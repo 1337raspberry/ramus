@@ -34,10 +34,18 @@ function TrafficLights() {
         <button className="traffic-light tl-close" title="Close" onClick={() => appWindow.close()}>
           <IconClose size={10} />
         </button>
-        <button className="traffic-light tl-minimize" title="Minimize" onClick={() => appWindow.minimize()}>
+        <button
+          className="traffic-light tl-minimize"
+          title="Minimize"
+          onClick={() => appWindow.minimize()}
+        >
           <IconMinimize size={10} />
         </button>
-        <button className="traffic-light tl-fullscreen" title="Fullscreen" onClick={() => appWindow.toggleMaximize()}>
+        <button
+          className="traffic-light tl-fullscreen"
+          title="Fullscreen"
+          onClick={() => appWindow.toggleMaximize()}
+        >
           <IconFullscreen size={10} />
         </button>
       </div>
@@ -116,56 +124,59 @@ export default function App() {
   }, []);
 
   // Global keyboard shortcuts
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    const mod = e.metaKey || e.ctrlKey;
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
 
-    if (mod && e.key === "f") {
-      e.preventDefault();
-      setShowSearch((s) => !s);
-      return;
-    }
+      if (mod && e.key === "f") {
+        e.preventDefault();
+        setShowSearch((s) => !s);
+        return;
+      }
 
-    if (mod && e.key === "e") {
-      e.preventDefault();
-      setShowEQ((s) => !s);
-      return;
-    }
+      if (mod && e.key === "e") {
+        e.preventDefault();
+        setShowEQ((s) => !s);
+        return;
+      }
 
-    if (mod && e.key === ",") {
-      e.preventDefault();
-      setShowSettings((s) => !s);
-      return;
-    }
+      if (mod && e.key === ",") {
+        e.preventDefault();
+        setShowSettings((s) => !s);
+        return;
+      }
 
-    if (mod && e.shiftKey && e.key === "D") {
-      e.preventDefault();
-      setShowColorDebug((s) => !s);
-      return;
-    }
+      if (mod && e.shiftKey && e.key === "D") {
+        e.preventDefault();
+        setShowColorDebug((s) => !s);
+        return;
+      }
 
-    if (
-      e.key === " " &&
-      !mod &&
-      !(e.target instanceof HTMLInputElement) &&
-      !(e.target instanceof HTMLTextAreaElement)
-    ) {
-      e.preventDefault();
-      togglePlayPause();
-      return;
-    }
+      if (
+        e.key === " " &&
+        !mod &&
+        !(e.target instanceof HTMLInputElement) &&
+        !(e.target instanceof HTMLTextAreaElement)
+      ) {
+        e.preventDefault();
+        togglePlayPause();
+        return;
+      }
 
-    if (mod && e.key === "ArrowRight") {
-      e.preventDefault();
-      nextTrack();
-      return;
-    }
+      if (mod && e.key === "ArrowRight") {
+        e.preventDefault();
+        nextTrack();
+        return;
+      }
 
-    if (mod && e.key === "ArrowLeft") {
-      e.preventDefault();
-      previousTrack();
-      return;
-    }
-  }, [setShowSearch, setShowEQ, setShowSettings]);
+      if (mod && e.key === "ArrowLeft") {
+        e.preventDefault();
+        previousTrack();
+        return;
+      }
+    },
+    [setShowSearch, setShowEQ, setShowSettings],
+  );
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -201,7 +212,9 @@ export default function App() {
       <TrafficLights />
       <ThreeColumnLayout
         sidebar={<SidebarView onOpenSettings={() => setShowSettings(true)} />}
-        content={detailAlbum ? <AlbumDetailView /> : suggestion ? <SuggestionView /> : <AlbumGridView />}
+        content={
+          detailAlbum ? <AlbumDetailView /> : suggestion ? <SuggestionView /> : <AlbumGridView />
+        }
         detail={<DetailColumn onOpenEQ={() => setShowEQ(true)} />}
       />
       {showSearch && <SearchOverlay onDismiss={() => setShowSearch(false)} />}

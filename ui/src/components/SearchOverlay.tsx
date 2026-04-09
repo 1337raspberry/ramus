@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { search as searchCmd, getArtUrl, insertNext, appendToQueue, getTracksForAlbum, playTracks, getQueue } from "../lib/commands";
+import {
+  search as searchCmd,
+  getArtUrl,
+  insertNext,
+  appendToQueue,
+  getTracksForAlbum,
+  playTracks,
+  getQueue,
+} from "../lib/commands";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import type { SearchResult, Track } from "../lib/types";
@@ -17,9 +25,15 @@ function SearchThumb({ artPath, onPlay }: { artPath: string | null; onPlay: () =
     if (!artPath) return;
     let cancelled = false;
     getArtUrl(artPath, 72)
-      .then((url) => { if (!cancelled) setSrc(url); })
-      .catch(() => { if (!cancelled) setErr(true); });
-    return () => { cancelled = true; };
+      .then((url) => {
+        if (!cancelled) setSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setErr(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [artPath]);
 
   return (
@@ -27,7 +41,9 @@ function SearchThumb({ artPath, onPlay }: { artPath: string | null; onPlay: () =
       {src && !err ? (
         <img className="search-thumb" src={src} alt="" onError={() => setErr(true)} />
       ) : (
-        <div className="search-thumb search-thumb-placeholder"><IconMusicNote /></div>
+        <div className="search-thumb search-thumb-placeholder">
+          <IconMusicNote />
+        </div>
       )}
       <button
         className="search-thumb-play"
@@ -144,7 +160,7 @@ export default function SearchOverlay({ onDismiss }: Props) {
         playTracks([buildTrack(result)], 0).catch(() => {});
       }
     },
-    [onDismiss]
+    [onDismiss],
   );
 
   const handlePlay = useCallback(
@@ -160,7 +176,7 @@ export default function SearchOverlay({ onDismiss }: Props) {
       }
       onDismiss();
     },
-    [onDismiss]
+    [onDismiss],
   );
 
   const handlePlayNext = useCallback((result: SearchResult) => {
@@ -216,14 +232,14 @@ export default function SearchOverlay({ onDismiss }: Props) {
         return;
       }
     },
-    [ordered, selectedIndex, onDismiss, handleSelect]
+    [ordered, selectedIndex, onDismiss, handleSelect],
   );
 
   const handleBackdropClick = useCallback(
     (e: React.MouseEvent) => {
       if (e.target === e.currentTarget) onDismiss();
     },
-    [onDismiss]
+    [onDismiss],
   );
 
   const renderRow = (result: SearchResult, index: number) => {
@@ -239,9 +255,7 @@ export default function SearchOverlay({ onDismiss }: Props) {
       >
         <SearchThumb artPath={result.albumArtPath} onPlay={() => handlePlay(result)} />
         <div className="search-row-info">
-          <div className="search-row-title">
-            {isAlbum ? result.albumTitle : result.trackTitle}
-          </div>
+          <div className="search-row-title">{isAlbum ? result.albumTitle : result.trackTitle}</div>
           <div className="search-row-sub">
             {isAlbum
               ? `${result.artistName}${result.year ? ` (${result.year})` : ""}`
@@ -249,7 +263,9 @@ export default function SearchOverlay({ onDismiss }: Props) {
           </div>
         </div>
         {result.isFavourite && (
-          <span className="search-fav-star"><IconStarFilled /></span>
+          <span className="search-fav-star">
+            <IconStarFilled />
+          </span>
         )}
         <div className="search-menu-wrap">
           <button
@@ -293,7 +309,9 @@ export default function SearchOverlay({ onDismiss }: Props) {
         onKeyDown={handleKeyDown}
       >
         <div className="search-input-row">
-          <span className="search-icon"><IconSearch /></span>
+          <span className="search-icon">
+            <IconSearch />
+          </span>
           <input
             ref={inputRef}
             className="search-input"

@@ -24,7 +24,7 @@
   --accent-b: 220;
   --accent: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
   --accent-8: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.08);
-  --accent-20: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.20);
+  --accent-20: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.2);
   --accent-35: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.35);
   --accent-85: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.85);
 
@@ -62,7 +62,8 @@ html {
   background: #111;
 }
 
-body, #root {
+body,
+#root {
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -75,7 +76,10 @@ body, #root {
   -moz-osx-font-smoothing: grayscale;
 }
 
-button, input, select, textarea {
+button,
+input,
+select,
+textarea {
   font-family: inherit;
 }
 
@@ -101,7 +105,8 @@ button, input, select, textarea {
 }
 
 /* Allow selection in text inputs */
-input, textarea {
+input,
+textarea {
   -webkit-user-select: text;
   user-select: text;
 }
@@ -128,10 +133,22 @@ input, textarea {
   transition: background-color 0.8s ease-in-out;
 }
 
-.ultrablur-tl { top: 0; left: 0; }
-.ultrablur-tr { top: 0; right: 0; }
-.ultrablur-bl { bottom: 0; left: 0; }
-.ultrablur-br { bottom: 0; right: 0; }
+.ultrablur-tl {
+  top: 0;
+  left: 0;
+}
+.ultrablur-tr {
+  top: 0;
+  right: 0;
+}
+.ultrablur-bl {
+  bottom: 0;
+  left: 0;
+}
+.ultrablur-br {
+  bottom: 0;
+  right: 0;
+}
 
 /* ----------------------------------------------------------------
    Window drag region
@@ -272,7 +289,9 @@ input, textarea {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
 }
 
 .sidebar-tab:hover {
@@ -448,7 +467,9 @@ input, textarea {
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s, transform 0.15s;
+  transition:
+    opacity 0.15s,
+    transform 0.15s;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
   padding-left: 2px;
 }
@@ -867,8 +888,6 @@ input, textarea {
   padding: 8px 0;
 }
 
-
-
 /* Bottom: genres, studio/codec, queue chevron — fixed at bottom */
 .np-bottom {
   flex-shrink: 0;
@@ -887,7 +906,9 @@ input, textarea {
   display: flex;
   justify-content: center;
   width: 100%;
-  transition: color 0.15s, transform 0.15s;
+  transition:
+    color 0.15s,
+    transform 0.15s;
 }
 
 .np-queue-toggle:hover {
@@ -1098,7 +1119,6 @@ input, textarea {
   gap: 4px;
 }
 
-
 /* ----------------------------------------------------------------
    Volume Slider
    ---------------------------------------------------------------- */
@@ -1242,7 +1262,9 @@ input, textarea {
   color: var(--text-secondary);
   padding: 2px 4px;
   border-radius: 4px;
-  transition: color 0.3s, font-weight 0.3s;
+  transition:
+    color 0.3s,
+    font-weight 0.3s;
   line-height: 1.5;
 }
 
@@ -2091,7 +2113,9 @@ input, textarea {
   font-size: 11px;
   cursor: pointer;
   padding: 4px 10px;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .settings-btn:hover {

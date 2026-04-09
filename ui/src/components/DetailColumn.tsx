@@ -19,33 +19,42 @@ export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
     setShowQueue(open);
   }, []);
 
-  const scrollRef = useCallback((el: HTMLDivElement | null) => {
-    obsRef.current?.disconnect();
-    elRef.current = el;
-    if (el) {
-      setPanelHeight(el.clientHeight);
-      const obs = new ResizeObserver(() => {
+  const scrollRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      obsRef.current?.disconnect();
+      elRef.current = el;
+      if (el) {
         setPanelHeight(el.clientHeight);
-        setQueue(false);
-      });
-      obs.observe(el);
-      obsRef.current = obs;
-    }
-  }, [setQueue]);
+        const obs = new ResizeObserver(() => {
+          setPanelHeight(el.clientHeight);
+          setQueue(false);
+        });
+        obs.observe(el);
+        obsRef.current = obs;
+      }
+    },
+    [setQueue],
+  );
 
   // Wheel down on the panel opens the queue
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (e.deltaY > 0 && !showQueueRef.current) {
-      setQueue(true);
-    }
-  }, [setQueue]);
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      if (e.deltaY > 0 && !showQueueRef.current) {
+        setQueue(true);
+      }
+    },
+    [setQueue],
+  );
 
   // When scrolled back to top, close the queue
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (showQueueRef.current && e.currentTarget.scrollTop === 0) {
-      setQueue(false);
-    }
-  }, [setQueue]);
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      if (showQueueRef.current && e.currentTarget.scrollTop === 0) {
+        setQueue(false);
+      }
+    },
+    [setQueue],
+  );
 
   if (!currentTrack) {
     return <div className="empty-state">Select an album</div>;

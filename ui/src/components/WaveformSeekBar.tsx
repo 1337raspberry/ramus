@@ -35,8 +35,7 @@ export default function WaveformSeekBar() {
     const h = rect.height;
 
     // Only resize canvas backing store when size actually changed
-    const needsResize =
-      lastSizeRef.current.w !== w || lastSizeRef.current.h !== h;
+    const needsResize = lastSizeRef.current.w !== w || lastSizeRef.current.h !== h;
     if (needsResize) {
       canvas.width = w * dpr;
       canvas.height = h * dpr;
@@ -228,7 +227,7 @@ export default function WaveformSeekBar() {
       setIsSeeking(true);
       setSeekPos(frac * duration);
     },
-    [duration]
+    [duration],
   );
 
   const onMouseDown = useCallback(
@@ -254,7 +253,7 @@ export default function WaveformSeekBar() {
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [duration, seek, handleSeekStart]
+    [duration, seek, handleSeekStart],
   );
 
   return (

@@ -42,10 +42,7 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
   }, [album.thumb]);
 
   return (
-    <div
-      className="album-card"
-      onClick={() => openAlbumDetail(album)}
-    >
+    <div className="album-card" onClick={() => openAlbumDetail(album)}>
       <div className="album-art-wrap">
         {artSrc && !artError ? (
           <img
@@ -56,7 +53,9 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
             onError={() => setArtError(true)}
           />
         ) : (
-          <div className="album-art-placeholder"><IconMusicNote /></div>
+          <div className="album-art-placeholder">
+            <IconMusicNote />
+          </div>
         )}
         <button
           className="album-card-play-btn"
@@ -122,10 +121,13 @@ export default function AlbumGridView() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const { cols, cardWidth, callbackRef } = useGridLayout();
 
-  const setRef = useCallback((el: HTMLDivElement | null) => {
-    scrollRef.current = el;
-    callbackRef(el);
-  }, [callbackRef]);
+  const setRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      scrollRef.current = el;
+      callbackRef(el);
+    },
+    [callbackRef],
+  );
 
   const rowCount = Math.ceil(albums.length / cols);
 
@@ -147,7 +149,7 @@ export default function AlbumGridView() {
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       setAlbumSortOrder(e.target.value as AlbumSortOrder);
     },
-    [setAlbumSortOrder]
+    [setAlbumSortOrder],
   );
 
   const handleShuffleFavs = useCallback(() => {
@@ -185,11 +187,7 @@ export default function AlbumGridView() {
             <span>Shuffle</span>
           </button>
         )}
-        <select
-          className="sort-select"
-          value={albumSortOrder}
-          onChange={onSortChange}
-        >
+        <select className="sort-select" value={albumSortOrder} onChange={onSortChange}>
           {SORT_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
@@ -197,10 +195,7 @@ export default function AlbumGridView() {
           ))}
         </select>
       </div>
-      <div
-        ref={setRef}
-        style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}
-      >
+      <div ref={setRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
         <div
           style={{
             height: virtualizer.getTotalSize(),
@@ -225,10 +220,7 @@ export default function AlbumGridView() {
                 }}
               >
                 {rowAlbums.map((album) => (
-                  <div
-                    key={album.ratingKey}
-                    style={{ width: cardWidth, flexShrink: 0 }}
-                  >
+                  <div key={album.ratingKey} style={{ width: cardWidth, flexShrink: 0 }}>
                     <AlbumCard album={album} />
                   </div>
                 ))}
