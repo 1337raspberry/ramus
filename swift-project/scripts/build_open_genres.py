@@ -1,244 +1,165 @@
 #!/usr/bin/env python3
 """
-Fetch music genre data from Wikidata (CC0) and build open.json
-for the Ramus genre tree.
+Build open.json from the beets genres-tree.yaml (MIT licensed).
 
-Outputs the same JSON format as genres.json:
+Source: https://github.com/beetbox/beets/blob/master/beetsplug/lastgenre/genres-tree.yaml
+
+Outputs:
   {"updated_at": "...", "genres": [{"name": "...", "short_summary": null, "children": [...]}]}
-
-Names are kept exactly as Wikidata provides them — no normalization.
 """
 
 import json
 import os
+import re
 import sqlite3
 import sys
-import urllib.parse
 import urllib.request
-from collections import defaultdict
 from datetime import datetime, timezone
 
-SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
+BEETS_URL = "https://raw.githubusercontent.com/beetbox/beets/refs/heads/master/beetsplug/lastgenre/genres-tree.yaml"
 USER_AGENT = "RamusGenreBuilder/1.0 (https://github.com/1337raspberry/ramus)"
 
-# Broad super-categories to group root genres under.
-# Keys are category names, values are keyword sets to match against genre labels.
-SUPER_CATEGORIES = {
-    "rock music": {"rock", "grunge", "britpop", "shoegaze", "surf"},
-    "electronic music": {"electronic", "electro", "techno", "house", "trance", "dubstep",
-                         "drum and bass", "breakbeat", "edm", "synth", "chiptune",
-                         "ambient", "downtempo", "idm"},
-    "jazz": {"jazz", "bebop", "swing", "bossa nova", "bop"},
-    "classical music": {"classical", "symphony", "concerto", "sonata", "opera", "baroque",
-                        "chamber", "orchestral", "choral", "cantata", "oratorio",
-                        "romantic music", "minimalism"},
-    "hip hop music": {"hip hop", "hip-hop", "rap", "rapping", "trap"},
-    "heavy metal music": {"metal", "doom", "thrash", "death metal", "black metal",
-                          "grindcore", "metalcore"},
-    "pop music": {"pop", "bubblegum", "boy band", "girl group", "teen"},
-    "folk music": {"folk", "traditional", "ballad"},
-    "blues": {"blues"},
-    "country music": {"country", "bluegrass", "honky-tonk", "outlaw"},
-    "rhythm and blues": {"r&b", "soul", "funk", "motown", "doo-wop", "gospel"},
-    "reggae": {"reggae", "ska", "dancehall", "dub", "rocksteady", "calypso"},
-    "punk rock": {"punk", "hardcore"},
-    "dance music": {"dance", "disco"},
-    "world music": {"world", "afro", "latin", "samba", "flamenco", "fado", "tango",
-                    "cumbia", "merengue", "salsa", "bossa", "mariachi"},
-    "experimental music": {"experimental", "avant-garde", "noise", "drone",
-                           "musique concrète", "sound art", "free improvisation"},
-    "new-age music": {"new age", "new-age", "meditation"},
-    "spoken word": {"spoken word", "poetry", "audiobook", "comedy"},
-    "musical theatre": {"musical theatre", "musical theater", "show tunes", "cabaret"},
-    "religious music": {"religious", "sacred", "hymn", "gospel", "liturgical",
-                        "devotional", "christian", "qawwali", "bhajan", "kirtan"},
+# Words/patterns to keep as-is when title-casing (acronyms, special forms)
+_PRESERVE_UPPER = {
+    "DJ", "EBM", "EDM", "IDM", "MPB", "NYC", "R&B", "UK", "US",
+    "NRG", "J-POP", "K-POP", "J-ROCK", "K-ROCK", "C-POP",
 }
 
 
-def sparql_query(query: str) -> list[dict]:
-    """Execute a SPARQL query against Wikidata and return bindings."""
-    url = SPARQL_ENDPOINT + "?" + urllib.parse.urlencode({
-        "format": "json",
-        "query": query,
-    })
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        data = json.loads(resp.read())
-    return data["results"]["bindings"]
+def _title_case(name: str) -> str:
+    """Title-case a genre name, matching the Rust title_case() logic.
 
-
-def fetch_genres() -> dict[str, dict]:
-    """Fetch all music genres with parent relationships from Wikidata."""
-    print("Fetching genres from Wikidata SPARQL endpoint...")
-
-    query = """
-    SELECT ?genre ?genreLabel ?genreDescription ?parent ?parentLabel WHERE {
-      ?genre wdt:P31 wd:Q188451 .
-      OPTIONAL { ?genre wdt:P279 ?parent . ?parent wdt:P31 wd:Q188451 . }
-      SERVICE wikibase:label { bd:serviceParam wikibase:language "en" . }
-    }
+    - Lowercase words get first letter capitalised
+    - Words with existing uppercase are preserved (e.g., "EBM", "R&B")
+    - Hyphenated compounds are handled per segment
     """
+    def case_word(w: str) -> str:
+        if w.upper() in _PRESERVE_UPPER:
+            return w.upper()
+        if w == w.lower():
+            return w.capitalize()
+        return w  # Has mixed/upper case already — preserve
 
-    bindings = sparql_query(query)
-    print(f"  Received {len(bindings)} rows")
+    parts = name.split(" ")
+    result = []
+    for part in parts:
+        if "-" in part:
+            result.append("-".join(case_word(seg) for seg in part.split("-")))
+        else:
+            result.append(case_word(part))
+    return " ".join(result)
 
-    genres: dict[str, dict] = {}
-    for b in bindings:
-        qid = b["genre"]["value"].split("/")[-1]
-        label = b["genreLabel"]["value"]
 
-        # Skip genres whose label is just the QID (no English label)
-        if label.startswith("Q") and label[1:].isdigit():
+def fetch_yaml(cache_path: str | None = None) -> str:
+    """Download beets genres-tree.yaml, or read from local cache."""
+    if cache_path and os.path.exists(cache_path):
+        print(f"Reading cached YAML: {cache_path}")
+        with open(cache_path) as f:
+            return f.read()
+
+    print(f"Downloading beets genres-tree.yaml...")
+    req = urllib.request.Request(BEETS_URL, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        content = resp.read().decode("utf-8")
+
+    if cache_path:
+        with open(cache_path, "w") as f:
+            f.write(content)
+        print(f"  Cached to: {cache_path}")
+
+    return content
+
+
+def parse_yaml_tree(content: str) -> list[dict]:
+    """Parse the beets YAML into our JSON tree format.
+
+    The beets YAML is a simple indented structure:
+      - genre_name:
+          - child_genre
+          - child_with_kids:
+              - grandchild
+
+    We use a simple line-based parser instead of pulling in PyYAML.
+    """
+    lines = content.splitlines()
+    # Stack: list of (indent_level, node_dict)
+    # We build the tree by tracking indentation
+    root_children: list[dict] = []
+    stack: list[tuple[int, list[dict]]] = [(-1, root_children)]
+
+    for line in lines:
+        stripped = line.rstrip()
+        if not stripped or stripped.startswith("#"):
             continue
 
-        if qid not in genres:
-            desc = b.get("genreDescription", {}).get("value") or None
-            genres[qid] = {"label": label, "description": desc, "parents": [], "children": []}
-        elif genres[qid]["description"] is None:
-            desc = b.get("genreDescription", {}).get("value") or None
-            if desc:
-                genres[qid]["description"] = desc
+        # Calculate indent (number of leading spaces)
+        indent = len(line) - len(line.lstrip())
 
-        if "parent" in b:
-            parent_qid = b["parent"]["value"].split("/")[-1]
-            parent_label = b["parentLabel"]["value"]
-            # Skip parents with no English label
-            if parent_label.startswith("Q") and parent_label[1:].isdigit():
-                continue
-            if parent_qid not in [p["qid"] for p in genres[qid]["parents"]]:
-                genres[qid]["parents"].append({"qid": parent_qid, "label": parent_label})
+        # Extract name: "- genre_name:" or "- genre_name"
+        text = stripped.lstrip("- ").rstrip(":")
+        if not text:
+            continue
 
-    print(f"  Unique genres: {len(genres)}")
-    return genres
-
-
-def build_tree(genres: dict[str, dict]) -> list[dict]:
-    """Convert the DAG into a tree by choosing canonical parents."""
-
-    # Build child count per genre (how many genres list it as a parent)
-    child_count: dict[str, int] = defaultdict(int)
-    for g in genres.values():
-        for p in g["parents"]:
-            if p["qid"] in genres:
-                child_count[p["qid"]] += 1
-
-    # For multi-parent genres, pick the parent with the most children (most canonical)
-    parent_map: dict[str, str | None] = {}  # qid -> parent_qid or None
-    for qid, g in genres.items():
-        valid_parents = [p for p in g["parents"] if p["qid"] in genres]
-        if not valid_parents:
-            parent_map[qid] = None
-        elif len(valid_parents) == 1:
-            parent_map[qid] = valid_parents[0]["qid"]
-        else:
-            # Pick parent with most children (most "canonical" category)
-            best = max(valid_parents, key=lambda p: child_count.get(p["qid"], 0))
-            parent_map[qid] = best["qid"]
-
-    # Build children lists
-    children_of: dict[str, list[str]] = defaultdict(list)
-    roots: list[str] = []
-    for qid, parent_qid in parent_map.items():
-        if parent_qid is None:
-            roots.append(qid)
-        else:
-            children_of[parent_qid].append(qid)
-
-    print(f"  Root genres (no parent): {len(roots)}")
-    print(f"  Genres with parents: {len(genres) - len(roots)}")
-
-    # Build tree nodes recursively with cycle protection
-    def build_node(qid: str, visited: set[str]) -> dict | None:
-        if qid in visited:
-            return None  # Cycle detected, skip
-        visited.add(qid)
-
-        g = genres[qid]
-        child_nodes = []
-        for child_qid in sorted(children_of.get(qid, []),
-                                 key=lambda q: genres[q]["label"].lower()):
-            node = build_node(child_qid, visited)
-            if node:
-                child_nodes.append(node)
-
-        visited.discard(qid)
-
-        return {
-            "name": g["label"],
-            "short_summary": g.get("description"),
-            "children": child_nodes if child_nodes else [],
+        node = {
+            "name": _title_case(text),
+            "short_summary": None,
+            "children": [],
         }
 
-    # Group roots under super-categories
-    categorized: dict[str, list[str]] = defaultdict(list)
-    uncategorized: list[str] = []
+        # Pop stack until we find the right parent level
+        while len(stack) > 1 and stack[-1][0] >= indent:
+            stack.pop()
 
-    for qid in roots:
-        label = genres[qid]["label"].lower()
-        matched = False
-        for cat_name, keywords in SUPER_CATEGORIES.items():
-            for kw in keywords:
-                if kw in label:
-                    categorized[cat_name].append(qid)
-                    matched = True
-                    break
-            if matched:
-                break
-        if not matched:
-            uncategorized.append(qid)
+        # Add to current parent's children
+        stack[-1][1].append(node)
 
-    print(f"  Categorized roots: {sum(len(v) for v in categorized.values())}")
-    print(f"  Uncategorized roots: {len(uncategorized)}")
+        # Push this node's children list as the new context
+        stack.append((indent, node["children"]))
 
-    # Build top-level tree
-    top_level: list[dict] = []
+    return root_children
 
-    # Super-category nodes
-    for cat_name in sorted(categorized.keys()):
-        cat_children = []
-        for qid in sorted(categorized[cat_name],
-                          key=lambda q: genres[q]["label"].lower()):
-            node = build_node(qid, set())
-            if node:
-                cat_children.append(node)
 
-        # If the super-category name itself is a genre in our data,
-        # use it as the parent and add its own Wikidata children too
-        cat_qid = None
-        for qid, g in genres.items():
-            if g["label"].lower() == cat_name.lower() and parent_map.get(qid) is not None:
-                cat_qid = qid
-                break
+def apply_overrides(tree: list[dict], overrides_path: str) -> list[dict]:
+    """Apply manual overrides from genre_overrides.json.
 
-        if cat_qid and cat_qid in children_of:
-            # Merge: the category genre's own children + the root genres assigned here
-            own_node = build_node(cat_qid, set())
-            if own_node:
-                # Deduplicate children by name
-                existing_names = {c["name"] for c in own_node["children"]}
-                for child in cat_children:
-                    if child["name"] not in existing_names:
-                        own_node["children"].append(child)
-                own_node["children"].sort(key=lambda c: c["name"].lower())
-                top_level.append(own_node)
+    Supported keys:
+      force_remove: list of genre names to delete (case-insensitive)
+      rename: dict of old_name -> new_name
+      force_description: dict of name -> description
+    """
+    if not os.path.exists(overrides_path):
+        return tree
+
+    with open(overrides_path) as f:
+        overrides = json.load(f)
+
+    if not any(overrides.get(k) for k in ("force_remove", "rename", "force_description")):
+        return tree
+
+    print(f"Applying overrides from {os.path.basename(overrides_path)}...")
+
+    remove_set = {n.lower() for n in overrides.get("force_remove", [])}
+    rename_map = {k.lower(): v for k, v in overrides.get("rename", {}).items()}
+    desc_map = {k.lower(): v for k, v in overrides.get("force_description", {}).items()}
+
+    def process(nodes: list[dict]) -> list[dict]:
+        result = []
+        for n in nodes:
+            key = n["name"].lower()
+            if key in remove_set:
+                print(f"  Removed: {n['name']}")
                 continue
+            if key in rename_map:
+                print(f"  Renamed: {n['name']} → {rename_map[key]}")
+                n["name"] = rename_map[key]
+            if key in desc_map:
+                n["short_summary"] = desc_map[key]
+            if n.get("children"):
+                n["children"] = process(n["children"])
+            result.append(n)
+        return result
 
-        top_level.append({
-            "name": cat_name,
-            "short_summary": None,
-            "children": cat_children,
-        })
-
-    # Uncategorized roots — all added as top-level entries.
-    # No "Other" bucket in the data; the runtime buildDisplayTree handles
-    # unmatched Plex genres in its own "Other" node.
-    for qid in sorted(uncategorized, key=lambda q: genres[q]["label"].lower()):
-        node = build_node(qid, set())
-        if node:
-            top_level.append(node)
-
-    top_level.sort(key=lambda n: n["name"].lower())
-    return top_level
+    return process(tree)
 
 
 def count_genres(nodes: list[dict]) -> int:
@@ -293,15 +214,22 @@ def match_report(tree: list[dict]) -> None:
 
 
 def main():
-    # Fetch data
-    genres = fetch_genres()
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    cache_path = os.path.join(script_dir, "genres-tree.yaml")
 
-    # Build tree
-    print("\nBuilding tree...")
-    tree = build_tree(genres)
+    # Fetch / read the beets YAML
+    content = fetch_yaml(cache_path)
+
+    # Parse into tree
+    print("Parsing genre tree...")
+    tree = parse_yaml_tree(content)
+
+    # Apply overrides
+    overrides_path = os.path.join(script_dir, "genre_overrides.json")
+    tree = apply_overrides(tree, overrides_path)
 
     total = count_genres(tree)
-    print(f"\nFinal tree: {len(tree)} top-level categories, {total} total genres")
+    print(f"Final tree: {len(tree)} top-level categories, {total} total genres")
 
     # Output
     output = {
@@ -309,16 +237,20 @@ def main():
         "genres": tree,
     }
 
-    # Determine output path
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Write to both Swift and Tauri paths
     project_root = os.path.dirname(script_dir)
-    output_path = os.path.join(project_root, "ramus", "Resources", "open.json")
+    xplat_root = os.path.dirname(project_root)
+    output_paths = [
+        os.path.join(project_root, "ramus", "Resources", "open.json"),
+        os.path.join(xplat_root, "ramus-tauri", "data", "open.json"),
+    ]
 
-    with open(output_path, "w") as f:
-        json.dump(output, f, indent=2, ensure_ascii=False)
-
-    print(f"\nWritten to: {output_path}")
-    print(f"File size: {os.path.getsize(output_path) / 1024:.1f} KB")
+    for output_path in output_paths:
+        if os.path.exists(os.path.dirname(output_path)):
+            with open(output_path, "w") as f:
+                json.dump(output, f, indent=2, ensure_ascii=False)
+            print(f"\nWritten to: {output_path}")
+            print(f"File size: {os.path.getsize(output_path) / 1024:.1f} KB")
 
     # Match report
     match_report(tree)
