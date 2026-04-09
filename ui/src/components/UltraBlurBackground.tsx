@@ -32,7 +32,7 @@ export function randomPalette(): { colors: UltraBlurColors; accent: [number, num
   return { colors: preset.blur, accent: preset.accent };
 }
 
-// --- Color math (ported from Swift UltraBlurBackground.swift) ---
+// --- Color helpers ---
 
 interface RGB { r: number; g: number; b: number }
 
@@ -45,50 +45,6 @@ function hexToRgb(hex: string): RGB {
     r: ((value >> 16) & 0xff) / 255,
     g: ((value >> 8) & 0xff) / 255,
     b: (value & 0xff) / 255,
-  };
-}
-
-function hue2rgb(p: number, q: number, t: number): number {
-  if (t < 0) t += 1;
-  if (t > 1) t -= 1;
-  if (t < 1 / 6) return p + (q - p) * 6 * t;
-  if (t < 1 / 2) return q;
-  if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-  return p;
-}
-
-/** Desaturate 35%, darken 25%, enforce minimum lightness 0.20. */
-function pastelise(c: RGB): RGB {
-  const maxC = Math.max(c.r, c.g, c.b);
-  const minC = Math.min(c.r, c.g, c.b);
-  let l = (maxC + minC) / 2;
-  const delta = maxC - minC;
-
-  if (delta <= 0.001) {
-    const darkened = Math.max(l * 0.75, 0.12);
-    return { r: darkened, g: darkened, b: darkened };
-  }
-
-  let s = l < 0.5 ? delta / (maxC + minC) : delta / (2 - maxC - minC);
-  s *= 0.65;
-  l = Math.max(l * 0.75, 0.20);
-
-  let h: number;
-  if (maxC === c.r) {
-    h = (c.g - c.b) / delta + (c.g < c.b ? 6 : 0);
-  } else if (maxC === c.g) {
-    h = (c.b - c.r) / delta + 2;
-  } else {
-    h = (c.r - c.g) / delta + 4;
-  }
-  h /= 6;
-
-  const q2 = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p2 = 2 * l - q2;
-  return {
-    r: hue2rgb(p2, q2, h + 1 / 3),
-    g: hue2rgb(p2, q2, h),
-    b: hue2rgb(p2, q2, h - 1 / 3),
   };
 }
 
@@ -106,10 +62,10 @@ interface Props {
  * is natively transitionable for smooth crossfades.
  */
 export default function UltraBlurBackground({ colors }: Props) {
-  const tl = toCSS(pastelise(hexToRgb(colors.topLeft)));
-  const tr = toCSS(pastelise(hexToRgb(colors.topRight)));
-  const bl = toCSS(pastelise(hexToRgb(colors.bottomLeft)));
-  const br = toCSS(pastelise(hexToRgb(colors.bottomRight)));
+  const tl = toCSS(hexToRgb(colors.topLeft));
+  const tr = toCSS(hexToRgb(colors.topRight));
+  const bl = toCSS(hexToRgb(colors.bottomLeft));
+  const br = toCSS(hexToRgb(colors.bottomRight));
 
   return (
     <div className="ultrablur-bg">

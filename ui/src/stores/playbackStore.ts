@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Album, Track, LyricsResult, UltraBlurColors } from "../lib/types";
+import { blurColorsFromPalette, type VibrantPalette } from "../lib/vibrantColor";
 import {
   getVolume,
   setVolume as setVolumeCmd,
@@ -36,6 +37,7 @@ interface PlaybackState {
 
   // UltraBlur
   ultraBlurColors: UltraBlurColors | null;
+  vibrantPalette: VibrantPalette | null;
 
   // Queue
   queue: Track[];
@@ -99,6 +101,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   waveformLevels: null,
 
   ultraBlurColors: null,
+  vibrantPalette: null,
 
   queue: [],
   showQueue: false,
@@ -118,8 +121,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     });
 
     if (trackChanged && track) {
-      // Reset lyrics/waveform for new track
-      set({ lyrics: null, waveformLevels: null, lyricsLoading: false });
+      // Reset lyrics/waveform/palette for new track
+      set({ lyrics: null, waveformLevels: null, lyricsLoading: false, vibrantPalette: null });
 
       // Fetch waveform
       getWaveform(track.ratingKey)
@@ -142,8 +145,15 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
           .then((genres) => set({ currentGenres: genres }))
           .catch(() => set({ currentGenres: [] }));
         getAlbumColors(track.albumKey)
-          .then((colors) => {
-            if (colors) set({ ultraBlurColors: colors });
+          .then((result) => {
+            if (result.palette) {
+              set({
+                vibrantPalette: result.palette,
+                ultraBlurColors: blurColorsFromPalette(result.palette),
+              });
+            } else if (result.colors) {
+              set({ ultraBlurColors: result.colors });
+            }
           })
           .catch(() => {});
       } else {

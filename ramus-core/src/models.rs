@@ -88,6 +88,26 @@ pub struct UltraBlurColors {
     pub bottom_left: String,
 }
 
+/// 6-swatch palette from node-vibrant, cached in the database.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VibrantPalette {
+    pub vibrant: Option<String>,
+    pub dark_vibrant: Option<String>,
+    pub light_vibrant: Option<String>,
+    pub muted: Option<String>,
+    pub dark_muted: Option<String>,
+    pub light_muted: Option<String>,
+}
+
+/// UltraBlur colors + cached vibrant palette returned from the database.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlbumColorInfo {
+    pub colors: Option<UltraBlurColors>,
+    pub palette: Option<VibrantPalette>,
+}
+
 // ---------------------------------------------------------------------------
 // Album
 // ---------------------------------------------------------------------------

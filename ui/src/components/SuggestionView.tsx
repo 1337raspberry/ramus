@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
-import { getArtUrl, getAlbumColors, getAlbumGenres, getTracksForAlbum } from "../lib/commands";
-import { extractVibrantColor } from "../lib/vibrantColor";
+import { getArtUrl, getAlbumColors, getAlbumGenres, getTracksForAlbum, setAlbumPalette } from "../lib/commands";
+import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import { formatCodec } from "../lib/format";
 import FlowLayout from "./FlowLayout";
 import { IconMusicNote } from "./Icons";
@@ -59,25 +59,38 @@ export default function SuggestionView() {
     return () => { cancelled = true; };
   }, [album]);
 
-  // Set ultrablur + accent when nothing is playing
+  // Set ultrablur + accent when nothing is playing (from cached palette/colors)
   useEffect(() => {
     if (!album || status !== "stopped") return;
     getAlbumColors(album.ratingKey)
-      .then((colors) => {
-        if (colors) usePlaybackStore.setState({ ultraBlurColors: colors });
+      .then((result) => {
+        if (result.palette) {
+          usePlaybackStore.setState({
+            vibrantPalette: result.palette,
+            ultraBlurColors: blurColorsFromPalette(result.palette),
+          });
+        } else if (result.colors) {
+          usePlaybackStore.setState({ ultraBlurColors: result.colors });
+        }
       })
       .catch(() => {});
   }, [album, status]);
 
   const handleArtLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
     if (status !== "stopped") return;
-    const color = extractVibrantColor(e.currentTarget);
-    if (color) {
-      document.documentElement.style.setProperty("--accent-r", String(color[0]));
-      document.documentElement.style.setProperty("--accent-g", String(color[1]));
-      document.documentElement.style.setProperty("--accent-b", String(color[2]));
-    }
-  }, [status]);
+    extractPalette(e.currentTarget).then((palette) => {
+      if (!palette) return;
+      const [r, g, b] = accentFromPalette(palette);
+      document.documentElement.style.setProperty("--accent-r", String(r));
+      document.documentElement.style.setProperty("--accent-g", String(g));
+      document.documentElement.style.setProperty("--accent-b", String(b));
+      const blurColors = blurColorsFromPalette(palette);
+      usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
+      if (album) {
+        setAlbumPalette(album.ratingKey, palette).catch(() => {});
+      }
+    });
+  }, [status, album]);
 
   const handleClick = useCallback(() => {
     if (!album) return;

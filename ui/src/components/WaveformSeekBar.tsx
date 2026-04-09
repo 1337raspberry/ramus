@@ -120,21 +120,10 @@ export default function WaveformSeekBar() {
     ctx.clearRect(0, 0, w, h);
 
     if (shape && levels && levels.length > 0) {
-      // Unplayed (muted)
-      ctx.globalAlpha = 0.2;
+      // Unplayed
+      ctx.globalAlpha = 0.15;
       ctx.globalCompositeOperation = "source-over";
       ctx.drawImage(shape, 0, 0, w, h);
-
-      // Buffered portion
-      if (bufferedX > progressX) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(progressX, 0, bufferedX - progressX, h);
-        ctx.clip();
-        ctx.globalAlpha = 0.35;
-        ctx.drawImage(shape, 0, 0, w, h);
-        ctx.restore();
-      }
 
       // Played portion (accent color)
       if (progressX > 0) {
@@ -142,7 +131,7 @@ export default function WaveformSeekBar() {
         ctx.beginPath();
         ctx.rect(0, 0, progressX, h);
         ctx.clip();
-        ctx.globalAlpha = 0.85;
+        ctx.globalAlpha = 0.9;
         // Draw shape as mask, then tint
         ctx.globalCompositeOperation = "source-over";
         ctx.drawImage(shape, 0, 0, w, h);

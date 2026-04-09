@@ -122,22 +122,20 @@ fn main() {
                                 // Configure player
                                 player.configure(url.clone(), token, client_id);
 
-                                // Open cache database
+                                // Open (or create) cache database
                                 if let Ok(cache_dir) = ramus_core::plex::token_store::config_dir() {
                                     let db_path = cache_dir.join("library_cache.db");
-                                    if db_path.exists() {
-                                        if let Ok(db) = CacheDatabase::open(&db_path) {
-                                            let db_arc = Arc::new(db);
+                                    if let Ok(db) = CacheDatabase::open(&db_path) {
+                                        let db_arc = Arc::new(db);
 
-                                            let sync = SyncEngine::new(db_arc.clone(), client.clone());
-                                            *state.sync_engine.lock() = Some(sync);
+                                        let sync = SyncEngine::new(db_arc.clone(), client.clone());
+                                        *state.sync_engine.lock() = Some(sync);
 
-                                            let search = SearchEngine::new(db_arc.clone(), None);
-                                            *state.search_engine.write() = Some(search);
+                                        let search = SearchEngine::new(db_arc.clone(), None);
+                                        *state.search_engine.write() = Some(search);
 
-                                            if let Ok(db2) = CacheDatabase::open(&db_path) {
-                                                *state.cache.lock() = Some(db2);
-                                            }
+                                        if let Ok(db2) = CacheDatabase::open(&db_path) {
+                                            *state.cache.lock() = Some(db2);
                                         }
                                     }
                                 }
@@ -261,6 +259,7 @@ fn main() {
             commands::library::get_random_album,
             commands::library::get_art_url,
             commands::library::get_album_colors,
+            commands::library::set_album_palette,
             commands::library::get_cache_stats,
             // playback
             commands::playback::play_tracks,
