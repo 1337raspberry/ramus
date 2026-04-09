@@ -19,7 +19,7 @@ export default function VolumeSlider({ value, onChange }: Props) {
       const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
       onChange(frac * 100);
     },
-    [onChange]
+    [onChange],
   );
 
   const onMouseDown = useCallback(
@@ -37,7 +37,7 @@ export default function VolumeSlider({ value, onChange }: Props) {
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [updateFromEvent]
+    [updateFromEvent],
   );
 
   return (
@@ -48,10 +48,7 @@ export default function VolumeSlider({ value, onChange }: Props) {
     >
       <div className="volume-track" />
       <div className="volume-fill" style={{ width: `${fraction * 100}%` }} />
-      <div
-        className="volume-thumb"
-        style={{ left: `${fraction * 100}%` }}
-      />
+      <div className="volume-thumb" style={{ left: `${fraction * 100}%` }} />
     </div>
   );
 }

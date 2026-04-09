@@ -73,7 +73,7 @@ export default function ServerPicker({ onSelect }: Props) {
       setSelectedId(server.machineIdentifier);
       onSelect(server, status.uri);
     },
-    [statuses, onSelect]
+    [statuses, onSelect],
   );
 
   const handleManualConnect = useCallback(async () => {
@@ -90,7 +90,7 @@ export default function ServerPicker({ onSelect }: Props) {
             owned: true,
             connections: [{ uri: manualUrl, local: false, relay: false, protocol: "http" }],
           },
-          manualUrl
+          manualUrl,
         );
       } else {
         setError("Could not connect to server");
@@ -135,9 +135,7 @@ export default function ServerPicker({ onSelect }: Props) {
               <span className="server-icon">{server.owned ? "\uD83D\uDDA5" : "\uD83D\uDD17"}</span>
               <div className="server-info">
                 <div className="server-name">{server.name}</div>
-                <div className="server-status">
-                  {status ? connectionLabel(status) : "..."}
-                </div>
+                <div className="server-status">{status ? connectionLabel(status) : "..."}</div>
               </div>
               {status?.isHttp && (
                 <span className="server-http-warn" title="Unencrypted connection">
@@ -149,10 +147,7 @@ export default function ServerPicker({ onSelect }: Props) {
         })}
       </div>
 
-      <button
-        className="onboarding-text-btn"
-        onClick={() => setShowManual(!showManual)}
-      >
+      <button className="onboarding-text-btn" onClick={() => setShowManual(!showManual)}>
         {showManual ? "Hide manual entry" : "Enter URL manually"}
       </button>
 

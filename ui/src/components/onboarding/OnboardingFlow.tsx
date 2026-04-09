@@ -41,7 +41,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
         .then(() => setStep("initialSync"))
         .catch(() => {});
     },
-    [server, serverUrl]
+    [server, serverUrl],
   );
 
   const handleSyncComplete = useCallback(() => {
@@ -57,9 +57,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
       <div className="onboarding-card">
         <div className="onboarding-brand">ramus</div>
         {step === "signIn" && <OAuthSignIn onSuccess={handleSignInSuccess} />}
-        {step === "discoverServers" && (
-          <ServerPicker onSelect={handleServerSelect} />
-        )}
+        {step === "discoverServers" && <ServerPicker onSelect={handleServerSelect} />}
         {step === "selectLibrary" && server && (
           <LibraryPicker server={server} onSelect={handleLibrarySelect} />
         )}

@@ -11,13 +11,7 @@ interface Props {
   onDismiss: () => void;
 }
 
-export default function LyricsView({
-  lyrics,
-  isPinned,
-  onTogglePin,
-  onSeek,
-  onDismiss,
-}: Props) {
+export default function LyricsView({ lyrics, isPinned, onTogglePin, onSeek, onDismiss }: Props) {
   const position = usePlaybackStore((s) => s.position);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [flashId, setFlashId] = useState<number | null>(null);
@@ -50,10 +44,7 @@ export default function LyricsView({
       <button className="lyrics-close" onClick={onDismiss}>
         <IconClose size={14} />
       </button>
-      <button
-        className={`lyrics-pin${isPinned ? " pinned" : ""}`}
-        onClick={onTogglePin}
-      >
+      <button className={`lyrics-pin${isPinned ? " pinned" : ""}`} onClick={onTogglePin}>
         <IconPin />
       </button>
       <div className="lyrics-scroll" ref={scrollRef}>
@@ -71,9 +62,7 @@ export default function LyricsView({
             </div>
           );
         })}
-        <div className="lyrics-source">
-          {lyrics.source === "plex" ? "via Plex" : "via LRCLIB"}
-        </div>
+        <div className="lyrics-source">{lyrics.source === "plex" ? "via Plex" : "via LRCLIB"}</div>
       </div>
     </div>
   );

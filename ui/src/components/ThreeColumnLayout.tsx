@@ -47,12 +47,11 @@ export default function ThreeColumnLayout({ sidebar, content, detail }: Props) {
       e.preventDefault();
       dragging.current = side;
       startX.current = e.clientX;
-      startWidth.current =
-        side === "left" ? widths.sidebar : widths.detail;
+      startWidth.current = side === "left" ? widths.sidebar : widths.detail;
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
     },
-    [widths]
+    [widths],
   );
 
   useEffect(() => {
@@ -61,17 +60,11 @@ export default function ThreeColumnLayout({ sidebar, content, detail }: Props) {
       const delta = e.clientX - startX.current;
 
       if (dragging.current === "left") {
-        const next = Math.max(
-          SIDEBAR_MIN,
-          Math.min(SIDEBAR_MAX, startWidth.current + delta)
-        );
+        const next = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startWidth.current + delta));
         setWidths((prev) => ({ ...prev, sidebar: next }));
       } else {
         // Right divider: dragging right = narrower detail
-        const next = Math.max(
-          DETAIL_MIN,
-          Math.min(DETAIL_MAX, startWidth.current - delta)
-        );
+        const next = Math.max(DETAIL_MIN, Math.min(DETAIL_MAX, startWidth.current - delta));
         setWidths((prev) => ({ ...prev, detail: next }));
       }
     };

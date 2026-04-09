@@ -4,8 +4,12 @@ import { getArtUrl, getQueue, insertNext, appendToQueue } from "../lib/commands"
 import { usePlaybackStore } from "../stores/playbackStore";
 import { formatDuration, formatCodec } from "../lib/format";
 import {
-  IconChevronLeft, IconStarFilled, IconStarEmpty, IconMusicNote,
-  IconPlay, IconMoreDots,
+  IconChevronLeft,
+  IconStarFilled,
+  IconStarEmpty,
+  IconMusicNote,
+  IconPlay,
+  IconMoreDots,
 } from "./Icons";
 
 export default function AlbumDetailView() {
@@ -22,14 +26,23 @@ export default function AlbumDetailView() {
 
   // Fetch art
   useEffect(() => {
-    if (!album?.thumb) { setArtSrc(null); return; }
+    if (!album?.thumb) {
+      setArtSrc(null);
+      return;
+    }
     setArtErr(false);
     setArtSrc(null);
     let cancelled = false;
     getArtUrl(album.thumb, 160)
-      .then((url) => { if (!cancelled) setArtSrc(url); })
-      .catch(() => { if (!cancelled) setArtErr(true); });
-    return () => { cancelled = true; };
+      .then((url) => {
+        if (!cancelled) setArtSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setArtErr(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [album?.thumb]);
 
   // Close dropdown on outside click (only when menu is open)
@@ -78,7 +91,9 @@ export default function AlbumDetailView() {
           {artSrc && !artErr ? (
             <img className="adv-art" src={artSrc} alt={album.title} />
           ) : (
-            <div className="adv-art-placeholder"><IconMusicNote /></div>
+            <div className="adv-art-placeholder">
+              <IconMusicNote />
+            </div>
           )}
         </div>
         <div className="adv-hero-info">
@@ -100,35 +115,24 @@ export default function AlbumDetailView() {
       <div className="adv-tracks">
         {tracks.map((track, i) => {
           const showDiscHeader =
-            hasMultipleDiscs &&
-            (i === 0 || track.discNumber !== tracks[i - 1].discNumber);
+            hasMultipleDiscs && (i === 0 || track.discNumber !== tracks[i - 1].discNumber);
           const hasTrackArtist =
-            track.trackArtist &&
-            track.trackArtist.toLowerCase() !== album.artistName.toLowerCase();
+            track.trackArtist && track.trackArtist.toLowerCase() !== album.artistName.toLowerCase();
           const isMenuOpen = openMenuKey === track.ratingKey;
           const isNearBottom = i >= tracks.length - 3;
 
           return (
             <div key={track.ratingKey}>
               {showDiscHeader && (
-                <div className="adv-disc-header">
-                  Disc {track.discNumber ?? 1}
-                </div>
+                <div className="adv-disc-header">Disc {track.discNumber ?? 1}</div>
               )}
-              <div
-                className="adv-track-row"
-                onClick={() => playAlbum(album, i)}
-              >
+              <div className="adv-track-row" onClick={() => playAlbum(album, i)}>
                 <span className="adv-track-num">{track.index ?? i + 1}</span>
                 <div className="adv-track-info">
                   <div className="adv-track-title">{track.title}</div>
-                  {hasTrackArtist && (
-                    <div className="adv-track-artist">{track.trackArtist}</div>
-                  )}
+                  {hasTrackArtist && <div className="adv-track-artist">{track.trackArtist}</div>}
                 </div>
-                <span className="adv-track-duration">
-                  {formatDuration(track.duration)}
-                </span>
+                <span className="adv-track-duration">{formatDuration(track.duration)}</span>
                 <button
                   className={`adv-track-fav${track.isFavourite ? " active" : ""}`}
                   onClick={(e) => {
@@ -143,9 +147,7 @@ export default function AlbumDetailView() {
                     className="adv-track-dots"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setOpenMenuKey((prev) =>
-                        prev === track.ratingKey ? null : track.ratingKey
-                      );
+                      setOpenMenuKey((prev) => (prev === track.ratingKey ? null : track.ratingKey));
                     }}
                   >
                     <IconMoreDots />

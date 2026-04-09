@@ -54,7 +54,9 @@ export default function ColorDebugPanel() {
             flexShrink: 0,
           }}
         />
-        <span>accent: rgb({accent.r}, {accent.g}, {accent.b})</span>
+        <span>
+          accent: rgb({accent.r}, {accent.g}, {accent.b})
+        </span>
       </div>
 
       {ultraBlurColors && (
@@ -70,7 +72,13 @@ export default function ColorDebugPanel() {
                   border: "1px solid rgba(255,255,255,0.2)",
                 }}
               />
-              <div style={{ fontSize: 9, opacity: 0.6 }}>{k.replace("bottom", "b").replace("top", "t").replace("Left", "L").replace("Right", "R")}</div>
+              <div style={{ fontSize: 9, opacity: 0.6 }}>
+                {k
+                  .replace("bottom", "b")
+                  .replace("top", "t")
+                  .replace("Left", "L")
+                  .replace("Right", "R")}
+              </div>
             </div>
           ))}
         </div>

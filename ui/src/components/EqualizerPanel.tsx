@@ -36,7 +36,7 @@ function VerticalEQSlider({
       const snapped = Math.abs(raw) < 0.8 ? 0 : Math.round(raw * 2) / 2;
       onChange(snapped);
     },
-    [onChange]
+    [onChange],
   );
 
   const onMouseDown = useCallback(
@@ -53,7 +53,7 @@ function VerticalEQSlider({
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [disabled, updateFromY]
+    [disabled, updateFromY],
   );
 
   return (
@@ -67,10 +67,7 @@ function VerticalEQSlider({
       {/* Track */}
       <div className="eq-track" />
       {/* Fill from center to thumb */}
-      <div
-        className="eq-fill"
-        style={{ top: `${fillTop}%`, height: `${fillHeight}%` }}
-      />
+      <div className="eq-fill" style={{ top: `${fillTop}%`, height: `${fillHeight}%` }} />
       {/* Thumb */}
       <div className="eq-thumb" style={{ top: `${thumbPercent}%` }} />
     </div>
@@ -83,15 +80,12 @@ export default function EqualizerPanel({ onDismiss }: Props) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Apply EQ with debounce
-  const applyDebounced = useCallback(
-    (newEnabled: boolean, newBands: number[]) => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        applyEqualizer(newEnabled, newBands).catch(() => {});
-      }, 50);
-    },
-    []
-  );
+  const applyDebounced = useCallback((newEnabled: boolean, newBands: number[]) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      applyEqualizer(newEnabled, newBands).catch(() => {});
+    }, 50);
+  }, []);
 
   const handleBandChange = useCallback(
     (index: number, value: number) => {
@@ -102,7 +96,7 @@ export default function EqualizerPanel({ onDismiss }: Props) {
         return next;
       });
     },
-    [enabled, applyDebounced]
+    [enabled, applyDebounced],
   );
 
   const handleToggle = useCallback(() => {
@@ -136,7 +130,7 @@ export default function EqualizerPanel({ onDismiss }: Props) {
     (e: React.MouseEvent) => {
       if (e.target === e.currentTarget) onDismiss();
     },
-    [onDismiss]
+    [onDismiss],
   );
 
   return (
@@ -146,11 +140,7 @@ export default function EqualizerPanel({ onDismiss }: Props) {
         <div className="eq-header">
           <span className="eq-title">Equalizer</span>
           <label className="eq-toggle">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={handleToggle}
-            />
+            <input type="checkbox" checked={enabled} onChange={handleToggle} />
             <span className="eq-toggle-label">{enabled ? "On" : "Off"}</span>
           </label>
           <button className="eq-close" onClick={onDismiss}>

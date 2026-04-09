@@ -161,8 +161,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       return { expandedGenreIds: next };
     }),
 
-  expandAll: () =>
-    set((state) => ({ expandedGenreIds: collectAllIds(state.genreTree) })),
+  expandAll: () => set((state) => ({ expandedGenreIds: collectAllIds(state.genreTree) })),
 
   collapseAll: () => set({ expandedGenreIds: new Set() }),
 
@@ -273,8 +272,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
   },
 
-  shuffleAlbums: () =>
-    set((state) => ({ albums: sortAlbums(state.albums, "random") })),
+  shuffleAlbums: () => set((state) => ({ albums: sortAlbums(state.albums, "random") })),
 
   // Suggestion
   suggestion: null,
@@ -329,7 +327,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       await toggleAlbumFavourite(album.ratingKey, next);
       set((state) => ({
         albums: state.albums.map((a) =>
-          a.ratingKey === album.ratingKey ? { ...a, isFavourite: next } : a
+          a.ratingKey === album.ratingKey ? { ...a, isFavourite: next } : a,
         ),
         selectedAlbum:
           state.selectedAlbum?.ratingKey === album.ratingKey
@@ -351,10 +349,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       await toggleTrackFavourite(track.ratingKey, next);
       set((state) => ({
         tracks: state.tracks.map((t) =>
-          t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t
+          t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t,
         ),
         detailTracks: state.detailTracks.map((t) =>
-          t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t
+          t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t,
         ),
       }));
     } catch {

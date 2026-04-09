@@ -15,7 +15,11 @@ interface SidebarProps {
   onOpenSettings?: () => void;
 }
 
-function ArtistList({ artists, selectedArtistId, selectArtist }: {
+function ArtistList({
+  artists,
+  selectedArtistId,
+  selectArtist,
+}: {
   artists: { sourceId: string; name: string }[];
   selectedArtistId: string | null;
   selectArtist: (id: string) => void;
@@ -115,9 +119,7 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
         ))}
       </div>
       <div style={{ flex: 1, overflow: "hidden" }}>
-        {(sidebarMode === "genres" || sidebarMode === "favourites") && (
-          <GenreTreeView />
-        )}
+        {(sidebarMode === "genres" || sidebarMode === "favourites") && <GenreTreeView />}
         {sidebarMode === "artists" && (
           <ArtistList
             artists={artists}

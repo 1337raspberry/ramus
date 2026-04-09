@@ -12,22 +12,25 @@ function QueueTrackThumb({ thumb }: { thumb: string | null }) {
     if (!thumb) return;
     let cancelled = false;
     getArtUrl(thumb, 50)
-      .then((url) => { if (!cancelled) setSrc(url); })
-      .catch(() => { if (!cancelled) setErr(true); });
-    return () => { cancelled = true; };
+      .then((url) => {
+        if (!cancelled) setSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setErr(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [thumb]);
 
   if (src && !err) {
-    return (
-      <img
-        className="queue-thumb"
-        src={src}
-        alt=""
-        onError={() => setErr(true)}
-      />
-    );
+    return <img className="queue-thumb" src={src} alt="" onError={() => setErr(true)} />;
   }
-  return <div className="queue-thumb queue-thumb-placeholder"><IconMusicNote /></div>;
+  return (
+    <div className="queue-thumb queue-thumb-placeholder">
+      <IconMusicNote />
+    </div>
+  );
 }
 
 export default function QueueView() {
@@ -62,13 +65,9 @@ export default function QueueView() {
                 <QueueTrackThumb thumb={track.thumb} />
                 <div className="queue-track-info">
                   <div className="queue-track-title">{track.title}</div>
-                  <div className="queue-track-artist">
-                    {track.trackArtist || track.artistName}
-                  </div>
+                  <div className="queue-track-artist">{track.trackArtist || track.artistName}</div>
                 </div>
-                <span className="queue-track-duration">
-                  {formatDuration(track.duration)}
-                </span>
+                <span className="queue-track-duration">{formatDuration(track.duration)}</span>
                 <button
                   className="queue-remove"
                   onClick={(e) => {
@@ -82,10 +81,7 @@ export default function QueueView() {
             );
           })}
           {visibleCount < totalUpcoming && (
-            <button
-              className="queue-show-more"
-              onClick={() => setVisibleCount((c) => c + 50)}
-            >
+            <button className="queue-show-more" onClick={() => setVisibleCount((c) => c + 50)}>
               Show more ({totalUpcoming - visibleCount} remaining)
             </button>
           )}
