@@ -177,7 +177,10 @@ pub fn patch_stored_config(
     };
     let data = match std::fs::read_to_string(&path) {
         Ok(d) => d,
-        Err(_) => return,
+        Err(e) => {
+            log::warn!("patch_stored_config: cannot read config file: {e}");
+            return;
+        }
     };
     let mut doc: serde_json::Value = match serde_json::from_str(&data) {
         Ok(v) => v,
