@@ -224,11 +224,13 @@ pub async fn finalize_onboarding(
     *state.cache.lock() = Some(db2);
 
     // Configure audio player with server connection details
+    let is_local = server.connections.iter().any(|c| c.uri == server_url && c.local);
     state.player.configure(
         url.clone(),
         server_token.clone(),
         state.client.client_identifier.clone(),
     );
+    state.player.set_remote(!is_local);
 
     // Load genre mapper from bundled data
     let open_json_bytes = include_bytes!("../../data/open.json");
@@ -236,9 +238,17 @@ pub async fn finalize_onboarding(
         *state.genre_mapper.write() = Some(mapper);
     }
 
-    // Initialize connection monitor
+    // Initialize connection monitor with player failover callback
     let allow_http = !state.settings.read().refuse_http;
     state.connection_monitor.set_allow_http(allow_http);
+    let monitor_player = state.player.clone();
+    state.connection_monitor.set_on_connection_changed(
+        std::sync::Arc::new(move |url, token, is_local, _is_http| {
+            let is_remote = !is_local;
+            monitor_player.update_server_connection(url, token, is_remote);
+            log::info!("monitor: updated player connection (is_remote={})", is_remote);
+        }),
+    );
     state
         .connection_monitor
         .start(PlexServer::from(&config), server_url, auth_token);

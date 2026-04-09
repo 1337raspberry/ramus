@@ -241,6 +241,11 @@ impl AudioPlayer {
         inner.is_remote = is_remote;
     }
 
+    /// Update only the remote flag (e.g., after connection type is determined).
+    pub fn set_remote(&self, is_remote: bool) {
+        self.inner.lock().is_remote = is_remote;
+    }
+
     /// Update playback configuration.
     pub fn update_config(&self, config: PlaybackConfig) {
         let mut inner = self.inner.lock();

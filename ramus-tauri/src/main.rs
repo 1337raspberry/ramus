@@ -157,68 +157,159 @@ fn main() {
                                 let plex_server = PlexServer::from(&config);
                                 connection_monitor.set_allow_http(allow_http);
                                 let bg_auth_token = auth_token.clone();
+
+                                // Update player when monitor switches connections
+                                let monitor_player = state.player.clone();
+                                connection_monitor.set_on_connection_changed(
+                                    std::sync::Arc::new(move |url, token, is_local, _is_http| {
+                                        let is_remote = !is_local;
+                                        monitor_player.update_server_connection(url, token, is_remote);
+                                        log::info!("monitor: updated player connection (is_remote={})", is_remote);
+                                    }),
+                                );
+
                                 connection_monitor.start(
                                     plex_server.clone(),
                                     url_str.clone(),
                                     auth_token,
                                 );
 
-                                // Background: verify current connection, test alternatives if down
+                                // Background: try local first, then stored URI, then full test
                                 let bg_client = client.clone();
                                 let bg_url = url.clone();
                                 let bg_token = config.access_token.clone();
                                 let bg_monitor = connection_monitor.clone();
                                 let bg_settings = state.settings.clone();
+                                let bg_player = state.player.clone();
                                 tauri::async_runtime::spawn(async move {
-                                    log::debug!("testing stored connection: {}", bg_url);
+                                    let allow_http = !bg_settings.read().refuse_http;
 
-                                    // Verify the stored URI is reachable
-                                    if bg_client
-                                        .test_connection(bg_url.as_str(), &bg_token, Some(std::time::Duration::from_secs(3)))
-                                        .await
-                                    {
-                                        log::debug!("stored connection ok");
-                                        return;
+                                    // Helper: apply a successful connection
+                                    let apply_connection =
+                                        |conn: &ramus_core::models::PlexServerConnection| -> bool {
+                                            if let Ok(new_url) = url::Url::parse(&conn.uri) {
+                                                if bg_client.token().is_some() {
+                                                    bg_client.set_server_url(Some(new_url.clone()));
+                                                    let is_remote = !conn.local;
+                                                    bg_player.set_remote(is_remote);
+                                                    log::info!(
+                                                        "connected via {} (is_remote={})",
+                                                        conn.uri, is_remote,
+                                                    );
+                                                    ramus_core::plex::auth::patch_stored_config(
+                                                        None,
+                                                        Some(&conn.uri),
+                                                    );
+                                                    bg_monitor.update_active_uri(conn.uri.clone());
+                                                    return true;
+                                                }
+                                            }
+                                            false
+                                        };
+
+                                    let mut failed: std::collections::HashSet<String> = std::collections::HashSet::new();
+                                    // Normalize URIs for comparison (url::Url adds trailing slash)
+                                    let normalize = |s: &str| s.trim_end_matches('/').to_string();
+
+                                    // 1. Try local connections first (fast, ~2s timeout)
+                                    let local_conns: Vec<_> = plex_server
+                                        .sorted_connections()
+                                        .into_iter()
+                                        .filter(|c| c.local)
+                                        .filter(|c| allow_http || c.protocol == "https")
+                                        .collect();
+
+                                    if !local_conns.is_empty() {
+                                        log::debug!(
+                                            "trying {} local connection(s) first",
+                                            local_conns.len(),
+                                        );
+                                        for conn in &local_conns {
+                                            if bg_client
+                                                .test_connection(
+                                                    &conn.uri,
+                                                    &bg_token,
+                                                    Some(std::time::Duration::from_secs(2)),
+                                                )
+                                                .await
+                                            {
+                                                let conn = (*conn).clone();
+                                                if apply_connection(&conn) {
+                                                    return;
+                                                }
+                                            }
+                                            log::debug!("local connection failed: {}", conn.uri);
+                                            failed.insert(normalize(&conn.uri));
+                                        }
                                     }
 
-                                    // Abort if logged out during the probe
+                                    // 2. Try stored activeUri (skip if already tested as local)
+                                    let stored_normalized = normalize(bg_url.as_str());
+                                    if !failed.contains(&stored_normalized) {
+                                        log::debug!("testing stored connection: {}", bg_url);
+                                        if bg_client
+                                            .test_connection(
+                                                bg_url.as_str(),
+                                                &bg_token,
+                                                Some(std::time::Duration::from_secs(3)),
+                                            )
+                                            .await
+                                        {
+                                            let is_local = plex_server
+                                                .connections
+                                                .iter()
+                                                .any(|c| normalize(&c.uri) == stored_normalized && c.local);
+                                            bg_player.set_remote(!is_local);
+                                            log::debug!(
+                                                "stored connection ok (is_remote={})",
+                                                !is_local,
+                                            );
+                                            return;
+                                        }
+                                        failed.insert(stored_normalized);
+                                    } else {
+                                        log::debug!("skipping stored connection (already failed): {}", bg_url);
+                                    }
+
+                                    // Abort if logged out during probes
                                     if bg_client.token().is_none() {
                                         return;
                                     }
 
-                                    // Re-read in case settings changed since launch
-                                    let allow_http = !bg_settings.read().refuse_http;
+                                    // 3. Test remaining cached connections (skip already-failed)
+                                    let remaining: Vec<_> = plex_server
+                                        .connections
+                                        .iter()
+                                        .filter(|c| !failed.contains(&normalize(&c.uri)))
+                                        .cloned()
+                                        .collect();
 
-                                    // Stored URI is down; log cached connections for diagnosis
-                                    log::info!(
-                                        "stored connection unavailable ({}), testing {} cached alternative(s) (allow_http={})",
-                                        bg_url,
-                                        plex_server.connections.len(),
-                                        allow_http,
-                                    );
-                                    for (i, conn) in plex_server.connections.iter().enumerate() {
-                                        log::debug!(
-                                            "  cached[{}]: {} (local={}, relay={}, proto={}, priority={})",
-                                            i, conn.uri, conn.local, conn.relay, conn.protocol, conn.priority(),
+                                    if remaining.is_empty() && !plex_server.connections.is_empty() {
+                                        log::debug!("all cached connections already tested, skipping to re-discovery");
+                                    } else if !remaining.is_empty() {
+                                        log::info!(
+                                            "testing {} remaining cached connection(s) (skipped {} already failed)",
+                                            remaining.len(),
+                                            failed.len(),
                                         );
+                                        let filtered_server = ramus_core::models::PlexServer {
+                                            connections: remaining,
+                                            ..plex_server.clone()
+                                        };
+                                        let (best, _is_http) = bg_client
+                                            .find_best_connection(&filtered_server, allow_http, true)
+                                            .await;
+                                        if let Some(conn) = best {
+                                            apply_connection(&conn);
+                                            return;
+                                        }
                                     }
 
-                                    let (best, _is_http) = bg_client
-                                        .find_best_connection(&plex_server, allow_http, true)
-                                        .await;
-                                    if let Some(conn) = best {
-                                        if let Ok(new_url) = url::Url::parse(&conn.uri) {
-                                            if bg_client.token().is_some() {
-                                                bg_client.set_server_url(Some(new_url));
-                                                log::info!("switched to alternative connection: {}", conn.uri);
-                                                ramus_core::plex::auth::patch_stored_config(None, Some(&conn.uri));
-                                                bg_monitor.update_active_uri(conn.uri);
-                                            }
-                                        }
+                                    // 4. Re-discover from plex.tv
+                                    if bg_auth_token.is_empty() {
+                                        log::warn!("cannot re-discover from plex.tv — no auth token stored");
                                         return;
                                     }
-
-                                    // Cached connections exhausted — re-discover from plex.tv
                                     log::info!("no cached alternatives, re-discovering from plex.tv");
                                     if let Ok(servers) = bg_client.discover_servers(&bg_auth_token).await {
                                         if let Some(found) = servers
@@ -233,18 +324,12 @@ fn main() {
                                                 .find_best_connection(found, allow_http, true)
                                                 .await;
                                             if let Some(conn) = best {
-                                                if let Ok(new_url) = url::Url::parse(&conn.uri) {
-                                                    if bg_client.token().is_some() {
-                                                        bg_client.set_server_url(Some(new_url));
-                                                        log::info!("switched to re-discovered connection: {}", conn.uri);
-                                                        bg_monitor.update_active_uri(conn.uri.clone());
-                                                        // Update monitor and disk cache
-                                                        bg_monitor.update_server(found.clone());
-                                                        ramus_core::plex::auth::patch_stored_config(
-                                                            Some(&found.connections),
-                                                            Some(&conn.uri),
-                                                        );
-                                                    }
+                                                if apply_connection(&conn) {
+                                                    bg_monitor.update_server(found.clone());
+                                                    ramus_core::plex::auth::patch_stored_config(
+                                                        Some(&found.connections),
+                                                        None, // apply_connection already set activeUri
+                                                    );
                                                 }
                                             } else {
                                                 log::warn!(
