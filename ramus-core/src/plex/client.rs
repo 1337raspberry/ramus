@@ -521,13 +521,24 @@ impl PlexClient {
                 .collect()
         };
 
+        log::debug!(
+            "find_best_connection: {} candidate(s) from {} total (allow_http={})",
+            sorted.len(),
+            server.connections.len(),
+            allow_http,
+        );
+
         if sorted.is_empty() {
+            log::warn!("find_best_connection: no candidates after filtering");
             return (None, false);
         }
 
-        let mut handles = Vec::new();
+        let mut join_set = tokio::task::JoinSet::new();
+        let candidate_count = sorted.len();
         for (i, conn) in sorted.iter().enumerate() {
             let uri = conn.uri.clone();
+            let local = conn.local;
+            let relay = conn.relay;
             let token = if send_token {
                 Some(server.access_token.clone())
             } else {
@@ -536,13 +547,19 @@ impl PlexClient {
             let client_id = self.client_identifier.clone();
             let http = self.http.clone();
 
-            handles.push(tokio::spawn(async move {
+            join_set.spawn(async move {
                 let url = match Url::parse(&uri) {
                     Ok(u) => match u.join("identity") {
                         Ok(u) => u,
-                        Err(_) => return (i, false),
+                        Err(_) => {
+                            log::debug!("  [{}] {} — bad URL join", i, uri);
+                            return (i, false);
+                        }
                     },
-                    Err(_) => return (i, false),
+                    Err(_) => {
+                        log::debug!("  [{}] {} — bad URL parse", i, uri);
+                        return (i, false);
+                    }
                 };
                 let mut req = http
                     .get(url)
@@ -554,19 +571,45 @@ impl PlexClient {
                     req = req.header("X-Plex-Token", t);
                 }
                 let resp = req.send().await;
+                match &resp {
+                    Ok(r) => {
+                        let status = r.status().as_u16();
+                        log::debug!(
+                            "  [{}] {} (local={}, relay={}) — HTTP {}",
+                            i, uri, local, relay, status,
+                        );
+                    }
+                    Err(e) => {
+                        log::debug!(
+                            "  [{}] {} (local={}, relay={}) — error: {}",
+                            i, uri, local, relay, e,
+                        );
+                    }
+                }
                 let ok = matches!(resp, Ok(r) if r.status().as_u16() == 200);
                 (i, ok)
-            }));
+            });
         }
 
+        // Process results as they arrive; return early once no better candidate is possible
         let mut best_index: Option<usize> = None;
-        for handle in handles {
-            if let Ok((index, succeeded)) = handle.await {
+        let mut resolved = vec![false; candidate_count];
+        while let Some(result) = join_set.join_next().await {
+            if let Ok((index, succeeded)) = result {
+                resolved[index] = true;
                 if succeeded {
                     best_index = Some(match best_index {
                         Some(cur) => cur.min(index),
                         None => index,
                     });
+                }
+                // If we have a winner and all higher-priority candidates have
+                // already resolved (failed), no point waiting for slower ones
+                if let Some(best) = best_index {
+                    if (0..best).all(|i| resolved[i]) {
+                        join_set.abort_all();
+                        break;
+                    }
                 }
             }
         }

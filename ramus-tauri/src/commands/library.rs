@@ -261,12 +261,9 @@ pub async fn get_art_url(
     {
         let mut cache = state.image_cache.lock();
         if let Some(path) = cache.get(&thumb, size) {
-            log::debug!("image cache hit: {thumb} @{size}");
             return Ok(path.to_string_lossy().to_string());
         }
     }
-
-    log::debug!("image cache miss: {thumb} @{size}");
 
     // Cache miss; download from Plex
     let server_url = state.client.server_url().ok_or("Not connected")?;
