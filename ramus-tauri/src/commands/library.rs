@@ -2,7 +2,7 @@ use tauri::State;
 
 use ramus_core::cache::db::CacheStats;
 use ramus_core::genre::node::GenreNode;
-use ramus_core::models::{Album, ArtistInfo, Track, UltraBlurColors};
+use ramus_core::models::{Album, AlbumColorInfo, ArtistInfo, Track, VibrantPalette};
 use ramus_core::search::engine::GenreExpander;
 use serde::Serialize;
 
@@ -308,8 +308,17 @@ pub async fn get_art_url(
 pub async fn get_album_colors(
     state: State<'_, AppState>,
     source_id: String,
-) -> CmdResult<Option<UltraBlurColors>> {
+) -> CmdResult<AlbumColorInfo> {
     with_cache(&state, |db| db.album_colors(&source_id))
+}
+
+#[tauri::command]
+pub async fn set_album_palette(
+    state: State<'_, AppState>,
+    source_id: String,
+    palette: VibrantPalette,
+) -> CmdResult<()> {
+    with_cache(&state, |db| db.set_album_palette(&source_id, &palette))
 }
 
 #[tauri::command]

@@ -14,6 +14,7 @@ import type {
   Track,
   UltraBlurColors,
 } from "./types";
+import type { VibrantPalette } from "./vibrantColor";
 
 // -- Auth --
 
@@ -99,7 +100,10 @@ export const getArtUrl = async (thumb: string, size?: number): Promise<string> =
 };
 
 export const getAlbumColors = (sourceId: string) =>
-  invoke<UltraBlurColors | null>("get_album_colors", { sourceId });
+  invoke<{ colors: UltraBlurColors | null; palette: VibrantPalette | null }>("get_album_colors", { sourceId });
+
+export const setAlbumPalette = (sourceId: string, palette: VibrantPalette) =>
+  invoke<void>("set_album_palette", { sourceId, palette });
 
 export const getCacheStats = () => invoke<CacheStats>("get_cache_stats");
 

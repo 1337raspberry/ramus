@@ -11,6 +11,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   playbackMode: "directPlay",
   lookaheadDepth: 3,
   audioCacheLimitBytes: 2_147_483_648,
+  imageCacheLimitBytes: 536_870_912,
   syncIntervalHours: 0,
   genreSource: "open",
   libraryPadding: 0,

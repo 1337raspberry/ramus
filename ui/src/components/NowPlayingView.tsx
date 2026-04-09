@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
-import { getArtUrl, toggleAlbumFavourite, toggleTrackFavourite } from "../lib/commands";
-import { extractVibrantColor } from "../lib/vibrantColor";
+import { getArtUrl, toggleAlbumFavourite, toggleTrackFavourite, setAlbumPalette } from "../lib/commands";
+import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import WaveformSeekBar from "./WaveformSeekBar";
 import VolumeSlider from "./VolumeSlider";
 import FlowLayout from "./FlowLayout";
@@ -65,13 +65,19 @@ export default function NowPlayingView({ onOpenEQ, panelHeight, showQueue, onTog
     const img = e.currentTarget;
     if (lastAccentThumb.current === thumb) return;
     lastAccentThumb.current = thumb;
-    const color = extractVibrantColor(img);
-    if (color) {
-      document.documentElement.style.setProperty("--accent-r", String(color[0]));
-      document.documentElement.style.setProperty("--accent-g", String(color[1]));
-      document.documentElement.style.setProperty("--accent-b", String(color[2]));
-    }
-  }, [thumb]);
+    extractPalette(img).then((palette) => {
+      if (!palette) return;
+      const [r, g, b] = accentFromPalette(palette);
+      document.documentElement.style.setProperty("--accent-r", String(r));
+      document.documentElement.style.setProperty("--accent-g", String(g));
+      document.documentElement.style.setProperty("--accent-b", String(b));
+      const blurColors = blurColorsFromPalette(palette);
+      usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
+      if (track?.albumKey) {
+        setAlbumPalette(track.albumKey, palette).catch(() => {});
+      }
+    });
+  }, [thumb, track?.albumKey]);
 
   if (!track) return null;
 

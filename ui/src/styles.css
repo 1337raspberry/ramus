@@ -112,18 +112,18 @@ input, textarea {
 
 .ultrablur-bg {
   position: fixed;
-  inset: -120px;
+  inset: -184px;
   z-index: 0;
   pointer-events: none;
-  filter: blur(100px);
+  filter: blur(220px);
   will-change: filter;
   contain: strict;
 }
 
 .ultrablur-blob {
   position: absolute;
-  width: 60%;
-  height: 60%;
+  width: 66%;
+  height: 66%;
   border-radius: 50%;
   transition: background-color 0.8s ease-in-out;
 }
