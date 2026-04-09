@@ -579,6 +579,7 @@ impl AudioPlayer {
         inner.state.current_track = Some(inner.state.queue[pos].clone());
         inner.position = 0.0;
         inner.duration = 0.0;
+        inner.buffered_fraction = 0.0;
     }
 
     /// Handle mpv pause state change.
@@ -640,6 +641,12 @@ impl AudioPlayer {
     {
         let mut inner = self.inner.lock();
         f(&mut inner.cache)
+    }
+
+
+    /// Whether the current track is fully buffered (buffered_fraction >= 1.0).
+    pub fn is_fully_buffered(&self) -> bool {
+        self.inner.lock().buffered_fraction >= 1.0
     }
 
     // --- Prefetch ---

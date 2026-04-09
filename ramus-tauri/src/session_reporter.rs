@@ -25,6 +25,9 @@ pub struct SessionReporter {
     periodic_active: Arc<Mutex<bool>>,
     /// Whether the periodic loop task has been spawned yet.
     loop_spawned: Mutex<bool>,
+    /// Last rating_key reported via track_started, used to deduplicate the
+    /// overlapping calls from play_tracks and on_playlist_pos_change.
+    last_started_key: Mutex<Option<String>>,
 }
 
 impl SessionReporter {
@@ -36,11 +39,20 @@ impl SessionReporter {
             tick_notify: Arc::new(Notify::new()),
             periodic_active: Arc::new(Mutex::new(false)),
             loop_spawned: Mutex::new(false),
+            last_started_key: Mutex::new(None),
         })
     }
 
-    /// Report that a new track started playing.
+    /// Report that a new track started playing. Deduplicates if the same
+    /// track is reported twice (play_tracks + on_playlist_pos_change overlap).
     pub fn track_started(&self, track: &Track, session_id: &str) {
+        let mut last = self.last_started_key.lock();
+        if last.as_deref() == Some(&track.rating_key) {
+            return; // already reported this track
+        }
+        *last = Some(track.rating_key.clone());
+        drop(last);
+
         let timeline = self.tracker.lock().track_started(track, session_id);
         self.send_timeline(&timeline);
         self.start_periodic();
@@ -76,6 +88,7 @@ impl SessionReporter {
     /// Report playback stopped (end of queue, new queue load, or user stop).
     pub fn playback_stopped(&self) {
         self.stop_periodic();
+        *self.last_started_key.lock() = None;
         self.update_tracker_position();
         if let Some(timeline) = self.tracker.lock().playback_stopped() {
             self.send_timeline(&timeline);
