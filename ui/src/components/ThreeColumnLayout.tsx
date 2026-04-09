@@ -27,7 +27,7 @@ function loadWidths(): { sidebar: number; detail: number } {
       };
     }
   } catch {
-    // ignore
+    /* localStorage may be unavailable */
   }
   return { sidebar: SIDEBAR_DEFAULT, detail: DETAIL_DEFAULT };
 }

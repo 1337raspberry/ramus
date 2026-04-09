@@ -19,7 +19,7 @@ export default function LyricsView({ lyrics, isPinned, onTogglePin, onSeek, onDi
 
   const active = activeLineIndex(lyrics, position);
 
-  // Auto-scroll only when active line actually changes
+  // Auto-scroll only when the active line changes
   useEffect(() => {
     if (active < 0 || active === lastActiveRef.current) return;
     lastActiveRef.current = active;

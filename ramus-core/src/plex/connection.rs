@@ -16,9 +16,7 @@ use url::Url;
 use crate::models::PlexServer;
 use crate::plex::client::PlexClient;
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+// --- Constants ---
 
 /// Debounce window for network interface changes.
 const DEBOUNCE_MS: u64 = 500;
@@ -29,9 +27,7 @@ const FAST_PATH_TIMEOUT: Duration = Duration::from_secs(3);
 /// Timeout for testing cached alternative connections.
 const CACHED_TIMEOUT: Duration = Duration::from_secs(5);
 
-// ---------------------------------------------------------------------------
-// Callback types
-// ---------------------------------------------------------------------------
+// --- Callback types ---
 
 /// Callback fired when a new working connection is found.
 /// Parameters: (server_url, access_token, is_local, is_http)
@@ -40,9 +36,7 @@ pub type ConnectionChangedCallback = Arc<dyn Fn(Url, String, bool, bool) + Send 
 /// Callback fired when all connections fail.
 pub type ConnectionLostCallback = Arc<dyn Fn() + Send + Sync>;
 
-// ---------------------------------------------------------------------------
-// ConnectionMonitor
-// ---------------------------------------------------------------------------
+// --- ConnectionMonitor ---
 
 struct MonitorInner {
     cached_server: Option<PlexServer>,
@@ -136,8 +130,8 @@ impl ConnectionMonitor {
 
     /// Called when network interfaces change (from platform-specific monitoring).
     ///
-    /// Compares interfaces with the previous set — only triggers evaluation
-    /// if the set actually changed. Debounces with a 500ms delay.
+    /// Compares interfaces with the previous set and only triggers evaluation
+    /// if the set changed. Debounces with a 500ms delay.
     pub fn handle_path_update(self: &Arc<Self>, interfaces: HashSet<String>) {
         let mut inner = self.inner.lock();
 
@@ -299,9 +293,7 @@ enum EvalResult {
     Lost,
 }
 
-// ---------------------------------------------------------------------------
-// Pure helpers
-// ---------------------------------------------------------------------------
+// --- Pure helpers ---
 
 /// Check if a URI matches the HTTP policy.
 /// If `allow_http` is true, all URIs pass. Otherwise, only HTTPS.
@@ -317,9 +309,7 @@ pub fn interfaces_changed(current: &HashSet<String>, new: &HashSet<String>) -> b
     current != new
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {

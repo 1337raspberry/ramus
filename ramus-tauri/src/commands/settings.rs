@@ -28,20 +28,20 @@ pub async fn update_settings(
 ) -> CmdResult<()> {
     let prev_genre_source = state.settings.read().genre_source.clone();
 
-    // Update player config if playback settings changed
+    // Apply playback config changes to the player
     let config = settings.to_playback_config();
     state.player.update_config(config);
 
-    // Update connection monitor HTTP policy
+    // Sync HTTP policy with connection monitor
     state.connection_monitor.set_allow_http(!settings.refuse_http);
 
-    // Update image cache limit
+    // Apply image cache limit
     state
         .image_cache
         .lock()
         .set_limit(settings.image_cache_limit_bytes as u64);
 
-    // Reload genre mapper if genre source changed
+    // Reload genre mapper if source changed
     if settings.genre_source != prev_genre_source {
         match settings.genre_source {
             ramus_core::models::GenreSource::Custom => {
@@ -93,9 +93,8 @@ pub async fn import_custom_genres(
 ) -> CmdResult<Vec<String>> {
     let (data, warnings) = CustomGenreParser::parse(&text).map_err(|e| e.to_string())?;
     let mapper = GenreMapper::from_json_bytes(&data).map_err(|e| e.to_string())?;
-    // Persist the custom genre JSON to disk
     ramus_core::settings::save_custom_genres(&data).map_err(|e| e.to_string())?;
-    // Update settings to remember genre source
+    // Persist genre source preference
     let mut settings = state.settings.read().clone();
     settings.genre_source = ramus_core::models::GenreSource::Custom;
     ramus_core::settings::save(&settings).map_err(|e| e.to_string())?;
@@ -106,7 +105,7 @@ pub async fn import_custom_genres(
 
 #[tauri::command]
 pub async fn remove_custom_genres(state: State<'_, AppState>) -> CmdResult<()> {
-    // Delete custom genre file and reset to bundled open.json
+    // Delete custom genre file and revert to bundled open.json
     ramus_core::settings::delete_custom_genres();
     let mut settings = state.settings.read().clone();
     settings.genre_source = ramus_core::models::GenreSource::Open;

@@ -24,13 +24,11 @@ export default function ServerPicker({ onSelect }: Props) {
   const [manualUrl, setManualUrl] = useState("");
   const [manualTesting, setManualTesting] = useState(false);
 
-  // Discover servers on mount
   useEffect(() => {
     discoverServers()
       .then((found) => {
         setServers(found);
         setLoading(false);
-        // Auto-test all servers
         found.forEach((server) => {
           setStatuses((prev) => {
             const next = new Map(prev);

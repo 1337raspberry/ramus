@@ -24,7 +24,6 @@ export default function SuggestionView() {
   const [genres, setGenres] = useState<string[]>([]);
   const [codec, setCodec] = useState<string | null>(null);
 
-  // Fetch art URL
   useEffect(() => {
     if (!album?.thumb) {
       setArtSrc(null);
@@ -45,7 +44,6 @@ export default function SuggestionView() {
     };
   }, [album?.thumb]);
 
-  // Fetch genres
   useEffect(() => {
     if (!album) {
       setGenres([]);
@@ -69,7 +67,6 @@ export default function SuggestionView() {
     }
   }, [album]);
 
-  // Fetch codec from first track
   useEffect(() => {
     if (!album) {
       setCodec(null);
@@ -88,7 +85,7 @@ export default function SuggestionView() {
     };
   }, [album]);
 
-  // Set ultrablur + accent when nothing is playing (from cached palette/colors)
+  // Apply cached accent + ultrablur colors when nothing is playing
   useEffect(() => {
     if (!album || status !== "stopped") return;
     getAlbumColors(album.ratingKey)

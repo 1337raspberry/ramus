@@ -24,7 +24,6 @@ export default function WaveformSeekBar() {
   const displayPos = isSeeking ? seekPos : position;
   const fraction = duration > 0 ? displayPos / duration : 0;
 
-  // Rebuild the static waveform shape only when levels or canvas size change
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -34,7 +33,7 @@ export default function WaveformSeekBar() {
     const w = rect.width;
     const h = rect.height;
 
-    // Only resize canvas backing store when size actually changed
+    // Resize canvas backing store only when dimensions change
     const needsResize = lastSizeRef.current.w !== w || lastSizeRef.current.h !== h;
     if (needsResize) {
       canvas.width = w * dpr;
@@ -42,7 +41,6 @@ export default function WaveformSeekBar() {
       lastSizeRef.current = { w, h };
     }
 
-    // Rebuild offscreen shape canvas when levels or size change
     if (levels !== lastLevelsRef.current || needsResize) {
       lastLevelsRef.current = levels;
       const offscreen = document.createElement("canvas");
@@ -87,7 +85,7 @@ export default function WaveformSeekBar() {
     }
   }, [levels]);
 
-  // Draw progress overlay — this runs on every position tick but is cheap
+  // Draw progress overlay (runs on every position tick; inexpensive)
   useEffect(() => {
     const canvas = canvasRef.current;
     const shape = shapeCanvasRef.current;
@@ -195,18 +193,14 @@ export default function WaveformSeekBar() {
     ctx.restore();
   }, [levels, fraction, bufferedFraction, isBuffering]);
 
-  // Buffering animation loop
   useEffect(() => {
     if (!isBuffering) return;
     let running = true;
     const animate = () => {
       if (!running) return;
-      // Force the draw effect to re-run by triggering a state update
-      // Actually, we just need to repaint — use rAF with direct canvas draw
+      // Repaint via requestAnimationFrame with direct canvas rendering
       const canvas = canvasRef.current;
       if (canvas) {
-        // Dispatch a minimal re-render isn't needed — the draw effect
-        // won't re-run. Instead, do the scan draw inline here.
         animRef.current = requestAnimationFrame(animate);
       }
     };
@@ -217,7 +211,6 @@ export default function WaveformSeekBar() {
     };
   }, [isBuffering]);
 
-  // Seek via drag
   const handleSeekStart = useCallback(
     (clientX: number) => {
       const el = containerRef.current;

@@ -8,9 +8,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// --- Types ---
 
 /// Reason a file ended playback.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,9 +52,7 @@ impl LoadMode {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Callbacks
-// ---------------------------------------------------------------------------
+// --- Callbacks ---
 
 /// Callbacks fired by the mpv event loop.
 /// All callbacks are `Send + Sync` so they can be dispatched from the event thread.
@@ -73,9 +69,7 @@ pub struct MpvCallbacks {
     pub on_file_ended: Option<Box<dyn Fn(FileEndReason) + Send + Sync>>,
 }
 
-// ---------------------------------------------------------------------------
-// Configuration
-// ---------------------------------------------------------------------------
+// --- Configuration ---
 
 /// Default mpv initialization options for audio-only playback.
 pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
@@ -114,9 +108,7 @@ pub fn observed_properties() -> Vec<(&'static str, ObserverID)> {
     ]
 }
 
-// ---------------------------------------------------------------------------
-// MpvHandle (trait for testability)
-// ---------------------------------------------------------------------------
+// --- MpvHandle (trait for testability) ---
 
 /// Abstraction over mpv operations for testability.
 /// The real implementation wraps libmpv FFI calls.
@@ -135,9 +127,7 @@ pub trait MpvPlayer: Send + Sync {
     fn is_shutdown(&self) -> bool;
 }
 
-// ---------------------------------------------------------------------------
-// Shutdown flag (shared between controller and event loop)
-// ---------------------------------------------------------------------------
+// --- Shutdown flag (shared between controller and event loop) ---
 
 /// Thread-safe shutdown flag. Prevents use-after-free when the mpv handle
 /// is destroyed while event loop callbacks are still in-flight.
@@ -168,9 +158,7 @@ impl Default for ShutdownFlag {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {

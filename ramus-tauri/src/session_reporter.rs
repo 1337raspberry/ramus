@@ -1,8 +1,6 @@
-//! Plex session reporter — orchestrates SessionTracker + PlexClient.
-//!
-//! Drives periodic timeline updates, scrobble detection, and graceful
-//! shutdown reporting. All public methods are non-async so they can be
-//! called directly from mpv callback threads.
+//! Plex session reporter. Orchestrates SessionTracker and PlexClient for
+//! periodic timeline updates, scrobble detection, and graceful shutdown
+//! reporting. All public methods are synchronous for use from mpv callbacks.
 
 use std::sync::{Arc, Weak};
 use std::time::Duration;
@@ -41,14 +39,14 @@ impl SessionReporter {
         })
     }
 
-    /// A new track started playing.
+    /// Report that a new track started playing.
     pub fn track_started(&self, track: &Track, session_id: &str) {
         let timeline = self.tracker.lock().track_started(track, session_id);
         self.send_timeline(&timeline);
         self.start_periodic();
     }
 
-    /// A track ended naturally (auto-advance). Scrobbles it.
+    /// Report a track ended naturally (auto-advance) and scrobble it.
     pub fn track_ended(&self, track: &Track) {
         let rk = track.rating_key.clone();
         let client = self.client.clone();
@@ -57,7 +55,7 @@ impl SessionReporter {
         });
     }
 
-    /// Playback paused.
+    /// Report playback paused.
     pub fn playback_paused(&self) {
         self.update_tracker_position();
         if let Some(timeline) = self.tracker.lock().playback_paused() {
@@ -66,7 +64,7 @@ impl SessionReporter {
         self.stop_periodic();
     }
 
-    /// Playback resumed from pause.
+    /// Report playback resumed from pause.
     pub fn playback_resumed(&self) {
         self.update_tracker_position();
         if let Some(timeline) = self.tracker.lock().playback_resumed() {
@@ -75,7 +73,7 @@ impl SessionReporter {
         self.start_periodic();
     }
 
-    /// Playback stopped entirely (end of queue, new queue load, user stop).
+    /// Report playback stopped (end of queue, new queue load, or user stop).
     pub fn playback_stopped(&self) {
         self.stop_periodic();
         self.update_tracker_position();
@@ -84,14 +82,14 @@ impl SessionReporter {
         }
     }
 
-    /// User seeked to a new position.
+    /// Report a seek to a new position.
     pub fn playback_seeked(&self, position: f64) {
         if let Some(timeline) = self.tracker.lock().playback_seeked(position) {
             self.send_timeline(&timeline);
         }
     }
 
-    /// Blocking stop for app termination. Waits up to 2 seconds.
+    /// Synchronous stop for app termination. Waits up to 2 seconds.
     pub fn stop_sync(&self) {
         self.stop_periodic();
         self.update_tracker_position();
@@ -116,7 +114,7 @@ impl SessionReporter {
         }
     }
 
-    // -- internals --
+    // --- Internals ---
 
     fn update_tracker_position(&self) {
         let pos = self.player.position();
@@ -145,8 +143,8 @@ impl SessionReporter {
         *self.periodic_active.lock() = false;
     }
 
-    /// Lazily spawn the periodic loop on first use. Must be called from a
-    /// context where tauri's async runtime is available (i.e. after setup).
+    /// Lazily spawn the periodic reporting loop. Must be called after
+    /// Tauri's async runtime is available (i.e. after setup).
     pub fn ensure_loop_spawned(self: &Arc<Self>) {
         let mut spawned = self.loop_spawned.lock();
         if !*spawned {

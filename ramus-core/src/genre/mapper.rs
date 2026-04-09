@@ -6,9 +6,7 @@ use parking_lot::Mutex;
 use crate::genre::node::GenreNode;
 use crate::search::engine::GenreExpander;
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
+// --- Errors ---
 
 #[derive(Debug, thiserror::Error)]
 pub enum GenreMapperError {
@@ -20,9 +18,7 @@ pub enum GenreMapperError {
     Json(#[from] serde_json::Error),
 }
 
-// ---------------------------------------------------------------------------
-// JSON types for deserialization
-// ---------------------------------------------------------------------------
+// --- JSON types for deserialization ---
 
 #[derive(serde::Deserialize)]
 struct GenreFile {
@@ -36,9 +32,7 @@ struct GenreNodeRaw {
     children: Option<Vec<GenreNodeRaw>>,
 }
 
-// ---------------------------------------------------------------------------
-// GenreMapper
-// ---------------------------------------------------------------------------
+// --- GenreMapper ---
 
 pub struct GenreMapper {
     /// The full hierarchy as loaded from JSON.
@@ -219,9 +213,7 @@ impl GenreMapper {
         GenreNode::new(display_name, parent_path, raw.short_summary.clone(), children, 0, 0)
     }
 
-    // -----------------------------------------------------------------------
-    // Private: Lookup
-    // -----------------------------------------------------------------------
+    // --- Private: Lookup ---
 
     fn build_lookup(nodes: &[GenreNode], lookup: &mut HashMap<String, GenreNode>) {
         for node in nodes {
@@ -232,9 +224,7 @@ impl GenreMapper {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Private: Pruning
-    // -----------------------------------------------------------------------
+    // --- Private: Pruning ---
 
     fn prune_node(
         node: &GenreNode,
@@ -295,7 +285,6 @@ impl GenreMapper {
     }
 }
 
-// Implement GenreExpander for SearchEngine integration
 impl GenreExpander for GenreMapper {
     fn expand_genre(&self, name: &str) -> Option<HashSet<String>> {
         self.match_genre(name).map(|node| {
@@ -306,9 +295,7 @@ impl GenreExpander for GenreMapper {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Title-casing
-// ---------------------------------------------------------------------------
+// --- Title-casing ---
 
 /// Title-case a genre name for display.
 /// All-lowercase words get first letter capitalised.
@@ -342,9 +329,7 @@ pub fn title_case(input: &str) -> String {
         .join(" ")
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -387,7 +372,7 @@ mod tests {
       ]
     }"#;
 
-    // -- Tree Loading --
+    // --- Tree Loading ---
 
     #[test]
     fn test_load_tree_from_json() {
@@ -411,7 +396,7 @@ mod tests {
         assert!(death_metal.children.is_none());
     }
 
-    // -- Path-Based IDs --
+    // --- Path-Based IDs ---
 
     #[test]
     fn test_path_based_ids() {
@@ -454,7 +439,7 @@ mod tests {
         assert_eq!(pop_funk.id, "pop/funk");
     }
 
-    // -- Exact Matching --
+    // --- Exact Matching ---
 
     #[test]
     fn test_exact_match_case_insensitive() {
@@ -471,7 +456,7 @@ mod tests {
         assert_eq!(node.unwrap().name, "Progressive Rock");
     }
 
-    // -- Fuzzy Matching --
+    // --- Fuzzy Matching ---
 
     #[test]
     fn test_fuzzy_match_close_spelling() {
@@ -496,7 +481,7 @@ mod tests {
         assert!(node.is_none(), "Completely unrelated genre should not match");
     }
 
-    // -- Display Tree & Pruning --
+    // --- Display Tree & Pruning ---
 
     #[test]
     fn test_build_display_tree_prunes_empty_branches() {
@@ -537,7 +522,7 @@ mod tests {
         assert!(tree.is_empty(), "Empty sets should produce empty tree");
     }
 
-    // -- Deduplicated Album Counts --
+    // --- Deduplicated Album Counts ---
 
     #[test]
     fn test_deduplicated_count_with_shared_album() {
@@ -596,7 +581,7 @@ mod tests {
         assert_eq!(names.len(), 5);
     }
 
-    // -- Title Case Tests --
+    // --- Title Case Tests ---
 
     #[test]
     fn test_all_lowercase_gets_title_cased() {

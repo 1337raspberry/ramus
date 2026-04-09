@@ -1,6 +1,4 @@
-// ---------------------------------------------------------------------------
-// Shared utility functions
-// ---------------------------------------------------------------------------
+// --- Shared utility functions ---
 
 /// Lossless audio codecs (case-insensitive matching via `is_lossless_codec`).
 pub const LOSSLESS_CODECS: &[&str] = &["flac", "alac", "wav", "aiff", "aif", "pcm"];
@@ -10,9 +8,7 @@ pub fn is_lossless_codec(codec: &str) -> bool {
     LOSSLESS_CODECS.contains(&codec.to_lowercase().as_str())
 }
 
-// ---------------------------------------------------------------------------
-// FTS5 / LIKE escaping
-// ---------------------------------------------------------------------------
+// --- FTS5 / LIKE escaping ---
 
 /// Escape a string for FTS5 MATCH queries.
 /// Strip `"*():^{}`, replace `-` with space.
@@ -43,9 +39,7 @@ pub fn escape_like(input: &str) -> String {
     out
 }
 
-// ---------------------------------------------------------------------------
-// Percent encoding / decoding
-// ---------------------------------------------------------------------------
+// --- Percent encoding / decoding ---
 
 /// RFC 3986 percent-encode a string (unreserved chars pass through).
 pub fn percent_encode(s: &str) -> String {
@@ -82,9 +76,7 @@ pub fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&result).into_owned()
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {

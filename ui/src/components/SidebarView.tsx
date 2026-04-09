@@ -97,7 +97,6 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
   const selectArtist = useLibraryStore((s) => s.selectArtist);
 
-  // Load genre tree + all albums on mount
   useEffect(() => {
     const store = useLibraryStore.getState();
     store.loadGenreTree();

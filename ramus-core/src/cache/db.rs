@@ -6,9 +6,7 @@ use rusqlite::{params, Connection};
 
 use crate::models::{Album, AlbumColorInfo, RangeOp, Track, UltraBlurColors, VibrantPalette};
 
-// ---------------------------------------------------------------------------
-// Type aliases for complex tuples
-// ---------------------------------------------------------------------------
+// --- Type aliases for complex tuples ---
 
 /// (name, sortName, sourceId, artUrl, summary, updatedAt)
 pub type ArtistUpsertRow = (String, Option<String>, String, Option<String>, Option<String>, Option<i64>);
@@ -16,9 +14,7 @@ pub type ArtistUpsertRow = (String, Option<String>, String, Option<String>, Opti
 /// (id, name, sourceId, artUrl)
 pub type ArtistRow = (i64, String, String, Option<String>);
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
+// --- Errors ---
 
 #[derive(Debug, thiserror::Error)]
 pub enum CacheError {
@@ -28,9 +24,7 @@ pub enum CacheError {
     Json(#[from] serde_json::Error),
 }
 
-// ---------------------------------------------------------------------------
-// Helper types
-// ---------------------------------------------------------------------------
+// --- Helper types ---
 
 #[derive(Debug, Clone)]
 pub struct CachedItemInfo {
@@ -54,9 +48,7 @@ pub struct CacheStats {
     pub genre_count: i64,
 }
 
-// ---------------------------------------------------------------------------
-// Search result row types
-// ---------------------------------------------------------------------------
+// --- Search result row types ---
 
 /// Album row returned by search queries.
 #[derive(Debug, Clone)]
@@ -83,9 +75,7 @@ pub struct TrackSearchRow {
     pub is_favourite: bool,
 }
 
-// ---------------------------------------------------------------------------
-// CacheDatabase
-// ---------------------------------------------------------------------------
+// --- CacheDatabase ---
 
 pub struct CacheDatabase {
     conn: Mutex<Connection>,
@@ -187,9 +177,7 @@ impl CacheDatabase {
         Ok(())
     }
 
-    // -----------------------------------------------------------------------
-    // Batch Upserts (for sync)
-    // -----------------------------------------------------------------------
+    // --- Batch Upserts (for sync) ---
 
     /// Batch upsert artists. Returns sourceId → local id map.
     pub fn batch_upsert_artists(
@@ -219,7 +207,6 @@ impl CacheDatabase {
             }
         }
 
-        // Collect ID map
         {
             let mut id_stmt = tx.prepare_cached("SELECT sourceId, id FROM artists")?;
             let rows = id_stmt.query_map([], |row| {
@@ -386,9 +373,7 @@ impl CacheDatabase {
         Ok(())
     }
 
-    // -----------------------------------------------------------------------
-    // Genre Management
-    // -----------------------------------------------------------------------
+    // --- Genre Management ---
 
     /// Upsert a genre name (case-insensitive). Returns the genre id.
     pub fn upsert_genre(&self, name: &str) -> Result<i64, CacheError> {
@@ -469,9 +454,7 @@ impl CacheDatabase {
         Ok(())
     }
 
-    // -----------------------------------------------------------------------
-    // Timestamp lookups (for incremental sync)
-    // -----------------------------------------------------------------------
+    // --- Timestamp lookups (for incremental sync) ---
 
     pub fn all_artist_timestamps(&self) -> Result<HashMap<String, CachedItemInfo>, CacheError> {
         let conn = self.conn.lock();
@@ -540,9 +523,7 @@ impl CacheDatabase {
         Ok(map)
     }
 
-    // -----------------------------------------------------------------------
-    // ID lookups
-    // -----------------------------------------------------------------------
+    // --- ID lookups ---
 
     pub fn artist_id(&self, source_id: &str) -> Result<Option<i64>, CacheError> {
         let conn = self.conn.lock();
@@ -586,9 +567,7 @@ impl CacheDatabase {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Query methods
-    // -----------------------------------------------------------------------
+    // --- Query methods ---
 
     /// Get albums for a genre name (joined with artist).
     pub fn albums_for_genre(&self, genre_name: &str) -> Result<Vec<Album>, CacheError> {
@@ -925,9 +904,7 @@ impl CacheDatabase {
         Ok(set)
     }
 
-    // -----------------------------------------------------------------------
-    // Search query methods (used by SearchEngine)
-    // -----------------------------------------------------------------------
+    // --- Search query methods (used by SearchEngine) ---
 
     /// Search albums by title (LIKE contains), with optional album ID filter.
     pub fn search_albums_by_title_filtered(
@@ -1450,9 +1427,7 @@ impl CacheDatabase {
         Ok(names)
     }
 
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
+    // --- Helpers ---
 
     fn map_album_rows(
         stmt: &mut rusqlite::Statement,
@@ -1481,9 +1456,7 @@ impl CacheDatabase {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Upsert row types
-// ---------------------------------------------------------------------------
+// --- Upsert row types ---
 
 #[derive(Debug, Clone)]
 pub struct AlbumUpsertRow {
@@ -1517,9 +1490,7 @@ pub struct TrackUpsertRow {
 
 use crate::util::{escape_fts5, escape_like};
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -1591,7 +1562,7 @@ mod tests {
         .unwrap();
     }
 
-    // -- CRUD tests --
+    // --- CRUD tests ---
 
     #[test]
     fn test_artist_crud() {

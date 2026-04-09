@@ -74,7 +74,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
     errorTimerRef.current = setTimeout(() => setError(null), 5000);
   }, []);
 
-  // Load settings and stats on mount
   useEffect(() => {
     getSettings()
       .then(setSettings)
@@ -87,7 +86,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
       .catch((e) => showError(`Failed to load cache stats: ${e}`));
   }, [showError]);
 
-  // Listen for sync progress
   useEffect(() => {
     const unlisten = listen<SyncProgress>("sync-progress", (event) => {
       setSyncProgress(event.payload);
@@ -103,7 +101,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
     };
   }, []);
 
-  // Cleanup timers
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -200,7 +197,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
       .catch((e) => showError(`Sign out failed: ${e}`));
   }, [onSignOut, showError]);
 
-  // Close on Escape
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {

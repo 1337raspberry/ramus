@@ -79,7 +79,6 @@ export default function EqualizerPanel({ onDismiss }: Props) {
   const [bands, setBands] = useState<number[]>(() => new Array(10).fill(0));
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Apply EQ with debounce
   const applyDebounced = useCallback((newEnabled: boolean, newBands: number[]) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -113,7 +112,6 @@ export default function EqualizerPanel({ onDismiss }: Props) {
     applyDebounced(enabled, zeroed);
   }, [enabled, applyDebounced]);
 
-  // Close on Escape
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -125,7 +123,6 @@ export default function EqualizerPanel({ onDismiss }: Props) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [onDismiss]);
 
-  // Click outside to dismiss
   const handleBackdropClick = useCallback(
     (e: React.MouseEvent) => {
       if (e.target === e.currentTarget) onDismiss();

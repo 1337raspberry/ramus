@@ -13,7 +13,6 @@ export default function InitialSync({ onComplete, onSkip }: Props) {
   const [progress, setProgress] = useState<SyncProgress | null>(null);
   const [done, setDone] = useState(false);
 
-  // Listen for sync progress
   useEffect(() => {
     const unlisten = listen<SyncProgress>("sync-progress", (event) => {
       setProgress(event.payload);

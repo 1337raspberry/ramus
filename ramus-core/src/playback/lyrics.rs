@@ -69,9 +69,7 @@ impl LyricsResult {
     }
 }
 
-// ---------------------------------------------------------------------------
-// LRC parser
-// ---------------------------------------------------------------------------
+// --- LRC parser ---
 
 /// Parse LRC format lyrics text.
 ///
@@ -158,9 +156,7 @@ pub struct LrclibResponse {
     pub plain_lyrics: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Plex JSON lyrics parsing
-// ---------------------------------------------------------------------------
+// --- Plex JSON lyrics parsing ---
 
 /// Plex lyrics response: `MediaContainer > Lyrics > Line > Span`.
 #[derive(Debug, serde::Deserialize)]
@@ -237,9 +233,7 @@ pub fn parse_plex_json_lyrics(data: &[u8]) -> Option<Vec<LyricLine>> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Lyrics path validation
-// ---------------------------------------------------------------------------
+// --- Lyrics path validation ---
 
 /// Validate a Plex lyrics stream path for safety.
 ///
@@ -250,9 +244,7 @@ pub fn validate_lyrics_path(path: &str) -> bool {
 }
 
 
-// ---------------------------------------------------------------------------
-// LRCLIB fetch
-// ---------------------------------------------------------------------------
+// --- LRCLIB fetch ---
 
 /// Maximum LRCLIB response size (512 KB).
 const LRCLIB_MAX_RESPONSE: usize = 512 * 1024;
@@ -323,9 +315,7 @@ pub async fn fetch_from_lrclib(
     None
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -481,7 +471,7 @@ mod tests {
         assert!(resp2.plain_lyrics.is_none());
     }
 
-    // -- Plex JSON lyrics parsing --
+    // --- Plex JSON lyrics parsing ---
 
     #[test]
     fn test_parse_plex_json_synced() {
@@ -570,7 +560,7 @@ mod tests {
         assert_eq!(lines[0].text, "Real line");
     }
 
-    // -- Path validation --
+    // --- Path validation ---
 
     #[test]
     fn test_validate_lyrics_path_valid() {
@@ -591,7 +581,7 @@ mod tests {
         assert!(!validate_lyrics_path("library/no-leading-slash"));
     }
 
-    // -- LRCLIB fetch --
+    // --- LRCLIB fetch ---
 
     #[tokio::test]
     async fn test_fetch_from_lrclib_synced() {
