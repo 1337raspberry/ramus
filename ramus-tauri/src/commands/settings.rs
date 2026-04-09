@@ -7,7 +7,7 @@ use ramus_core::models::Settings;
 
 use crate::state::AppState;
 
-type CmdResult<T> = Result<T, String>;
+use super::CmdResult;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -13,7 +13,7 @@ use ramus_core::search::engine::SearchEngine;
 
 use crate::state::AppState;
 
-type CmdResult<T> = Result<T, String>;
+use super::CmdResult;
 
 #[tauri::command]
 pub async fn start_oauth(state: State<'_, AppState>) -> CmdResult<String> {

@@ -11,7 +11,7 @@ use ramus_core::plex::token_store::TokenStore;
 use crate::events;
 use crate::state::AppState;
 
-type CmdResult<T> = Result<T, String>;
+use super::CmdResult;
 
 fn get_library_key() -> CmdResult<String> {
     let token_store = TokenStore::new().map_err(|e| e.to_string())?;

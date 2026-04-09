@@ -7,7 +7,7 @@ use ramus_core::playback::waveform;
 use crate::events::{emit_playback_state, PlaybackStatePayload};
 use crate::state::AppState;
 
-type CmdResult<T> = Result<T, String>;
+use super::CmdResult;
 
 #[tauri::command]
 pub async fn play_tracks(

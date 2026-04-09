@@ -75,7 +75,7 @@ function stripHash(hex: string): string {
   return hex.startsWith("#") ? hex.slice(1) : hex;
 }
 
-function hexToRgb(hex: string): [number, number, number] {
+export function hexToRgb(hex: string): [number, number, number] {
   const cleaned = hex.startsWith("#") ? hex.slice(1) : hex;
   const value = parseInt(cleaned, 16);
   if (isNaN(value)) return [0, 0, 0];

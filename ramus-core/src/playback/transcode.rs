@@ -1,16 +1,7 @@
 use url::Url;
 
 use crate::models::PlaybackMode;
-
-// ---------------------------------------------------------------------------
-// Lossless codec detection
-// ---------------------------------------------------------------------------
-
-const LOSSLESS_CODECS: &[&str] = &["flac", "alac", "wav", "aiff", "aif", "pcm"];
-
-fn is_lossless_codec(codec: &str) -> bool {
-    LOSSLESS_CODECS.contains(&codec.to_lowercase().as_str())
-}
+use crate::util::{is_lossless_codec, percent_decode, percent_encode};
 
 // ---------------------------------------------------------------------------
 // Transcode decision
@@ -90,45 +81,6 @@ pub fn build_hls_url(
     Url::parse(&format!("{}{}?{}", base, endpoint, query)).ok()
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn percent_encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for byte in s.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(byte as char);
-            }
-            _ => {
-                out.push_str(&format!("%{:02X}", byte));
-            }
-        }
-    }
-    out
-}
-
-fn percent_decode(s: &str) -> String {
-    let mut result = Vec::with_capacity(s.len());
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(
-                &s[i + 1..i + 3],
-                16,
-            ) {
-                result.push(byte);
-                i += 3;
-                continue;
-            }
-        }
-        result.push(bytes[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&result).into_owned()
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -282,36 +234,4 @@ mod tests {
         assert!(!url_str.contains("/audio/:/"));
     }
 
-    // -- is_lossless_codec --
-
-    #[test]
-    fn test_lossless_codec_detection() {
-        assert!(is_lossless_codec("flac"));
-        assert!(is_lossless_codec("alac"));
-        assert!(is_lossless_codec("wav"));
-        assert!(is_lossless_codec("aiff"));
-        assert!(is_lossless_codec("aif"));
-        assert!(is_lossless_codec("pcm"));
-        assert!(is_lossless_codec("FLAC")); // case insensitive
-        assert!(!is_lossless_codec("mp3"));
-        assert!(!is_lossless_codec("aac"));
-        assert!(!is_lossless_codec("opus"));
-        assert!(!is_lossless_codec("vorbis"));
-    }
-
-    // -- percent encoding --
-
-    #[test]
-    fn test_percent_encode() {
-        assert_eq!(percent_encode("abc123"), "abc123");
-        assert_eq!(percent_encode("hello world"), "hello%20world");
-        assert_eq!(percent_encode("a&b=c"), "a%26b%3Dc");
-    }
-
-    #[test]
-    fn test_percent_decode() {
-        assert_eq!(percent_decode("abc123"), "abc123");
-        assert_eq!(percent_decode("%2e%2e"), "..");
-        assert_eq!(percent_decode("/library/%2e%2e/etc"), "/library/../etc");
-    }
 }

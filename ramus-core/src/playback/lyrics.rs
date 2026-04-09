@@ -245,27 +245,10 @@ pub fn parse_plex_json_lyrics(data: &[u8]) -> Option<Vec<LyricLine>> {
 ///
 /// Must start with `/library/` or `/file/`, and must not contain path traversal.
 pub fn validate_lyrics_path(path: &str) -> bool {
-    let decoded = percent_decode_simple(path);
+    let decoded = crate::util::percent_decode(path);
     (decoded.starts_with("/library/") || decoded.starts_with("/file/")) && !decoded.contains("..")
 }
 
-fn percent_decode_simple(s: &str) -> String {
-    let mut result = Vec::with_capacity(s.len());
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                result.push(byte);
-                i += 3;
-                continue;
-            }
-        }
-        result.push(bytes[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&result).into_owned()
-}
 
 // ---------------------------------------------------------------------------
 // LRCLIB fetch

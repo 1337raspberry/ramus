@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
-
-function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
+import { formatDuration } from "../lib/format";
 
 export default function WaveformSeekBar() {
   const levels = usePlaybackStore((s) => s.waveformLevels);
@@ -268,8 +263,8 @@ export default function WaveformSeekBar() {
         <canvas ref={canvasRef} className="waveform-canvas" />
       </div>
       <div className="waveform-times">
-        <span className="waveform-time">{formatTime(displayPos)}</span>
-        <span className="waveform-time">{formatTime(duration)}</span>
+        <span className="waveform-time">{formatDuration(displayPos)}</span>
+        <span className="waveform-time">{formatDuration(duration)}</span>
       </div>
     </div>
   );

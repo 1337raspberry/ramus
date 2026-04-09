@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::state::AppState;
 
-type CmdResult<T> = Result<T, String>;
+use super::CmdResult;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
