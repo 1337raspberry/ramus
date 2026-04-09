@@ -1515,38 +1515,7 @@ pub struct TrackUpsertRow {
     pub updated_at: Option<i64>,
 }
 
-// ---------------------------------------------------------------------------
-// FTS5 / LIKE escaping
-// ---------------------------------------------------------------------------
-
-/// Escape a string for FTS5 MATCH queries.
-/// Strip `"*():^{}`, replace `-` with space.
-pub fn escape_fts5(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    for ch in input.chars() {
-        match ch {
-            '"' | '*' | '(' | ')' | ':' | '^' | '{' | '}' => {}
-            '-' => out.push(' '),
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
-/// Escape a string for SQL LIKE patterns (escape `%`, `_`, `\`).
-pub fn escape_like(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    for ch in input.chars() {
-        match ch {
-            '%' | '_' | '\\' => {
-                out.push('\\');
-                out.push(ch);
-            }
-            _ => out.push(ch),
-        }
-    }
-    out
-}
+use crate::util::{escape_fts5, escape_like};
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -1800,27 +1769,6 @@ mod tests {
         assert_eq!(results[0].title, "Paranoid Android");
     }
 
-    #[test]
-    fn test_like_pattern_escaping() {
-        // % in search term should be treated literally
-        assert_eq!(escape_like("100%"), "100\\%");
-        // _ should be escaped
-        assert_eq!(escape_like("track_1"), "track\\_1");
-        // \ should be escaped
-        assert_eq!(escape_like("back\\slash"), "back\\\\slash");
-        // Normal text passes through
-        assert_eq!(escape_like("hello world"), "hello world");
-        // Empty string
-        assert_eq!(escape_like(""), "");
-        // All special chars
-        assert_eq!(escape_like("%_\\"), "\\%\\_\\\\");
-        // Mixed
-        assert_eq!(escape_like("foo%bar_baz"), "foo\\%bar\\_baz");
-        // Multiple consecutive
-        assert_eq!(escape_like("%%"), "\\%\\%");
-        // Unicode preserved
-        assert_eq!(escape_like("björk"), "björk");
-    }
 
     #[test]
     fn test_album_year_range_filters() {
@@ -1932,15 +1880,6 @@ mod tests {
         assert!(results.is_empty());
     }
 
-    #[test]
-    fn test_fts5_escaping() {
-        assert_eq!(escape_fts5("hello-world"), "hello world");
-        assert_eq!(escape_fts5(r#"test"quote"#), "testquote");
-        assert_eq!(escape_fts5("foo*bar"), "foobar");
-        assert_eq!(escape_fts5("(group)"), "group");
-        assert_eq!(escape_fts5("normal text"), "normal text");
-        assert_eq!(escape_fts5("colon:value"), "colonvalue");
-    }
 
     #[test]
     fn test_update_deep_metadata() {

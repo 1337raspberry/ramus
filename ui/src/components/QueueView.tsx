@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { getArtUrl } from "../lib/commands";
+import { formatDuration } from "../lib/format";
 import { IconMusicNote, IconClose } from "./Icons";
-
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 function QueueTrackThumb({ thumb }: { thumb: string | null }) {
   const [src, setSrc] = useState<string | null>(null);

@@ -5,7 +5,7 @@ use ramus_core::search::parser::QueryParser;
 
 use crate::state::AppState;
 
-type CmdResult<T> = Result<T, String>;
+use super::CmdResult;
 
 #[tauri::command]
 pub async fn search(

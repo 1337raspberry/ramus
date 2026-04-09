@@ -186,8 +186,7 @@ impl Track {
     /// Audio format display: "FLAC" for lossless, "MP3 320 kbps" for lossy.
     pub fn format_description(&self) -> Option<String> {
         let codec = self.codec.as_ref()?;
-        let lossless = ["flac", "alac", "wav", "aiff", "pcm"];
-        if lossless.contains(&codec.to_lowercase().as_str()) {
+        if crate::util::is_lossless_codec(codec) {
             return Some(codec.to_uppercase());
         }
         if let Some(bitrate) = self.bitrate {

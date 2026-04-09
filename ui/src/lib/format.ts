@@ -6,7 +6,7 @@ export function formatDuration(seconds: number): string {
 
 export function formatCodec(codec: string | null, bitrate: number | null): string | null {
   if (!codec) return null;
-  const lossless = ["flac", "alac", "wav", "aiff", "pcm"];
+  const lossless = ["flac", "alac", "wav", "aiff", "aif", "pcm"];
   if (lossless.includes(codec.toLowerCase())) return codec.toUpperCase();
   if (bitrate) return `${codec.toUpperCase()} ${bitrate}`;
   return codec.toUpperCase();

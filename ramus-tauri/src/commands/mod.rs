@@ -1,3 +1,5 @@
+pub type CmdResult<T> = Result<T, String>;
+
 pub mod auth;
 pub mod library;
 pub mod playback;

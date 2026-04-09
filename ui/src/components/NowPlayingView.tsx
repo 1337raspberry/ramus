@@ -3,6 +3,7 @@ import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { getArtUrl, toggleAlbumFavourite, toggleTrackFavourite, setAlbumPalette } from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
+import { formatCodec } from "../lib/format";
 import WaveformSeekBar from "./WaveformSeekBar";
 import VolumeSlider from "./VolumeSlider";
 import FlowLayout from "./FlowLayout";
@@ -13,14 +14,6 @@ import {
   IconStarFilled, IconStarEmpty, IconMusicNote, IconEqualizer,
   IconPrevious, IconPause, IconPlay, IconNext, IconChevronDown,
 } from "./Icons";
-
-function formatCodec(codec: string | null, bitrate: number | null): string | null {
-  if (!codec) return null;
-  const lossless = ["flac", "alac", "wav", "aiff", "pcm"];
-  if (lossless.includes(codec.toLowerCase())) return codec.toUpperCase();
-  if (bitrate) return `${codec.toUpperCase()} ${bitrate}`;
-  return codec.toUpperCase();
-}
 
 interface NowPlayingProps {
   onOpenEQ?: () => void;

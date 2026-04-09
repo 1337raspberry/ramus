@@ -134,19 +134,6 @@ impl QueryParser {
         ParsedQuery { filters }
     }
 
-    /// Strip FTS5 metacharacters from a string for safe use in MATCH queries.
-    pub fn escape_fts5(text: &str) -> String {
-        let mut result = String::with_capacity(text.len());
-        for ch in text.chars() {
-            match ch {
-                '"' | '*' | '(' | ')' | ':' | '^' | '{' | '}' => {}
-                '-' => result.push(' '),
-                _ => result.push(ch),
-            }
-        }
-        result
-    }
-
     fn parse_segment(segment: &str) -> Option<SearchFilter> {
         let lower = segment.to_lowercase();
 
@@ -350,24 +337,6 @@ mod tests {
         assert!(QueryParser::parse("%").is_empty());
     }
 
-    #[test]
-    fn test_escape_fts5() {
-        let escaped = QueryParser::escape_fts5("hello*world\"test");
-        assert_eq!(escaped, "helloworldtest");
-    }
-
-    #[test]
-    fn test_escape_fts5_hyphen_replaced_with_space() {
-        assert_eq!(QueryParser::escape_fts5("-something"), " something");
-        assert_eq!(QueryParser::escape_fts5("hip-hop"), "hip hop");
-    }
-
-    #[test]
-    fn test_escape_fts5_keywords_neutralised_by_quoting() {
-        // escapeFTS5 doesn't strip keywords — quoting happens at the engine call site
-        let escaped = QueryParser::escape_fts5("rock OR metal");
-        assert_eq!(escaped, "rock OR metal");
-    }
 
     #[test]
     fn test_default_search_does_not_produce_track_search() {

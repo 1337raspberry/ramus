@@ -1,4 +1,5 @@
 import type { UltraBlurColors } from "../lib/types";
+import { hexToRgb } from "../lib/vibrantColor";
 
 // Curated color presets sampled from real album art.
 // Each entry has ultrablur corner colors and a matching accent.
@@ -34,22 +35,8 @@ export function randomPalette(): { colors: UltraBlurColors; accent: [number, num
 
 // --- Color helpers ---
 
-interface RGB { r: number; g: number; b: number }
-
-function hexToRgb(hex: string): RGB {
-  const cleaned = hex.startsWith("#") ? hex.slice(1) : hex;
-  if (cleaned.length !== 6) return { r: 0, g: 0, b: 0 };
-  const value = parseInt(cleaned, 16);
-  if (isNaN(value)) return { r: 0, g: 0, b: 0 };
-  return {
-    r: ((value >> 16) & 0xff) / 255,
-    g: ((value >> 8) & 0xff) / 255,
-    b: (value & 0xff) / 255,
-  };
-}
-
-function toCSS(c: RGB): string {
-  return `rgb(${Math.round(c.r * 255)}, ${Math.round(c.g * 255)}, ${Math.round(c.b * 255)})`;
+function toCSS(rgb: [number, number, number]): string {
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
 
 interface Props {

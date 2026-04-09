@@ -5,3 +5,4 @@ pub mod playback;
 pub mod plex;
 pub mod search;
 pub mod settings;
+pub mod util;

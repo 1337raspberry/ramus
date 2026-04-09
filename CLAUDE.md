@@ -67,6 +67,65 @@ cd ui && npm run build                      # Production build (tsc + vite)
 - **`loadfile "replace"` implicitly stops** — do NOT call `mpv.stop()` before `load_queue`, it races with playlist setup.
 - **Session reporting**: always send `state=stopped` for the previous track before reporting a new one. Scrobble at >= 90% progress, once per track.
 
+## Naming Conventions & Shared Utilities
+
+### Canonical locations — do not duplicate
+
+Shared utility functions live in `ramus-core/src/util.rs`. Before writing a helper, check if it already exists here:
+
+| Function / Constant | Purpose |
+|---|---|
+| `escape_fts5(input)` | Strip FTS5 metacharacters for MATCH queries |
+| `escape_like(input)` | Escape `%`, `_`, `\` for SQL LIKE patterns |
+| `percent_encode(s)` | RFC 3986 percent-encoding |
+| `percent_decode(s)` | Percent-decoding (`%2F` → `/`) |
+| `LOSSLESS_CODECS` | `&["flac", "alac", "wav", "aiff", "aif", "pcm"]` |
+| `is_lossless_codec(codec)` | Case-insensitive lossless check |
+
+The Tauri command result type is defined once in `ramus-tauri/src/commands/mod.rs`:
+```rust
+pub type CmdResult<T> = Result<T, String>;
+```
+Command files import it via `use super::CmdResult;` — do not redefine locally.
+
+Frontend format helpers live in `ui/src/lib/format.ts`:
+- `formatDuration(seconds)` — `"m:ss"` display (do not create local copies or name variants like `formatTime`)
+- `formatCodec(codec, bitrate)` — `"FLAC"` or `"MP3 320"` display
+
+Color helpers live in `ui/src/lib/vibrantColor.ts`:
+- `hexToRgb(hex)` — returns `[r, g, b]` (0-255), exported for shared use
+- `accentFromPalette(p)`, `blurColorsFromPalette(p)`, `extractPalette(img)`
+
+### Naming conventions by layer
+
+| Layer | Convention | Examples |
+|---|---|---|
+| Rust structs/enums | PascalCase | `PlaybackStatus`, `CacheError` |
+| Rust functions/fields | snake_case | `is_lossless_codec`, `rating_key` |
+| Rust constants | UPPER_SNAKE_CASE | `LOSSLESS_CODECS`, `BATCH_SIZE` |
+| SQLite columns | camelCase | `sourceId`, `artUrl`, `durationMs` |
+| Tauri commands | snake_case | `get_genre_tree`, `play_tracks` |
+| Tauri events | kebab-case | `playback-state`, `accent-color` |
+| TS types/interfaces | PascalCase | `Album`, `PlaybackStatePayload` |
+| TS functions | camelCase | `formatDuration`, `extractPalette` |
+| TS constants | UPPER_SNAKE_CASE | `MIN_CARD_WIDTH`, `BAND_LABELS` |
+| React components | PascalCase | `NowPlayingView`, `AlbumCard` |
+| Zustand stores | `use[Name]Store` | `useLibraryStore`, `usePlaybackStore` |
+| CSS classes | kebab-case with prefix | `.np-header`, `.album-card`, `.eq-panel` |
+| CSS variables | `--kebab-case` | `--accent-r`, `--bg-primary` |
+
+### Key type aliases
+
+- `PlexID = String` — Plex `ratingKey`, used as the primary identifier for media items
+- `Duration = f64` — always in **seconds** in Rust/TS; the DB stores `durationMs` (milliseconds), convert at boundary
+
+### Rules to maintain consistency
+
+- When adding a new utility that could be used across modules, put it in `util.rs` (Rust) or `ui/src/lib/` (TS) — never define helpers inline in component/command files
+- The lossless codec list must include `"aif"` (valid AIFF extension) — always use `is_lossless_codec()` or import from `format.ts` rather than defining inline arrays
+- Tauri event names are kebab-case strings; keep them in sync between `ramus-tauri/src/events.rs` (emit) and `ui/src/App.tsx` / stores (listen)
+- DB column names are camelCase for Plex API compatibility — this is intentional, do not change to snake_case
+
 ## Swift Reference Mapping
 
 When implementing a Rust module, consult the corresponding Swift source:

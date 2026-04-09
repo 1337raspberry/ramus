@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::cache::db::CacheDatabase;
 use crate::models::{RangeField, SearchResult, SearchResultKind};
-use crate::search::parser::{ParsedQuery, QueryParser};
+use crate::search::parser::ParsedQuery;
 
 // ---------------------------------------------------------------------------
 // Genre expansion trait (decouples from GenreMapper)
@@ -227,7 +227,7 @@ impl SearchEngine {
         let mut seen = HashSet::<i64>::new();
         let mut results = Vec::new();
 
-        let escaped = QueryParser::escape_fts5(text);
+        let escaped = crate::util::escape_fts5(text);
         let fts_tokens: String = escaped
             .split_whitespace()
             .filter(|t| !t.is_empty())
