@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
-import {
-  getArtUrl,
-  toggleAlbumFavourite,
-  toggleTrackFavourite,
-  setAlbumPalette,
-} from "../lib/commands";
+import { getArtUrl, setAlbumPalette } from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import { formatCodec } from "../lib/format";
 import WaveformSeekBar from "./WaveformSeekBar";
@@ -122,11 +117,13 @@ export default function NowPlayingView({
 
   const handleAlbumFavToggle = () => {
     if (!nowPlayingAlbum) return;
-    toggleAlbumFavourite(nowPlayingAlbum.ratingKey, !albumFav).catch(() => {});
+    // Route through libraryStore so albums/selectedAlbum/detailAlbum AND
+    // playbackStore.nowPlayingAlbum all get the optimistic update.
+    useLibraryStore.getState().toggleAlbumFav(nowPlayingAlbum);
   };
 
   const handleTrackFavToggle = () => {
-    toggleTrackFavourite(track.ratingKey, !trackFav).catch(() => {});
+    useLibraryStore.getState().toggleTrackFav(track);
   };
 
   const handleArtistClick = () => {

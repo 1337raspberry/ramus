@@ -189,3 +189,4 @@ Events flow Rust → frontend via `app.emit()`. Commands flow frontend → Rust 
 - Dark theme enforced, CSS variables for dynamic accent color (`--accent-r/g/b`)
 - Custom window chrome (`decorations: false`, CSS drag region)
 - 150ms debounce on search input, 50ms debounce on EQ slider changes
+- **Favourite toggles** route through `libraryStore.toggleAlbumFav` / `toggleTrackFav`. These own the Tauri IPC call AND patch `playbackStore.nowPlayingAlbum` / `currentTrack` / `queue` when IDs match, keeping library views and the Now Playing card in sync. Do **not** call the `toggle_album_favourite` / `toggle_track_favourite` IPC commands directly from components — the UI won't re-render because the stores are the source of truth for star icons.
