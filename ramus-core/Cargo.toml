@@ -24,6 +24,11 @@ rusqlite = { version = "0.31", features = ["bundled", "column_decltype"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
 
+[target.'cfg(target_os = "windows")'.dependencies]
+# Used by token_store::hardware_uuid() to read MachineGuid from
+# HKLM\SOFTWARE\Microsoft\Cryptography on Windows.
+winreg = "0.55"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros"] }
 wiremock = "0.6"
