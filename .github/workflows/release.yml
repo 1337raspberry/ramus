@@ -1,0 +1,121 @@
+name: Release
+
+# Builds ramus for macOS (Apple Silicon + Intel) and Linux, uploads the
+# installers to a draft GitHub Release. Trigger by pushing a `v*` tag
+# (e.g. `git tag v0.1.0 && git push origin v0.1.0`) or by running the
+# workflow manually from the Actions tab.
+#
+# Windows is intentionally not in the matrix yet — our current build.rs
+# uses pkg-config + direct C FFI, which requires libmpv headers and an
+# MSVC import lib on Windows. A follow-up will move to runtime loading
+# via libloading so we can add a windows-latest entry.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-14
+            label: macOS (Apple Silicon)
+            rust-target: aarch64-apple-darwin
+            tauri-args: --target aarch64-apple-darwin
+          - platform: macos-13
+            label: macOS (Intel)
+            rust-target: x86_64-apple-darwin
+            tauri-args: --target x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            label: Linux (x86_64)
+            rust-target: ''
+            tauri-args: ''
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+          # Separate cache per platform so they don't stomp each other.
+          key: ${{ matrix.platform }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      # Linux: Tauri's webkit2gtk + libmpv for playback.
+      # libayatana-appindicator3-dev is the maintained replacement for
+      # the deprecated libappindicator3-dev package.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf \
+            libmpv-dev \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      # macOS: brew installs libmpv for the host arch (arm64 on macos-14,
+      # x86_64 on macos-13), which is why we keep the two runners split
+      # instead of trying to build a universal binary on one box.
+      - name: Install macOS system dependencies
+        if: runner.os == 'macOS'
+        run: brew install mpv
+
+      - name: Install frontend dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Build and publish Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: ramus-tauri
+          tagName: v__VERSION__
+          releaseName: 'ramus v__VERSION__'
+          releaseBody: |
+            Automated build from CI. Grab the file that matches your system:
+
+            - **macOS (Apple Silicon)** — `*_aarch64.dmg`
+            - **macOS (Intel)** — `*_x64.dmg`
+            - **Linux** — `.AppImage` (portable), `.deb` (Debian/Ubuntu), `.rpm` (Fedora/RHEL)
+
+            ### Heads up
+            These builds are **unsigned**, so you'll get a warning the first time you open the app:
+
+            - On macOS: right-click the app → Open, or run `xattr -cr /Applications/ramus.app` to clear the quarantine flag.
+            - On Linux: `chmod +x ramus_*.AppImage` if you grabbed the AppImage.
+
+            Windows builds aren't published yet — coming in a follow-up.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.tauri-args }}

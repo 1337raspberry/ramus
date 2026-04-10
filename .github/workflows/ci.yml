@@ -1,0 +1,79 @@
+name: CI
+
+# Lightweight checks on every push + PR so we notice breakage before
+# tagging a release. Runs the Rust unit tests + clippy + the frontend
+# build on macOS and Linux. No bundling — the Release workflow handles
+# installer artifacts.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.label }})
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-14
+            label: macOS
+          - platform: ubuntu-22.04
+            label: Linux
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+          key: ci-${{ matrix.platform }}
+
+      # ramus-core is pure Rust with full test coverage — no system deps,
+      # no libmpv, no webkit needed. We deliberately skip ramus-tauri here
+      # because tauri-build wants the frontend dist/ dir to exist; the
+      # Release workflow covers the full build path.
+      - name: cargo test (ramus-core)
+        run: cargo test -p ramus-core --all-features
+
+      - name: cargo clippy (ramus-core)
+        run: cargo clippy -p ramus-core --all-targets -- -D warnings
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: ui
+        run: npm run build
