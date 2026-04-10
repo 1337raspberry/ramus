@@ -3068,6 +3068,7 @@ dependencies = [
  "env_logger",
  "libc",
  "log",
+ "objc2",
  "open",
  "parking_lot",
  "pkg-config",
