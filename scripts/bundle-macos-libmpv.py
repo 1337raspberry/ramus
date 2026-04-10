@@ -87,8 +87,74 @@ def otool_deps(path: Path) -> list[str]:
     return deps
 
 
-def is_skippable(install_name: str) -> bool:
-    return install_name.startswith(SYSTEM_PREFIXES) or install_name.startswith("@")
+def otool_rpaths(path: Path) -> list[str]:
+    """Return every LC_RPATH entry embedded in `path`.
+
+    `otool -l` dumps load commands like:
+        Load command 12
+              cmd LC_RPATH
+          cmdsize 40
+             path /opt/homebrew/lib (offset 12)
+
+    We scan for `cmd LC_RPATH` lines and grab the `path` entry that appears
+    within the next few lines. Callers use these to resolve `@rpath/...` deps
+    against their containing binary's RPATH list.
+    """
+    out = subprocess.check_output(["otool", "-l", str(path)], text=True)
+    rpaths: list[str] = []
+    lines = out.splitlines()
+    i = 0
+    while i < len(lines):
+        if lines[i].strip().startswith("cmd LC_RPATH"):
+            # The `path` line normally appears two lines later, but we scan a
+            # small window in case the format ever shifts.
+            for j in range(i + 1, min(i + 6, len(lines))):
+                stripped = lines[j].strip()
+                if stripped.startswith("path "):
+                    rpath = stripped[len("path "):].rsplit(" (offset", 1)[0].strip()
+                    rpaths.append(rpath)
+                    break
+        i += 1
+    return rpaths
+
+
+def resolve_dep(install_name: str, containing: Path) -> Path | None:
+    """Resolve a load-command install name to a concrete file on disk.
+
+    Handles absolute paths, `@loader_path/...` (relative to the containing
+    binary's dir), and `@rpath/...` (substitutes each LC_RPATH entry of the
+    containing binary until one exists). `@executable_path/...` cannot be
+    resolved in a build script and returns None.
+
+    Homebrew's mpv formula currently uses absolute install names for its
+    direct deps, so in practice this mostly matters for transitive deps of
+    ffmpeg/libplacebo etc. which do use `@rpath` on newer brew builds. If
+    we don't resolve those, `walk_transitive` drops them silently and the
+    bundle ends up incomplete.
+    """
+    if install_name.startswith("@rpath/"):
+        rel = install_name[len("@rpath/"):]
+        for rpath in otool_rpaths(containing):
+            # An RPATH entry may itself start with @loader_path (dyld's
+            # equivalent of $ORIGIN); substitute it against the containing
+            # binary's parent directory. @executable_path inside an RPATH
+            # is unresolvable in this context.
+            if rpath.startswith("@loader_path"):
+                rpath = str(containing.parent) + rpath[len("@loader_path"):]
+            elif rpath.startswith("@executable_path"):
+                continue
+            candidate = Path(rpath) / rel
+            if candidate.exists():
+                return candidate
+        return None
+    if install_name.startswith("@loader_path/"):
+        candidate = containing.parent / install_name[len("@loader_path/"):]
+        return candidate if candidate.exists() else None
+    if install_name.startswith("@executable_path/"):
+        return None
+    # Plain absolute path.
+    p = Path(install_name)
+    return p if p.exists() else None
 
 
 def bundled_basename(install_name: str) -> str:
@@ -108,24 +174,40 @@ def bundled_basename(install_name: str) -> str:
 
 
 def walk_transitive(root: Path) -> dict[str, Path]:
-    """BFS through libmpv's deps. Returns map of install_name → resolved real path."""
+    """BFS through libmpv's transitive deps.
+
+    Returns a map of install-name-as-seen-in-load-commands → resolved real
+    path on disk. Multiple install names may collapse to the same real path
+    (e.g. a symlink soname AND an `@rpath/` ref both pointing at the same
+    versioned file). The `-change` rewrite later needs to find every distinct
+    install name, so we keep them all in the map — dedupe happens at the
+    real-path layer in `main()`.
+    """
     seen: set[str] = set()
     result: dict[str, Path] = {}
-    queue: list[tuple[str, Path]] = [(str(root), root)]
+    # Queue entries: (install_name, containing_binary). `containing` is the
+    # file that referenced this install name — needed so `@rpath/` refs can be
+    # resolved against that file's own LC_RPATH list.
+    queue: list[tuple[str, Path]] = [(str(root), root.resolve())]
     while queue:
-        install_name, current = queue.pop(0)
+        install_name, containing = queue.pop(0)
         if install_name in seen:
             continue
         seen.add(install_name)
-        if not current.exists():
-            print(f"warn: {current} not found, skipping", file=sys.stderr)
+        if install_name.startswith(SYSTEM_PREFIXES):
             continue
-        real = current.resolve()
+        resolved = resolve_dep(install_name, containing)
+        if resolved is None:
+            print(
+                f"warn: could not resolve {install_name} (referenced from "
+                f"{containing}); skipping",
+                file=sys.stderr,
+            )
+            continue
+        real = resolved.resolve()
         result[install_name] = real
         for dep in otool_deps(real):
-            if is_skippable(dep):
-                continue
-            queue.append((dep, Path(dep)))
+            queue.append((dep, real))
     return result
 
 
@@ -179,6 +261,36 @@ def main() -> int:
 
     print(f"copied {len(real_to_target)} unique files")
 
+    # Sanity check BEFORE we start rewriting: every non-system dep embedded in
+    # a copied file must have an entry in `install_name_to_target`, otherwise
+    # the `-change` pass would leave a stale absolute path (or unresolved
+    # `@rpath/`) behind and the shipped .app would fail at dlopen. Hard-fail
+    # here rather than warning and shipping a broken bundle.
+    missing: list[tuple[str, str]] = []
+    for real_path, target_basename in real_to_target.items():
+        path = WORKDIR / target_basename
+        for dep in otool_deps(path):
+            if dep.startswith(SYSTEM_PREFIXES):
+                continue
+            if dep in install_name_to_target:
+                continue
+            missing.append((target_basename, dep))
+
+    if missing:
+        print(
+            "ERROR: bundled files reference deps that were not themselves bundled:",
+            file=sys.stderr,
+        )
+        for binary, dep in missing:
+            print(f"  {binary} → {dep}", file=sys.stderr)
+        print(
+            "\nThis usually means walk_transitive() failed to resolve an "
+            "@rpath / @loader_path dep or otherwise missed a branch of the "
+            "dependency graph. Fix the resolver and rerun.",
+            file=sys.stderr,
+        )
+        return 1
+
     # Rewrite install names so every bundled dylib references its peers via
     # @loader_path/<basename>. After this, the bundle is fully self-contained
     # — no absolute paths to /opt/homebrew anywhere in any of these files.
@@ -186,26 +298,21 @@ def main() -> int:
         path = WORKDIR / target_basename
         # The dylib's own install ID — what other binaries see as its name.
         install_name_tool("-id", f"@loader_path/{target_basename}", str(path))
-        # Each dep that points at something we bundled gets rewritten.
+        # Every non-system dep is guaranteed present in the map by the
+        # sanity check above, so we can look up unconditionally.
         for dep in otool_deps(path):
-            if is_skippable(dep):
+            if dep.startswith(SYSTEM_PREFIXES):
                 continue
-            mapped = install_name_to_target.get(dep)
-            if mapped:
-                install_name_tool(
-                    "-change", dep, f"@loader_path/{mapped}", str(path)
-                )
-            else:
-                print(
-                    f"WARN: {target_basename} references {dep} which wasn't bundled",
-                    file=sys.stderr,
-                )
+            mapped = install_name_to_target[dep]
+            install_name_tool(
+                "-change", dep, f"@loader_path/{mapped}", str(path)
+            )
 
     # Generate tauri.macos.conf.json — Tauri auto-merges this when building
     # for macOS. Paths are interpreted relative to tauri.conf.json's dir.
     rel_paths = sorted({f"macos-frameworks/{b}" for b in real_to_target.values()})
     config = {
-        "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/nicegui/static/tauri-conf-schema.json",
+        "$schema": "https://schema.tauri.app/config/2",
         "bundle": {"macOS": {"frameworks": rel_paths}},
     }
     CONFIG_OUT.write_text(json.dumps(config, indent=2) + "\n")
