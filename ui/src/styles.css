@@ -1532,7 +1532,8 @@ textarea {
 
 /* --- EQ Button --- */
 
-.np-eq-btn {
+.np-eq-btn,
+.np-viz-btn {
   background: none;
   border: none;
   font-size: 16px;
@@ -1545,7 +1546,14 @@ textarea {
   transition: color 0.15s;
 }
 
-.np-eq-btn:hover {
+.np-eq-btn:hover,
+.np-viz-btn:hover {
+  color: var(--accent);
+}
+
+/* Active = visualiser currently showing. Stays in accent so the user can
+ * tell at a glance that toggling it will turn the visualiser off. */
+.np-viz-btn.active {
   color: var(--accent);
 }
 

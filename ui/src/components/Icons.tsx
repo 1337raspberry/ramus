@@ -271,3 +271,21 @@ export function IconExpand({ size = defaults.size, className }: IconProps) {
     </svg>
   );
 }
+
+export function IconWave({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M3 12 q 3 -6 6 0 t 6 0 t 6 0" />
+    </svg>
+  );
+}

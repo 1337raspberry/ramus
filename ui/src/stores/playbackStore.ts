@@ -50,6 +50,10 @@ interface PlaybackState {
 
   // --- Focus mode ---
   isFocusMode: boolean;
+  // Whether the focus-mode visualiser layer is rendered. Session-only —
+  // resets to true on reload. Controlled by the IconWave toggle next to
+  // the equalizer button in FocusNowPlayingView's track row.
+  showVisualizer: boolean;
 
   // --- Realtime audio meter (fed from mpv `af-metadata/astats`) ---
   // FocusVisualizer reads this via getState() inside a RAF loop to avoid
@@ -71,6 +75,7 @@ interface PlaybackState {
   toggleLyricsPinned: () => void;
   toggleQueue: () => void;
   toggleFocusMode: () => void;
+  toggleVisualizer: () => void;
   removeQueueItem: (index: number) => void;
   jumpToIndex: (index: number) => void;
 }
@@ -127,6 +132,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   currentGenres: [],
 
   isFocusMode: false,
+  showVisualizer: true,
   audioLevels: null,
 
   onPlaybackState: (status, track, queueIndex) => {
@@ -298,6 +304,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
 
   toggleFocusMode: () => set((s) => ({ isFocusMode: !s.isFocusMode })),
+
+  toggleVisualizer: () => set((s) => ({ showVisualizer: !s.showVisualizer })),
 
   removeQueueItem: (index) => {
     removeFromQueueCmd(index).catch(() => {});
