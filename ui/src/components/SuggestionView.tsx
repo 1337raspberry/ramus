@@ -85,7 +85,9 @@ export default function SuggestionView() {
     };
   }, [album]);
 
-  // Apply cached accent + ultrablur colors when nothing is playing
+  // Prime the store with a previously-extracted vibrant palette if we have
+  // one cached in the DB. Skip the legacy API-sourced ultraBlurColors entirely
+  // — dynamic extraction in handleArtLoad is the source of truth.
   useEffect(() => {
     if (!album || status !== "stopped") return;
     getAlbumColors(album.ratingKey)
@@ -95,8 +97,6 @@ export default function SuggestionView() {
             vibrantPalette: result.palette,
             ultraBlurColors: blurColorsFromPalette(result.palette),
           });
-        } else if (result.colors) {
-          usePlaybackStore.setState({ ultraBlurColors: result.colors });
         }
       })
       .catch(() => {});

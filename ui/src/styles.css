@@ -259,7 +259,6 @@ textarea {
   display: flex;
   gap: 2px;
   padding: 8px 8px 0;
-  border-bottom: 1px solid var(--border);
 }
 
 .sidebar-tab {
@@ -522,7 +521,6 @@ textarea {
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -808,15 +806,11 @@ textarea {
   padding: 12px 16px;
   font-size: 11px;
   color: var(--text-secondary);
-  border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .adv-footer-right {
   font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid var(--border);
   color: var(--text-muted);
 }
 
@@ -1435,7 +1429,6 @@ textarea {
 
 .sidebar-bottom-row {
   display: flex;
-  border-top: 1px solid var(--border);
 }
 
 .sidebar-bottom-btn {
@@ -1452,10 +1445,6 @@ textarea {
 
 .sidebar-bottom-btn:hover {
   color: var(--text-primary);
-}
-
-.sidebar-bottom-btn + .sidebar-bottom-btn {
-  border-left: 1px solid var(--border);
 }
 
 /* --- Suggestion View --- */

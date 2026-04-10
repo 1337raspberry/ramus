@@ -16,6 +16,7 @@ import {
   toggleTrackFavourite,
   playTracks,
 } from "../lib/commands";
+import { usePlaybackStore } from "./playbackStore";
 
 export type SidebarMode = "genres" | "favourites" | "artists";
 export type AlbumSortOrder = "alphabetical" | "latestAdded" | "recentlyPlayed" | "random";
@@ -321,6 +322,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             ? { ...state.detailAlbum, isFavourite: next }
             : state.detailAlbum,
       }));
+      // Keep the Now Playing card in sync if it's showing this album
+      usePlaybackStore.setState((state) => ({
+        nowPlayingAlbum:
+          state.nowPlayingAlbum?.ratingKey === album.ratingKey
+            ? { ...state.nowPlayingAlbum, isFavourite: next }
+            : state.nowPlayingAlbum,
+      }));
     } catch {}
   },
 
@@ -333,6 +341,16 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t,
         ),
         detailTracks: state.detailTracks.map((t) =>
+          t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t,
+        ),
+      }));
+      // Keep the Now Playing card + queue in sync if this track is playing/queued
+      usePlaybackStore.setState((state) => ({
+        currentTrack:
+          state.currentTrack?.ratingKey === track.ratingKey
+            ? { ...state.currentTrack, isFavourite: next }
+            : state.currentTrack,
+        queue: state.queue.map((t) =>
           t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t,
         ),
       }));
