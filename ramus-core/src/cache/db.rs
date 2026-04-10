@@ -654,7 +654,7 @@ mod tests {
             album_items.push(AlbumUpsertRow {
                 title: format!("Album {}", i),
                 artist_id: first_artist_id,
-                year: Some(2000 + (i % 20) as i32),
+                year: Some(2000 + (i % 20)),
                 source_id: format!("al{}", i),
                 art_url: None,
                 updated_at: Some(1000),

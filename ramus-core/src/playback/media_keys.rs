@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn test_media_key_events() {
         // Verify all variants exist and are distinguishable
-        let events = vec![
+        let events = [
             MediaKeyEvent::Play,
             MediaKeyEvent::Pause,
             MediaKeyEvent::Toggle,
