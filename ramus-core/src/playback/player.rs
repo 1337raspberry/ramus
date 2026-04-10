@@ -20,6 +20,12 @@ use crate::playback::transcode;
 /// 10-band EQ center frequencies in Hz.
 pub const EQ_FREQUENCIES: [u32; 10] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
+/// Labelled astats filter, always prepended to the mpv `af` chain so that
+/// realtime audio metering is available independent of EQ state. The label
+/// lets us observe `af-metadata/astats` via libmpv regardless of other
+/// filters in the chain.
+pub const ASTATS_FILTER: &str = "@astats:astats=metadata=1:reset=1:measure_overall=none";
+
 /// Allowed file extensions for cached audio files.
 const ALLOWED_EXTENSIONS: &[&str] = &[
     "flac", "alac", "m4a", "mp3", "aac", "wav", "aiff", "ogg", "opus", "mp2", "bin",
@@ -45,6 +51,19 @@ pub fn build_eq_filter_string(bands: &[f32; 10]) -> String {
         .collect();
 
     format!("lavfi=[{}]", filters.join(","))
+}
+
+/// Build the full mpv `af` chain: always includes the astats metering
+/// filter, optionally followed by the labelled EQ chain when enabled.
+///
+/// `af=no` can't be used to disable EQ any more — doing so would also drop
+/// the astats filter and break realtime metering. Call this instead.
+pub fn build_af_string(eq_enabled: bool, bands: &[f32; 10]) -> String {
+    if eq_enabled {
+        format!("{ASTATS_FILTER},@eq:{}", build_eq_filter_string(bands))
+    } else {
+        ASTATS_FILTER.to_string()
+    }
 }
 
 // --- Filename sanitization ---
@@ -202,6 +221,14 @@ pub struct AudioPlayer {
 
 impl AudioPlayer {
     pub fn new(mpv: Arc<dyn MpvPlayer>) -> Self {
+        // Ensure the astats metering filter is in the chain from the very first
+        // track, so the focus-mode visualiser has data before the user ever
+        // touches EQ. Goes through build_af_string (EQ disabled) rather than
+        // a raw ASTATS_FILTER write so the "always use the builder" rule in
+        // CLAUDE.md has exactly one path to enforce. build_af_string(false, …)
+        // returns the astats-only chain, matching ASTATS_FILTER byte-for-byte.
+        mpv.set_audio_filters(&build_af_string(false, &[0.0; 10]));
+
         Self {
             mpv,
             inner: Mutex::new(PlayerInner {
@@ -509,15 +536,12 @@ impl AudioPlayer {
 
     /// Apply or clear the 10-band equalizer.
     ///
-    /// When enabled, builds a lavfi filter string from the gain values.
-    /// When disabled, clears filters with "no" (not empty string).
+    /// The astats metering filter is always present in the chain, so even
+    /// when the equalizer is disabled we set `af` to the astats-only string
+    /// (not `"no"`, which would drop metering).
     pub fn apply_equalizer(&self, enabled: bool, bands: &[f32; 10]) {
-        if enabled {
-            let filter = build_eq_filter_string(bands);
-            self.mpv.set_audio_filters(&filter);
-        } else {
-            self.mpv.set_audio_filters("no");
-        }
+        let filter = build_af_string(enabled, bands);
+        self.mpv.set_audio_filters(&filter);
     }
 
     // --- State queries ---
@@ -1105,9 +1129,9 @@ mod tests {
         assert_eq!(load_files.len(), 3);
 
         // First should be Replace, rest Append
-        assert!(matches!(&calls[0], MockCall::LoadFile { mode: LoadMode::Replace, .. }));
-        assert!(matches!(&calls[1], MockCall::LoadFile { mode: LoadMode::Append, .. }));
-        assert!(matches!(&calls[2], MockCall::LoadFile { mode: LoadMode::Append, .. }));
+        assert!(matches!(load_files[0], MockCall::LoadFile { mode: LoadMode::Replace, .. }));
+        assert!(matches!(load_files[1], MockCall::LoadFile { mode: LoadMode::Append, .. }));
+        assert!(matches!(load_files[2], MockCall::LoadFile { mode: LoadMode::Append, .. }));
     }
 
     #[test]
@@ -1131,17 +1155,19 @@ mod tests {
     #[test]
     fn test_load_queue_empty_is_noop() {
         let (player, mpv) = make_player();
+        let initial_count = mpv.call_count();
         player.load_queue(vec![], 0);
         assert_eq!(player.state().status, PlaybackStatus::Stopped);
-        assert_eq!(mpv.call_count(), 0);
+        assert_eq!(mpv.call_count(), initial_count);
     }
 
     #[test]
     fn test_load_queue_out_of_bounds_is_noop() {
         let (player, mpv) = make_player();
+        let initial_count = mpv.call_count();
         player.load_queue(vec![make_test_track("1")], 5);
         assert_eq!(player.state().status, PlaybackStatus::Stopped);
-        assert_eq!(mpv.call_count(), 0);
+        assert_eq!(mpv.call_count(), initial_count);
     }
 
     #[test]
@@ -1489,14 +1515,19 @@ mod tests {
         let bands = [3.0, -1.0, 0.0, 2.0, -2.0, 1.0, 0.5, -0.5, 4.0, -4.0];
         player.apply_equalizer(true, &bands);
 
+        // The most recent filter set should contain both the astats metering
+        // segment and the labelled EQ chain.
         let calls = mpv.calls();
-        let filter_call = calls
+        let last_filter = calls
             .iter()
-            .find(|c| matches!(c, MockCall::SetAudioFilters(_)));
-        assert!(filter_call.is_some());
-        if let MockCall::SetAudioFilters(s) = filter_call.unwrap() {
-            assert!(s.starts_with("lavfi=["));
-        }
+            .rev()
+            .find_map(|c| match c {
+                MockCall::SetAudioFilters(s) => Some(s.clone()),
+                _ => None,
+            })
+            .expect("expected set_audio_filters to be called");
+        assert!(last_filter.contains("@astats:astats=metadata=1"));
+        assert!(last_filter.contains("@eq:lavfi=[equalizer="));
     }
 
     #[test]
@@ -1505,10 +1536,47 @@ mod tests {
         let bands = [0.0; 10];
         player.apply_equalizer(false, &bands);
 
+        // Disabling EQ must NOT clear filters entirely — astats must remain
+        // so the focus-mode visualiser keeps receiving metering data.
+        let calls = mpv.calls();
+        let last_filter = calls
+            .iter()
+            .rev()
+            .find_map(|c| match c {
+                MockCall::SetAudioFilters(s) => Some(s.clone()),
+                _ => None,
+            })
+            .expect("expected set_audio_filters to be called");
+        assert_eq!(last_filter, ASTATS_FILTER);
+        assert!(!last_filter.contains("equalizer="));
+    }
+
+    #[test]
+    fn test_audio_player_new_sets_astats_filter() {
+        // The player constructor must push the astats filter so metering is
+        // live before the first track loads and before EQ is touched.
+        let (_player, mpv) = make_player();
         let calls = mpv.calls();
         assert!(calls
             .iter()
-            .any(|c| matches!(c, MockCall::SetAudioFilters(s) if s == "no")));
+            .any(|c| matches!(c, MockCall::SetAudioFilters(s) if s == ASTATS_FILTER)));
+    }
+
+    #[test]
+    fn test_build_af_string_disabled() {
+        let s = build_af_string(false, &[0.0; 10]);
+        assert_eq!(s, ASTATS_FILTER);
+    }
+
+    #[test]
+    fn test_build_af_string_enabled() {
+        let bands = [1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let s = build_af_string(true, &bands);
+        assert!(s.starts_with(ASTATS_FILTER));
+        assert!(s.contains(",@eq:lavfi=[equalizer="));
+        assert!(s.contains("g=1.0"));
+        assert!(s.contains("g=2.0"));
+        assert!(s.contains("g=3.0"));
     }
 
     // --- Callback handler tests ---

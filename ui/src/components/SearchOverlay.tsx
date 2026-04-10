@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ART_SIZE,
   search as searchCmd,
   getArtUrl,
   insertNext,
@@ -24,7 +25,7 @@ function SearchThumb({ artPath, onPlay }: { artPath: string | null; onPlay: () =
   useEffect(() => {
     if (!artPath) return;
     let cancelled = false;
-    getArtUrl(artPath, 72)
+    getArtUrl(artPath, ART_SIZE.SMALL)
       .then((url) => {
         if (!cancelled) setSrc(url);
       })

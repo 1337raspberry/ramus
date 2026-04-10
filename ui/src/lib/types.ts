@@ -152,6 +152,13 @@ export interface AccentColorPayload {
   b: number;
 }
 
+export interface AudioLevelPayload {
+  leftPeak: number;
+  rightPeak: number;
+  leftRms: number;
+  rightRms: number;
+}
+
 export interface UltraBlurColors {
   topLeft: string;
   topRight: string;

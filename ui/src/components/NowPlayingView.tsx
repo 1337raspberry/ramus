@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
-import { useLibraryStore } from "../stores/libraryStore";
-import { getArtUrl, setAlbumPalette } from "../lib/commands";
+import { ART_SIZE, setAlbumPalette } from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
-import { formatCodec } from "../lib/format";
+import { useArtUrl } from "../lib/useArtUrl";
+import { useNowPlayingActions } from "../lib/useNowPlayingActions";
 import WaveformSeekBar from "./WaveformSeekBar";
 import VolumeSlider from "./VolumeSlider";
 import FlowLayout from "./FlowLayout";
-import LyricsView from "./LyricsView";
+import LyricsOverlay from "./LyricsOverlay";
 import QueueView from "./QueueView";
 import { togglePlayPause, nextTrack, previousTrack } from "../lib/commands";
 import {
@@ -20,6 +20,7 @@ import {
   IconPlay,
   IconNext,
   IconChevronDown,
+  IconExpand,
 } from "./Icons";
 
 interface NowPlayingProps {
@@ -35,42 +36,35 @@ export default function NowPlayingView({
   showQueue,
   onToggleQueue,
 }: NowPlayingProps) {
-  const track = usePlaybackStore((s) => s.currentTrack);
   const status = usePlaybackStore((s) => s.status);
-  const lyrics = usePlaybackStore((s) => s.lyrics);
-  const lyricsLoading = usePlaybackStore((s) => s.lyricsLoading);
-  const showLyrics = usePlaybackStore((s) => s.showLyrics);
-  const lyricsPinned = usePlaybackStore((s) => s.lyricsPinned);
   const toggleLyrics = usePlaybackStore((s) => s.toggleLyrics);
-  const toggleLyricsPinned = usePlaybackStore((s) => s.toggleLyricsPinned);
-  const seek = usePlaybackStore((s) => s.seek);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
   const volume = usePlaybackStore((s) => s.volume);
   const changeVolume = usePlaybackStore((s) => s.changeVolume);
 
-  const nowPlayingAlbum = usePlaybackStore((s) => s.nowPlayingAlbum);
-
-  const [artSrc, setArtSrc] = useState<string | null>(null);
-  const [artErr, setArtErr] = useState(false);
-  const lastAccentThumb = useRef<string | null>(null);
+  const {
+    track,
+    nowPlayingAlbum,
+    hasTrackArtist,
+    year,
+    studio,
+    codec,
+    albumFav,
+    trackFav,
+    handleAlbumFavToggle,
+    handleTrackFavToggle,
+    handleArtistClick,
+    handleAlbumClick,
+    handleYearClick,
+    handleGenreClick,
+  } = useNowPlayingActions();
 
   const thumb = track?.thumb ?? nowPlayingAlbum?.thumb ?? null;
-  useEffect(() => {
-    if (!thumb) return;
-    setArtErr(false);
-    setArtSrc(null);
-    let cancelled = false;
-    getArtUrl(thumb, 600)
-      .then((url) => {
-        if (!cancelled) setArtSrc(url);
-      })
-      .catch(() => {
-        if (!cancelled) setArtErr(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [thumb]);
+  // LARGE tier — shared with the focus view and SuggestionView so entering
+  // focus mode is an instant cache hit and the compact panel stays crisp
+  // on HiDPI displays.
+  const { artSrc, artErr, setArtErr } = useArtUrl(thumb, ART_SIZE.LARGE);
+  const lastAccentThumb = useRef<string | null>(null);
 
   const handleArtLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -107,42 +101,9 @@ export default function NowPlayingView({
 
   const albumTitle = track.albumTitle;
   const artistName = track.artistName;
-  const hasTrackArtist =
-    track.trackArtist && track.trackArtist.toLowerCase() !== track.artistName.toLowerCase();
-  const year = nowPlayingAlbum?.year;
-  const studio = nowPlayingAlbum?.studio;
-  const codec = formatCodec(track.codec, track.bitrate);
-  const albumFav = nowPlayingAlbum?.isFavourite ?? false;
-  const trackFav = track.isFavourite;
 
-  const handleAlbumFavToggle = () => {
-    if (!nowPlayingAlbum) return;
-    // Route through libraryStore so albums/selectedAlbum/detailAlbum AND
-    // playbackStore.nowPlayingAlbum all get the optimistic update.
-    useLibraryStore.getState().toggleAlbumFav(nowPlayingAlbum);
-  };
-
-  const handleTrackFavToggle = () => {
-    useLibraryStore.getState().toggleTrackFav(track);
-  };
-
-  const handleArtistClick = () => {
-    useLibraryStore.getState().loadAlbumsForArtistName(track.artistName);
-  };
-
-  const handleAlbumClick = () => {
-    if (!nowPlayingAlbum) return;
-    useLibraryStore.getState().openAlbumDetail(nowPlayingAlbum);
-  };
-
-  const handleYearClick = () => {
-    if (year) useLibraryStore.getState().loadAlbumsForYear(year);
-  };
-
-  const handleGenreClick = (genre: string) => {
-    const store = useLibraryStore.getState();
-    store.setSidebarMode("genres");
-    store.loadAlbumsForGenre(genre);
+  const handleEnterFocusMode = () => {
+    usePlaybackStore.getState().toggleFocusMode();
   };
 
   return (
@@ -164,6 +125,13 @@ export default function NowPlayingView({
                 onClick={handleAlbumFavToggle}
               >
                 {albumFav ? <IconStarFilled /> : <IconStarEmpty />}
+              </button>
+              <button
+                className="np-focus-btn"
+                onClick={handleEnterFocusMode}
+                title="Focus mode (⇧⌘N)"
+              >
+                <IconExpand size={14} />
               </button>
             </div>
             {year && (
@@ -192,23 +160,7 @@ export default function NowPlayingView({
                   <IconMusicNote />
                 </div>
               )}
-              {showLyrics && (
-                <div className="np-lyrics-overlay">
-                  {lyrics ? (
-                    <LyricsView
-                      lyrics={lyrics}
-                      isPinned={lyricsPinned}
-                      onTogglePin={toggleLyricsPinned}
-                      onSeek={seek}
-                      onDismiss={toggleLyrics}
-                    />
-                  ) : lyricsLoading ? (
-                    <div className="lyrics-loading">loading lyrics...</div>
-                  ) : (
-                    <div className="lyrics-empty">No lyrics available</div>
-                  )}
-                </div>
-              )}
+              <LyricsOverlay />
             </div>
           </div>
 

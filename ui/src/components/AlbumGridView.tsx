@@ -3,7 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type AlbumSortOrder } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import type { Album } from "../lib/types";
-import { getArtUrl, getFavouriteTracks, playTracks, getQueue } from "../lib/commands";
+import { ART_SIZE, getArtUrl, getFavouriteTracks, playTracks, getQueue } from "../lib/commands";
 import { IconPlay, IconStarFilled, IconStarEmpty, IconMusicNote, IconShuffle } from "./Icons";
 
 const SORT_OPTIONS: { value: AlbumSortOrder; label: string }[] = [
@@ -29,7 +29,7 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
   useEffect(() => {
     if (!album.thumb) return;
     let cancelled = false;
-    getArtUrl(album.thumb, 300)
+    getArtUrl(album.thumb, ART_SIZE.MEDIUM)
       .then((url) => {
         if (!cancelled) setArtSrc(url);
       })

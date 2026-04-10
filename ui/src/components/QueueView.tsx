@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
-import { getArtUrl } from "../lib/commands";
+import { ART_SIZE, getArtUrl } from "../lib/commands";
 import { formatDuration } from "../lib/format";
 import { IconMusicNote, IconClose } from "./Icons";
 
@@ -11,7 +11,7 @@ function QueueTrackThumb({ thumb }: { thumb: string | null }) {
   useEffect(() => {
     if (!thumb) return;
     let cancelled = false;
-    getArtUrl(thumb, 50)
+    getArtUrl(thumb, ART_SIZE.SMALL)
       .then((url) => {
         if (!cancelled) setSrc(url);
       })

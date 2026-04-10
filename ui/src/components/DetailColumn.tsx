@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { useQueuePanel } from "../lib/useQueuePanel";
 import NowPlayingView from "./NowPlayingView";
 
 interface DetailColumnProps {
@@ -9,15 +10,9 @@ interface DetailColumnProps {
 export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
   const currentTrack = usePlaybackStore((s) => s.currentTrack);
   const [panelHeight, setPanelHeight] = useState(0);
-  const [showQueue, setShowQueue] = useState(false);
-  const showQueueRef = useRef(false);
+  const queue = useQueuePanel();
   const elRef = useRef<HTMLDivElement | null>(null);
   const obsRef = useRef<ResizeObserver | null>(null);
-
-  const setQueue = useCallback((open: boolean) => {
-    showQueueRef.current = open;
-    setShowQueue(open);
-  }, []);
 
   const scrollRef = useCallback(
     (el: HTMLDivElement | null) => {
@@ -27,33 +22,13 @@ export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
         setPanelHeight(el.clientHeight);
         const obs = new ResizeObserver(() => {
           setPanelHeight(el.clientHeight);
-          setQueue(false);
+          queue.setOpen(false);
         });
         obs.observe(el);
         obsRef.current = obs;
       }
     },
-    [setQueue],
-  );
-
-  // Wheel down on the panel opens the queue
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
-      if (e.deltaY > 0 && !showQueueRef.current) {
-        setQueue(true);
-      }
-    },
-    [setQueue],
-  );
-
-  // When scrolled back to top, close the queue
-  const handleScroll = useCallback(
-    (e: React.UIEvent<HTMLDivElement>) => {
-      if (showQueueRef.current && e.currentTarget.scrollTop === 0) {
-        setQueue(false);
-      }
-    },
-    [setQueue],
+    [queue],
   );
 
   if (!currentTrack) {
@@ -63,15 +38,15 @@ export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
   return (
     <div
       ref={scrollRef}
-      className={`detail-scroll${showQueue ? " queue-open" : ""}`}
-      onWheel={handleWheel}
-      onScroll={handleScroll}
+      className={`detail-scroll${queue.open ? " queue-open" : ""}`}
+      onWheel={queue.onWheel}
+      onScroll={queue.onScroll}
     >
       <NowPlayingView
         onOpenEQ={onOpenEQ}
         panelHeight={panelHeight}
-        showQueue={showQueue}
-        onToggleQueue={() => setQueue(!showQueueRef.current)}
+        showQueue={queue.open}
+        onToggleQueue={queue.toggle}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 import { create } from "zustand";
-import type { Album, Track, LyricsResult, UltraBlurColors } from "../lib/types";
+import type { Album, AudioLevelPayload, LyricsResult, Track, UltraBlurColors } from "../lib/types";
 import { blurColorsFromPalette, type VibrantPalette } from "../lib/vibrantColor";
+import { useVisualizerDebugStore } from "./visualizerDebugStore";
 import {
   getVolume,
   setVolume as setVolumeCmd,
@@ -47,10 +48,19 @@ interface PlaybackState {
   nowPlayingAlbum: Album | null;
   currentGenres: string[];
 
+  // --- Focus mode ---
+  isFocusMode: boolean;
+
+  // --- Realtime audio meter (fed from mpv `af-metadata/astats`) ---
+  // FocusVisualizer reads this via getState() inside a RAF loop to avoid
+  // re-renders on every 30fps tick. Don't subscribe via a React selector.
+  audioLevels: AudioLevelPayload | null;
+
   // --- Event Handlers ---
   onPlaybackState: (status: string, track: Track | null, queueIndex: number) => void;
   onPlaybackPosition: (position: number, duration: number) => void;
   onBuffering: (isBuffering: boolean, bufferedFraction: number) => void;
+  onAudioLevel: (payload: AudioLevelPayload) => void;
 
   // --- Actions ---
   seek: (seconds: number) => void;
@@ -60,6 +70,7 @@ interface PlaybackState {
   toggleLyrics: () => void;
   toggleLyricsPinned: () => void;
   toggleQueue: () => void;
+  toggleFocusMode: () => void;
   removeQueueItem: (index: number) => void;
   jumpToIndex: (index: number) => void;
 }
@@ -80,6 +91,13 @@ function activeLineIndex(lyrics: LyricsResult, position: number): number {
 }
 
 export { activeLineIndex };
+
+// Monotonic generation counter for the audio-level delayed dispatch path.
+// Incremented on every track change; pending setTimeouts compare against the
+// current value and drop their payload if it has advanced, preventing the
+// previous track's buffered meter data from bleeding into the new track
+// during the ~600 ms delay window (see onAudioLevel below).
+let audioLevelGen = 0;
 
 export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   status: "stopped",
@@ -108,9 +126,18 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   currentGenres: [],
 
+  isFocusMode: false,
+  audioLevels: null,
+
   onPlaybackState: (status, track, queueIndex) => {
     const prev = get().currentTrack;
     const trackChanged = track?.ratingKey !== prev?.ratingKey;
+
+    // Invalidate any in-flight delayed audio-level dispatches so stale
+    // metering data from the previous track can't land on the new one.
+    if (trackChanged) {
+      audioLevelGen += 1;
+    }
 
     set({
       status: status as PlaybackState["status"],
@@ -189,6 +216,36 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     set({ isBuffering, bufferedFraction });
   },
 
+  onAudioLevel: (payload) => {
+    // Hot-path mutation: set() is still fine because no React component
+    // subscribes to audioLevels via a selector — FocusVisualizer reads via
+    // getState() inside requestAnimationFrame.
+    //
+    // Visual delay: astats sees PCM samples upstream of the OS audio sink,
+    // so the visualiser naturally leads the speakers by ~mpv audio-buffer
+    // (~500 ms). Buffering the event by a matching delay realigns the
+    // visual reaction with what the listener actually hears.
+    //
+    // DEBUG (focus visualiser panel): currently reads the delay from the
+    // live debug store so the slider can tune it. When the debug panel is
+    // removed, replace the `useVisualizerDebugStore.getState().visualDelayMs`
+    // read with `VISUALIZER_DEFAULTS.visualDelayMs` imported from
+    // `./visualizerDebugStore`.
+    const delay = useVisualizerDebugStore.getState().visualDelayMs;
+    if (delay > 0) {
+      // Capture the current generation in the closure. If the track
+      // changes before this timeout fires, the generation will have
+      // advanced and we drop the stale payload.
+      const gen = audioLevelGen;
+      setTimeout(() => {
+        if (gen !== audioLevelGen) return;
+        set({ audioLevels: payload });
+      }, delay);
+    } else {
+      set({ audioLevels: payload });
+    }
+  },
+
   seek: (seconds) => {
     seekCmd(seconds).catch(() => {});
     set({ position: seconds });
@@ -239,6 +296,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       set({ showQueue: false });
     }
   },
+
+  toggleFocusMode: () => set((s) => ({ isFocusMode: !s.isFocusMode })),
 
   removeQueueItem: (index) => {
     removeFromQueueCmd(index).catch(() => {});

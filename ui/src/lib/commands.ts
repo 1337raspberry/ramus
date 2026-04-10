@@ -84,6 +84,23 @@ export const getAlbum = (sourceId: string) => invoke<Album | null>("get_album", 
 
 export const getRandomAlbum = () => invoke<Album | null>("get_random_album");
 
+/**
+ * Canonical album-art size tiers. Every surface that loads album art should
+ * pick one of these — it keeps the per-size on-disk cache bounded to three
+ * entries per album and lets different surfaces share cache hits. Adding a
+ * fourth tier means every album gets a fourth cached copy, so resist the
+ * temptation unless there's a genuine new size class.
+ *
+ * - SMALL  (72):   search result rows, queue track thumbnails
+ * - MEDIUM (300):  album grid tiles, album detail header
+ * - LARGE  (1200): compact Now Playing panel, focus Now Playing, suggestion view
+ */
+export const ART_SIZE = {
+  SMALL: 72,
+  MEDIUM: 300,
+  LARGE: 1200,
+} as const;
+
 export const getArtUrl = async (thumb: string, size?: number): Promise<string> => {
   const filePath = await invoke<string>("get_art_url", { thumb, size });
   return convertFileSrc(filePath);

@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isAuthenticated, togglePlayPause, nextTrack, previousTrack } from "./lib/commands";
 import type {
   AccentColorPayload,
+  AudioLevelPayload,
   PlaybackStatePayload,
   PlaybackPositionPayload,
   PlaybackBufferingPayload,
@@ -17,6 +18,10 @@ import AlbumGridView from "./components/AlbumGridView";
 import AlbumDetailView from "./components/AlbumDetailView";
 import SuggestionView from "./components/SuggestionView";
 import DetailColumn from "./components/DetailColumn";
+import FocusNowPlayingView from "./components/FocusNowPlayingView";
+// DEBUG (focus visualiser panel): delete these two imports when removing the panel.
+import FocusVisualizerDebugPanel from "./components/FocusVisualizerDebugPanel";
+import { useVisualizerDebugStore } from "./stores/visualizerDebugStore";
 import SearchOverlay from "./components/SearchOverlay";
 import EqualizerPanel from "./components/EqualizerPanel";
 import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
@@ -71,6 +76,10 @@ export default function App() {
   const suggestion = useLibraryStore((s) => s.suggestion);
   const detailAlbum = useLibraryStore((s) => s.detailAlbum);
   const albumColors = usePlaybackStore((s) => s.ultraBlurColors);
+  const isFocusMode = usePlaybackStore((s) => s.isFocusMode);
+  const toggleFocusMode = usePlaybackStore((s) => s.toggleFocusMode);
+  // DEBUG (focus visualiser panel): delete when removing the panel.
+  const vizDebugOpen = useVisualizerDebugStore((s) => s.panelOpen);
   const blurColors = useMemo(() => albumColors ?? initialColors, [albumColors]);
 
   // Check auth on mount
@@ -112,6 +121,9 @@ export default function App() {
       const { isBuffering, bufferedFraction } = event.payload;
       store.onBuffering(isBuffering, bufferedFraction);
     });
+    const u4 = listen<AudioLevelPayload>("audio-level", (event) => {
+      store.onAudioLevel(event.payload);
+    });
 
     store.loadVolume();
 
@@ -119,13 +131,51 @@ export default function App() {
       u1.then((fn) => fn());
       u2.then((fn) => fn());
       u3.then((fn) => fn());
+      u4.then((fn) => fn());
     };
   }, []);
+
+  // When focus mode is active, visually hide the three-column layout so the
+  // focus overlay sits cleanly over the global UltraBlur background. We
+  // toggle a body class (rather than conditionally rendering) so the compact
+  // NowPlayingView stays mounted — its image `onLoad` handler is responsible
+  // for extracting the Vibrant palette on track change, and unmounting would
+  // break that flow for brand-new albums.
+  useEffect(() => {
+    document.body.classList.toggle("focus-mode-active", isFocusMode);
+    return () => {
+      document.body.classList.remove("focus-mode-active");
+    };
+  }, [isFocusMode]);
 
   // Global keyboard shortcuts
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
+
+      // Esc exits focus mode (before any other Esc-based dismissal)
+      if (e.key === "Escape" && usePlaybackStore.getState().isFocusMode) {
+        e.preventDefault();
+        toggleFocusMode();
+        return;
+      }
+
+      // Cmd/Ctrl+Shift+N toggles focus "Now Playing" mode
+      // (with Shift held, e.key is always uppercase)
+      if (mod && e.shiftKey && e.key === "N") {
+        e.preventDefault();
+        toggleFocusMode();
+        return;
+      }
+
+      // DEBUG (focus visualiser panel): delete this whole block when
+      // removing the panel. Cmd/Ctrl+Shift+V toggles the live tuning UI;
+      // only meaningful while focus mode is active.
+      if (mod && e.shiftKey && e.key === "V") {
+        e.preventDefault();
+        useVisualizerDebugStore.getState().togglePanel();
+        return;
+      }
 
       if (mod && e.key === "f") {
         e.preventDefault();
@@ -174,7 +224,7 @@ export default function App() {
         return;
       }
     },
-    [setShowSearch, setShowEQ, setShowSettings],
+    [setShowSearch, setShowEQ, setShowSettings, toggleFocusMode],
   );
 
   useEffect(() => {
@@ -216,6 +266,9 @@ export default function App() {
         }
         detail={<DetailColumn onOpenEQ={() => setShowEQ(true)} />}
       />
+      {isFocusMode && <FocusNowPlayingView onOpenEQ={() => setShowEQ(true)} />}
+      {/* DEBUG (focus visualiser panel): delete this line when removing the panel. */}
+      {isFocusMode && vizDebugOpen && <FocusVisualizerDebugPanel />}
       {showSearch && <SearchOverlay onDismiss={() => setShowSearch(false)} />}
       {showEQ && <EqualizerPanel onDismiss={() => setShowEQ(false)} />}
       {showSettings && (
@@ -223,6 +276,11 @@ export default function App() {
           onDismiss={() => setShowSettings(false)}
           onSignOut={() => {
             setShowSettings(false);
+            // Clear focus mode so the store flag doesn't outlive the
+            // authenticated session — otherwise re-auth would immediately
+            // drop the user back into a dangling focus overlay with no
+            // track playing.
+            usePlaybackStore.setState({ isFocusMode: false });
             setAuthed(false);
           }}
         />
