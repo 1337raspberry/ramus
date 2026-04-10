@@ -32,9 +32,37 @@ import { IconClose, IconMinimize, IconFullscreen } from "./components/Icons";
 
 const appWindow = getCurrentWindow();
 
+/**
+ * Custom traffic lights + drag region. Replicates the macOS behaviour
+ * that the native green button has (dedicated fullscreen Space) while
+ * still letting the user double-click the title area to maximise on
+ * the current desktop — matching the distinction macOS makes between
+ * "click green" (fullscreen) and "option-click green / double-click
+ * titlebar" (zoom / maximise).
+ *
+ * The Rust setup hook flips the NSWindow `collectionBehavior` flag so
+ * that a `decorations: false` window is allowed to enter native
+ * fullscreen at all; without that, `setFullscreen(true)` is a no-op.
+ */
 function TrafficLights() {
+  // Toggle fullscreen — the native "green button" behaviour on macOS.
+  // isFullscreen() is cheap, so read-then-set is fine here.
+  const handleFullscreen = async () => {
+    const isFs = await appWindow.isFullscreen();
+    await appWindow.setFullscreen(!isFs);
+  };
+
+  // Double-click on the drag region = zoom / maximise on the current
+  // desktop (matches the default macOS title-bar double-click). Ignore
+  // double-clicks that originated inside a child button so hitting the
+  // green light twice in quick succession doesn't also zoom.
+  const handleDragDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    appWindow.toggleMaximize();
+  };
+
   return (
-    <div className="drag-region" data-tauri-drag-region>
+    <div className="drag-region" data-tauri-drag-region onDoubleClick={handleDragDoubleClick}>
       <div className="traffic-lights">
         <button className="traffic-light tl-close" title="Close" onClick={() => appWindow.close()}>
           <IconClose size={10} />
@@ -48,8 +76,8 @@ function TrafficLights() {
         </button>
         <button
           className="traffic-light tl-fullscreen"
-          title="Fullscreen"
-          onClick={() => appWindow.toggleMaximize()}
+          title="Toggle Full Screen"
+          onClick={handleFullscreen}
         >
           <IconFullscreen size={10} />
         </button>
@@ -147,6 +175,45 @@ export default function App() {
       document.body.classList.remove("focus-mode-active");
     };
   }, [isFocusMode]);
+
+  // Track native fullscreen state and toggle a body class so styles can
+  // hide the custom drag-region + reclaim the 32px it occupies at the top.
+  // Tauri doesn't emit a dedicated fullscreen event, so we piggyback on
+  // `onResized` (fires on enter/exit) and query `isFullscreen()`. macOS's
+  // system menu bar still auto-reveals at the top edge, so the user can
+  // exit via View > Exit Full Screen or ⌃⌘F when our chrome is hidden.
+  useEffect(() => {
+    let cancelled = false;
+    let unlistenResize: (() => void) | null = null;
+
+    const apply = (fs: boolean) => {
+      document.body.classList.toggle("is-fullscreen", fs);
+    };
+
+    const check = async () => {
+      try {
+        const fs = await appWindow.isFullscreen();
+        if (!cancelled) apply(fs);
+      } catch {
+        // ignore
+      }
+    };
+
+    check();
+
+    appWindow
+      .onResized(() => check())
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlistenResize = fn;
+      });
+
+    return () => {
+      cancelled = true;
+      unlistenResize?.();
+      document.body.classList.remove("is-fullscreen");
+    };
+  }, []);
 
   // Global keyboard shortcuts
   const handleKeyDown = useCallback(

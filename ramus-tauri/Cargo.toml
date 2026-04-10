@@ -23,6 +23,15 @@ open = "5"
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# Used to opt the borderless NSWindow into native fullscreen
+# (NSWindowCollectionBehaviorFullScreenPrimary). Without this, macOS refuses
+# to let a window with `decorations: false` enter fullscreen at all — the
+# green traffic light is dead and View > Enter Full Screen is disabled.
+# objc2 is already a transitive dependency of Tauri, so we reuse the same
+# version without pulling anything new.
+objc2 = "0.6"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 pkg-config = "0.3"

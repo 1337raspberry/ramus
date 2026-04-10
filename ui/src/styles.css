@@ -898,6 +898,7 @@ textarea {
   font-size: 18px;
   font-weight: 700;
   line-height: 1.2;
+  overflow: hidden;
 }
 
 .np-clickable {
@@ -2475,9 +2476,72 @@ textarea {
  * giving a single, unified blur backdrop.
  */
 
+/* --- Marquee text (back-and-forth scroll on overflow) ---
+ *
+ * Used by `MarqueeText.tsx` for long Now Playing track / album / artist
+ * titles. The component owns the JS measurement and toggles
+ * `.marquee--active` on the outer wrapper when the inner span overflows.
+ * `--marquee-dist` and `--marquee-duration` are set inline by the
+ * component so a single keyframe block serves every instance.
+ */
+.marquee-inner {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Required for vertical alignment with sibling text — do not change. */
+  vertical-align: top;
+  will-change: transform;
+}
+
+.marquee--active .marquee-inner {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  animation: marquee-bounce var(--marquee-duration, 10s) ease-in-out infinite;
+}
+
+@keyframes marquee-bounce {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+  48%,
+  60% {
+    transform: translateX(var(--marquee-dist, 0));
+  }
+  96%,
+  100% {
+    transform: translateX(0);
+  }
+}
+
 body.focus-mode-active .three-column-layout {
   visibility: hidden;
   pointer-events: none;
+}
+
+/* --- Native fullscreen: hide custom chrome & reclaim its 32px ---
+ *
+ * In macOS fullscreen the system menu bar still auto-reveals at the top
+ * edge, which is the user's escape hatch (View > Exit Full Screen / ⌃⌘F).
+ * Our custom drag region would otherwise sit underneath, doubling up —
+ * so drop it entirely and zero out the 32px padding-top / top offsets
+ * that exist to clear it.
+ */
+body.is-fullscreen .drag-region {
+  display: none;
+}
+
+body.is-fullscreen .sidebar-col,
+body.is-fullscreen .column-content,
+body.is-fullscreen .detail-col {
+  padding-top: 0;
+}
+
+body.is-fullscreen .focus-body {
+  top: 0;
 }
 
 .focus-overlay {
@@ -2606,7 +2670,13 @@ body.focus-mode-active .three-column-layout {
 
 .focus-album-row {
   display: flex;
-  align-items: baseline;
+  /* `center` instead of `baseline` because the album title is wrapped in
+   * a MarqueeText `div` whose inner `inline-block` span has
+   * `overflow: hidden` — per CSS spec that collapses the span's baseline
+   * to the bottom margin edge, which drags sibling text (the year) out
+   * of line. Compact `.np-album-row` already uses center for the same
+   * reason. */
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }

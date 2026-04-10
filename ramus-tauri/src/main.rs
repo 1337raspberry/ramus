@@ -358,6 +358,43 @@ fn main() {
             let auto_sync_settings = state.settings.clone();
             let auto_sync_engine = state.sync_engine.clone();
 
+            // macOS: opt the (borderless) main NSWindow into native fullscreen.
+            // With `decorations: false` the window is created with a borderless
+            // style mask and `collectionBehavior = default`, which does NOT
+            // include `.fullScreenPrimary` — so macOS refuses fullscreen
+            // entirely (green button no-op, View > Enter Full Screen disabled,
+            // moving between Spaces ignored). Add the flag ourselves once the
+            // window exists so `setFullscreen(true)` from JS just works.
+            //
+            // Using raw objc2 `msg_send!` instead of a higher-level wrapper
+            // (e.g. objc2-app-kit's NSWindow type) to avoid wrestling with
+            // feature-flag gating — we only need two calls and the value of
+            // NSWindowCollectionBehaviorFullScreenPrimary (1 << 7 = 128) is
+            // stable Apple API.
+            #[cfg(target_os = "macos")]
+            {
+                use objc2::msg_send;
+                use objc2::runtime::AnyObject;
+
+                // NSWindowCollectionBehaviorFullScreenPrimary from AppKit.
+                const FULL_SCREEN_PRIMARY: usize = 1 << 7;
+
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Ok(ns_window_ptr) = window.ns_window() {
+                        let ns_window = ns_window_ptr as *mut AnyObject;
+                        if !ns_window.is_null() {
+                            unsafe {
+                                let current: usize = msg_send![ns_window, collectionBehavior];
+                                let _: () = msg_send![
+                                    ns_window,
+                                    setCollectionBehavior: current | FULL_SCREEN_PRIMARY
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+
             app.manage(state);
 
             session_reporter.ensure_loop_spawned();

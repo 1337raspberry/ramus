@@ -9,6 +9,7 @@ import VolumeSlider from "./VolumeSlider";
 import FlowLayout from "./FlowLayout";
 import LyricsOverlay from "./LyricsOverlay";
 import QueueView from "./QueueView";
+import MarqueeText from "./MarqueeText";
 import { togglePlayPause, nextTrack, previousTrack } from "../lib/commands";
 import {
   IconStarFilled,
@@ -113,13 +114,13 @@ export default function NowPlayingView({
         {/* === TOP: Artist, Album, Year === */}
         <div className="np-top">
           <div className="np-header">
-            <div className="np-artist np-clickable" onClick={handleArtistClick}>
+            <MarqueeText className="np-artist np-clickable" onClick={handleArtistClick}>
               {hasTrackArtist ? `${artistName} (${track.trackArtist})` : artistName}
-            </div>
+            </MarqueeText>
             <div className="np-album-row">
-              <span className="np-album-title np-clickable" onClick={handleAlbumClick}>
+              <MarqueeText className="np-album-title np-clickable" onClick={handleAlbumClick}>
                 {albumTitle}
-              </span>
+              </MarqueeText>
               <button
                 className={`np-fav-btn${albumFav ? " active" : ""}`}
                 onClick={handleAlbumFavToggle}
@@ -167,7 +168,7 @@ export default function NowPlayingView({
           <VolumeSlider value={volume} onChange={changeVolume} />
 
           <div className="np-track-row">
-            <span className="np-track-title">{track.title}</span>
+            <MarqueeText className="np-track-title">{track.title}</MarqueeText>
             {onOpenEQ && (
               <button className="np-eq-btn" onClick={onOpenEQ} title="Equalizer">
                 <IconEqualizer />

@@ -77,6 +77,7 @@ cd ui && npm run build                      # Production build (tsc + vite)
 - **Transcode endpoint** is `/music/:/transcode/universal/start.m3u8` — NOT `/audio/:/transcode/...`. Requires `X-Plex-Platform: Chrome` header.
 - **`loadfile "replace"` implicitly stops** — do NOT call `mpv.stop()` before `load_queue`, it races with playlist setup.
 - **Session reporting**: always send `state=stopped` for the previous track before reporting a new one. Scrobble at >= 90% progress, once per track.
+- **macOS fullscreen** — `decorations: false` gives us a borderless NSWindow that macOS refuses to fullscreen. The `main.rs` setup hook flips `NSWindow.collectionBehavior |= NSWindowCollectionBehaviorFullScreenPrimary` (via `objc2::msg_send!`) to opt it in. Don't remove it — without it, the green traffic light, ⌃⌘F, and `setFullscreen(true)` are all no-ops.
 
 ## Naming Conventions & Shared Utilities
 

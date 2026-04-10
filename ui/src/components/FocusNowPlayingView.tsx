@@ -10,6 +10,7 @@ import FlowLayout from "./FlowLayout";
 import LyricsOverlay from "./LyricsOverlay";
 import QueueView from "./QueueView";
 import FocusVisualizer from "./FocusVisualizer";
+import MarqueeText from "./MarqueeText";
 import {
   IconStarFilled,
   IconStarEmpty,
@@ -117,13 +118,13 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
           </div>
 
           <div className="focus-art-meta">
-            <div className="focus-artist np-clickable" onClick={handleArtistClick}>
+            <MarqueeText className="focus-artist np-clickable" onClick={handleArtistClick}>
               {hasTrackArtist ? `${artistName} (${track.trackArtist})` : artistName}
-            </div>
+            </MarqueeText>
             <div className="focus-album-row">
-              <span className="focus-album-title np-clickable" onClick={handleAlbumClick}>
+              <MarqueeText className="focus-album-title np-clickable" onClick={handleAlbumClick}>
                 {albumTitle}
-              </span>
+              </MarqueeText>
               {year && (
                 <span className="focus-year np-clickable" onClick={handleYearClick}>
                   ({year})
@@ -148,7 +149,7 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
         >
           <div className="focus-controls-main">
             <div className="focus-track-row">
-              <span className="focus-track-title">{track.title}</span>
+              <MarqueeText className="focus-track-title">{track.title}</MarqueeText>
               {onOpenEQ && (
                 <button className="np-eq-btn" onClick={onOpenEQ} title="Equalizer">
                   <IconEqualizer />
