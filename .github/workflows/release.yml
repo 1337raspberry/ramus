@@ -34,16 +34,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macOS Universal: builds for both Apple Silicon and Intel on a
+          # single arm64 runner, then `lipo`s them together into one .dmg.
+          # Now possible because libloading means we don't need a libmpv
+          # binary for each arch at link time — only at runtime, where
+          # each user's brew install provides the right one.
           - platform: macos-14
-            label: macOS (Apple Silicon)
-            rust-target: aarch64-apple-darwin
-            tauri-args: --target aarch64-apple-darwin
-          # macos-13 (Intel) was removed — GitHub retired the hosted Intel
-          # runners. To support Intel Macs again, switch this entry to a
-          # universal build (`rust-target: aarch64-apple-darwin x86_64-apple-darwin`,
-          # `tauri-args: --target universal-apple-darwin`) on the existing
-          # macos-14 line. Worth doing now that libloading removes the
-          # link-time libmpv constraint that previously blocked it.
+            label: macOS (Universal)
+            rust-target: aarch64-apple-darwin,x86_64-apple-darwin
+            tauri-args: --target universal-apple-darwin
           - platform: ubuntu-22.04
             label: Linux (x86_64)
             rust-target: ''
@@ -141,8 +140,7 @@ jobs:
           releaseBody: |
             Automated build from CI. Grab the file that matches your system:
 
-            - **macOS (Apple Silicon)** — `*_aarch64.dmg`
-            - **macOS (Intel)** — `*_x64.dmg`
+            - **macOS (Universal)** — `*_universal.dmg` (works on Intel + Apple Silicon)
             - **Linux** — `.AppImage` (portable), `.deb` (Debian/Ubuntu), `.rpm` (Fedora/RHEL)
             - **Windows** — `*_x64-setup.exe` (NSIS) or `*_x64_en-US.msi` (MSI). libmpv-2.dll is bundled, no separate install needed.
 
