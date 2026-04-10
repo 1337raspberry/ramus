@@ -21,6 +21,7 @@ import {
   IconNext,
   IconChevronDown,
   IconClose,
+  IconWave,
 } from "./Icons";
 
 interface Props {
@@ -50,6 +51,8 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
   const volume = usePlaybackStore((s) => s.volume);
   const changeVolume = usePlaybackStore((s) => s.changeVolume);
   const toggleFocusMode = usePlaybackStore((s) => s.toggleFocusMode);
+  const showVisualizer = usePlaybackStore((s) => s.showVisualizer);
+  const toggleVisualizer = usePlaybackStore((s) => s.toggleVisualizer);
 
   // Navigation handlers exit focus mode when triggered (artist/album/year/
   // genre clicks), so pass toggleFocusMode as the onNavigate callback.
@@ -87,8 +90,10 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
   return (
     <div className="focus-overlay">
       {/* Visualiser renders as a full-window background layer behind the art
-       * and controls, draping from the very top of the frame. */}
-      <FocusVisualizer />
+       * and controls, draping from the very top of the frame. Gated on
+       * `showVisualizer` so the user can toggle it off via the wave button
+       * in the track row. Unmount (not CSS-hide) so the RAF loop stops. */}
+      {showVisualizer && <FocusVisualizer />}
 
       <div className="focus-body">
         {/* Left 50%: large album art with artist/album/year anchored below */}
@@ -149,6 +154,13 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
                   <IconEqualizer />
                 </button>
               )}
+              <button
+                className={`np-viz-btn${showVisualizer ? " active" : ""}`}
+                onClick={toggleVisualizer}
+                title={showVisualizer ? "Hide visualiser" : "Show visualiser"}
+              >
+                <IconWave />
+              </button>
               <button
                 className={`np-fav-btn${trackFav ? " active" : ""}`}
                 onClick={(e) => {

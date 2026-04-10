@@ -238,7 +238,7 @@ impl AudioPlayer {
                 is_loading: false,
                 is_buffering: false,
                 buffered_fraction: 0.0,
-                volume: 50.0,
+                volume: 100.0,
                 config: PlaybackConfig::default(),
                 server_url: None,
                 token: None,
@@ -821,7 +821,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 calls: Mutex::new(Vec::new()),
-                volume: Mutex::new(50.0),
+                volume: Mutex::new(100.0),
                 shutdown: AtomicBool::new(false),
             }
         }

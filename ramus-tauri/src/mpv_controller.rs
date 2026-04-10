@@ -87,9 +87,9 @@ impl MpvController {
                 mpv_observe_property(ctx, *id as u64, n.as_ptr(), fmt);
             }
 
-            // Default volume
+            // Default volume (100 = unity gain, no attenuation)
             let vol_name = CString::new("volume").unwrap();
-            let mut vol: f64 = 50.0;
+            let mut vol: f64 = 100.0;
             mpv_set_property(
                 ctx,
                 vol_name.as_ptr(),
