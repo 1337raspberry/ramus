@@ -126,7 +126,7 @@ impl MpvController {
             let c_args: Vec<CString> = args.iter().map(|s| CString::new(*s).unwrap()).collect();
             let mut ptrs: Vec<*const i8> = c_args.iter().map(|s| s.as_ptr()).collect();
             ptrs.push(std::ptr::null());
-            self.lib.command(self.handle.ptr(), ptrs.as_mut_ptr());
+            self.lib.command(self.handle.ptr(), ptrs.as_ptr());
         }
     }
 
