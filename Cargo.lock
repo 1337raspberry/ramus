@@ -3074,7 +3074,7 @@ dependencies = [
 
 [[package]]
 name = "ramus-tauri"
-version = "1.0.1"
+version = "1.0.0"
 dependencies = [
  "env_logger",
  "libc",
