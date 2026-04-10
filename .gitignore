@@ -9,3 +9,9 @@ dev/
 # libmpv-2.dll downloaded by the Release workflow on Windows runners —
 # not a checked-in binary; CI fetches it fresh each build.
 ramus-tauri/windows-deps/
+
+# libmpv + transitive dylibs bundled by scripts/bundle-macos-libmpv.py
+# during the Release workflow on macOS runners. Generated fresh each
+# build from brew's libmpv install — never commit these.
+ramus-tauri/macos-frameworks/
+ramus-tauri/tauri.macos.conf.json
