@@ -353,7 +353,7 @@ pub fn interfaces_changed(current: &HashSet<String>, new: &HashSet<String>) -> b
 mod tests {
     use super::*;
     use crate::models::PlexServerConnection;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     // -- Pure logic tests --
 

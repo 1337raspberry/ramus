@@ -409,7 +409,7 @@ mod tests {
 
     #[test]
     fn test_file_end_reason_variants() {
-        let reasons = vec![
+        let reasons = [
             FileEndReason::Eof,
             FileEndReason::Stop,
             FileEndReason::Quit,
