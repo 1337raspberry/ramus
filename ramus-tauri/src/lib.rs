@@ -18,6 +18,7 @@ use crate::events::{
     PlaybackBufferingPayload, PlaybackPositionPayload, PlaybackStatePayload,
 };
 use crate::mpv_controller::MpvController;
+use crate::mpv_ffi::MpvLib;
 use crate::session_reporter::ReporterRef;
 
 /// Create an AudioPlayer backed by libmpv with Tauri event callbacks.
@@ -200,7 +201,11 @@ pub fn create_mpv_player(
         })),
     });
 
-    let mpv = MpvController::new(callbacks).expect("Failed to initialize libmpv");
+    // Load libmpv at runtime. A clear error beats an obscure dlopen failure,
+    // so `MpvLib::load()` already returns a multi-line string listing every
+    // path it tried — surface that verbatim if it fails.
+    let mpv_lib = Arc::new(MpvLib::load().unwrap_or_else(|e| panic!("{e}")));
+    let mpv = MpvController::new(mpv_lib, callbacks).expect("Failed to initialize libmpv");
     let player = Arc::new(ramus_core::playback::player::AudioPlayer::new(
         Arc::new(mpv),
     ));

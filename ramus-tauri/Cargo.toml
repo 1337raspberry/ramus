@@ -19,6 +19,9 @@ uuid = { version = "1", features = ["v4"] }
 urlencoding = "2"
 rand = "0.8"
 open = "5"
+# libmpv is loaded at runtime (not statically linked) so the app compiles
+# on any platform without headers or import libs. See src/mpv_ffi.rs.
+libloading = "0.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -34,4 +37,3 @@ objc2 = "0.6"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-pkg-config = "0.3"
