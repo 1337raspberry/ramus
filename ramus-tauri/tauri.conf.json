@@ -54,7 +54,7 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["libmpv2", "libwebkit2gtk-4.1-0", "libgtk-3-0"]
+        "depends": ["libmpv2 | libmpv1", "libwebkit2gtk-4.1-0", "libgtk-3-0"]
       },
       "rpm": {
         "depends": ["mpv-libs", "webkit2gtk4.1", "gtk3"]

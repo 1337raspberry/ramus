@@ -117,20 +117,33 @@ def walk_transitive(root: Path) -> list[Path]:
 
 
 def find_libmpv() -> Path | None:
-    candidates = [
-        Path("/usr/lib/x86_64-linux-gnu/libmpv.so.2"),
-        Path("/usr/lib64/libmpv.so.2"),
-        Path("/usr/lib/libmpv.so.2"),
+    """Find the libmpv soname symlink on the build runner.
+
+    Prefers `libmpv.so.2` (Ubuntu 24.04+, Fedora 38+, Arch) and falls back
+    to `libmpv.so.1` (Ubuntu 22.04 LTS, older distros). The .so.0 / soname
+    symlink is what we want — its target is the actual versioned file.
+    """
+    search_dirs = [
+        Path("/usr/lib/x86_64-linux-gnu"),  # Debian / Ubuntu multiarch
+        Path("/usr/lib64"),  # Fedora / RHEL
+        Path("/usr/lib"),  # Arch and others
     ]
-    return next((p for p in candidates if p.exists()), None)
+    # Newer first — if both happen to be installed we pick libmpv2.
+    for major in (2, 1):
+        soname = f"libmpv.so.{major}"
+        for d in search_dirs:
+            candidate = d / soname
+            if candidate.exists():
+                return candidate
+    return None
 
 
 def main() -> int:
     libmpv = find_libmpv()
     if libmpv is None:
         print(
-            "libmpv.so.2 not found in any standard system location — "
-            "did you `apt install libmpv2`?",
+            "libmpv soname (libmpv.so.2 or libmpv.so.1) not found in any "
+            "standard system location — did you `apt install libmpv-dev`?",
             file=sys.stderr,
         )
         return 1
