@@ -95,12 +95,22 @@ jobs:
             wget \
             file
 
-      # macOS: brew installs libmpv for the host arch (arm64 on macos-14,
-      # x86_64 on macos-13), which is why we keep the two runners split
-      # instead of trying to build a universal binary on one box.
+      # macOS: brew installs libmpv plus its full ffmpeg/codec/font stack.
+      # We bundle all of it into the .app a few steps below for self-contained
+      # distribution — users no longer need to `brew install mpv` themselves.
       - name: Install macOS system dependencies
         if: runner.os == 'macOS'
         run: brew install mpv
+
+      # Walk libmpv's transitive dylibs, copy them to ramus-tauri/macos-frameworks/,
+      # rewrite all install_names to @loader_path/<basename>, and write
+      # tauri.macos.conf.json with bundle.macOS.frameworks populated. Tauri
+      # auto-merges that platform-conf.json at build time and copies the
+      # (already self-contained) dylibs into <app>.app/Contents/Frameworks/.
+      # See scripts/bundle-macos-libmpv.py for the gory details.
+      - name: Bundle libmpv into macOS .app
+        if: runner.os == 'macOS'
+        run: python3 scripts/bundle-macos-libmpv.py
 
       # Windows: no pkg-config, no libmpv-dev package. Download the LGPL
       # prebuilt DLL from zhongfly/mpv-winbuild and drop it where
