@@ -135,7 +135,7 @@ fn main() {
 
                                 // Load genre mapper; prefer custom genres if configured
                                 let custom_mapper = (settings.genre_source == ramus_core::models::GenreSource::Custom)
-                                    .then(|| ramus_core::settings::load_custom_genres())
+                                    .then(ramus_core::settings::load_custom_genres)
                                     .flatten()
                                     .and_then(|data| GenreMapper::from_json_bytes(&data).ok());
 
