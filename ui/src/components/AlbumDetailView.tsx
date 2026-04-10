@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
-import { getArtUrl, getQueue, insertNext, appendToQueue } from "../lib/commands";
+import { ART_SIZE, getArtUrl, getQueue, insertNext, appendToQueue } from "../lib/commands";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { formatDuration, formatCodec } from "../lib/format";
 import {
@@ -32,7 +32,7 @@ export default function AlbumDetailView() {
     setArtErr(false);
     setArtSrc(null);
     let cancelled = false;
-    getArtUrl(album.thumb, 160)
+    getArtUrl(album.thumb, ART_SIZE.MEDIUM)
       .then((url) => {
         if (!cancelled) setArtSrc(url);
       })

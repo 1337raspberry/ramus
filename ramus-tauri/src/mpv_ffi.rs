@@ -13,6 +13,10 @@ pub const MPV_FORMAT_STRING: c_int = 1;
 pub const MPV_FORMAT_FLAG: c_int = 3;
 pub const MPV_FORMAT_INT64: c_int = 4;
 pub const MPV_FORMAT_DOUBLE: c_int = 5;
+pub const MPV_FORMAT_NODE: c_int = 6;
+pub const MPV_FORMAT_NODE_ARRAY: c_int = 7;
+pub const MPV_FORMAT_NODE_MAP: c_int = 8;
+pub const MPV_FORMAT_BYTE_ARRAY: c_int = 9;
 
 // Event IDs
 pub const MPV_EVENT_NONE: c_int = 0;
@@ -47,6 +51,37 @@ pub struct mpv_event_property {
 pub struct mpv_event_end_file {
     pub reason: c_int,
     pub error: c_int,
+}
+
+// --- Node format (for complex properties like af-metadata/<label>) ---
+//
+// mpv returns `af-metadata/astats` as an MPV_FORMAT_NODE whose inner node is
+// MPV_FORMAT_NODE_MAP: a list of (key string, value node) pairs where every
+// value node is itself an MPV_FORMAT_STRING. We only read string values out
+// of this tree, so other union variants (flag, int64, double, byte_array)
+// are declared for correct struct layout but unused.
+
+#[repr(C)]
+pub union mpv_node_u {
+    pub string: *mut c_char,
+    pub flag: c_int,
+    pub int64: i64,
+    pub double_: f64,
+    pub list: *mut mpv_node_list,
+    pub ba: *mut c_void, // byte_array — unused
+}
+
+#[repr(C)]
+pub struct mpv_node {
+    pub u: mpv_node_u,
+    pub format: c_int,
+}
+
+#[repr(C)]
+pub struct mpv_node_list {
+    pub num: c_int,
+    pub values: *mut mpv_node,
+    pub keys: *mut *mut c_char,
 }
 
 extern "C" {

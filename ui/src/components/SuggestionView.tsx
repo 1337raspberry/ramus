@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import {
+  ART_SIZE,
   getArtUrl,
   getAlbumColors,
   getAlbumGenres,
@@ -32,7 +33,7 @@ export default function SuggestionView() {
     setArtErr(false);
     setArtSrc(null);
     let cancelled = false;
-    getArtUrl(album.thumb, 600)
+    getArtUrl(album.thumb, ART_SIZE.LARGE)
       .then((url) => {
         if (!cancelled) setArtSrc(url);
       })

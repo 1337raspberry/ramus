@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::thread;
 
 use ramus_core::playback::mpv::{
-    FileEndReason, LoadMode, MpvCallbacks, MpvPlayer, ObserverID,
+    AudioLevels, AudioLevelsBuilder, FileEndReason, LoadMode, MpvCallbacks, MpvPlayer, ObserverID,
 };
 
 use crate::mpv_ffi::*;
@@ -82,6 +82,7 @@ impl MpvController {
                         MPV_FORMAT_FLAG
                     }
                     ObserverID::PlaylistPos | ObserverID::CacheBufferingState => MPV_FORMAT_INT64,
+                    ObserverID::AudioLevel => MPV_FORMAT_NODE,
                 };
                 mpv_observe_property(ctx, *id as u64, n.as_ptr(), fmt);
             }
@@ -337,6 +338,16 @@ fn event_loop(
                             }
                         }
                     }
+                    id if id == ObserverID::AudioLevel as u64 => {
+                        if prop.format == MPV_FORMAT_NODE {
+                            if let Some(ref cb) = callbacks.on_audio_level {
+                                let node = unsafe { &*(prop.data as *const mpv_node) };
+                                if let Some(levels) = unsafe { parse_astats_node(node) } {
+                                    cb(levels);
+                                }
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -374,4 +385,79 @@ fn event_loop(
             _ => {}
         }
     }
+}
+
+// --- astats metadata parsing ---
+//
+// The `af-metadata/astats` property returns an MPV_FORMAT_NODE whose value is
+// an MPV_FORMAT_NODE_MAP of string→string pairs. For our filter configuration
+// (`astats=metadata=1:reset=1:measure_overall=none`) the keys we care about are:
+//
+//   lavfi.astats.1.Peak_level   — left channel peak  (dBFS)
+//   lavfi.astats.1.RMS_level    — left channel RMS   (dBFS)
+//   lavfi.astats.2.Peak_level   — right channel peak (dBFS)
+//   lavfi.astats.2.RMS_level    — right channel RMS  (dBFS)
+//
+// Values can be the literal string "-inf" for silence, which we map to
+// f64::NEG_INFINITY. Returns None if the node isn't a map or if any of the
+// four required keys is missing.
+//
+// Mirrors the approach used by supersonic's `backend/player/mpv/peaks.c`.
+//
+// Defence in depth: astats with `measure_overall=none` for stereo emits ~8
+// keys in practice, and even with all overall/per-channel flags enabled
+// ffmpeg's astats tops out well under 64 keys. If a malformed or
+// unexpected node reports a huge `num`, casting it to `isize` and walking
+// the arrays would read far past the allocation. Cap at a generous bound.
+const MAX_ASTATS_KEYS: c_int = 64;
+
+unsafe fn parse_astats_node(node: &mpv_node) -> Option<AudioLevels> {
+    if node.format != MPV_FORMAT_NODE_MAP {
+        return None;
+    }
+    let list_ptr = node.u.list;
+    if list_ptr.is_null() {
+        return None;
+    }
+    let list = &*list_ptr;
+    if list.num <= 0
+        || list.num > MAX_ASTATS_KEYS
+        || list.keys.is_null()
+        || list.values.is_null()
+    {
+        return None;
+    }
+
+    let mut builder = AudioLevelsBuilder::new();
+
+    for i in 0..list.num as isize {
+        let key_ptr = *list.keys.offset(i);
+        if key_ptr.is_null() {
+            continue;
+        }
+        let value_node = &*list.values.offset(i);
+        if value_node.format != MPV_FORMAT_STRING {
+            continue;
+        }
+        let value_ptr = value_node.u.string;
+        if value_ptr.is_null() {
+            continue;
+        }
+
+        let key = match CStr::from_ptr(key_ptr).to_str() {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let value = match CStr::from_ptr(value_ptr).to_str() {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        // Delegate value parsing + key routing to the safe pure builder in
+        // ramus-core, where the semantics can be unit-tested without the
+        // FFI dance.
+        builder.apply_astats_entry(key, value);
+    }
+
+    builder.build()
 }
