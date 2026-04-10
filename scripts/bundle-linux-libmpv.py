@@ -157,8 +157,25 @@ def main() -> int:
     WORKDIR.mkdir(parents=True)
 
     files_config: dict[str, str] = {}
+    # Track basenames we've already copied. walk_transitive dedupes by
+    # resolved real path, so symlinked sonames collapse to one file — but
+    # two *different* real files can still share a basename (e.g. a
+    # multi-arch install with `/usr/lib/x86_64-linux-gnu/libfoo.so.2` and
+    # `/usr/lib/libfoo.so.2`), and we'd rather fail loudly than silently
+    # overwrite and ship whichever one happened to be last in BFS order.
+    used_basenames: dict[str, Path] = {}
     for src in libs:
         dst = WORKDIR / src.name
+        if src.name in used_basenames:
+            print(
+                f"ERROR: basename collision on {src.name}: already bundled "
+                f"{used_basenames[src.name]}, now trying to bundle {src}. "
+                f"walk_transitive should not have returned both of these — "
+                f"investigate the dependency graph.",
+                file=sys.stderr,
+            )
+            return 1
+        used_basenames[src.name] = src
         shutil.copy2(src, dst)
         dst.chmod(0o644)
         # Set RPATH to $ORIGIN so the dynamic linker resolves this lib's
@@ -174,7 +191,7 @@ def main() -> int:
         files_config[f"/usr/lib/{src.name}"] = f"linux-libs/{src.name}"
 
     config = {
-        "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/nicegui/static/tauri-conf-schema.json",
+        "$schema": "https://schema.tauri.app/config/2",
         "bundle": {"linux": {"appimage": {"files": files_config}}},
     }
     CONFIG_OUT.write_text(json.dumps(config, indent=2) + "\n")

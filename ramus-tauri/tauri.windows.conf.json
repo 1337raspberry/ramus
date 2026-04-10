@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/nicegui/static/tauri-conf-schema.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
     "resources": {
       "windows-deps/libmpv-2.dll": "libmpv-2.dll"
