@@ -20,6 +20,12 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
+# tauri-action calls the GitHub Releases REST API to create + upload to
+# the draft release. The default GITHUB_TOKEN is read-only for `contents`
+# unless we explicitly grant write here.
+permissions:
+  contents: write
+
 jobs:
   build:
     name: ${{ matrix.label }}
