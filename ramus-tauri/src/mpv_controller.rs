@@ -30,6 +30,7 @@ impl MpvHandle {
 // --- MpvController ---
 
 pub struct MpvController {
+    lib: Arc<MpvLib>,
     handle: Arc<MpvHandle>,
     shutdown: Arc<AtomicBool>,
     _event_thread: Option<thread::JoinHandle<()>>,
@@ -38,7 +39,10 @@ pub struct MpvController {
 impl MpvController {
     /// Create and initialize a new mpv instance with a background event
     /// loop thread that dispatches `callbacks`.
-    pub fn new(callbacks: Arc<MpvCallbacks>) -> Result<Self, String> {
+    ///
+    /// `lib` is the runtime-loaded libmpv — load it once at app startup
+    /// (via `MpvLib::load()`) and share the `Arc` across controllers.
+    pub fn new(lib: Arc<MpvLib>, callbacks: Arc<MpvCallbacks>) -> Result<Self, String> {
         unsafe {
             // mpv requires LC_NUMERIC=C for POSIX float formatting (e.g. EQ filters).
             // Without this, mpv_create() returns null on Linux with non-C locales.
@@ -49,7 +53,7 @@ impl MpvController {
                 libc::setlocale(lc_numeric, c_locale.as_ptr());
             }
 
-            let ctx = mpv_create();
+            let ctx = lib.create();
             if ctx.is_null() {
                 return Err("mpv_create() returned null".into());
             }
@@ -59,17 +63,14 @@ impl MpvController {
             for (key, val) in &options {
                 let k = CString::new(*key).unwrap();
                 let v = CString::new(*val).unwrap();
-                mpv_set_option_string(ctx, k.as_ptr(), v.as_ptr());
+                lib.set_option_string(ctx, k.as_ptr(), v.as_ptr());
             }
 
-            let err = mpv_initialize(ctx);
+            let err = lib.initialize(ctx);
             if err < 0 {
-                let msg = CStr::from_ptr(mpv_error_string(err));
-                mpv_destroy(ctx);
-                return Err(format!(
-                    "mpv_initialize failed: {}",
-                    msg.to_string_lossy()
-                ));
+                let msg = CStr::from_ptr(lib.error_string(err));
+                lib.destroy(ctx);
+                return Err(format!("mpv_initialize failed: {}", msg.to_string_lossy()));
             }
 
             // Register property observers
@@ -84,13 +85,13 @@ impl MpvController {
                     ObserverID::PlaylistPos | ObserverID::CacheBufferingState => MPV_FORMAT_INT64,
                     ObserverID::AudioLevel => MPV_FORMAT_NODE,
                 };
-                mpv_observe_property(ctx, *id as u64, n.as_ptr(), fmt);
+                lib.observe_property(ctx, *id as u64, n.as_ptr(), fmt);
             }
 
             // Default volume (100 = unity gain, no attenuation)
             let vol_name = CString::new("volume").unwrap();
             let mut vol: f64 = 100.0;
-            mpv_set_property(
+            lib.set_property(
                 ctx,
                 vol_name.as_ptr(),
                 MPV_FORMAT_DOUBLE,
@@ -103,14 +104,16 @@ impl MpvController {
             // Spawn background event loop
             let handle_clone = handle.clone();
             let shutdown_clone = shutdown.clone();
+            let lib_clone = lib.clone();
             let event_thread = thread::Builder::new()
                 .name("mpv-event-loop".into())
                 .spawn(move || {
-                    event_loop(handle_clone, shutdown_clone, callbacks);
+                    event_loop(lib_clone, handle_clone, shutdown_clone, callbacks);
                 })
                 .map_err(|e| format!("Failed to spawn mpv event thread: {e}"))?;
 
             Ok(Self {
+                lib,
                 handle,
                 shutdown,
                 _event_thread: Some(event_thread),
@@ -123,7 +126,7 @@ impl MpvController {
             let c_args: Vec<CString> = args.iter().map(|s| CString::new(*s).unwrap()).collect();
             let mut ptrs: Vec<*const i8> = c_args.iter().map(|s| s.as_ptr()).collect();
             ptrs.push(std::ptr::null());
-            mpv_command(self.handle.ptr(), ptrs.as_mut_ptr());
+            self.lib.command(self.handle.ptr(), ptrs.as_mut_ptr());
         }
     }
 
@@ -131,7 +134,7 @@ impl MpvController {
         unsafe {
             let n = CString::new(name).unwrap();
             let mut v = value;
-            mpv_set_property(
+            self.lib.set_property(
                 self.handle.ptr(),
                 n.as_ptr(),
                 MPV_FORMAT_DOUBLE,
@@ -144,7 +147,7 @@ impl MpvController {
         unsafe {
             let n = CString::new(name).unwrap();
             let mut v: c_int = if value { 1 } else { 0 };
-            mpv_set_property(
+            self.lib.set_property(
                 self.handle.ptr(),
                 n.as_ptr(),
                 MPV_FORMAT_FLAG,
@@ -157,7 +160,7 @@ impl MpvController {
         unsafe {
             let n = CString::new(name).unwrap();
             let mut v: f64 = 0.0;
-            mpv_get_property(
+            self.lib.get_property(
                 self.handle.ptr(),
                 n.as_ptr(),
                 MPV_FORMAT_DOUBLE,
@@ -181,7 +184,7 @@ impl MpvPlayer for MpvController {
         unsafe {
             let name = CString::new("playlist-pos").unwrap();
             let mut v = index;
-            mpv_set_property(
+            self.lib.set_property(
                 self.handle.ptr(),
                 name.as_ptr(),
                 MPV_FORMAT_INT64,
@@ -218,7 +221,8 @@ impl MpvPlayer for MpvController {
         unsafe {
             let name = CString::new("af").unwrap();
             let val = CString::new(value).unwrap();
-            mpv_set_property_string(self.handle.ptr(), name.as_ptr(), val.as_ptr());
+            self.lib
+                .set_property_string(self.handle.ptr(), name.as_ptr(), val.as_ptr());
         }
     }
 
@@ -240,7 +244,7 @@ impl Drop for MpvController {
             let _ = t.join();
         }
         unsafe {
-            mpv_destroy(self.handle.ptr());
+            self.lib.destroy(self.handle.ptr());
         }
     }
 }
@@ -248,6 +252,7 @@ impl Drop for MpvController {
 // --- Event loop (runs on background thread) ---
 
 fn event_loop(
+    lib: Arc<MpvLib>,
     handle: Arc<MpvHandle>,
     shutdown: Arc<AtomicBool>,
     callbacks: Arc<MpvCallbacks>,
@@ -257,7 +262,7 @@ fn event_loop(
             break;
         }
 
-        let event = unsafe { &*mpv_wait_event(handle.ptr(), 0.5) };
+        let event = unsafe { &*lib.wait_event(handle.ptr(), 0.5) };
 
         if shutdown.load(Ordering::Acquire) {
             break;
@@ -367,7 +372,7 @@ fn event_loop(
                         MPV_END_FILE_REASON_QUIT => FileEndReason::Quit,
                         MPV_END_FILE_REASON_ERROR => {
                             let msg = unsafe {
-                                CStr::from_ptr(mpv_error_string(ef.error))
+                                CStr::from_ptr(lib.error_string(ef.error))
                                     .to_string_lossy()
                                     .into_owned()
                             };
