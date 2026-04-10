@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/nicegui/static/tauri-conf-schema.json",
   "productName": "ramus",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "identifier": "com.ramus.app",
   "build": {
     "frontendDist": "../ui/dist",
