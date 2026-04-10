@@ -1,14 +1,15 @@
 name: Release
 
-# Builds ramus for macOS (Apple Silicon + Intel) and Linux, uploads the
-# installers to a draft GitHub Release. Trigger by pushing a `v*` tag
-# (e.g. `git tag v0.1.0 && git push origin v0.1.0`) or by running the
-# workflow manually from the Actions tab.
+# Builds ramus for macOS (Apple Silicon + Intel), Linux, and Windows,
+# uploads the installers to a draft GitHub Release. Trigger by pushing
+# a `v*` tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`) or by
+# running the workflow manually from the Actions tab.
 #
-# Windows is intentionally not in the matrix yet — our current build.rs
-# uses pkg-config + direct C FFI, which requires libmpv headers and an
-# MSVC import lib on Windows. A follow-up will move to runtime loading
-# via libloading so we can add a windows-latest entry.
+# libmpv is loaded at runtime via libloading (see ramus-tauri/src/mpv_ffi.rs),
+# so the build machine only needs libmpv present for the brew/apt dev
+# loop on mac/linux. On Windows there is no pkg-config / libmpv-dev
+# package to install — we download the zhongfly LGPL prebuilt DLL and
+# let Tauri bundle it as a resource so it ends up alongside ramus.exe.
 
 on:
   push:
@@ -37,6 +38,10 @@ jobs:
             tauri-args: --target x86_64-apple-darwin
           - platform: ubuntu-22.04
             label: Linux (x86_64)
+            rust-target: ''
+            tauri-args: ''
+          - platform: windows-latest
+            label: Windows (x86_64)
             rust-target: ''
             tauri-args: ''
 
@@ -90,6 +95,29 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install mpv
 
+      # Windows: no pkg-config, no libmpv-dev package. Download the LGPL
+      # prebuilt DLL from zhongfly/mpv-winbuild and drop it where
+      # tauri.windows.conf.json expects it (`ramus-tauri/windows-deps/`).
+      # Tauri then bundles it as a resource so it lands next to ramus.exe
+      # in the installer. Tag is pinned — bump manually when we want a
+      # newer mpv. `7z.exe` is preinstalled on GitHub Actions Windows runners.
+      - name: Download libmpv DLL
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MPV_RELEASE_TAG: 2026-04-10-75939c2
+          MPV_ASSET: mpv-dev-lgpl-x86_64-20260410-git-75939c2.7z
+        run: |
+          $url = "https://github.com/zhongfly/mpv-winbuild/releases/download/$env:MPV_RELEASE_TAG/$env:MPV_ASSET"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile mpv-dev.7z
+          7z x mpv-dev.7z -ompv-dev | Out-Null
+          $dll = Get-ChildItem -Path mpv-dev -Recurse -Filter libmpv-2.dll | Select-Object -First 1
+          if ($null -eq $dll) { throw "libmpv-2.dll not found in archive" }
+          New-Item -ItemType Directory -Force -Path ramus-tauri/windows-deps | Out-Null
+          Copy-Item $dll.FullName ramus-tauri/windows-deps/libmpv-2.dll
+          Write-Host "Placed libmpv-2.dll ($((Get-Item ramus-tauri/windows-deps/libmpv-2.dll).Length) bytes)"
+
       - name: Install frontend dependencies
         working-directory: ui
         run: npm ci
@@ -108,14 +136,14 @@ jobs:
             - **macOS (Apple Silicon)** — `*_aarch64.dmg`
             - **macOS (Intel)** — `*_x64.dmg`
             - **Linux** — `.AppImage` (portable), `.deb` (Debian/Ubuntu), `.rpm` (Fedora/RHEL)
+            - **Windows** — `*_x64-setup.exe` (NSIS) or `*_x64_en-US.msi` (MSI). libmpv-2.dll is bundled, no separate install needed.
 
             ### Heads up
             These builds are **unsigned**, so you'll get a warning the first time you open the app:
 
-            - On macOS: right-click the app → Open, or run `xattr -cr /Applications/ramus.app` to clear the quarantine flag.
-            - On Linux: `chmod +x ramus_*.AppImage` if you grabbed the AppImage.
-
-            Windows builds aren't published yet — coming in a follow-up.
+            - **macOS**: right-click the app → Open, or run `xattr -cr /Applications/ramus.app` to clear the quarantine flag.
+            - **Linux**: `chmod +x ramus_*.AppImage` if you grabbed the AppImage.
+            - **Windows**: SmartScreen will show "Unknown publisher" — click "More info" → "Run anyway".
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.tauri-args }}
