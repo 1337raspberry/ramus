@@ -38,10 +38,12 @@ jobs:
             label: macOS (Apple Silicon)
             rust-target: aarch64-apple-darwin
             tauri-args: --target aarch64-apple-darwin
-          - platform: macos-13
-            label: macOS (Intel)
-            rust-target: x86_64-apple-darwin
-            tauri-args: --target x86_64-apple-darwin
+          # macos-13 (Intel) was removed — GitHub retired the hosted Intel
+          # runners. To support Intel Macs again, switch this entry to a
+          # universal build (`rust-target: aarch64-apple-darwin x86_64-apple-darwin`,
+          # `tauri-args: --target universal-apple-darwin`) on the existing
+          # macos-14 line. Worth doing now that libloading removes the
+          # link-time libmpv constraint that previously blocked it.
           - platform: ubuntu-22.04
             label: Linux (x86_64)
             rust-target: ''
