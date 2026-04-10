@@ -54,22 +54,22 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
           targets: ${{ matrix.rust-target }}
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
         with:
           workspaces: '. -> target'
           # Separate cache per platform so they don't stomp each other.
           key: ${{ matrix.platform }}
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: 20
           cache: npm
@@ -129,18 +129,35 @@ jobs:
       # prebuilt DLL from zhongfly/mpv-winbuild and drop it where
       # tauri.windows.conf.json expects it (`ramus-tauri/windows-deps/`).
       # Tauri then bundles it as a resource so it lands next to ramus.exe
-      # in the installer. Tag is pinned — bump manually when we want a
-      # newer mpv. `7z.exe` is preinstalled on GitHub Actions Windows runners.
+      # in the installer. `7z.exe` is preinstalled on GitHub Actions Windows runners.
+      #
+      # SECURITY: tag + asset + sha256 are ALL pinned. GitHub release assets
+      # are mutable (the owner can delete + re-upload a file under the same
+      # tag), so tag pinning alone is not enough to defeat a supply-chain
+      # attack on that repo — the hash check is the real guarantee that the
+      # DLL matches what we audited. If you bump MPV_RELEASE_TAG / MPV_ASSET,
+      # you MUST also update MPV_ASSET_SHA256 to the new asset's SHA-256
+      # (visible on the GitHub releases page or via the GitHub API, e.g.:
+      #   gh api /repos/zhongfly/mpv-winbuild/releases/tags/<tag> \
+      #     --jq '.assets[] | select(.name=="<asset>") | .digest'
+      # which returns "sha256:<hex>").
       - name: Download libmpv DLL
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           MPV_RELEASE_TAG: 2026-04-10-75939c2
           MPV_ASSET: mpv-dev-lgpl-x86_64-20260410-git-75939c2.7z
+          MPV_ASSET_SHA256: 7c80d47c69a29451a603cb212875d96ac5c2669f4a8b858b0af5cef0bf3dd581
         run: |
           $url = "https://github.com/zhongfly/mpv-winbuild/releases/download/$env:MPV_RELEASE_TAG/$env:MPV_ASSET"
           Write-Host "Downloading $url"
           Invoke-WebRequest -Uri $url -OutFile mpv-dev.7z
+          $actual = (Get-FileHash mpv-dev.7z -Algorithm SHA256).Hash.ToLower()
+          $expected = $env:MPV_ASSET_SHA256.ToLower()
+          if ($actual -ne $expected) {
+            throw "mpv-dev.7z SHA-256 mismatch: expected $expected, got $actual"
+          }
+          Write-Host "SHA-256 verified: $actual"
           7z x mpv-dev.7z -ompv-dev | Out-Null
           $dll = Get-ChildItem -Path mpv-dev -Recurse -Filter libmpv-2.dll | Select-Object -First 1
           if ($null -eq $dll) { throw "libmpv-2.dll not found in archive" }
@@ -153,7 +170,7 @@ jobs:
         run: npm ci
 
       - name: Build and publish Tauri app
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5  # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
