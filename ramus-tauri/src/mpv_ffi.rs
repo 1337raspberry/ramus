@@ -103,7 +103,7 @@ type FnInitialize = unsafe extern "C" fn(*mut mpv_handle) -> c_int;
 type FnDestroy = unsafe extern "C" fn(*mut mpv_handle);
 type FnSetOptionString =
     unsafe extern "C" fn(*mut mpv_handle, *const c_char, *const c_char) -> c_int;
-type FnCommand = unsafe extern "C" fn(*mut mpv_handle, *mut *const c_char) -> c_int;
+type FnCommand = unsafe extern "C" fn(*mut mpv_handle, *const *const c_char) -> c_int;
 type FnSetProperty =
     unsafe extern "C" fn(*mut mpv_handle, *const c_char, c_int, *mut c_void) -> c_int;
 type FnSetPropertyString =
@@ -223,7 +223,7 @@ impl MpvLib {
     }
 
     #[inline]
-    pub unsafe fn command(&self, ctx: *mut mpv_handle, args: *mut *const c_char) -> c_int {
+    pub unsafe fn command(&self, ctx: *mut mpv_handle, args: *const *const c_char) -> c_int {
         (self.command)(ctx, args)
     }
 
@@ -416,5 +416,14 @@ const fn default_lib_name() -> &'static str {
     #[cfg(target_os = "linux")]
     {
         "libmpv.so.2"
+    }
+    // Fallback so the function stays compilable on unsupported targets
+    // (FreeBSD, NetBSD, any future target). Without this arm, all three
+    // cfg blocks compile away and the function has no return value →
+    // hard compile error. The bare soname lets the dynamic linker search
+    // LD_LIBRARY_PATH / equivalent.
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        "libmpv.so"
     }
 }
