@@ -296,11 +296,20 @@ def main() -> int:
     # — no absolute paths to /opt/homebrew anywhere in any of these files.
     for real_path, target_basename in real_to_target.items():
         path = WORKDIR / target_basename
+        # IMPORTANT: snapshot deps BEFORE touching the self-id. `otool -L`
+        # reports the current LC_ID_DYLIB as the first tab-indented entry, so
+        # once we've rewritten it to `@loader_path/<basename>` a second call
+        # would return that new string — and it's not in install_name_to_target
+        # (which is keyed on the *original* install names we walked). Reading
+        # first keeps the snapshot consistent with the map. `-change` is a
+        # no-op on LC_ID_DYLIB anyway (that's exclusively `-id`'s domain), so
+        # including the original self-id in the iteration below is harmless.
+        deps = otool_deps(path)
         # The dylib's own install ID — what other binaries see as its name.
         install_name_tool("-id", f"@loader_path/{target_basename}", str(path))
         # Every non-system dep is guaranteed present in the map by the
         # sanity check above, so we can look up unconditionally.
-        for dep in otool_deps(path):
+        for dep in deps:
             if dep.startswith(SYSTEM_PREFIXES):
                 continue
             mapped = install_name_to_target[dep]
