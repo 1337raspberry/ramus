@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/nicegui/static/tauri-conf-schema.json",
   "productName": "ramus",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "com.ramus.app",
   "build": {
     "frontendDist": "../ui/dist",
@@ -26,7 +26,11 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["$APPDATA/**", "$HOME/Library/Application Support/com.raspsoft.ramus/**", "$HOME/.local/share/ramus/**"]
+          "allow": [
+            "$APPDATA/**",
+            "$HOME/Library/Application Support/com.raspsoft.ramus/**",
+            "$HOME/.local/share/ramus/**"
+          ]
         }
       }
     }
