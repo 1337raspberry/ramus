@@ -26,7 +26,7 @@ pub async fn update_settings(
     state: State<'_, AppState>,
     settings: Settings,
 ) -> CmdResult<()> {
-    let prev_genre_source = state.settings.read().genre_source.clone();
+    let prev_genre_source = state.settings.read().genre_source;
 
     // Apply playback config changes to the player
     let config = settings.to_playback_config();

@@ -46,15 +46,43 @@ jobs:
           workspaces: '. -> target'
           key: ci-${{ matrix.platform }}
 
-      # ramus-core is pure Rust with full test coverage — no system deps,
-      # no libmpv, no webkit needed. We deliberately skip ramus-tauri here
-      # because tauri-build wants the frontend dist/ dir to exist; the
-      # Release workflow covers the full build path.
+      # Linux: tauri's transitive sys crates (webkit2gtk-sys, soup3-sys,
+      # javascriptcore-sys) probe pkg-config in their build scripts even
+      # for `cargo clippy`. macOS uses native WKWebView so no system deps.
+      # libmpv is NOT needed at build time — runtime only via libloading.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      # tauri-build reads `frontendDist` from tauri.conf.json and expects
+      # the directory to exist, so the frontend must be built before any
+      # cargo command that touches ramus-tauri.
+      - name: Build frontend
+        working-directory: ui
+        run: npm ci && npm run build
+
       - name: cargo test (ramus-core)
         run: cargo test -p ramus-core --all-features
 
-      - name: cargo clippy (ramus-core)
-        run: cargo clippy -p ramus-core --all-targets -- -D warnings
+      # Workspace-wide so warnings in ramus-tauri can't slip past CI.
+      # `--all-targets` covers test code, which is where most of the
+      # session's actual lint failures lived.
+      - name: cargo clippy (workspace)
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   frontend:
     name: Frontend

@@ -46,7 +46,7 @@ cargo test -p ramus-core                    # Run all core tests
 cargo test -p ramus-core -- test_name       # Run a single test
 cargo test -p ramus-core -- module::        # Run tests in a module
 cargo build -p ramus-core                   # Build core library
-cargo clippy -p ramus-core                  # Lint
+cargo clippy -p ramus-core --all-targets    # Lint (production + tests)
 ```
 
 ### Tauri App
@@ -55,6 +55,13 @@ cargo tauri dev                             # Dev mode (Rust + React hot-reload)
 cargo tauri build                           # Production build
 cargo test -p ramus-tauri                   # Tauri command tests
 ```
+
+### Before committing
+CI runs clippy with `-D warnings` (warnings = errors) on **both** crates and **all targets** (lib + tests). A clean local lint requires the same flags — and per-crate clippy hides warnings in the other crate. Run this before every commit:
+```sh
+cargo clippy --workspace --all-targets -- -D warnings
+```
+Lints in test-only code (`#[cfg(test)]`) won't fail a normal `cargo build`/`cargo test`, but they **will** fail CI. Don't skip `--all-targets`.
 
 ### React Frontend
 ```sh
