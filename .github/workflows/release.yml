@@ -75,7 +75,9 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      # Linux: Tauri's webkit2gtk + libmpv for playback.
+      # Linux: Tauri's webkit2gtk + libmpv for playback. patchelf is needed
+      # both by tauri's AppImage bundler and by our self-contained libmpv
+      # script (sets RPATH=$ORIGIN on each bundled lib).
       # libayatana-appindicator3-dev is the maintained replacement for
       # the deprecated libappindicator3-dev package.
       - name: Install Linux system dependencies
@@ -94,6 +96,17 @@ jobs:
             curl \
             wget \
             file
+
+      # Walk libmpv.so.2's transitive non-glibc deps via ldd, copy them to
+      # ramus-tauri/linux-libs/, set RPATH=$ORIGIN on each, and write
+      # tauri.linux.conf.json with bundle.linux.appimage.files mapping each
+      # to /usr/lib/<basename>. Tauri picks up the platform-conf at build
+      # time and adds the libs to the .AppImage. .deb / .rpm are unaffected
+      # — those use the system libmpv2 / mpv-libs via the depends arrays
+      # already in tauri.conf.json.
+      - name: Bundle libmpv into Linux .AppImage
+        if: runner.os == 'Linux'
+        run: python3 scripts/bundle-linux-libmpv.py
 
       # macOS: brew installs libmpv plus its full ffmpeg/codec/font stack.
       # We bundle all of it into the .app a few steps below for self-contained

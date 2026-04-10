@@ -15,3 +15,9 @@ ramus-tauri/windows-deps/
 # build from brew's libmpv install — never commit these.
 ramus-tauri/macos-frameworks/
 ramus-tauri/tauri.macos.conf.json
+
+# libmpv + transitive .so files bundled by scripts/bundle-linux-libmpv.py
+# during the Release workflow on Linux runners. Generated fresh each
+# build from apt's libmpv2 install — never commit these.
+ramus-tauri/linux-libs/
+ramus-tauri/tauri.linux.conf.json

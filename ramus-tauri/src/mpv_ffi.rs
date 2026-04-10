@@ -356,6 +356,20 @@ fn candidate_paths() -> Vec<String> {
                         .into_owned(),
                 );
             }
+            // Linux AppImage / FHS layout: binary at /usr/bin/<app>, libs at
+            // /usr/lib/<lib>. AppImage extracts the bundle to /tmp/.mount_xxx
+            // so this lookup catches the bundled libmpv regardless of whether
+            // AppImage's AppRun set LD_LIBRARY_PATH for us.
+            #[cfg(target_os = "linux")]
+            if let Some(parent) = dir.parent() {
+                paths.push(
+                    parent
+                        .join("lib")
+                        .join(lib_name)
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
         }
     }
 
