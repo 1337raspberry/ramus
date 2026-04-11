@@ -1,6 +1,18 @@
 import { create } from "zustand";
 import type { Album, LyricsResult, SpectrumState, Track, UltraBlurColors } from "../lib/types";
 import { blurColorsFromPalette, type VibrantPalette } from "../lib/vibrantColor";
+
+/**
+ * Which rendering mode the focus-mode visualiser is in.
+ *
+ * - `"off"`  — viz is unmounted entirely (RAF loop stops)
+ * - `"bars"` — 256-bar mirrored spectrum, bass centred, treble at edges
+ * - `"line"` — smoothed averaged curve filled from the top edge down
+ *
+ * Cycled by clicking the wave-icon button in the focus-mode track row;
+ * see `cycleVisualizerMode`.
+ */
+export type VisualizerMode = "off" | "bars" | "line";
 import {
   getVolume,
   setVolume as setVolumeCmd,
@@ -50,10 +62,11 @@ interface PlaybackState {
 
   // --- Focus mode ---
   isFocusMode: boolean;
-  // Whether the focus-mode visualiser layer is rendered. Session-only —
-  // resets to true on reload. Controlled by the IconWave toggle next to
-  // the equalizer button in FocusNowPlayingView's track row.
-  showVisualizer: boolean;
+  // Which visualiser rendering mode is active in focus mode. Session-
+  // only — resets to `"bars"` on reload. Cycled `bars → line → off` by
+  // clicking the IconWave button next to the equalizer in
+  // FocusNowPlayingView's track row (see `cycleVisualizerMode`).
+  visualizerMode: VisualizerMode;
 
   // --- Focus-mode FFT spectrogram ---
   //
@@ -87,7 +100,7 @@ interface PlaybackState {
   toggleLyricsPinned: () => void;
   toggleQueue: () => void;
   toggleFocusMode: () => void;
-  toggleVisualizer: () => void;
+  cycleVisualizerMode: () => void;
   removeQueueItem: (index: number) => void;
   jumpToIndex: (index: number) => void;
 }
@@ -144,7 +157,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   currentGenres: [],
 
   isFocusMode: false,
-  showVisualizer: true,
+  visualizerMode: "bars",
   spectrumState: null,
 
   onPlaybackState: (status, track, queueIndex) => {
@@ -389,7 +402,12 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   toggleFocusMode: () => set((s) => ({ isFocusMode: !s.isFocusMode })),
 
-  toggleVisualizer: () => set((s) => ({ showVisualizer: !s.showVisualizer })),
+  cycleVisualizerMode: () =>
+    set((s) => {
+      const next: VisualizerMode =
+        s.visualizerMode === "bars" ? "line" : s.visualizerMode === "line" ? "off" : "bars";
+      return { visualizerMode: next };
+    }),
 
   removeQueueItem: (index) => {
     removeFromQueueCmd(index).catch(() => {});

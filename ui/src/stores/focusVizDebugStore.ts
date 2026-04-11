@@ -72,6 +72,15 @@ export interface FocusVizDebugState {
   /** Minimum bar height (0..1) required before noise kicks in. */
   bassNoiseGate: number;
 
+  // --- Line mode ---
+  /**
+   * Width (in bars) of the symmetric moving-average window used to
+   * smooth the eased bar heights into a single continuous curve in
+   * line mode. Larger = smoother + less detail; smaller = more
+   * structure but more jitter. 1 = no smoothing.
+   */
+  lineSmoothingWindow: number;
+
   // --- Panel state (not persisted — see merge() below) ---
   /** Whether the slider panel is visible. Toggled with ⌘⇧V. */
   panelOpen: boolean;
@@ -102,6 +111,9 @@ export const FOCUS_VIZ_DEFAULTS: FocusVizDebugState = {
   bassNoiseAmount: 0.08,
   bassNoiseBandCutoff: 40,
   bassNoiseGate: 0.08,
+  // Line mode — moderate smoothing preserves structural detail
+  // while averaging out the bass lockstep and per-band jitter.
+  lineSmoothingWindow: 12,
   // Panel
   panelOpen: false,
 };
@@ -113,7 +125,7 @@ export const useFocusVizDebugStore = create<FocusVizDebugState>()(
     // discard any older persisted state and rehydrate from the new
     // defaults. Saves the user from having to hit Reset manually after
     // a default change. Increment on every baked-defaults update.
-    version: 3,
+    version: 4,
     // Always start with the panel closed regardless of last session.
     merge: (persisted, current) => ({
       ...current,

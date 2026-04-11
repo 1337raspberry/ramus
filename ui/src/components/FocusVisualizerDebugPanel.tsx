@@ -76,6 +76,19 @@ const SLIDER_GROUPS: { name: string; sliders: SliderSpec[] }[] = [
       { key: "bassNoiseGate", label: "Silent-bar gate", min: 0, max: 0.3, step: 0.005 },
     ],
   },
+  {
+    name: "Line mode",
+    sliders: [
+      {
+        key: "lineSmoothingWindow",
+        label: "Smoothing window",
+        min: 1,
+        max: 40,
+        step: 1,
+        unit: "bars",
+      },
+    ],
+  },
 ];
 
 export default function FocusVisualizerDebugPanel() {

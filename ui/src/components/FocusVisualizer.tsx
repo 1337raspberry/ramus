@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { spectrumKind, type SpectrumFrames, type SpectrumState } from "../lib/types";
+import { accentFromPalette } from "../lib/vibrantColor";
 // DEBUG (focus viz tuning): runtime-tunable parameters via the slider panel.
 // Remove this import + every line tagged `DEBUG (focus viz tuning)` to
 // rip out the debug system. See stores/focusVizDebugStore.ts for the
@@ -17,21 +18,35 @@ import { useFocusVizDebugStore } from "../stores/focusVizDebugStore";
  * `floor(positionMs / hopMs)` using mpv's own `time-pos`, so bars align
  * sample-accurately with whatever the speakers are playing.
  *
- * Three visual states:
- *   - "analysing"   → centred "Analysing audio…" placeholder
- *   - "unavailable" → centred "Visualiser not available while transcoding"
- *                     (or whichever `reason` the backend supplies)
- *   - ready         → 256 mirrored bars across the top of the focus view
+ * Placeholder states (shown before the spectrogram is ready):
+ *   - "analysing"   → "Analysing audio…" label
+ *   - "unavailable" → "Visualiser not available while transcoding" (or
+ *                     whatever `reason` the backend supplies)
  *
- * Rendering model: 128 FFT bands are rendered **twice** — once per half
- * of the canvas, mirrored about the vertical centreline. Bass sits in
- * the middle and treble at both outer edges, producing a symmetric
- * "mountain" that pulses with low frequencies and shimmers at the wings.
+ * Ready-state rendering modes, cycled by the wave-icon button in
+ * FocusNowPlayingView's track row (`playbackStore.cycleVisualizerMode`):
  *
- *   bar index 0  → band 127 (highest treble, far left)
- *   bar index 127→ band 0   (lowest bass, just left of centre)
- *   bar index 128→ band 0   (lowest bass, just right of centre)
- *   bar index 255→ band 127 (highest treble, far right)
+ *   - "bars" → 256 mirrored bars across the top. 128 FFT bands are
+ *     rendered **twice** (once per half of the canvas, mirrored about
+ *     the vertical centreline), so bass sits in the middle and treble
+ *     at both outer edges, producing a symmetric mountain silhouette.
+ *
+ *       bar index 0  → band 127 (highest treble, far left)
+ *       bar index 127→ band 0   (lowest bass, just left of centre)
+ *       bar index 128→ band 0   (lowest bass, just right of centre)
+ *       bar index 255→ band 127 (highest treble, far right)
+ *
+ *   - "line" → a single smoothed curve across the full width, filled
+ *     from the top edge down. Uses the same underlying eased bar
+ *     heights but passes them through a moving-average window and
+ *     draws a filled path with quadratic curves between points for a
+ *     glassy organic look. Smoothing window is tuned via the debug
+ *     slider (`lineSmoothingWindow`).
+ *
+ * Mode switches don't remount the canvas — the draw loop reads
+ * `playbackStore.visualizerMode` via `getState()` each frame and
+ * branches. This keeps the eased-height buffer continuous across
+ * bars↔line transitions so there's no flicker.
  */
 
 const BAR_COUNT = 256; // 128 bands × 2 mirrored halves
@@ -57,6 +72,7 @@ const HALF_BAR_COUNT = BAR_COUNT / 2;
 //   const BASS_NOISE_AMOUNT = 0.08;      // ±8% wobble on bass bars
 //   const BASS_NOISE_BAND_CUTOFF = 40;   // apply to bands 0..39
 //   const BASS_NOISE_GATE = 0.08;        // skip bars below 8% height
+//   const LINE_SMOOTHING_WINDOW = 12;    // moving-average window (line mode)
 //
 // (or whichever values you've settled on after tuning — check the
 // `focus-viz-debug` localStorage key in DevTools to see them.)
@@ -141,8 +157,10 @@ export default function FocusVisualizer() {
   }
 
   // Ready path: render the canvas layer. Pull `normalisedFrames!` — the
-  // memo resolved it to non-null for the "ready" kind.
-  return <BarsLayer frames={normalisedFrames!} />;
+  // memo resolved it to non-null for the "ready" kind. The layer reads
+  // `visualizerMode` via getState() each frame so mode cycling doesn't
+  // remount the canvas.
+  return <CanvasLayer frames={normalisedFrames!} />;
 }
 
 // --- Placeholder layer ---
@@ -185,9 +203,28 @@ function PlaceholderLayer({ state }: { state: SpectrumState | null }) {
   );
 }
 
-// --- Bars layer ---
+// --- Canvas layer (bars + line modes share one canvas + RAF) ---
 
-function BarsLayer({ frames }: { frames: SpectrumFrames }) {
+/**
+ * In-place moving-average smoothing over `src[]` with a symmetric
+ * window of `windowSize` samples. Writes into `out[]`, which must have
+ * the same length as `src`. O(n·windowSize) per call — fine for
+ * n=256, window<=40 at 60 fps. Used by the line-mode draw path to
+ * turn the jagged per-band eased heights into a continuous curve.
+ */
+function smoothLineInto(src: Float32Array, windowSize: number, out: Float32Array): void {
+  const n = src.length;
+  const halfWindow = Math.floor(Math.max(1, windowSize) / 2);
+  for (let i = 0; i < n; i++) {
+    const lo = Math.max(0, i - halfWindow);
+    const hi = Math.min(n, i + halfWindow + 1);
+    let sum = 0;
+    for (let j = lo; j < hi; j++) sum += src[j];
+    out[i] = sum / (hi - lo);
+  }
+}
+
+function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
@@ -197,6 +234,9 @@ function BarsLayer({ frames }: { frames: SpectrumFrames }) {
   const currentRef = useRef<Float32Array>(new Float32Array(BAR_COUNT));
   // Reusable scratch buffer so the RAF loop doesn't allocate every frame.
   const scratchRef = useRef<Uint8Array>(new Uint8Array(BAR_COUNT));
+  // Line-mode smoothing output buffer, reused across frames so the
+  // moving-average pass doesn't allocate every frame.
+  const smoothedLineRef = useRef<Float32Array>(new Float32Array(BAR_COUNT));
 
   // Bass-decorrelation noise tables — one value per *band* (not per
   // bar) so left/right mirror bars using the same band stay in sync
@@ -206,8 +246,34 @@ function BarsLayer({ frames }: { frames: SpectrumFrames }) {
   // bands that all read the same FFT bin. See the draw loop below
   // for the gating logic, and the physics explanation is in the
   // `bassNoiseAmount` doc in focusVizDebugStore.ts.
+  // Only used by the "bars" draw branch — the "line" branch's
+  // horizontal smoothing averages the lockstep out on its own.
   const noisePhasesRef = useRef<Float32Array | null>(null);
   const noiseFreqsRef = useRef<Float32Array | null>(null);
+
+  // Cached accent RGB (as pre-stringified channel values ready for
+  // rgba() template literals). Refreshed via the effect below whenever
+  // the vibrantPalette in playbackStore changes, which is at most once
+  // per track change. The RAF loop reads from this ref every frame
+  // instead of calling `getComputedStyle(document.documentElement)`,
+  // which would otherwise trigger a browser style-recalc query 60× a
+  // second to probe a value that barely ever changes.
+  const accentRef = useRef<{ r: string; g: string; b: string }>({
+    r: "120",
+    g: "90",
+    b: "220",
+  });
+  const vibrantPalette = usePlaybackStore((s) => s.vibrantPalette);
+  useEffect(() => {
+    if (!vibrantPalette) {
+      // No palette yet (fresh session, or a track with no art).
+      // Fall back to the same defaults the CSS `:root` rule ships.
+      accentRef.current = { r: "120", g: "90", b: "220" };
+      return;
+    }
+    const [r, g, b] = accentFromPalette(vibrantPalette);
+    accentRef.current = { r: String(r), g: String(g), b: String(b) };
+  }, [vibrantPalette]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -274,6 +340,10 @@ function BarsLayer({ frames }: { frames: SpectrumFrames }) {
       const playback = usePlaybackStore.getState();
       const isPlaying = playback.status === "playing";
       const positionMs = playback.position * 1000;
+      // Mode is read every frame (not captured in closure) so cycling
+      // bars ↔ line via the wave button takes effect on the next paint
+      // without remounting the canvas / resetting the eased buffer.
+      const mode = playback.visualizerMode;
 
       // DEBUG (focus viz tuning): pull all tunable params via getState()
       // each frame so slider tweaks take effect on the very next paint.
@@ -300,11 +370,9 @@ function BarsLayer({ frames }: { frames: SpectrumFrames }) {
         current[i] = prev + (target - prev) * ease;
       }
 
-      // Accent colour from CSS variables so bars match the album art.
-      const styles = getComputedStyle(document.documentElement);
-      const r = styles.getPropertyValue("--accent-r").trim() || "120";
-      const g = styles.getPropertyValue("--accent-g").trim() || "90";
-      const b = styles.getPropertyValue("--accent-b").trim() || "220";
+      // Accent colour from the cached ref — updated by the
+      // vibrantPalette effect above, no per-frame style-recalc cost.
+      const { r, g, b } = accentRef.current;
 
       // DEBUG (focus viz tuning): GLOBAL_ALPHA
       ctx.globalAlpha = viz.globalAlpha;
@@ -320,56 +388,112 @@ function BarsLayer({ frames }: { frames: SpectrumFrames }) {
       grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${viz.gradientBottomOpacity})`);
       ctx.fillStyle = grad;
 
-      // DEBUG (focus viz tuning): BORDER_WIDTH_PX / BORDER_OPACITY.
-      // Stroke is applied per-bar after the fill, only when width > 0.
-      const drawBorder = viz.borderWidthPx > 0 && viz.borderOpacity > 0;
-      if (drawBorder) {
-        ctx.lineWidth = viz.borderWidthPx;
-        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${viz.borderOpacity})`;
-      }
+      if (mode === "line") {
+        // --- Line mode ---
+        //
+        // Average the eased bar heights with a symmetric moving-average
+        // window, then draw a filled curve from the top edge down to
+        // the smoothed profile. Using quadratic segments between
+        // consecutive points — each actual point becomes a control
+        // point, with segment midpoints as on-curve anchors — gives a
+        // continuous, glassy curve without needing bezier tension
+        // math. The mirror symmetry of the underlying band data is
+        // preserved automatically because `current[]` is already mirrored
+        // (bars 127 and 128 both read band 0, etc).
+        //
+        // Noise decorrelation is deliberately skipped in this mode —
+        // the horizontal smoothing averages the bass lockstep out on
+        // its own, and adding per-band wobble on top would just add
+        // high-frequency ripple to an otherwise smooth curve.
+        //
+        // DEBUG (focus viz tuning): LINE_SMOOTHING_WINDOW
+        const smoothed = smoothedLineRef.current;
+        smoothLineInto(current, viz.lineSmoothingWindow, smoothed);
 
-      // Bar layout: evenly spaced across the full width. Width is
-      // computed once per frame (resize-aware) from the canvas size.
-      // DEBUG (focus viz tuning): BAR_GAP_PX
-      const totalGap = viz.barGapPx * (BAR_COUNT - 1);
-      const barWidth = Math.max(0.5, (w - totalGap) / BAR_COUNT);
+        const n = BAR_COUNT;
+        const xStep = n > 1 ? w / (n - 1) : w;
 
-      // Bass decorrelation: for low-frequency bands below the cutoff,
-      // apply a tiny per-band sinusoidal wobble so adjacent bars that
-      // share the same FFT bin don't move in identical lockstep. Gated
-      // on the current amplitude so silent bars stay perfectly still —
-      // noise on near-zero bars would look like flickery bottom pixels.
-      //
-      // Applied per BAND (not per bar) so the left and right mirror
-      // halves stay in sync — band N's wobble is identical on both
-      // sides of centre, preserving the mirror symmetry while still
-      // decorrelating band N from band N±1. See the useEffect init
-      // block above for the phase/frequency table.
-      const noisePhases = noisePhasesRef.current;
-      const noiseFreqs = noiseFreqsRef.current;
-      const noiseActive = viz.bassNoiseAmount > 0 && viz.bassNoiseBandCutoff > 0;
-      const noiseT = noiseActive ? performance.now() / 1000 : 0;
-
-      for (let i = 0; i < BAR_COUNT; i++) {
-        let h = current[i];
-
-        if (noiseActive && noisePhases && noiseFreqs) {
-          const band = barToBand(i);
-          if (band < viz.bassNoiseBandCutoff && h > viz.bassNoiseGate) {
-            const wobble = Math.sin(noiseT * noiseFreqs[band] + noisePhases[band]);
-            h = h * (1 + wobble * viz.bassNoiseAmount);
-            if (h < 0) h = 0;
-            else if (h > 1) h = 1;
-          }
+        // Path construction: start from the top-left corner, thread a
+        // quadratic chain through the smoothed heights, close via a
+        // mirror quad to the top-right corner, then `closePath` back
+        // across the top edge. The two closing quads are shaped so
+        // their tangents at (0,0) and (w,0) are VERTICAL, which
+        // matches the implicit top-edge closure perfectly — no kinks
+        // at either edge.
+        //
+        // The midpoint-quadratic technique in the loop (each data
+        // point becomes a control, segment midpoints are the on-curve
+        // anchors) keeps the interior continuous for free.
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        // Left entry quad: tangent at (0,0) points toward the control
+        // (0, bar[0]*maxH) = straight down, matching the top edge's
+        // implicit vertical closure. The anchor at the first segment
+        // midpoint hands off cleanly to the loop below.
+        for (let i = 0; i < n - 1; i++) {
+          const x1 = i * xStep;
+          const y1 = smoothed[i] * maxH;
+          const x2 = (i + 1) * xStep;
+          const y2 = smoothed[i + 1] * maxH;
+          ctx.quadraticCurveTo(x1, y1, (x1 + x2) / 2, (y1 + y2) / 2);
+        }
+        // Right exit quad: mirror of the entry. Control at
+        // (w, bar[n-1]*maxH), anchor at (w, 0). Tangent at (w, 0) is
+        // vertical, matching the top edge on the other side.
+        ctx.quadraticCurveTo(w, smoothed[n - 1] * maxH, w, 0);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        // --- Bars mode (default) ---
+        //
+        // DEBUG (focus viz tuning): BORDER_WIDTH_PX / BORDER_OPACITY.
+        // Stroke is applied per-bar after the fill, only when width > 0.
+        const drawBorder = viz.borderWidthPx > 0 && viz.borderOpacity > 0;
+        if (drawBorder) {
+          ctx.lineWidth = viz.borderWidthPx;
+          ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${viz.borderOpacity})`;
         }
 
-        const barHeight = h * maxH;
-        // DEBUG (focus viz tuning): MIN_VISIBLE_HEIGHT_PX
-        if (barHeight < viz.minVisibleHeightPx) continue;
-        const x = i * (barWidth + viz.barGapPx);
-        ctx.fillRect(x, 0, barWidth, barHeight);
-        if (drawBorder) {
-          ctx.strokeRect(x, 0, barWidth, barHeight);
+        // Bar layout: evenly spaced across the full width. Width is
+        // computed once per frame (resize-aware) from the canvas size.
+        // DEBUG (focus viz tuning): BAR_GAP_PX
+        const totalGap = viz.barGapPx * (BAR_COUNT - 1);
+        const barWidth = Math.max(0.5, (w - totalGap) / BAR_COUNT);
+
+        // Bass decorrelation: for low-frequency bands below the cutoff,
+        // apply a tiny per-band sinusoidal wobble so adjacent bars that
+        // share the same FFT bin don't move in identical lockstep.
+        // Gated on the current amplitude so silent bars stay perfectly
+        // still — noise on near-zero bars would look like flickery
+        // bottom pixels. Applied per BAND (not per bar) so the left
+        // and right mirror halves stay in sync. See the useEffect
+        // init block above for the phase/frequency table.
+        const noisePhases = noisePhasesRef.current;
+        const noiseFreqs = noiseFreqsRef.current;
+        const noiseActive = viz.bassNoiseAmount > 0 && viz.bassNoiseBandCutoff > 0;
+        const noiseT = noiseActive ? performance.now() / 1000 : 0;
+
+        for (let i = 0; i < BAR_COUNT; i++) {
+          let barH = current[i];
+
+          if (noiseActive && noisePhases && noiseFreqs) {
+            const band = barToBand(i);
+            if (band < viz.bassNoiseBandCutoff && barH > viz.bassNoiseGate) {
+              const wobble = Math.sin(noiseT * noiseFreqs[band] + noisePhases[band]);
+              barH = barH * (1 + wobble * viz.bassNoiseAmount);
+              if (barH < 0) barH = 0;
+              else if (barH > 1) barH = 1;
+            }
+          }
+
+          const barHeight = barH * maxH;
+          // DEBUG (focus viz tuning): MIN_VISIBLE_HEIGHT_PX
+          if (barHeight < viz.minVisibleHeightPx) continue;
+          const x = i * (barWidth + viz.barGapPx);
+          ctx.fillRect(x, 0, barWidth, barHeight);
+          if (drawBorder) {
+            ctx.strokeRect(x, 0, barWidth, barHeight);
+          }
         }
       }
 
