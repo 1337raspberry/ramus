@@ -317,6 +317,33 @@ def main() -> int:
                 "-change", dep, f"@loader_path/{mapped}", str(path)
             )
 
+    # Re-sign every modified dylib ad-hoc. This is CRITICAL on Apple Silicon:
+    # any `install_name_tool` edit invalidates the file's embedded code
+    # signature, and dyld's code signing monitor kills the process with
+    # SIGKILL (Code Signature Invalid, "Invalid Page") on the very first page
+    # read during dlopen. Recent `install_name_tool` tries to re-sign ad-hoc
+    # automatically, but it quietly fails when the original signature blob
+    # lacks padding for the new name — which is exactly what we hit with the
+    # brew-built libmpv stack on 0.8.0 (see the crash report that prompted
+    # this fix). Doing it explicitly with `codesign --force --sign -` is the
+    # standard remedy and works on every file regardless of blob layout.
+    #
+    # Order doesn't matter: signing is per-file and doesn't care whether a
+    # dylib's `@loader_path` deps exist yet. We also run `codesign --verify`
+    # right after to hard-fail the build if any file is still broken, so we
+    # never ship another silent signature corruption.
+    for target_basename in real_to_target.values():
+        path = WORKDIR / target_basename
+        subprocess.run(
+            ["codesign", "--force", "--sign", "-", str(path)],
+            check=True,
+        )
+        subprocess.run(
+            ["codesign", "--verify", "--strict", str(path)],
+            check=True,
+        )
+    print(f"re-signed + verified {len(real_to_target)} dylibs (ad-hoc)")
+
     # Generate tauri.macos.conf.json — Tauri auto-merges this when building
     # for macOS. Paths are interpreted relative to tauri.conf.json's dir.
     rel_paths = sorted({f"macos-frameworks/{b}" for b in real_to_target.values()})
