@@ -3,5 +3,6 @@ pub mod media_keys;
 pub mod mpv;
 pub mod player;
 pub mod session;
+pub mod spectrum;
 pub mod transcode;
 pub mod waveform;
