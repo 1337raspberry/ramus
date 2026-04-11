@@ -152,11 +152,46 @@ export interface AccentColorPayload {
   b: number;
 }
 
-export interface AudioLevelPayload {
-  leftPeak: number;
-  rightPeak: number;
-  leftRms: number;
-  rightRms: number;
+// --- Focus-mode FFT spectrogram ---
+//
+// Shape matches ramus-core's `SpectrumFrames` struct, serde-serialised
+// with externally-tagged enums (the default). `SpectrumState` is
+// returned from the `get_spectrum` Tauri command and is the only thing
+// that drives FocusVisualizer's bar heights — there is no live audio
+// meter any more.
+
+export interface SpectrumFrames {
+  /// Milliseconds between adjacent frames. Index the spectrogram as
+  /// `floor(positionMs / hopMs)` using mpv's reported `time-pos`.
+  hopMs: number;
+  /// Number of bands per frame (128 with current defaults).
+  bandCount: number;
+  /// FFT window size in samples — diagnostics only.
+  fftSize: number;
+  /// Source sample rate — diagnostics only.
+  sampleRate: number;
+  /// `bandCount * totalFrames` bytes, row-major, u8 quantised 0..255.
+  /// Over Tauri's JSON IPC, postcard-ish `Vec<u8>` lands as a plain
+  /// number array. We convert to `Uint8Array` on receive.
+  frames: number[] | Uint8Array;
+}
+
+/// Matches ramus-core's `SpectrumState` enum (externally tagged).
+/// See `ramus-core/src/playback/spectrum.rs` — keep these in sync.
+export type SpectrumState =
+  | "analysing"
+  | { ready: SpectrumFrames }
+  | { unavailable: { reason: string } };
+
+/// Helper for exhaustive-match narrowing on `SpectrumState`.
+export function spectrumKind(state: SpectrumState): "analysing" | "ready" | "unavailable" {
+  if (state === "analysing") return "analysing";
+  if ("ready" in state) return "ready";
+  return "unavailable";
+}
+
+export interface SpectrumReadyPayload {
+  ratingKey: string;
 }
 
 export interface UltraBlurColors {

@@ -4,10 +4,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isAuthenticated, togglePlayPause, nextTrack, previousTrack } from "./lib/commands";
 import type {
   AccentColorPayload,
-  AudioLevelPayload,
   PlaybackStatePayload,
   PlaybackPositionPayload,
   PlaybackBufferingPayload,
+  SpectrumReadyPayload,
 } from "./lib/types";
 import { usePlaybackStore } from "./stores/playbackStore";
 import { useLibraryStore } from "./stores/libraryStore";
@@ -19,9 +19,6 @@ import AlbumDetailView from "./components/AlbumDetailView";
 import SuggestionView from "./components/SuggestionView";
 import DetailColumn from "./components/DetailColumn";
 import FocusNowPlayingView from "./components/FocusNowPlayingView";
-// DEBUG (focus visualiser panel): delete these two imports when removing the panel.
-import FocusVisualizerDebugPanel from "./components/FocusVisualizerDebugPanel";
-import { useVisualizerDebugStore } from "./stores/visualizerDebugStore";
 import SearchOverlay from "./components/SearchOverlay";
 import EqualizerPanel from "./components/EqualizerPanel";
 import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
@@ -106,8 +103,6 @@ export default function App() {
   const albumColors = usePlaybackStore((s) => s.ultraBlurColors);
   const isFocusMode = usePlaybackStore((s) => s.isFocusMode);
   const toggleFocusMode = usePlaybackStore((s) => s.toggleFocusMode);
-  // DEBUG (focus visualiser panel): delete when removing the panel.
-  const vizDebugOpen = useVisualizerDebugStore((s) => s.panelOpen);
   const blurColors = useMemo(() => albumColors ?? initialColors, [albumColors]);
 
   // Check auth on mount
@@ -149,8 +144,11 @@ export default function App() {
       const { isBuffering, bufferedFraction } = event.payload;
       store.onBuffering(isBuffering, bufferedFraction);
     });
-    const u4 = listen<AudioLevelPayload>("audio-level", (event) => {
-      store.onAudioLevel(event.payload);
+    // Focus-mode spectrum: Rust emits this when a prefetched track or
+    // the current track finishes analysis. Re-pull the spectrum for the
+    // currently playing track if it matches; otherwise ignore.
+    const u4 = listen<SpectrumReadyPayload>("spectrum-ready", (event) => {
+      store.refreshSpectrum(event.payload.ratingKey);
     });
 
     store.loadVolume();
@@ -232,15 +230,6 @@ export default function App() {
       if (mod && e.shiftKey && e.key === "N") {
         e.preventDefault();
         toggleFocusMode();
-        return;
-      }
-
-      // DEBUG (focus visualiser panel): delete this whole block when
-      // removing the panel. Cmd/Ctrl+Shift+V toggles the live tuning UI;
-      // only meaningful while focus mode is active.
-      if (mod && e.shiftKey && e.key === "V") {
-        e.preventDefault();
-        useVisualizerDebugStore.getState().togglePanel();
         return;
       }
 
@@ -334,8 +323,6 @@ export default function App() {
         detail={<DetailColumn onOpenEQ={() => setShowEQ(true)} />}
       />
       {isFocusMode && <FocusNowPlayingView onOpenEQ={() => setShowEQ(true)} />}
-      {/* DEBUG (focus visualiser panel): delete this line when removing the panel. */}
-      {isFocusMode && vizDebugOpen && <FocusVisualizerDebugPanel />}
       {showSearch && <SearchOverlay onDismiss={() => setShowSearch(false)} />}
       {showEQ && <EqualizerPanel onDismiss={() => setShowEQ(false)} />}
       {showSettings && (

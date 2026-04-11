@@ -1,13 +1,13 @@
 import { create } from "zustand";
-import type { Album, AudioLevelPayload, LyricsResult, Track, UltraBlurColors } from "../lib/types";
+import type { Album, LyricsResult, SpectrumState, Track, UltraBlurColors } from "../lib/types";
 import { blurColorsFromPalette, type VibrantPalette } from "../lib/vibrantColor";
-import { useVisualizerDebugStore } from "./visualizerDebugStore";
 import {
   getVolume,
   setVolume as setVolumeCmd,
   seek as seekCmd,
   fetchLyrics,
   getWaveform,
+  getSpectrum,
   getQueue,
   getAlbum,
   getAlbumGenres,
@@ -55,16 +55,28 @@ interface PlaybackState {
   // the equalizer button in FocusNowPlayingView's track row.
   showVisualizer: boolean;
 
-  // --- Realtime audio meter (fed from mpv `af-metadata/astats`) ---
+  // --- Focus-mode FFT spectrogram ---
+  //
+  // Precomputed per-track bands from symphonia + realfft in Rust.
+  // Hydrated on track change and on every `spectrum-ready` event.
   // FocusVisualizer reads this via getState() inside a RAF loop to avoid
-  // re-renders on every 30fps tick. Don't subscribe via a React selector.
-  audioLevels: AudioLevelPayload | null;
+  // re-renders on every 60fps tick. Don't subscribe via a React selector.
+  //
+  // `null` = never fetched for the current track (before the first
+  // getSpectrum call). `"analysing"` = backend knows the track but
+  // hasn't finished analysis yet; the viz shows a placeholder. When it
+  // flips to `{ ready }` the viz starts drawing bars at the current
+  // `position` lookup.
+  spectrumState: SpectrumState | null;
 
   // --- Event Handlers ---
   onPlaybackState: (status: string, track: Track | null, queueIndex: number) => void;
   onPlaybackPosition: (position: number, duration: number) => void;
   onBuffering: (isBuffering: boolean, bufferedFraction: number) => void;
-  onAudioLevel: (payload: AudioLevelPayload) => void;
+  /// Called on `spectrum-ready` events from Rust AND once at track change
+  /// to hydrate from the cache. Safe to call unconditionally; it only
+  /// invokes `getSpectrum` when there's a current track.
+  refreshSpectrum: (forRatingKey?: string) => void;
 
   // --- Actions ---
   seek: (seconds: number) => void;
@@ -97,12 +109,12 @@ function activeLineIndex(lyrics: LyricsResult, position: number): number {
 
 export { activeLineIndex };
 
-// Monotonic generation counter for the audio-level delayed dispatch path.
-// Incremented on every track change; pending setTimeouts compare against the
-// current value and drop their payload if it has advanced, preventing the
-// previous track's buffered meter data from bleeding into the new track
-// during the ~600 ms delay window (see onAudioLevel below).
-let audioLevelGen = 0;
+// Monotonic generation counter for the async spectrum-refresh path. Any
+// in-flight `getSpectrum` invoke checks this against the value captured
+// when it started — if the track has changed in the meantime, the
+// result is dropped so stale data from the previous track can't bleed
+// into the new track's UI state.
+let spectrumGen = 0;
 
 export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   status: "stopped",
@@ -133,16 +145,16 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   isFocusMode: false,
   showVisualizer: true,
-  audioLevels: null,
+  spectrumState: null,
 
   onPlaybackState: (status, track, queueIndex) => {
     const prev = get().currentTrack;
     const trackChanged = track?.ratingKey !== prev?.ratingKey;
 
-    // Invalidate any in-flight delayed audio-level dispatches so stale
-    // metering data from the previous track can't land on the new one.
+    // Invalidate any in-flight spectrum refreshes so stale data from the
+    // previous track can't land on the new one.
     if (trackChanged) {
-      audioLevelGen += 1;
+      spectrumGen += 1;
     }
 
     set({
@@ -153,7 +165,19 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     });
 
     if (trackChanged && track) {
-      set({ lyrics: null, waveformLevels: null, lyricsLoading: false, vibrantPalette: null });
+      set({
+        lyrics: null,
+        waveformLevels: null,
+        lyricsLoading: false,
+        vibrantPalette: null,
+      });
+
+      // `refreshSpectrum` below will debounce the "analysing"
+      // placeholder itself — see the comment there. We intentionally
+      // do NOT clear `spectrumState` here, because for cached tracks
+      // the fetch resolves in ~20-80 ms and debouncing avoids the
+      // placeholder ever rendering for those.
+      get().refreshSpectrum(track.ratingKey);
 
       getWaveform(track.ratingKey)
         .then((levels) => {
@@ -222,34 +246,94 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     set({ isBuffering, bufferedFraction });
   },
 
-  onAudioLevel: (payload) => {
-    // Hot-path mutation: set() is still fine because no React component
-    // subscribes to audioLevels via a selector — FocusVisualizer reads via
-    // getState() inside requestAnimationFrame.
-    //
-    // Visual delay: astats sees PCM samples upstream of the OS audio sink,
-    // so the visualiser naturally leads the speakers by ~mpv audio-buffer
-    // (~500 ms). Buffering the event by a matching delay realigns the
-    // visual reaction with what the listener actually hears.
-    //
-    // DEBUG (focus visualiser panel): currently reads the delay from the
-    // live debug store so the slider can tune it. When the debug panel is
-    // removed, replace the `useVisualizerDebugStore.getState().visualDelayMs`
-    // read with `VISUALIZER_DEFAULTS.visualDelayMs` imported from
-    // `./visualizerDebugStore`.
-    const delay = useVisualizerDebugStore.getState().visualDelayMs;
-    if (delay > 0) {
-      // Capture the current generation in the closure. If the track
-      // changes before this timeout fires, the generation will have
-      // advanced and we drop the stale payload.
-      const gen = audioLevelGen;
-      setTimeout(() => {
-        if (gen !== audioLevelGen) return;
-        set({ audioLevels: payload });
-      }, delay);
-    } else {
-      set({ audioLevels: payload });
+  refreshSpectrum: (forRatingKey) => {
+    // Resolve the target rating key: either the caller-provided one
+    // (from a spectrum-ready event, where we want to match it against
+    // the current track) or the current track's key.
+    const current = get().currentTrack;
+    if (!current) return;
+    if (forRatingKey && forRatingKey !== current.ratingKey) {
+      // The event was for a different track (probably the next
+      // prefetched one). Ignore — its state will hydrate when it
+      // actually starts playing.
+      return;
     }
+
+    const gen = spectrumGen;
+    const ratingKey = current.ratingKey;
+    const trackDurationS = current.duration;
+
+    // Debounced placeholder: only flip to "analysing" if the fetch
+    // takes more than 120 ms. Rationale: for cached `.spec` files the
+    // Tauri IPC resolves in ~50 ms and we want seamless bar-to-bar
+    // transitions without a placeholder flash. For cold analysis
+    // (first play of an uncached track, or a slow decode) we do want
+    // visual feedback, and 120 ms is under the threshold where users
+    // perceive "the app is frozen".
+    let placeholderFired = false;
+    const placeholderTimer = window.setTimeout(() => {
+      if (gen !== spectrumGen) return;
+      placeholderFired = true;
+      set({ spectrumState: "analysing" });
+    }, 120);
+
+    const t0 = performance.now();
+    getSpectrum(ratingKey)
+      .then((state) => {
+        const ipcMs = performance.now() - t0;
+        clearTimeout(placeholderTimer);
+        // Drop stale results if the track has changed while we were
+        // waiting. The gen check beats comparing current.ratingKey
+        // because a new track could theoretically have the same key
+        // (replay / queue reload).
+        if (gen !== spectrumGen) return;
+
+        // Timing sanity log: IPC latency is the key number here. If
+        // it's routinely over 500 ms for cached tracks, the JSON-array
+        // encoding of `Vec<u8>` is the bottleneck and we should switch
+        // to binary IPC via `tauri::ipc::Response`. Also
+        // cross-reference the spectrogram's own sense of duration
+        // against Plex's — large deltas mean the analyser is off.
+        if (typeof state === "object" && "ready" in state) {
+          const frames = state.ready;
+          const frameCount = Math.floor(frames.frames.length / frames.bandCount);
+          const analyserDurationS = (frameCount * frames.hopMs) / 1000;
+          console.log(
+            `[spectrum] ${ratingKey} ready: ` +
+              `ipc=${ipcMs.toFixed(0)}ms ` +
+              `placeholderShown=${placeholderFired} ` +
+              `hopMs=${frames.hopMs.toFixed(3)} ` +
+              `bands=${frames.bandCount} ` +
+              `sr=${frames.sampleRate} ` +
+              `frames=${frameCount} ` +
+              `analyserDuration=${analyserDurationS.toFixed(2)}s ` +
+              `plexDuration=${trackDurationS.toFixed(2)}s ` +
+              `delta=${(analyserDurationS - trackDurationS).toFixed(2)}s`,
+          );
+        } else {
+          console.log(
+            `[spectrum] ${ratingKey} ${typeof state === "string" ? state : "unavailable"}: ` +
+              `ipc=${ipcMs.toFixed(0)}ms placeholderShown=${placeholderFired}`,
+          );
+        }
+
+        // Measure the state-commit cost too — this is where
+        // useMemo's `Uint8Array.from` runs in FocusVisualizer, so a
+        // large value here points at the JSON-array conversion being
+        // the bottleneck rather than the IPC itself.
+        const tBeforeSet = performance.now();
+        set({ spectrumState: state });
+        const setMs = performance.now() - tBeforeSet;
+        if (setMs > 30) {
+          console.log(`[spectrum] ${ratingKey} set() took ${setMs.toFixed(0)}ms`);
+        }
+      })
+      .catch((err) => {
+        clearTimeout(placeholderTimer);
+        if (gen !== spectrumGen) return;
+        console.warn("[spectrum] getSpectrum failed:", err);
+        set({ spectrumState: "analysing" });
+      });
   },
 
   seek: (seconds) => {
