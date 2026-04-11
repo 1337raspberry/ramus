@@ -11,6 +11,7 @@ import type {
   PlexServer,
   SearchResult,
   Settings,
+  SpectrumState,
   Track,
   UltraBlurColors,
 } from "./types";
@@ -151,6 +152,13 @@ export const fetchLyrics = (ratingKey: string) =>
 
 export const getWaveform = (ratingKey: string) =>
   invoke<number[] | null>("get_waveform", { ratingKey });
+
+// Focus-mode spectrogram. Returns one of: "analysing", { ready: … },
+// or { unavailable: { reason } }. The backend never blocks on analysis —
+// if the track isn't ready yet we get "analysing" and should listen for
+// the `spectrum-ready` event before re-invoking.
+export const getSpectrum = (ratingKey: string) =>
+  invoke<SpectrumState>("get_spectrum", { ratingKey });
 
 // --- Search ---
 

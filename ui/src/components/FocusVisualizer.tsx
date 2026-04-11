@@ -1,68 +1,181 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
-import { useVisualizerDebugStore } from "../stores/visualizerDebugStore";
+import { spectrumKind, type SpectrumFrames, type SpectrumState } from "../lib/types";
 
 /**
- * Abstract hanging-line audio visualiser for the focus Now Playing view.
+ * Focus-mode FFT visualiser — 128-band mirrored spectrogram.
  *
- * Data source: libmpv's `af-metadata/astats` filter gives us left/right
- * RMS in dBFS via the `audio-level` Tauri event. The store mirrors this
- * into `audioLevels`, which this component reads via `getState()` inside
- * a requestAnimationFrame loop — deliberately bypassing React re-renders
- * so we get smooth ~60 fps animation without thrashing the component tree.
+ * Data source: `spectrumState` in `playbackStore`, populated from the
+ * `get_spectrum` Tauri command (per-track precomputed spectrograms from
+ * symphonia + realfft in Rust). No live audio metering — the old astats
+ * pulse path is gone. Sync is automatic because we look up frames by
+ * `floor(positionMs / hopMs)` using mpv's own `time-pos`, so bars align
+ * sample-accurately with whatever the speakers are playing.
  *
- * All tunable shape / animation / appearance parameters live in
- * `visualizerDebugStore`. They are read via `getState()` each frame, so
- * changes from the live debug panel apply immediately. Permanent defaults
- * are baked into `VISUALIZER_DEFAULTS` in that store file — edit them
- * there (or use the debug panel's "Copy" action to generate a paste-ready
- * block) rather than hardcoding here.
+ * Three visual states:
+ *   - "analysing"   → centred "Analysing audio…" placeholder
+ *   - "unavailable" → centred "Visualiser not available while transcoding"
+ *                     (or whichever `reason` the backend supplies)
+ *   - ready         → 256 mirrored bars across the top of the focus view
  *
- * Rendering: a single smooth curve anchored at the top edge that drapes
- * downward. Each point's depth is driven by (real overall RMS) *
- * (drooping-V center bias) * (three-octave smooth noise), so the line as
- * a whole pulses with loudness while individual points wobble organically.
- * The area above the curve is filled with a fading gradient and the curve
- * itself is stroked for a crisp boundary.
+ * Rendering model: 128 FFT bands are rendered **twice** — once per half
+ * of the canvas, mirrored about the vertical centreline. Bass sits in
+ * the middle and treble at both outer edges, producing a symmetric
+ * "mountain" that pulses with low frequencies and shimmers at the wings.
+ *
+ *   bar index 0  → band 127 (highest treble, far left)
+ *   bar index 127→ band 0   (lowest bass, just left of centre)
+ *   bar index 128→ band 0   (lowest bass, just right of centre)
+ *   bar index 255→ band 127 (highest treble, far right)
  */
 
-const MIN_DB = -60;
-const MAX_DB = 0;
+const BAR_COUNT = 256; // 128 bands × 2 mirrored halves
+const HALF_BAR_COUNT = BAR_COUNT / 2;
 
-/** dBFS → 0..1 linear amplitude ratio (clamped). */
-function dbToAmp(db: number): number {
-  if (!Number.isFinite(db) || db <= MIN_DB) return 0;
-  const clamped = Math.min(MAX_DB, db);
-  return Math.min(1, Math.pow(10, clamped / 20));
+// The bars occupy the top 40% of the focus window. Keeps them unobtrusive
+// enough that the album art + track metadata beneath still dominate the
+// visual hierarchy — the viz is meant to decorate the now-playing view,
+// not overwhelm it.
+const BAR_MAX_HEIGHT_PCT = 40;
+
+// Horizontal gap between adjacent bars, in CSS pixels. Small enough that
+// at 256 bars the canvas still reads as a continuous silhouette, but
+// large enough to preserve per-band definition.
+const BAR_GAP_PX = 1;
+
+// Decay smoothing: each frame, the eased height moves this fraction of
+// the way toward its target. Lower = smoother but laggier. 0.35 is
+// snappy enough for percussion while still filtering out STFT jitter.
+const EASE_DECAY = 0.35;
+// Attack is faster — transients shouldn't be slow-rising.
+const EASE_ATTACK = 0.55;
+
+/** Map a canvas bar index (0..255) to its source band index (0..127). */
+function barToBand(barIndex: number): number {
+  if (barIndex < HALF_BAR_COUNT) {
+    // Left half: 0 = highest band, HALF_BAR_COUNT-1 = lowest band.
+    return HALF_BAR_COUNT - 1 - barIndex;
+  }
+  // Right half: HALF_BAR_COUNT = lowest band, BAR_COUNT-1 = highest band.
+  return barIndex - HALF_BAR_COUNT;
 }
 
 /**
- * Smooth hash-based noise in [0, 1] — deterministic for a given (index,
- * phase) pair but continuous as `phase` advances. Cosine-interpolates
- * between two pseudo-random samples for C1 continuity.
+ * Read bar heights for the current frame into `out` (a Uint8Array of
+ * length BAR_COUNT). Returns true if a frame was available, false if
+ * we're past the end of the spectrogram (in which case the caller
+ * decays bars toward zero).
  */
-function smoothNoise(index: number, phase: number): number {
-  const p = phase + index * 0.37;
-  const i = Math.floor(p);
-  const f = p - i;
-  const hash = (n: number) => {
-    const x = Math.sin(n * 127.1 + index * 311.7) * 43758.5453;
-    return x - Math.floor(x);
-  };
-  const a = hash(i);
-  const b = hash(i + 1);
-  const t = (1 - Math.cos(f * Math.PI)) * 0.5;
-  return a * (1 - t) + b * t;
+function readFrameInto(frames: SpectrumFrames, positionMs: number, out: Uint8Array): boolean {
+  const bands = frames.bandCount;
+  if (bands === 0 || frames.hopMs <= 0) {
+    out.fill(0);
+    return false;
+  }
+
+  const frameIdx = Math.floor(positionMs / frames.hopMs);
+  const rawFrames = frames.frames;
+  const totalFrames = Math.floor(rawFrames.length / bands);
+  if (frameIdx < 0 || frameIdx >= totalFrames) {
+    out.fill(0);
+    return false;
+  }
+
+  const start = frameIdx * bands;
+  // Read through the BAR_COUNT canvas bars via the mirror map.
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const band = barToBand(i);
+    // Guard against a spectrogram with < 128 bands (custom config).
+    out[i] = band < bands ? (rawFrames as ArrayLike<number>)[start + band] : 0;
+  }
+  return true;
+}
+
+/**
+ * Convert a serde-serialised `SpectrumFrames` (which arrives as either
+ * a plain number[] or a Uint8Array over Tauri IPC) into a view that
+ * guarantees constant-time indexed reads. We normalise to Uint8Array
+ * once per track change so the RAF hot path never has to type-check.
+ */
+function normaliseFrames(frames: SpectrumFrames): SpectrumFrames {
+  if (frames.frames instanceof Uint8Array) return frames;
+  return { ...frames, frames: Uint8Array.from(frames.frames) };
 }
 
 export default function FocusVisualizer() {
+  // Subscribe to the TOP-LEVEL spectrum state so we can pick between
+  // the canvas and placeholder render. The canvas itself reads position
+  // via getState() inside the RAF loop — that's still the hot path.
+  const spectrumState = usePlaybackStore((s) => s.spectrumState);
+
+  // Cache the normalised frames for the currently-ready state so the
+  // RAF loop can index into Uint8Array directly without re-normalising
+  // every frame. `useMemo` is keyed on the identity of the underlying
+  // frames — set() creates a new object on every track change, so this
+  // recomputes exactly when it should.
+  const normalisedFrames = useMemo<SpectrumFrames | null>(() => {
+    if (typeof spectrumState === "object" && spectrumState !== null && "ready" in spectrumState) {
+      return normaliseFrames(spectrumState.ready);
+    }
+    return null;
+  }, [spectrumState]);
+
+  const kind = spectrumKind(spectrumState ?? "analysing");
+
+  // When we're showing a placeholder there's no need to drive an RAF
+  // loop at all — render plain React. The ready branch below owns its
+  // own canvas + RAF that we tear down on unmount / state change.
+  if (kind !== "ready") {
+    return <PlaceholderLayer state={spectrumState} />;
+  }
+
+  // Ready path: render the canvas layer. Pull `normalisedFrames!` — the
+  // memo resolved it to non-null for the "ready" kind.
+  return <BarsLayer frames={normalisedFrames!} />;
+}
+
+// --- Placeholder layer ---
+
+function PlaceholderLayer({ state }: { state: SpectrumState | null }) {
+  let label: string;
+  let muted = false;
+  if (state === null || state === "analysing") {
+    label = "Analysing audio…";
+  } else if ("unavailable" in state) {
+    const reason = state.unavailable.reason;
+    if (reason === "transcoding") {
+      label = "Visualiser unavailable while transcoding";
+    } else if (reason === "file_missing") {
+      label = "Analysing audio…";
+    } else if (reason.startsWith("unsupported_codec")) {
+      label = "Visualiser unavailable for this codec";
+    } else {
+      label = "Visualiser unavailable";
+    }
+    muted = true;
+  } else {
+    label = "Analysing audio…";
+  }
+
+  return (
+    <div className={`focus-visualizer focus-visualizer-placeholder${muted ? " is-muted" : ""}`}>
+      <span className="focus-visualizer-placeholder-label">{label}</span>
+    </div>
+  );
+}
+
+// --- Bars layer ---
+
+function BarsLayer({ frames }: { frames: SpectrumFrames }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
-  // Current normalised depth (0 = touching the top edge, 1 = bottom of canvas)
-  // for each sample point, spring-eased toward the target each frame. Sized
-  // to the current pointCount; re-allocated if the debug panel changes it.
-  const currentRef = useRef<Float32Array>(new Float32Array(64));
+
+  // Persistent per-bar eased height so bars decay smoothly between
+  // frames rather than snapping. Float32 for cheap lerping.
+  const currentRef = useRef<Float32Array>(new Float32Array(BAR_COUNT));
+  // Reusable scratch buffer so the RAF loop doesn't allocate every frame.
+  const scratchRef = useRef<Uint8Array>(new Uint8Array(BAR_COUNT));
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -72,10 +185,8 @@ export default function FocusVisualizer() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Track DPR alongside dimensions so the canvas reconfigures when the
-    // window moves between displays of different pixel densities (1x ↔ 2x
-    // Retina). Reading dpr fresh on every resize means the backing store
-    // always matches the current display.
+    // Track DPR and dimensions so the backing store resizes cleanly
+    // across displays (e.g. window drag from 1x to 2x Retina).
     let lastW = 0;
     let lastH = 0;
     let lastDpr = 0;
@@ -101,133 +212,64 @@ export default function FocusVisualizer() {
     const resizeObs = new ResizeObserver(() => resize());
     resizeObs.observe(container);
 
-    const render = (now: number) => {
+    // Reset eased-height buffer on track change so the old song's tail
+    // doesn't bleed into the new song's intro.
+    currentRef.current.fill(0);
+
+    const render = () => {
       const { w, h } = resize();
       ctx.clearRect(0, 0, w, h);
 
-      // Hot-path reads — no React subscriptions
+      // Hot-path reads — position is the ground truth for where in the
+      // spectrogram we are. Never subscribe to this via a selector.
       const playback = usePlaybackStore.getState();
-      // DEBUG (focus visualiser panel): live-tunable params. When the debug
-      // panel is removed, change this to:
-      //     const params = VISUALIZER_DEFAULTS;
-      // and import VISUALIZER_DEFAULTS directly from visualizerDebugStore.
-      const params = useVisualizerDebugStore.getState();
-
-      // Resize the eased-depth buffer if the point count slider changed
-      const pointCount = Math.max(2, Math.floor(params.pointCount));
-      if (currentRef.current.length !== pointCount) {
-        currentRef.current = new Float32Array(pointCount);
-      }
-
-      const levels = playback.audioLevels;
       const isPlaying = playback.status === "playing";
+      const positionMs = playback.position * 1000;
 
-      // Overall intensity from real astats metering
-      let mid = 0;
-      if (levels && isPlaying) {
-        const lr = dbToAmp(levels.leftRms);
-        const rr = dbToAmp(levels.rightRms);
-        mid = (lr + rr) / 2;
+      const scratch = scratchRef.current;
+      if (isPlaying) {
+        readFrameInto(frames, positionMs, scratch);
+      } else {
+        // Paused/stopped: decay toward zero so the bars don't freeze
+        // at whatever the last value was.
+        scratch.fill(0);
       }
 
-      // Calm idle breathing when silent / paused
-      const idleDepth = params.idleBase + (Math.sin(now / 1400) * 0.5 + 0.5) * params.idleAmplitude;
-
-      const phaseA = now * params.phaseRateA;
-      const phaseB = now * params.phaseRateB;
-      const phaseC = now * params.phaseRateC;
-
+      // Spring-ease each bar toward its target height.
       const current = currentRef.current;
-      const halfPoints = (pointCount - 1) / 2;
-
-      for (let i = 0; i < pointCount; i++) {
-        const a = smoothNoise(i * params.spatialA, phaseA);
-        const b = smoothNoise(i * params.spatialB + 1000, phaseB);
-        const c = smoothNoise(i * params.spatialC + 2000, phaseC);
-
-        let shape = a * params.weightA + b * params.weightB + c * params.weightC;
-        shape = Math.pow(Math.max(0, shape), params.shapePower);
-
-        const distFromCenter = halfPoints > 0 ? Math.abs(i - halfPoints) / halfPoints : 0;
-        const centerBias = 1 - Math.pow(distFromCenter, params.centerPower) * params.centerStrength;
-
-        let target: number;
-        if (mid > 0.01) {
-          target =
-            mid *
-              params.musicDepth *
-              centerBias *
-              (params.shapeMixBase + shape * params.shapeMixRange) +
-            idleDepth * params.idleWhileMusic;
-        } else {
-          target = idleDepth * shape * centerBias;
-        }
-
-        if (target > 1) target = 1;
-        if (target < 0) target = 0;
-
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const target = scratch[i] / 255;
         const prev = current[i];
-        const ease = target > prev ? params.attackEase : params.decayEase;
+        const ease = target > prev ? EASE_ATTACK : EASE_DECAY;
         current[i] = prev + (target - prev) * ease;
       }
 
-      // Convert normalised depths to canvas coordinates. The canvas spans
-      // the entire focus window (the visualiser is a background layer), so
-      // we scale each point's normalised 0..1 depth by `maxDepthPct` of
-      // the full canvas height — the curve drapes only within the top
-      // `maxDepthPct` percent of the window, regardless of canvas size.
-      const maxDrape = (h * params.maxDepthPct) / 100;
-      const points: { x: number; y: number }[] = [];
-      for (let i = 0; i < pointCount; i++) {
-        const x = pointCount > 1 ? (i / (pointCount - 1)) * w : w / 2;
-        const y = current[i] * maxDrape;
-        points.push({ x, y });
-      }
-
-      // Accent colour from CSS variables
+      // Accent colour from CSS variables so bars match the album art.
       const styles = getComputedStyle(document.documentElement);
       const r = styles.getPropertyValue("--accent-r").trim() || "120";
       const g = styles.getPropertyValue("--accent-g").trim() || "90";
       const b = styles.getPropertyValue("--accent-b").trim() || "220";
 
-      // --- Fill region: top edge → curve → top edge
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(points[0].x, points[0].y);
-      for (let i = 0; i < pointCount - 1; i++) {
-        const midX = (points[i].x + points[i + 1].x) / 2;
-        const midY = (points[i].y + points[i + 1].y) / 2;
-        ctx.quadraticCurveTo(points[i].x, points[i].y, midX, midY);
-      }
-      ctx.lineTo(points[pointCount - 1].x, points[pointCount - 1].y);
-      ctx.lineTo(w, 0);
-      ctx.closePath();
-
-      // Gradient fades over the drape region specifically, not the full
-      // canvas — so the fill looks cohesive regardless of how tall the
-      // underlying canvas is.
-      const gradEnd = Math.max(1, maxDrape);
-      const grad = ctx.createLinearGradient(0, 0, 0, gradEnd);
-      grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${params.fillOpacity})`);
-      grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+      // Gradient fill: opaque near the top edge (where the bars
+      // originate), fading to transparent at their bottom tips. Creates
+      // a cohesive glow that doesn't compete with the track title below.
+      const maxH = (h * BAR_MAX_HEIGHT_PCT) / 100;
+      const grad = ctx.createLinearGradient(0, 0, 0, maxH);
+      grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.95)`);
+      grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0.15)`);
       ctx.fillStyle = grad;
-      ctx.fill();
 
-      // --- Stroke the curve itself
-      ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 0; i < pointCount - 1; i++) {
-        const midX = (points[i].x + points[i + 1].x) / 2;
-        const midY = (points[i].y + points[i + 1].y) / 2;
-        ctx.quadraticCurveTo(points[i].x, points[i].y, midX, midY);
+      // Bar layout: evenly spaced across the full width. Width is
+      // computed once per frame (resize-aware) from the canvas size.
+      const totalGap = BAR_GAP_PX * (BAR_COUNT - 1);
+      const barWidth = Math.max(0.5, (w - totalGap) / BAR_COUNT);
+
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const barHeight = current[i] * maxH;
+        if (barHeight < 0.5) continue;
+        const x = i * (barWidth + BAR_GAP_PX);
+        ctx.fillRect(x, 0, barWidth, barHeight);
       }
-      ctx.lineTo(points[pointCount - 1].x, points[pointCount - 1].y);
-
-      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${params.strokeOpacity})`;
-      ctx.lineWidth = params.strokeWidth;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.stroke();
 
       rafRef.current = requestAnimationFrame(render);
     };
@@ -238,7 +280,7 @@ export default function FocusVisualizer() {
       cancelAnimationFrame(rafRef.current);
       resizeObs.disconnect();
     };
-  }, []);
+  }, [frames]);
 
   return (
     <div ref={containerRef} className="focus-visualizer">

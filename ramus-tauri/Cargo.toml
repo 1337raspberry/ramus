@@ -22,6 +22,20 @@ open = "5"
 # libmpv is loaded at runtime (not statically linked) so the app compiles
 # on any platform without headers or import libs. See src/mpv_ffi.rs.
 libloading = "0.8"
+# Pure-Rust audio decoder. Feeds decoded f32 samples into ramus-core's
+# spectrum analyser so the focus visualiser has real per-track FFT data.
+# No libav linkage — cross-platform compiles without native deps.
+symphonia = { version = "0.5", default-features = false, features = [
+    "flac",
+    "mp3",
+    "aac",
+    "alac",
+    "isomp4",
+    "vorbis",
+    "ogg",
+    "wav",
+    "pcm",
+] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -37,3 +51,6 @@ objc2 = "0.6"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
+tempfile = "3"

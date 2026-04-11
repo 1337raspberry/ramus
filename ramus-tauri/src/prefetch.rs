@@ -3,26 +3,44 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use ramus_core::playback::player::{is_allowed_extension, sanitize_filename, AudioPlayer};
+use ramus_core::playback::spectrum::{read_spec_file, spec_file_path};
+use tauri::AppHandle;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+
+use crate::events::emit_spectrum_ready;
+use crate::spectrum_analyzer;
 
 /// Monotonic counter — each `trigger()` call bumps this. Downloads check it
 /// before starting each track; if the generation has moved on, the old batch
 /// stops so we don't open competing connections that Plex will kill.
-static GENERATION: AtomicU64 = AtomicU64::new(0);
+pub(crate) static GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Max resume attempts per track before giving up.
 const MAX_RETRIES: u32 = 60;
 
-/// Spawn background prefetch tasks for upcoming tracks in the queue.
+/// Spawn background prefetch + spectrum-analysis tasks.
 ///
-/// Downloads are saved to the audio cache directory and registered
-/// in the player's LRU cache.
-pub fn trigger(player: Arc<AudioPlayer>, http_client: reqwest::Client) {
-    let targets = player.prefetch_targets();
-    if targets.is_empty() {
-        return;
-    }
-
+/// There are two concurrent paths here:
+///
+/// 1. **Fast path — the current track.** Skips the buffer/min-wait dance
+///    entirely and fires the download + analyser as soon as the track
+///    starts. This is what gets the focus-mode visualiser up within a
+///    few seconds on the very first track of a session (or any track
+///    the user skips to). It's safe to do this without waiting because
+///    direct-play tracks are plain static file serves — Plex's
+///    session/concurrency limits only bit back in the transcode era.
+///
+/// 2. **Slow path — upcoming tracks.** Keeps the original buffer-wait
+///    loop (`is_fully_buffered` + `min_wait`). These aren't time-critical
+///    (they just need to be cached by the time the user reaches them in
+///    the queue), and the wait is a cheap safety margin against mpv's
+///    HTTP GET colliding with ours on slower links.
+///
+/// Both paths share a single `GENERATION` counter so skips and queue
+/// reloads cleanly abort in-flight work. They also share
+/// [`spawn_analyse_task`] for the "kick off symphonia + FFT +
+/// emit_spectrum_ready" bit, which is why both call sites look so thin.
+pub fn trigger(player: Arc<AudioPlayer>, http_client: reqwest::Client, app: AppHandle) {
     let cache_dir = match ramus_core::plex::token_store::config_dir() {
         Ok(dir) => dir.join("audio_cache"),
         Err(_) => return,
@@ -32,15 +50,57 @@ pub fn trigger(player: Arc<AudioPlayer>, http_client: reqwest::Client) {
     // will notice and stop before starting its next download.
     let gen = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
 
+    // --- Fast path: current track ---
+    //
+    // Only spawned if the current track has a direct-play target and
+    // isn't already in the cache. Transcoded tracks return None here and
+    // get handled by `get_spectrum`'s `would_transcode` check instead —
+    // they never hit the analyser.
+    if let Some((current_id, current_url)) = player.current_track_download_target() {
+        let fp_player = player.clone();
+        let fp_http = http_client.clone();
+        let fp_app = app.clone();
+        let fp_cache_dir = cache_dir.clone();
+        tauri::async_runtime::spawn(async move {
+            if GENERATION.load(Ordering::SeqCst) != gen {
+                return;
+            }
+            match download_with_resume(
+                &fp_player,
+                &fp_http,
+                &fp_cache_dir,
+                &current_id,
+                &current_url,
+                gen,
+            )
+            .await
+            {
+                Ok(()) => {
+                    if GENERATION.load(Ordering::SeqCst) != gen {
+                        return;
+                    }
+                    spawn_analyse_task(&fp_player, current_id, fp_app);
+                }
+                Err(e) => {
+                    if GENERATION.load(Ordering::SeqCst) == gen {
+                        log::debug!("current-track download failed: {e}");
+                    }
+                }
+            }
+        });
+    }
+
+    // --- Slow path: upcoming tracks ---
+    //
+    // Unchanged from the pre-Option-A behaviour — wait for mpv's buffer
+    // to settle, then walk the upcoming queue downloading + analysing
+    // each track in turn.
+    let targets = player.prefetch_targets();
+    if targets.is_empty() {
+        return;
+    }
+
     tauri::async_runtime::spawn(async move {
-        // Plex limits concurrent downloads per client. mpv is actively
-        // streaming the current track, so we must wait until it finishes
-        // before starting our own downloads.
-        //
-        // cache-buffering-state (is_fully_buffered) only means mpv's
-        // read-ahead buffer is full — NOT that the entire file is on disk.
-        // We wait for that as a baseline, then enforce a minimum total wait
-        // to give mpv time to finish the full download.
         let start = tokio::time::Instant::now();
         let deadline = start + std::time::Duration::from_secs(120);
         let min_wait = std::time::Duration::from_secs(15);
@@ -79,22 +139,53 @@ pub fn trigger(player: Arc<AudioPlayer>, http_client: reqwest::Client) {
             }
 
             let cached = player.with_cache(|c| c.get(&track_id).is_some());
-            if cached {
-                continue;
+            if !cached {
+                if let Err(e) = download_with_resume(
+                    &player,
+                    &http_client,
+                    &cache_dir,
+                    &track_id,
+                    &url,
+                    gen,
+                )
+                .await
+                {
+                    if GENERATION.load(Ordering::SeqCst) != gen {
+                        log::debug!("prefetch: batch superseded, stopping");
+                        return;
+                    }
+                    log::debug!("prefetch failed for {track_id}: {e}");
+                    continue;
+                }
             }
 
-            if let Err(e) = download_with_resume(
-                &player, &http_client, &cache_dir, &track_id, &url, gen,
-            )
-            .await
-            {
-                if GENERATION.load(Ordering::SeqCst) != gen {
-                    log::debug!("prefetch: batch superseded, stopping");
-                    return;
-                }
-                log::debug!("prefetch failed for {track_id}: {e}");
-            }
+            spawn_analyse_task(&player, track_id, app.clone());
         }
+    });
+}
+
+/// Fire-and-forget analyser task. Expects the audio file to already be
+/// in the player's download cache (by rating_key). Runs symphonia +
+/// FFT on `spawn_blocking` so the ~1-2 s CPU spike doesn't park a
+/// tokio worker, then emits `spectrum-ready` so the focus visualiser
+/// can pull the result via `get_spectrum`.
+///
+/// If a valid `.spec` file already sits next to the cached audio, we
+/// skip the analyse pass entirely and just re-emit `spectrum-ready` so
+/// the frontend hydrates from disk. Without this short-circuit every
+/// `trigger()` call (i.e. every track change) would burn 1-2 s of CPU
+/// re-analysing already-analysed upcoming tracks.
+fn spawn_analyse_task(player: &AudioPlayer, track_id: String, app: AppHandle) {
+    let Some(audio_path) = player.with_cache(|c| c.get(&track_id).map(|p| p.to_path_buf())) else {
+        return;
+    };
+    if read_spec_file(&audio_path).is_some() {
+        emit_spectrum_ready(&app, track_id);
+        return;
+    }
+    tokio::task::spawn_blocking(move || {
+        spectrum_analyzer::analyse_and_persist(&audio_path);
+        emit_spectrum_ready(&app, track_id);
     });
 }
 
@@ -249,7 +340,13 @@ async fn download_with_resume(
     });
 
     for path in evicted {
+        // Drop the sibling .spec alongside the audio file. The .spec
+        // isn't tracked in DownloadCache so without this it would
+        // accumulate on disk forever — orphaned spectrograms for
+        // tracks whose audio is long gone.
+        let spec = spec_file_path(&path);
         let _ = tokio::fs::remove_file(&path).await;
+        let _ = tokio::fs::remove_file(&spec).await;
     }
 
     log::debug!("prefetch: cached {track_id} ({size} bytes, {retries} resumes)");

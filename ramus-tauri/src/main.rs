@@ -451,6 +451,8 @@ fn main() {
             commands::playback::apply_equalizer,
             commands::playback::fetch_lyrics,
             commands::playback::get_waveform,
+            // spectrum (focus-mode visualiser)
+            commands::spectrum::get_spectrum,
             // search
             commands::search::search,
             // sync

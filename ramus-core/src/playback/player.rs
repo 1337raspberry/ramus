@@ -20,12 +20,6 @@ use crate::playback::transcode;
 /// 10-band EQ center frequencies in Hz.
 pub const EQ_FREQUENCIES: [u32; 10] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
-/// Labelled astats filter, always prepended to the mpv `af` chain so that
-/// realtime audio metering is available independent of EQ state. The label
-/// lets us observe `af-metadata/astats` via libmpv regardless of other
-/// filters in the chain.
-pub const ASTATS_FILTER: &str = "@astats:astats=metadata=1:reset=1:measure_overall=none";
-
 /// Allowed file extensions for cached audio files.
 const ALLOWED_EXTENSIONS: &[&str] = &[
     "flac", "alac", "m4a", "mp3", "aac", "wav", "aiff", "ogg", "opus", "mp2", "bin",
@@ -53,16 +47,19 @@ pub fn build_eq_filter_string(bands: &[f32; 10]) -> String {
     format!("lavfi=[{}]", filters.join(","))
 }
 
-/// Build the full mpv `af` chain: always includes the astats metering
-/// filter, optionally followed by the labelled EQ chain when enabled.
+/// Build the mpv `af` chain string for the current EQ state.
 ///
-/// `af=no` can't be used to disable EQ any more — doing so would also drop
-/// the astats filter and break realtime metering. Call this instead.
+/// When EQ is enabled, this is the 10-band lavfi equalizer chain.
+/// When disabled, it's an empty string — which `set_audio_filters("")`
+/// interprets as "no filters", clearing anything previously set. We no
+/// longer prepend an `astats` metering filter: the focus-mode visualiser
+/// now drives itself from per-track precomputed spectrograms, so live
+/// metadata from the filter chain is unused.
 pub fn build_af_string(eq_enabled: bool, bands: &[f32; 10]) -> String {
     if eq_enabled {
-        format!("{ASTATS_FILTER},@eq:{}", build_eq_filter_string(bands))
+        build_eq_filter_string(bands)
     } else {
-        ASTATS_FILTER.to_string()
+        String::new()
     }
 }
 
@@ -221,14 +218,9 @@ pub struct AudioPlayer {
 
 impl AudioPlayer {
     pub fn new(mpv: Arc<dyn MpvPlayer>) -> Self {
-        // Ensure the astats metering filter is in the chain from the very first
-        // track, so the focus-mode visualiser has data before the user ever
-        // touches EQ. Goes through build_af_string (EQ disabled) rather than
-        // a raw ASTATS_FILTER write so the "always use the builder" rule in
-        // CLAUDE.md has exactly one path to enforce. build_af_string(false, …)
-        // returns the astats-only chain, matching ASTATS_FILTER byte-for-byte.
-        mpv.set_audio_filters(&build_af_string(false, &[0.0; 10]));
-
+        // The `af` chain starts empty — EQ will populate it when enabled.
+        // (The old astats metering filter was removed when the focus
+        // visualiser moved to precomputed spectrograms.)
         Self {
             mpv,
             inner: Mutex::new(PlayerInner {
@@ -536,9 +528,8 @@ impl AudioPlayer {
 
     /// Apply or clear the 10-band equalizer.
     ///
-    /// The astats metering filter is always present in the chain, so even
-    /// when the equalizer is disabled we set `af` to the astats-only string
-    /// (not `"no"`, which would drop metering).
+    /// When `enabled` is false the `af` chain is cleared entirely — there
+    /// are no other filters that need to survive.
     pub fn apply_equalizer(&self, enabled: bool, bands: &[f32; 10]) {
         let filter = build_af_string(enabled, bands);
         self.mpv.set_audio_filters(&filter);
@@ -753,6 +744,60 @@ impl AudioPlayer {
             .current_track
             .as_ref()
             .map(|t| t.rating_key.clone())
+    }
+
+    /// Returns `(rating_key, direct_play_url)` for the *current* track if
+    /// it's not already cached and is eligible for direct play (not being
+    /// transcoded). This is the companion to `prefetch_targets`, which
+    /// only covers upcoming tracks — together they let the prefetch task
+    /// also download the currently-playing track for spectrum analysis
+    /// without opening a second HTTP connection while mpv is still
+    /// actively streaming (timing is enforced by `prefetch.rs`).
+    pub fn current_track_download_target(&self) -> Option<(String, String)> {
+        let inner = self.inner.lock();
+        let track = inner.state.current_track.as_ref()?;
+
+        if inner.cache.get(&track.rating_key).is_some() {
+            return None;
+        }
+
+        if transcode::should_transcode(
+            track.codec.as_deref(),
+            inner.config.playback_mode,
+            inner.is_remote,
+        ) {
+            return None;
+        }
+
+        let server_url = inner.server_url.as_ref()?;
+        let token = inner.token.as_ref()?;
+        let part_key = track.part_key.as_ref()?;
+        let url = transcode::build_direct_play_url(server_url, part_key, token)?;
+        Some((track.rating_key.clone(), url.to_string()))
+    }
+
+    /// Would the given track get transcoded under the current settings?
+    ///
+    /// Used by the focus-mode visualiser's placeholder logic: transcoded
+    /// tracks can't be analysed (symphonia can't decode HLS manifests),
+    /// so `get_spectrum` surfaces `Unavailable { reason: "transcoding" }`
+    /// immediately instead of stranding the user on an "Analysing…"
+    /// placeholder that will never resolve.
+    ///
+    /// Returns `false` for unknown rating keys (not in the current queue)
+    /// — in that case the caller falls through to the normal "analysis
+    /// pending" path, which self-corrects once the track is actually
+    /// played and joins the queue.
+    pub fn would_transcode(&self, rating_key: &str) -> bool {
+        let inner = self.inner.lock();
+        let Some(track) = inner.state.queue.iter().find(|t| t.rating_key == rating_key) else {
+            return false;
+        };
+        transcode::should_transcode(
+            track.codec.as_deref(),
+            inner.config.playback_mode,
+            inner.is_remote,
+        )
     }
 }
 
@@ -1515,8 +1560,7 @@ mod tests {
         let bands = [3.0, -1.0, 0.0, 2.0, -2.0, 1.0, 0.5, -0.5, 4.0, -4.0];
         player.apply_equalizer(true, &bands);
 
-        // The most recent filter set should contain both the astats metering
-        // segment and the labelled EQ chain.
+        // The most recent filter set should be the labelled EQ chain.
         let calls = mpv.calls();
         let last_filter = calls
             .iter()
@@ -1526,8 +1570,7 @@ mod tests {
                 _ => None,
             })
             .expect("expected set_audio_filters to be called");
-        assert!(last_filter.contains("@astats:astats=metadata=1"));
-        assert!(last_filter.contains("@eq:lavfi=[equalizer="));
+        assert!(last_filter.contains("lavfi=[equalizer="));
     }
 
     #[test]
@@ -1536,8 +1579,9 @@ mod tests {
         let bands = [0.0; 10];
         player.apply_equalizer(false, &bands);
 
-        // Disabling EQ must NOT clear filters entirely — astats must remain
-        // so the focus-mode visualiser keeps receiving metering data.
+        // With EQ disabled the chain is empty — no astats, no anything.
+        // The focus visualiser now runs from precomputed spectrograms so
+        // nothing needs to survive in the filter chain.
         let calls = mpv.calls();
         let last_filter = calls
             .iter()
@@ -1547,33 +1591,31 @@ mod tests {
                 _ => None,
             })
             .expect("expected set_audio_filters to be called");
-        assert_eq!(last_filter, ASTATS_FILTER);
-        assert!(!last_filter.contains("equalizer="));
+        assert_eq!(last_filter, "");
     }
 
     #[test]
-    fn test_audio_player_new_sets_astats_filter() {
-        // The player constructor must push the astats filter so metering is
-        // live before the first track loads and before EQ is touched.
+    fn test_audio_player_new_does_not_touch_filters() {
+        // The constructor no longer pushes any filter up front — nothing
+        // depends on the af chain being pre-seeded.
         let (_player, mpv) = make_player();
         let calls = mpv.calls();
-        assert!(calls
+        assert!(!calls
             .iter()
-            .any(|c| matches!(c, MockCall::SetAudioFilters(s) if s == ASTATS_FILTER)));
+            .any(|c| matches!(c, MockCall::SetAudioFilters(_))));
     }
 
     #[test]
     fn test_build_af_string_disabled() {
         let s = build_af_string(false, &[0.0; 10]);
-        assert_eq!(s, ASTATS_FILTER);
+        assert_eq!(s, "");
     }
 
     #[test]
     fn test_build_af_string_enabled() {
         let bands = [1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         let s = build_af_string(true, &bands);
-        assert!(s.starts_with(ASTATS_FILTER));
-        assert!(s.contains(",@eq:lavfi=[equalizer="));
+        assert!(s.starts_with("lavfi=[equalizer="));
         assert!(s.contains("g=1.0"));
         assert!(s.contains("g=2.0"));
         assert!(s.contains("g=3.0"));

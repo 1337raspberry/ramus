@@ -4,7 +4,6 @@ use tauri::{AppHandle, Emitter};
 use ramus_core::cache::sync::SyncProgress;
 use ramus_core::models::Track;
 use ramus_core::playback::lyrics::LyricsResult;
-use ramus_core::playback::mpv::AudioLevels;
 
 // --- Event payloads ---
 
@@ -52,19 +51,6 @@ pub struct AccentColorPayload {
     pub b: u8,
 }
 
-/// Realtime audio metering from mpv's `astats` filter, in dBFS.
-/// Silence is represented by `f64::NEG_INFINITY` (serialised as JSON `null`
-/// via a skip, because `serde_json` can't encode `-inf`). The frontend
-/// converts dB → linear amplitude when rendering the spectrum visualiser.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AudioLevelPayload {
-    pub left_peak: f64,
-    pub right_peak: f64,
-    pub left_rms: f64,
-    pub right_rms: f64,
-}
-
 // --- Event emission helpers ---
 
 pub fn emit_playback_state(app: &AppHandle, payload: PlaybackStatePayload) {
@@ -103,25 +89,23 @@ pub fn emit_lyrics_update(app: &AppHandle, lyrics: LyricsResult) {
     let _ = app.emit("lyrics-update", lyrics);
 }
 
-/// Lowest dB value we forward to the frontend. astats emits `f64::NEG_INFINITY`
-/// for silent channels, which serde_json can't encode — we clamp to this
-/// instead so JSON is always valid and the frontend sees a normal float.
-const MIN_DB: f64 = -120.0;
-
-fn sanitize_db(v: f64) -> f64 {
-    if v.is_finite() {
-        v
-    } else {
-        MIN_DB
-    }
+/// Payload for `spectrum-ready`: notifies the frontend that a track's
+/// spectrogram is now available in the cache. The frontend then invokes
+/// `get_spectrum` to pull the actual bytes. We intentionally don't ship
+/// the spectrogram in the event itself because Tauri's JSON event bridge
+/// is slow for ~1 MB payloads.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpectrumReadyPayload {
+    pub rating_key: String,
 }
 
-pub fn emit_audio_level(app: &AppHandle, levels: AudioLevels) {
-    let payload = AudioLevelPayload {
-        left_peak: sanitize_db(levels.left_peak),
-        right_peak: sanitize_db(levels.right_peak),
-        left_rms: sanitize_db(levels.left_rms),
-        right_rms: sanitize_db(levels.right_rms),
+/// Emit `spectrum-ready` for a freshly analysed track. Safe to call from
+/// any thread that holds the `AppHandle` — Tauri's event bus handles the
+/// cross-thread fan-out to listeners.
+pub fn emit_spectrum_ready(app: &AppHandle, rating_key: impl Into<String>) {
+    let payload = SpectrumReadyPayload {
+        rating_key: rating_key.into(),
     };
-    let _ = app.emit("audio-level", payload);
+    let _ = app.emit("spectrum-ready", payload);
 }
