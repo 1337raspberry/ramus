@@ -59,8 +59,8 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
   const volume = usePlaybackStore((s) => s.volume);
   const changeVolume = usePlaybackStore((s) => s.changeVolume);
   const toggleFocusMode = usePlaybackStore((s) => s.toggleFocusMode);
-  const showVisualizer = usePlaybackStore((s) => s.showVisualizer);
-  const toggleVisualizer = usePlaybackStore((s) => s.toggleVisualizer);
+  const visualizerMode = usePlaybackStore((s) => s.visualizerMode);
+  const cycleVisualizerMode = usePlaybackStore((s) => s.cycleVisualizerMode);
 
   // Navigation handlers exit focus mode when triggered (artist/album/year/
   // genre clicks), so pass toggleFocusMode as the onNavigate callback.
@@ -112,11 +112,14 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
 
   return (
     <div className="focus-overlay">
-      {/* Visualiser renders as a full-window background layer behind the art
-       * and controls, draping from the very top of the frame. Gated on
-       * `showVisualizer` so the user can toggle it off via the wave button
-       * in the track row. Unmount (not CSS-hide) so the RAF loop stops. */}
-      {showVisualizer && <FocusVisualizer />}
+      {/* Visualiser renders as a full-window background layer behind the
+       * art and controls, draping from the very top of the frame. Gated
+       * on `visualizerMode !== "off"` so the wave button in the track
+       * row can cycle bars → line → off. Unmount (not CSS-hide) when
+       * off so the RAF loop stops. The viz reads its own mode via
+       * `usePlaybackStore.getState()` inside the RAF loop so switching
+       * between bars and line doesn't remount the canvas. */}
+      {visualizerMode !== "off" && <FocusVisualizer />}
 
       {/* DEBUG (focus viz tuning): always-mounted; renders nothing when
        * `panelOpen === false`. Toggled by the ⌘⇧V handler above. */}
@@ -182,9 +185,22 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
                 </button>
               )}
               <button
-                className={`np-viz-btn${showVisualizer ? " active" : ""}`}
-                onClick={toggleVisualizer}
-                title={showVisualizer ? "Hide visualiser" : "Show visualiser"}
+                className={`np-viz-btn${visualizerMode !== "off" ? " active" : ""}`}
+                onClick={cycleVisualizerMode}
+                title={
+                  visualizerMode === "bars"
+                    ? "Visualiser: bars — click for line mode"
+                    : visualizerMode === "line"
+                      ? "Visualiser: line — click to hide"
+                      : "Visualiser: off — click to show bars"
+                }
+                aria-label={
+                  visualizerMode === "bars"
+                    ? "Visualiser: bars, click for line mode"
+                    : visualizerMode === "line"
+                      ? "Visualiser: line, click to hide"
+                      : "Visualiser: off, click to show bars"
+                }
               >
                 <IconWave />
               </button>
