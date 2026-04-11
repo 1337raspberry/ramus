@@ -1,3 +1,46 @@
 [workspace]
 members = ["ramus-core", "ramus-tauri"]
 resolver = "2"
+
+# Optimise the CPU-heavy spectrum-analyser deps even in debug builds.
+# Symphonia, rustfft and realfft are pure-Rust numerical code that
+# runs at roughly 25× real-time in `opt-level = 0` but 300×+ in
+# `opt-level = 3`. Leaving them unoptimised in `cargo tauri dev` makes
+# a 5-minute track take ~14 s to analyse on first play instead of ~1 s.
+#
+# Our own crates stay at `opt-level = 0` (the dev default) so
+# incremental rebuilds are still fast — only the dependencies get the
+# fully-optimised treatment. Compile time cost is paid once on a clean
+# build and then cached in `target/` for every subsequent rebuild.
+[profile.dev.package.symphonia]
+opt-level = 3
+[profile.dev.package.symphonia-core]
+opt-level = 3
+[profile.dev.package.symphonia-bundle-mp3]
+opt-level = 3
+[profile.dev.package.symphonia-bundle-flac]
+opt-level = 3
+[profile.dev.package.symphonia-codec-aac]
+opt-level = 3
+[profile.dev.package.symphonia-codec-alac]
+opt-level = 3
+[profile.dev.package.symphonia-codec-vorbis]
+opt-level = 3
+[profile.dev.package.symphonia-codec-pcm]
+opt-level = 3
+[profile.dev.package.symphonia-format-isomp4]
+opt-level = 3
+[profile.dev.package.symphonia-format-ogg]
+opt-level = 3
+[profile.dev.package.symphonia-format-riff]
+opt-level = 3
+[profile.dev.package.symphonia-metadata]
+opt-level = 3
+[profile.dev.package.rustfft]
+opt-level = 3
+[profile.dev.package.realfft]
+opt-level = 3
+[profile.dev.package.num-complex]
+opt-level = 3
+[profile.dev.package.num-traits]
+opt-level = 3

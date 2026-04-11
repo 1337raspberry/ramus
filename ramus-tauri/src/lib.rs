@@ -5,6 +5,7 @@ pub mod mpv_controller;
 pub mod mpv_ffi;
 pub mod prefetch;
 pub mod session_reporter;
+pub mod spectrum_analyzer;
 pub mod state;
 
 use std::sync::Arc;
@@ -14,7 +15,7 @@ use tauri::AppHandle;
 use ramus_core::playback::mpv::MpvCallbacks;
 
 use crate::events::{
-    emit_audio_level, emit_playback_buffering, emit_playback_position, emit_playback_state,
+    emit_playback_buffering, emit_playback_position, emit_playback_state,
     PlaybackBufferingPayload, PlaybackPositionPayload, PlaybackStatePayload,
 };
 use crate::mpv_controller::MpvController;
@@ -34,7 +35,6 @@ pub fn create_mpv_player(
     let app5 = app_handle.clone();
     let app6 = app_handle.clone();
     let app7 = app_handle.clone();
-    let app8 = app_handle.clone();
 
     // The player is needed inside callbacks but holds the MpvController.
     // Use a shared Arc populated after construction to break the cycle.
@@ -90,7 +90,7 @@ pub fn create_mpv_player(
                         queue_index: state.queue_index,
                     },
                 );
-                            prefetch::trigger(p.clone(), http_client.clone());
+                            prefetch::trigger(p.clone(), http_client.clone(), app3.clone());
 
                 // Session reporting for natural track advance only.
                 // Same rating_key as previous track indicates a queue reload;
@@ -195,9 +195,6 @@ pub fn create_mpv_player(
             if let Some(ref p) = *pr9.lock() {
                 p.handle_file_ended(reason);
             }
-        })),
-        on_audio_level: Some(Box::new(move |levels| {
-            emit_audio_level(&app8, levels);
         })),
     });
 
