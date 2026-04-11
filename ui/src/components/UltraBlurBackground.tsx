@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { UltraBlurColors } from "../lib/types";
 import { hexToRgb } from "../lib/vibrantColor";
 
@@ -98,8 +99,29 @@ export function randomPalette(): { colors: UltraBlurColors; accent: [number, num
 
 // --- Color helpers ---
 
-function toCSS(rgb: [number, number, number]): string {
-  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+/**
+ * Baked tone adjustments from the tuning session. Brightness and
+ * saturation are applied in JS (not CSS `filter:`) because CSS filters
+ * go through Chromium's filter pipeline — the same pipeline whose
+ * 8-bit intermediate surfaces banded on Windows when we were using
+ * `filter: blur()`. Doing the tone math in JS guarantees the values
+ * feeding the gradient are already "final", so the only path the
+ * colours take to the screen is the high-precision gradient path.
+ *
+ * Saturation is a per-channel blend toward the RGB mean — simple
+ * grey in sRGB, not perceptually uniform, but deterministic and
+ * cheap. Brightness is a scalar multiply clamped to [0, 255].
+ * Applied in saturation-then-brightness order.
+ */
+const BRIGHTNESS = 0.9;
+const SATURATION = 1.2;
+
+function adjustedCSS(hex: string): string {
+  const [r, g, b] = hexToRgb(hex);
+  const grey = (r + g + b) / 3;
+  const clamp = (c: number) =>
+    Math.max(0, Math.min(255, Math.round((grey + (c - grey) * SATURATION) * BRIGHTNESS)));
+  return `rgb(${clamp(r)}, ${clamp(g)}, ${clamp(b)})`;
 }
 
 interface Props {
@@ -107,22 +129,34 @@ interface Props {
 }
 
 /**
- * Full-window gradient background using 4 blurred color blobs.
- * CSS blur eliminates all 8-bit banding, and background-color
- * is natively transitionable for smooth crossfades.
+ * Full-window gradient background built from 4 overlapping CSS
+ * `radial-gradient()` layers, one anchored at each corner.
+ *
+ * This replaces an earlier approach that used 4 solid-colour circle
+ * divs inside a `filter: blur(220px)` wrapper. That approach looked
+ * fine on macOS but banded catastrophically on Windows because
+ * Chromium's CSS filter pipeline uses 8-bit intermediate surfaces,
+ * baking quantisation into the blur output before any downstream
+ * dither could help. CSS radial gradients go through a different
+ * render path with higher internal precision and built-in dithering,
+ * so the same visual works cleanly on both platforms.
+ *
+ * The 4 corner colours are passed as CSS custom properties on the
+ * element's inline style. The matching `@property` declarations in
+ * `styles.css` with `syntax: '<color>'` enable smooth colour-space
+ * interpolation on the `transition`, giving us a 0.8s soft crossfade
+ * whenever the album changes. Brightness + saturation (baked as
+ * constants above) are applied to each colour in JS before it
+ * becomes CSS — deliberately NOT via CSS `filter:`, which would
+ * put us back in the banding-prone filter pipeline.
  */
 export default function UltraBlurBackground({ colors }: Props) {
-  const tl = toCSS(hexToRgb(colors.topLeft));
-  const tr = toCSS(hexToRgb(colors.topRight));
-  const bl = toCSS(hexToRgb(colors.bottomLeft));
-  const br = toCSS(hexToRgb(colors.bottomRight));
+  const bgStyle = {
+    "--ultrablur-tl": adjustedCSS(colors.topLeft),
+    "--ultrablur-tr": adjustedCSS(colors.topRight),
+    "--ultrablur-bl": adjustedCSS(colors.bottomLeft),
+    "--ultrablur-br": adjustedCSS(colors.bottomRight),
+  } as CSSProperties;
 
-  return (
-    <div className="ultrablur-bg">
-      <div className="ultrablur-blob ultrablur-tl" style={{ backgroundColor: tl }} />
-      <div className="ultrablur-blob ultrablur-tr" style={{ backgroundColor: tr }} />
-      <div className="ultrablur-blob ultrablur-bl" style={{ backgroundColor: bl }} />
-      <div className="ultrablur-blob ultrablur-br" style={{ backgroundColor: br }} />
-    </div>
-  );
+  return <div className="ultrablur-bg" aria-hidden="true" style={bgStyle} />;
 }
