@@ -108,41 +108,77 @@ textarea {
   user-select: text;
 }
 
-/* --- UltraBlur Background --- */
+/* --- UltraBlur Background ---
+ *
+ * Four overlapping radial gradients, one anchored at each corner,
+ * composited by default (no blend mode). The colours are passed in
+ * from `UltraBlurBackground.tsx` as CSS custom properties
+ * (`--ultrablur-tl` etc), declared via `@property` below with
+ * `syntax: '<color>'` so they interpolate smoothly in the
+ * `transition` — a plain CSS custom property transitions as "string
+ * replace" (instant), not as a colour blend. That's what gives us
+ * the 0.8s soft crossfade between albums.
+ *
+ * This replaces an earlier `filter: blur(220px)` approach that
+ * looked fine on macOS but banded catastrophically on Windows
+ * because Chromium's CSS filter pipeline uses 8-bit intermediate
+ * surfaces. Radial gradients go through a different render path
+ * with higher precision and built-in dithering — same visual goal,
+ * cleaner output on both platforms.
+ *
+ * LAYER ORDER MATTERS: `background-image` paints the first-listed
+ * layer ON TOP (front-to-back in declaration order). We list
+ * TL → TR → BR → BL, so the top-left colour sits on top and
+ * visually dominates wherever it's opaque; the other three only
+ * show through where TL has faded toward transparent. This is
+ * intentional — the baked brightness (0.9) and saturation (1.2)
+ * in `UltraBlurBackground.tsx` were tuned against this specific
+ * ordering. Reordering the layers or swapping to a symmetric
+ * blend mode will change the character of every preset and should
+ * only be done alongside a full re-tuning pass.
+ */
+
+@property --ultrablur-tl {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+@property --ultrablur-tr {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+@property --ultrablur-bl {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+@property --ultrablur-br {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
 
 .ultrablur-bg {
   position: fixed;
-  inset: -184px;
+  inset: 0;
   z-index: 0;
   pointer-events: none;
-  filter: blur(220px);
-  will-change: filter;
-  contain: strict;
-}
-
-.ultrablur-blob {
-  position: absolute;
-  width: 66%;
-  height: 66%;
-  border-radius: 50%;
-  transition: background-color 0.8s ease-in-out;
-}
-
-.ultrablur-tl {
-  top: 0;
-  left: 0;
-}
-.ultrablur-tr {
-  top: 0;
-  right: 0;
-}
-.ultrablur-bl {
-  bottom: 0;
-  left: 0;
-}
-.ultrablur-br {
-  bottom: 0;
-  right: 0;
+  background-color: #050508;
+  background-image:
+    radial-gradient(ellipse farthest-corner at 0% 0%, var(--ultrablur-tl), transparent 100%),
+    radial-gradient(ellipse farthest-corner at 100% 0%, var(--ultrablur-tr), transparent 100%),
+    radial-gradient(ellipse farthest-corner at 100% 100%, var(--ultrablur-br), transparent 100%),
+    radial-gradient(ellipse farthest-corner at 0% 100%, var(--ultrablur-bl), transparent 100%);
+  /* Overall dim baked in from the tuning session. Safe on the gradient
+   * render path — unlike CSS `filter:`, `opacity` doesn't go through
+   * Chromium's filter graph so it won't reintroduce banding. */
+  opacity: 0.8;
+  transition:
+    --ultrablur-tl 0.8s ease-in-out,
+    --ultrablur-tr 0.8s ease-in-out,
+    --ultrablur-bl 0.8s ease-in-out,
+    --ultrablur-br 0.8s ease-in-out;
 }
 
 /* --- Window Drag Region --- */
