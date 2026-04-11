@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { ART_SIZE } from "../lib/commands";
 import { togglePlayPause, nextTrack, previousTrack } from "../lib/commands";
@@ -10,6 +11,12 @@ import FlowLayout from "./FlowLayout";
 import LyricsOverlay from "./LyricsOverlay";
 import QueueView from "./QueueView";
 import FocusVisualizer from "./FocusVisualizer";
+// DEBUG (focus viz tuning): slider panel + ⌘⇧V toggle handler.
+// Remove these two imports, the useEffect, and the JSX mount when
+// ripping out the debug system. See stores/focusVizDebugStore.ts for
+// the full removal checklist.
+import FocusVisualizerDebugPanel from "./FocusVisualizerDebugPanel";
+import { toggleFocusVizDebugPanel } from "../stores/focusVizDebugStore";
 import MarqueeText from "./MarqueeText";
 import {
   IconStarFilled,
@@ -83,6 +90,21 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
   // don't re-extract here.
   const { artSrc, artErr, setArtErr } = useArtUrl(thumb, ART_SIZE.LARGE);
 
+  // DEBUG (focus viz tuning): ⌘⇧V (Cmd/Ctrl+Shift+V) toggles the viz
+  // debug slider panel while focus mode is open. Scoped to this view's
+  // lifetime so the shortcut is inert when focus mode isn't mounted.
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.shiftKey && (e.key === "V" || e.key === "v")) {
+        e.preventDefault();
+        toggleFocusVizDebugPanel();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
+
   if (!track) return null;
 
   const albumTitle = track.albumTitle;
@@ -95,6 +117,10 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
        * `showVisualizer` so the user can toggle it off via the wave button
        * in the track row. Unmount (not CSS-hide) so the RAF loop stops. */}
       {showVisualizer && <FocusVisualizer />}
+
+      {/* DEBUG (focus viz tuning): always-mounted; renders nothing when
+       * `panelOpen === false`. Toggled by the ⌘⇧V handler above. */}
+      <FocusVisualizerDebugPanel />
 
       <div className="focus-body">
         {/* Left 50%: large album art with artist/album/year anchored below */}

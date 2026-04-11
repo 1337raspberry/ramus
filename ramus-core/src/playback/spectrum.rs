@@ -253,6 +253,13 @@ pub fn analyse_samples(
             // (Hann has coherent gain 0.5, which halves the usual A*N/2).
             // Dividing by N/4 recovers `amp ≈ A` so amp_to_db lands in a
             // sensible dBFS range without per-band saturation.
+            //
+            // NOTE: the first ~47 log-spaced bands share a single FFT bin
+            // each at our default settings (50 Hz floor + 2048-pt FFT +
+            // 44.1 kHz SR), so they return identical values. That's the
+            // "bass lockstep" effect — handled visually in
+            // FocusVisualizer.tsx via per-band noise decorrelation in the
+            // RAF loop, not here.
             let amp_scale = 4.0 / fft_size as f32;
             let mut frame = vec![0.0_f32; bands];
             for (b, edges) in band_edges.iter().enumerate() {
