@@ -81,12 +81,14 @@ const MIN_PROGRESS_BYTES: u64 = 4096;
 
 // --- LAN mode ---
 
-/// Max concurrent prefetch downloads on LAN. Reduced from 3 to 2 so
-/// total concurrent connections (2 prefetch + 1 mpv) stay at 3. Plex
-/// servers throttle aggressively beyond 3 concurrent connections, and
-/// Windows Defender network inspection can further reduce per-connection
-/// throughput.
-const LAN_CONCURRENCY: usize = 2;
+/// Max concurrent prefetch downloads on LAN. Serial (1) keeps total
+/// connections at 2 (1 prefetch + 1 mpv). Plex servers actively reset
+/// streams when they see 3+ concurrent downloads, causing resumes even
+/// on fast LANs. Serial is barely slower in practice — a 40MB FLAC at
+/// gigabit speed takes ~0.5s, so 6 tracks finish in ~3s vs ~2s with
+/// concurrency. The time-budget retry strategy handles the rare resume
+/// if Plex still complains.
+const LAN_CONCURRENCY: usize = 1;
 
 /// Delay before starting prefetch on LAN after a natural advance.
 /// Just enough for mpv to issue its initial request.
