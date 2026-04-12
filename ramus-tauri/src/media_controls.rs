@@ -247,16 +247,12 @@ pub fn create_media_controls(
 ) -> Result<MediaControlsHandle, String> {
     #[cfg(target_os = "windows")]
     let hwnd = {
-        use raw_window_handle::HasWindowHandle;
-        let handle = window
-            .window_handle()
-            .map_err(|e| format!("failed to get window handle: {e}"))?;
-        match handle.as_raw() {
-            raw_window_handle::RawWindowHandle::Win32(h) => {
-                Some(h.hwnd.get() as *mut std::ffi::c_void)
-            }
-            _ => None,
-        }
+        // Tauri exposes .hwnd() directly on Windows — same pattern as
+        // .ns_window() on macOS in main.rs. No need for raw_window_handle crate.
+        let h = window
+            .hwnd()
+            .map_err(|e| format!("failed to get HWND: {e}"))?;
+        Some(h.0 as *mut std::ffi::c_void)
     };
 
     let config = PlatformConfig {
