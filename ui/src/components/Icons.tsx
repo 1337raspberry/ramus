@@ -211,6 +211,24 @@ export function IconFullscreen({ size = defaults.size, className }: IconProps) {
   );
 }
 
+export function IconMaximize({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <rect x="5" y="5" width="14" height="14" />
+    </svg>
+  );
+}
+
 export function IconChevronDown({ size = defaults.size, className }: IconProps) {
   return (
     <svg

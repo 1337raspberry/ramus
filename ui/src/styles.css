@@ -207,6 +207,12 @@ textarea {
   -webkit-app-region: drag;
 }
 
+.traffic-lights-right {
+  margin-left: auto;
+  padding-left: 0;
+  padding-right: 12px;
+}
+
 .traffic-light {
   pointer-events: auto;
   width: 12px;

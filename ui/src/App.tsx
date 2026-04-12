@@ -25,36 +25,67 @@ import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
 import OnboardingFlow from "./components/onboarding/OnboardingFlow";
 import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackground";
 import ColorDebugPanel from "./components/ColorDebugPanel";
-import { IconClose, IconMinimize, IconFullscreen } from "./components/Icons";
+import { IconClose, IconMinimize, IconFullscreen, IconMaximize } from "./components/Icons";
 
 const appWindow = getCurrentWindow();
 
+/** true when running inside WKWebView on macOS */
+const IS_MACOS = navigator.userAgent.includes("Macintosh");
+
 /**
- * Custom traffic lights + drag region. The green button enters a
- * dedicated fullscreen Space via `setFullscreen`; double-clicking the
- * drag area zooms/maximises on the current desktop — this is handled
- * natively by Tauri's `data-tauri-drag-region` attribute (no JS
- * handler needed; adding one causes a double-fire that bounces the
- * window back to its original size).
+ * Custom window controls + drag region.
  *
- * The Rust setup hook flips the NSWindow `collectionBehavior` flag so
- * that a `decorations: false` window is allowed to enter native
- * fullscreen at all; without that, `setFullscreen(true)` is a no-op.
+ * macOS (left-aligned): close · minimize · fullscreen
+ *   – Green button enters a dedicated fullscreen Space via setFullscreen.
+ *   – Double-click-to-zoom is handled natively by data-tauri-drag-region
+ *     (no JS handler — adding one causes a double-fire bounce).
+ *   – The Rust setup hook adds NSWindowCollectionBehaviorFullScreenPrimary
+ *     so setFullscreen works on a decorations:false window.
+ *
+ * Windows / Linux (right-aligned): minimize · maximize · close
+ *   – "Maximize" button toggles maximise (not exclusive fullscreen), so
+ *     the controls stay visible and the user can shrink back down.
  */
 function TrafficLights() {
-  // Toggle fullscreen — the native "green button" behaviour on macOS.
-  // isFullscreen() is cheap, so read-then-set is fine here.
-  const handleFullscreen = async () => {
-    const isFs = await appWindow.isFullscreen();
-    await appWindow.setFullscreen(!isFs);
-  };
+  if (IS_MACOS) {
+    const handleFullscreen = async () => {
+      const isFs = await appWindow.isFullscreen();
+      await appWindow.setFullscreen(!isFs);
+    };
 
+    return (
+      <div className="drag-region" data-tauri-drag-region>
+        <div className="traffic-lights">
+          <button
+            className="traffic-light tl-close"
+            title="Close"
+            onClick={() => appWindow.close()}
+          >
+            <IconClose size={10} />
+          </button>
+          <button
+            className="traffic-light tl-minimize"
+            title="Minimize"
+            onClick={() => appWindow.minimize()}
+          >
+            <IconMinimize size={10} />
+          </button>
+          <button
+            className="traffic-light tl-fullscreen"
+            title="Toggle Full Screen"
+            onClick={handleFullscreen}
+          >
+            <IconFullscreen size={10} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Windows / Linux: right-aligned, minimize → maximize → close
   return (
     <div className="drag-region" data-tauri-drag-region>
-      <div className="traffic-lights">
-        <button className="traffic-light tl-close" title="Close" onClick={() => appWindow.close()}>
-          <IconClose size={10} />
-        </button>
+      <div className="traffic-lights traffic-lights-right">
         <button
           className="traffic-light tl-minimize"
           title="Minimize"
@@ -63,11 +94,14 @@ function TrafficLights() {
           <IconMinimize size={10} />
         </button>
         <button
-          className="traffic-light tl-fullscreen"
-          title="Toggle Full Screen"
-          onClick={handleFullscreen}
+          className="traffic-light tl-maximize"
+          title="Maximize"
+          onClick={() => appWindow.toggleMaximize()}
         >
-          <IconFullscreen size={10} />
+          <IconMaximize size={10} />
+        </button>
+        <button className="traffic-light tl-close" title="Close" onClick={() => appWindow.close()}>
+          <IconClose size={10} />
         </button>
       </div>
     </div>
