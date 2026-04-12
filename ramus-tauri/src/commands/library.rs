@@ -153,6 +153,14 @@ pub async fn get_tracks_for_album(
 }
 
 #[tauri::command]
+pub async fn get_track(
+    state: State<'_, AppState>,
+    source_id: String,
+) -> CmdResult<Option<Track>> {
+    with_cache(&state, |db| db.track_by_source_id(&source_id))
+}
+
+#[tauri::command]
 pub async fn get_all_artists(state: State<'_, AppState>) -> CmdResult<Vec<ArtistInfo>> {
     let rows = with_cache(&state, |db| db.all_artists())?;
     Ok(rows

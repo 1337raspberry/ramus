@@ -297,6 +297,24 @@ impl CacheDatabase {
         Ok(albums)
     }
 
+    /// Get a single track by its source_id.
+    pub fn track_by_source_id(&self, source_id: &str) -> Result<Option<Track>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
+                    al.title, al.sourceId, t.trackNumber, t.durationMs,
+                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber
+             FROM tracks t
+             JOIN albums al ON al.id = t.albumId
+             JOIN artists ar ON ar.id = t.artistId
+             WHERE t.sourceId = ?1",
+        )?;
+        let mut tracks = stmt
+            .query_map(params![source_id], Self::map_track_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(tracks.pop())
+    }
+
     /// Get tracks for an album by album source_id.
     pub fn tracks_for_album(&self, album_source_id: &str) -> Result<Vec<Track>, CacheError> {
         let conn = self.conn.lock();

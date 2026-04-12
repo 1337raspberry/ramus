@@ -71,6 +71,8 @@ export const getAlbumsForYear = (year: number) => invoke<Album[]>("get_albums_fo
 export const getTracksForAlbum = (sourceId: string) =>
   invoke<Track[]>("get_tracks_for_album", { sourceId });
 
+export const getTrack = (sourceId: string) => invoke<Track | null>("get_track", { sourceId });
+
 export const getAllArtists = () => invoke<ArtistInfo[]>("get_all_artists");
 
 export const getFavouriteGenreTree = () => invoke<GenreTreeResponse>("get_favourite_genre_tree");
