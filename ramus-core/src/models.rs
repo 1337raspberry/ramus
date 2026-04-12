@@ -427,6 +427,8 @@ pub struct Settings {
     pub library_padding: i8,
     pub refuse_http: bool,
     pub last_sync_time_secs: i64,
+    pub disable_spectrum: bool,
+    pub flat_genres: bool,
 }
 
 impl Default for Settings {
@@ -441,6 +443,8 @@ impl Default for Settings {
             library_padding: 0,
             refuse_http: false,
             last_sync_time_secs: 0,
+            disable_spectrum: false,
+            flat_genres: false,
         }
     }
 }

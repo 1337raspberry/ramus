@@ -51,6 +51,9 @@ export const getGenreTree = () => invoke<GenreTreeResponse>("get_genre_tree");
 export const getAlbumsForGenre = (genre: string) =>
   invoke<Album[]>("get_albums_for_genre", { genre });
 
+export const getAlbumsForGenreNames = (genres: string[]) =>
+  invoke<Album[]>("get_albums_for_genre_names", { genres });
+
 export const getAllAlbums = () => invoke<Album[]>("get_all_albums");
 
 export const getFavouriteAlbums = () => invoke<Album[]>("get_favourite_albums");

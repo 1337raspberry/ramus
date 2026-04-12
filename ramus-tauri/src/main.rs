@@ -452,6 +452,7 @@ fn main() {
             // library
             commands::library::get_genre_tree,
             commands::library::get_albums_for_genre,
+            commands::library::get_albums_for_genre_names,
             commands::library::get_all_albums,
             commands::library::get_favourite_albums,
             commands::library::get_favourite_tracks,

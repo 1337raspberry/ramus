@@ -178,11 +178,45 @@ impl CacheDatabase {
     // --- Library query methods ---
 
     /// Get albums matching any of the given genre names (deduplicated).
+    /// Chunks the input to stay within SQLite's bind-parameter limit.
     pub fn albums_for_genres(&self, genre_names: &[&str]) -> Result<Vec<Album>, CacheError> {
         if genre_names.is_empty() {
             return Ok(Vec::new());
         }
         let conn = self.conn.lock();
+
+        // SQLite's default SQLITE_MAX_VARIABLE_NUMBER is 999. Chunk to
+        // stay well under the limit for any build of SQLite.
+        const CHUNK_SIZE: usize = 500;
+
+        if genre_names.len() <= CHUNK_SIZE {
+            return Self::albums_for_genres_query(&conn, genre_names);
+        }
+
+        // Multiple chunks: collect into a map keyed by sourceId to dedup,
+        // then sort to match the single-query ordering.
+        let mut seen = std::collections::HashSet::new();
+        let mut all = Vec::new();
+        for chunk in genre_names.chunks(CHUNK_SIZE) {
+            for album in Self::albums_for_genres_query(&conn, chunk)? {
+                if seen.insert(album.rating_key.clone()) {
+                    all.push(album);
+                }
+            }
+        }
+        all.sort_by(|a, b| {
+            a.artist_name
+                .to_lowercase()
+                .cmp(&b.artist_name.to_lowercase())
+                .then_with(|| a.year.cmp(&b.year))
+        });
+        Ok(all)
+    }
+
+    fn albums_for_genres_query(
+        conn: &rusqlite::Connection,
+        genre_names: &[&str],
+    ) -> Result<Vec<Album>, CacheError> {
         let placeholders: Vec<String> = (1..=genre_names.len()).map(|i| format!("?{i}")).collect();
         let sql = format!(
             "SELECT DISTINCT a.sourceId, a.title, ar.name, a.year, a.artUrl,
@@ -200,8 +234,7 @@ impl CacheDatabase {
             .iter()
             .map(|s| s as &dyn rusqlite::types::ToSql)
             .collect();
-        let albums = Self::map_album_rows(&mut stmt, params.as_slice(), &conn)?;
-        Ok(albums)
+        Self::map_album_rows(&mut stmt, params.as_slice(), conn)
     }
 
     /// Get a single album by its source_id.

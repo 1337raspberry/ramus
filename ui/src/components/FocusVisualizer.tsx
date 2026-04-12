@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { spectrumKind, type SpectrumFrames, type SpectrumState } from "../lib/types";
 import { accentFromPalette } from "../lib/vibrantColor";
 // DEBUG (focus viz tuning): runtime-tunable parameters via the slider panel.
@@ -130,6 +131,8 @@ function normaliseFrames(frames: SpectrumFrames): SpectrumFrames {
 }
 
 export default function FocusVisualizer() {
+  const disabled = useSettingsStore((s) => s.disableSpectrum);
+
   // Subscribe to the TOP-LEVEL spectrum state so we can pick between
   // the canvas and placeholder render. The canvas itself reads position
   // via getState() inside the RAF loop — that's still the hot path.
@@ -146,6 +149,8 @@ export default function FocusVisualizer() {
     }
     return null;
   }, [spectrumState]);
+
+  if (disabled) return null;
 
   const kind = spectrumKind(spectrumState ?? "analysing");
 
