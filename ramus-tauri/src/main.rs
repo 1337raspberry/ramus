@@ -33,8 +33,10 @@ fn main() {
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(
+                    // POSITION is excluded: upstream bug tauri-apps/tauri#14822
+                    // causes hangs with decorations:false on macOS, and
+                    // borderless position restore is unreliable on Windows.
                     tauri_plugin_window_state::StateFlags::SIZE
-                        | tauri_plugin_window_state::StateFlags::POSITION
                         | tauri_plugin_window_state::StateFlags::MAXIMIZED,
                 )
                 .build(),
