@@ -14,6 +14,13 @@ export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
   const elRef = useRef<HTMLDivElement | null>(null);
   const obsRef = useRef<ResizeObserver | null>(null);
 
+  // queue.setOpen is a stable useCallback — depend on it rather than
+  // the whole queue object, whose identity changes every time `open`
+  // toggles.  Depending on `queue` caused the ResizeObserver to be
+  // recreated on toggle, and its initial fire immediately called
+  // setOpen(false), snapping the queue shut before it could render.
+  const queueSetOpen = queue.setOpen;
+
   const scrollRef = useCallback(
     (el: HTMLDivElement | null) => {
       obsRef.current?.disconnect();
@@ -22,13 +29,13 @@ export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
         setPanelHeight(el.clientHeight);
         const obs = new ResizeObserver(() => {
           setPanelHeight(el.clientHeight);
-          queue.setOpen(false);
+          queueSetOpen(false);
         });
         obs.observe(el);
         obsRef.current = obs;
       }
     },
-    [queue],
+    [queueSetOpen],
   );
 
   if (!currentTrack) {
