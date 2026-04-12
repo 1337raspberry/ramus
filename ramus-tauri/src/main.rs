@@ -470,6 +470,7 @@ fn main() {
             commands::library::get_albums_for_artist_name,
             commands::library::get_albums_for_year,
             commands::library::get_tracks_for_album,
+            commands::library::get_track,
             commands::library::get_all_artists,
             commands::library::get_favourite_genre_tree,
             commands::library::toggle_album_favourite,

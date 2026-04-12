@@ -6,6 +6,7 @@ import {
   insertNext,
   appendToQueue,
   getTracksForAlbum,
+  getTrack,
   playTracks,
   getQueue,
 } from "../lib/commands";
@@ -60,23 +61,11 @@ function SearchThumb({ artPath, onPlay }: { artPath: string | null; onPlay: () =
   );
 }
 
-function buildTrack(result: SearchResult): Track {
-  return {
-    ratingKey: result.trackSourceId ?? result.albumSourceId,
-    title: result.trackTitle ?? result.albumTitle,
-    artistName: result.trackArtist ?? result.artistName,
-    trackArtist: result.trackArtist,
-    albumTitle: result.albumTitle,
-    albumKey: result.albumSourceId,
-    index: null,
-    duration: 0,
-    codec: null,
-    partKey: null,
-    thumb: result.albumArtPath,
-    isFavourite: result.isFavourite,
-    bitrate: null,
-    discNumber: null,
-  };
+/** Fetch the full Track from the DB and run an action with it. */
+async function withFullTrack(result: SearchResult, action: (track: Track) => void | Promise<void>) {
+  if (!result.trackSourceId) return;
+  const track = await getTrack(result.trackSourceId);
+  if (track) await action(track);
 }
 
 function refreshQueue() {
@@ -153,8 +142,8 @@ export default function SearchOverlay({ onDismiss }: Props) {
           addedAt: null,
           lastViewedAt: null,
         });
-      } else if (result.trackSourceId) {
-        playTracks([buildTrack(result)], 0).catch(() => {});
+      } else {
+        withFullTrack(result, (t) => playTracks([t], 0)).catch(() => {});
       }
     },
     [onDismiss],
@@ -169,7 +158,7 @@ export default function SearchOverlay({ onDismiss }: Props) {
           })
           .catch(() => {});
       } else {
-        playTracks([buildTrack(result)], 0).catch(() => {});
+        withFullTrack(result, (t) => playTracks([t], 0)).catch(() => {});
       }
       onDismiss();
     },
@@ -183,9 +172,7 @@ export default function SearchOverlay({ onDismiss }: Props) {
         .then(refreshQueue)
         .catch(() => {});
     } else {
-      insertNext([buildTrack(result)])
-        .then(refreshQueue)
-        .catch(() => {});
+      withFullTrack(result, (t) => insertNext([t]).then(refreshQueue)).catch(() => {});
     }
     setOpenMenuId(null);
   }, []);
@@ -197,9 +184,7 @@ export default function SearchOverlay({ onDismiss }: Props) {
         .then(refreshQueue)
         .catch(() => {});
     } else {
-      appendToQueue([buildTrack(result)])
-        .then(refreshQueue)
-        .catch(() => {});
+      withFullTrack(result, (t) => appendToQueue([t]).then(refreshQueue)).catch(() => {});
     }
     setOpenMenuId(null);
   }, []);
