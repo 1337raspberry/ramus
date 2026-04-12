@@ -237,8 +237,8 @@ impl SyncEngine {
 
         if prune_counts.total() > 0 {
             on_progress(SyncProgress {
-                phase: SyncPhase::Tracks,
-                current: 1,
+                phase: SyncPhase::Done,
+                current: 0,
                 total: 1,
                 detail: format!(
                     "Pruned {} removed items ({} artists, {} albums, {} tracks)",

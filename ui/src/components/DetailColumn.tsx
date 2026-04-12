@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useQueuePanel } from "../lib/useQueuePanel";
 import NowPlayingView from "./NowPlayingView";
@@ -14,39 +14,31 @@ export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
   const elRef = useRef<HTMLDivElement | null>(null);
   const obsRef = useRef<ResizeObserver | null>(null);
 
-  // queue.setOpen is a stable useCallback — depend on it rather than
-  // the whole queue object, whose identity changes every time `open`
-  // toggles.  Depending on `queue` caused the ResizeObserver to be
-  // recreated on toggle, and its initial fire immediately called
-  // setOpen(false), snapping the queue shut before it could render.
-  const queueSetOpen = queue.setOpen;
-
-  const scrollRef = useCallback(
-    (el: HTMLDivElement | null) => {
-      obsRef.current?.disconnect();
-      elRef.current = el;
-      if (el) {
+  const scrollRef = useCallback((el: HTMLDivElement | null) => {
+    obsRef.current?.disconnect();
+    elRef.current = el;
+    if (el) {
+      setPanelHeight(el.clientHeight);
+      const obs = new ResizeObserver(() => {
         setPanelHeight(el.clientHeight);
-        const obs = new ResizeObserver(() => {
-          setPanelHeight(el.clientHeight);
-          queueSetOpen(false);
-        });
-        obs.observe(el);
-        obsRef.current = obs;
-      }
-    },
-    [queueSetOpen],
-  );
+        // Don't call setOpen(false) here — the queue collapses via
+        // onScroll (scroll-to-top gesture) only. Closing on resize
+        // would snap the queue shut whenever the window is resized.
+      });
+      obs.observe(el);
+      obsRef.current = obs;
+    }
+  }, []);
 
-  const handleToggleQueue = useCallback(() => {
-    queue.toggle();
-    // Scroll down to reveal the track listing when opening
-    if (!queue.open && elRef.current) {
+  // Scroll down to reveal the track listing when the queue opens.
+  // Kept in a useEffect so handleToggleQueue stays stable (no queue.open dep).
+  useEffect(() => {
+    if (queue.open && elRef.current) {
       requestAnimationFrame(() => {
         elRef.current?.scrollTo({ top: elRef.current.scrollHeight, behavior: "smooth" });
       });
     }
-  }, [queue.open, queue.toggle]);
+  }, [queue.open]);
 
   if (!currentTrack) {
     return <div className="empty-state">Select an album</div>;
@@ -63,7 +55,7 @@ export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
         onOpenEQ={onOpenEQ}
         panelHeight={panelHeight}
         showQueue={queue.open}
-        onToggleQueue={handleToggleQueue}
+        onToggleQueue={queue.toggle}
       />
     </div>
   );

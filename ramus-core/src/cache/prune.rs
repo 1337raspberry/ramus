@@ -67,14 +67,19 @@ impl CacheDatabase {
 
         let tx = conn.unchecked_transaction()?;
 
-        // 1. Tracks: clean up FTS5 first, then delete rows
+        // Clean FTS5 for ALL tracks that will be removed — both explicitly
+        // stale tracks AND tracks that will be cascade-deleted when their
+        // parent album or artist is removed. FK cascades don't touch the
+        // external-content FTS5 table, so skipping these would leave
+        // zombie entries that bloat the index.
+        Self::delete_tracks_fts_for_stale(&tx, &stale_tracks, &stale_albums, &stale_artists)?;
+
+        // 1. Tracks: delete explicitly stale rows
         for chunk in stale_tracks.chunks(CHUNK_SIZE) {
-            Self::delete_tracks_fts(&tx, chunk)?;
             Self::delete_by_source_ids(&tx, "tracks", chunk)?;
         }
 
-        // 2. Albums (cascade deletes album_genres; any remaining child tracks
-        //    from cascaded artist deletes are handled by FK cascade)
+        // 2. Albums (cascade deletes child tracks + album_genres)
         for chunk in stale_albums.chunks(CHUNK_SIZE) {
             Self::delete_by_source_ids(&tx, "albums", chunk)?;
         }
@@ -107,38 +112,92 @@ impl CacheDatabase {
         Ok(set)
     }
 
-    /// Remove FTS5 entries for tracks about to be deleted.
-    /// External-content FTS5 tables need an explicit 'delete' command
-    /// with the old rowid and content values.
-    fn delete_tracks_fts(
+    /// Clean FTS5 entries for all tracks that will be removed — both
+    /// explicitly stale tracks and tracks that will be cascade-deleted
+    /// when their parent album or artist is removed.
+    fn delete_tracks_fts_for_stale(
         tx: &rusqlite::Transaction,
-        source_ids: &[&str],
+        stale_tracks: &[&str],
+        stale_albums: &[&str],
+        stale_artists: &[&str],
     ) -> Result<(), CacheError> {
-        let placeholders: String = (1..=source_ids.len())
-            .map(|i| format!("?{i}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql = format!(
-            "SELECT id, title FROM tracks WHERE sourceId IN ({placeholders})"
-        );
-        let mut stmt = tx.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::types::ToSql> = source_ids
-            .iter()
-            .map(|s| s as &dyn rusqlite::types::ToSql)
-            .collect();
-        let rows: Vec<(i64, String)> = stmt
-            .query_map(params.as_slice(), |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+        // Collect (id, title) for every track that will disappear.
+        // A single query with OR clauses handles all three sources.
+        let mut all_tracks: Vec<(i64, String)> = Vec::new();
 
+        // Explicitly stale tracks
+        for chunk in stale_tracks.chunks(CHUNK_SIZE) {
+            let ph = Self::placeholders(chunk.len());
+            let sql = format!("SELECT id, title FROM tracks WHERE sourceId IN ({ph})");
+            let params = Self::to_sql_params(chunk);
+            let mut stmt = tx.prepare(&sql)?;
+            let rows = stmt
+                .query_map(params.as_slice(), |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            all_tracks.extend(rows);
+        }
+
+        // Tracks on stale albums (will be cascade-deleted)
+        for chunk in stale_albums.chunks(CHUNK_SIZE) {
+            let ph = Self::placeholders(chunk.len());
+            let sql = format!(
+                "SELECT t.id, t.title FROM tracks t
+                 JOIN albums a ON a.id = t.albumId
+                 WHERE a.sourceId IN ({ph})"
+            );
+            let params = Self::to_sql_params(chunk);
+            let mut stmt = tx.prepare(&sql)?;
+            let rows = stmt
+                .query_map(params.as_slice(), |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            all_tracks.extend(rows);
+        }
+
+        // Tracks on stale artists (will be cascade-deleted through albums)
+        for chunk in stale_artists.chunks(CHUNK_SIZE) {
+            let ph = Self::placeholders(chunk.len());
+            let sql = format!(
+                "SELECT t.id, t.title FROM tracks t
+                 JOIN artists ar ON ar.id = t.artistId
+                 WHERE ar.sourceId IN ({ph})"
+            );
+            let params = Self::to_sql_params(chunk);
+            let mut stmt = tx.prepare(&sql)?;
+            let rows = stmt
+                .query_map(params.as_slice(), |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            all_tracks.extend(rows);
+        }
+
+        // Deduplicate by track id (a track may appear in multiple sets)
+        all_tracks.sort_unstable_by_key(|(id, _)| *id);
+        all_tracks.dedup_by_key(|(id, _)| *id);
+
+        // Issue FTS5 delete commands
         let mut fts_del = tx.prepare_cached(
             "INSERT INTO tracks_fts(tracks_fts, rowid, title) VALUES('delete', ?1, ?2)",
         )?;
-        for (id, title) in &rows {
+        for (id, title) in &all_tracks {
             fts_del.execute(params![id, title])?;
         }
         Ok(())
+    }
+
+    fn placeholders(n: usize) -> String {
+        (1..=n).map(|i| format!("?{i}")).collect::<Vec<_>>().join(", ")
+    }
+
+    fn to_sql_params<'a>(source_ids: &'a [&'a str]) -> Vec<&'a dyn rusqlite::types::ToSql> {
+        source_ids
+            .iter()
+            .map(|s| s as &dyn rusqlite::types::ToSql)
+            .collect()
     }
 
     fn delete_by_source_ids(
