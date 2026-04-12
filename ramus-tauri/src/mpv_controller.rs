@@ -76,7 +76,9 @@ impl MpvController {
             for (name, id) in &props {
                 let n = CString::new(*name).unwrap();
                 let fmt = match id {
-                    ObserverID::TimePos | ObserverID::Duration => MPV_FORMAT_DOUBLE,
+                    ObserverID::TimePos | ObserverID::Duration | ObserverID::CacheSpeed => {
+                        MPV_FORMAT_DOUBLE
+                    }
                     ObserverID::Pause | ObserverID::PausedForCache | ObserverID::IdleActive => {
                         MPV_FORMAT_FLAG
                     }
@@ -169,12 +171,22 @@ impl MpvController {
 }
 
 impl MpvPlayer for MpvController {
-    fn load_file(&self, url: &str, mode: LoadMode) {
-        self.command(&["loadfile", url, mode.as_str()]);
+    fn load_file(&self, url: &str, mode: LoadMode, options: Option<&str>) {
+        // mpv's `loadfile` command: `loadfile <url> <flags> [<index>] [<options>]`.
+        // For replace/append/append-play, <index> is unused — options goes in slot 4
+        // (we pass "-1" in the index slot as the libmpv accepted "no index" sentinel).
+        match options {
+            Some(opts) => self.command(&["loadfile", url, mode.as_str(), "-1", opts]),
+            None => self.command(&["loadfile", url, mode.as_str()]),
+        }
     }
 
-    fn load_file_at(&self, url: &str, index: i64) {
-        self.command(&["loadfile", url, "insert-at", &index.to_string()]);
+    fn load_file_at(&self, url: &str, index: i64, options: Option<&str>) {
+        let idx = index.to_string();
+        match options {
+            Some(opts) => self.command(&["loadfile", url, "insert-at", &idx, opts]),
+            None => self.command(&["loadfile", url, "insert-at", &idx]),
+        }
     }
 
     fn playlist_play_index(&self, index: i64) {
@@ -336,6 +348,14 @@ fn event_loop(
                         if prop.format == MPV_FORMAT_INT64 {
                             let val = unsafe { *(prop.data as *const i64) };
                             if let Some(ref cb) = callbacks.on_cache_state_change {
+                                cb(val);
+                            }
+                        }
+                    }
+                    id if id == ObserverID::CacheSpeed as u64 => {
+                        if prop.format == MPV_FORMAT_DOUBLE {
+                            let val = unsafe { *(prop.data as *const f64) };
+                            if let Some(ref cb) = callbacks.on_cache_speed_change {
                                 cb(val);
                             }
                         }

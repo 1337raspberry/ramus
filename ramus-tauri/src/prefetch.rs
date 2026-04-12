@@ -1,182 +1,603 @@
+//! Connection-aware prefetch worker with concurrent LAN downloads.
+//!
+//! ## What this module does
+//!
+//! Downloads upcoming tracks in the queue to the local audio cache so
+//! gapless playback stays gapless even if the user skips around. A
+//! secondary job is to generate per-track FFT spectrograms (`.spec`
+//! files) for the focus-mode visualiser.
+//!
+//! ## Dual-mode design: LAN vs Remote
+//!
+//! The worker detects whether the current Plex connection is local
+//! (LAN) or remote and adjusts its strategy:
+//!
+//! **LAN mode** — aggressive, matching the iOS port's approach:
+//!   - No idle-wait: downloads start ~1-2s after track change
+//!   - 3 concurrent downloads via `tokio::sync::Semaphore`
+//!   - Targets are batch-snapshotted and dispatched in parallel
+//!
+//! **Remote mode** — conservative, preserving the original design:
+//!   - Waits for mpv's `cache-speed` to hit 0 before starting
+//!   - 10-20s safety gaps after track changes
+//!   - Serial downloads (one at a time)
+//!   - Plex servers are known to kill concurrent remote connections
+//!
+//! ## First-track FFT via mpv `stream-record`
+//!
+//! mpv writes the bytes it reads to a file via the `stream-record`
+//! option (set per-loadfile in `player.rs::load_queue`). When the
+//! worker's cycle starts, it runs symphonia on the stream-record file
+//! to generate a `.spec` without opening an extra HTTP connection.
+//!
+//! ## Local-first playback
+//!
+//! As soon as a track lands in `DownloadCache` — from either a worker
+//! download or a stream-record ingest — its mpv playlist entry gets
+//! swapped to `file://<path>`. When mpv naturally advances to that
+//! track, it reads from disk with zero network traffic.
+
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use ramus_core::playback::player::{is_allowed_extension, sanitize_filename, AudioPlayer};
-use ramus_core::playback::spectrum::{read_spec_file, spec_file_path};
+use ramus_core::playback::spectrum::{read_spec_file, spec_file_path, SpectrumState};
 use tauri::AppHandle;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 use crate::events::emit_spectrum_ready;
 use crate::spectrum_analyzer;
 
-/// Monotonic counter — each `trigger()` call bumps this. Downloads check it
-/// before starting each track; if the generation has moved on, the old batch
-/// stops so we don't open competing connections that Plex will kill.
-pub(crate) static GENERATION: AtomicU64 = AtomicU64::new(0);
+// ---------------------------------------------------------------------------
+// Tunables
+// ---------------------------------------------------------------------------
 
 /// Max resume attempts per track before giving up.
-const MAX_RETRIES: u32 = 60;
+const MAX_RETRIES: u32 = 6;
 
-/// Spawn background prefetch + spectrum-analysis tasks.
-///
-/// There are two concurrent paths here:
-///
-/// 1. **Fast path — the current track.** Skips the buffer/min-wait dance
-///    entirely and fires the download + analyser as soon as the track
-///    starts. This is what gets the focus-mode visualiser up within a
-///    few seconds on the very first track of a session (or any track
-///    the user skips to). It's safe to do this without waiting because
-///    direct-play tracks are plain static file serves — Plex's
-///    session/concurrency limits only bit back in the transcode era.
-///
-/// 2. **Slow path — upcoming tracks.** Keeps the original buffer-wait
-///    loop (`is_fully_buffered` + `min_wait`). These aren't time-critical
-///    (they just need to be cached by the time the user reaches them in
-///    the queue), and the wait is a cheap safety margin against mpv's
-///    HTTP GET colliding with ours on slower links.
-///
-/// Both paths share a single `GENERATION` counter so skips and queue
-/// reloads cleanly abort in-flight work. They also share
-/// [`spawn_analyse_task`] for the "kick off symphonia + FFT +
-/// emit_spectrum_ready" bit, which is why both call sites look so thin.
-pub fn trigger(player: Arc<AudioPlayer>, http_client: reqwest::Client, app: AppHandle) {
+// --- LAN mode ---
+
+/// Max concurrent prefetch downloads on LAN. Matches the iOS port's
+/// 3-slot semaphore. Plex servers handle this fine on local connections.
+const LAN_CONCURRENCY: usize = 3;
+
+/// Delay before starting prefetch on LAN after a natural advance.
+/// Just enough for mpv to issue its initial request.
+const LAN_NATURAL_GAP: Duration = Duration::from_secs(1);
+
+/// Delay after a user skip on LAN. Slightly longer so rapid skips
+/// don't fire pointless downloads, but still fast.
+const LAN_SKIP_GAP: Duration = Duration::from_secs(2);
+
+// --- Remote mode ---
+
+/// Delay after mpv network-idle detection on a natural advance.
+const REMOTE_NATURAL_GAP: Duration = Duration::from_secs(10);
+
+/// Delay after mpv network-idle detection on a user skip.
+const REMOTE_SKIP_GAP: Duration = Duration::from_secs(20);
+
+/// How long `cache-speed` must read 0 before we declare mpv idle.
+/// Only used in remote mode.
+const IDLE_SIGNAL_REQUIRED_DURATION: Duration = Duration::from_secs(3);
+
+/// Fallback — if the idle signal never fires (e.g. file > demuxer-max-bytes),
+/// start the prefetch loop anyway after this long. Remote mode only.
+const IDLE_SIGNAL_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Poll interval while waiting for mpv to go idle. Remote mode only.
+const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+enum PrefetchCmd {
+    /// mpv's playlist-pos advanced naturally (gapless auto-advance or
+    /// play_tracks kicking off a fresh queue).
+    NaturalAdvance { generation: u64 },
+    /// User-initiated skip (next/prev/jump). Aborts any in-flight
+    /// download and restarts with a skip gap.
+    Skipped { generation: u64 },
+    /// Album switch / stop. Abort in-flight, wait for the next command
+    /// before doing anything.
+    #[allow(dead_code)]
+    Cancel { generation: u64 },
+}
+
+// ---------------------------------------------------------------------------
+// Handle
+// ---------------------------------------------------------------------------
+
+/// Control surface for the background prefetch worker. Cloneable so it
+/// can live in `AppState` and be called from any command handler or
+/// event callback.
+#[derive(Clone)]
+pub struct PrefetchHandle {
+    tx: mpsc::UnboundedSender<PrefetchCmd>,
+    generation: Arc<AtomicU64>,
+}
+
+impl PrefetchHandle {
+    /// Signal that mpv has naturally advanced to a new track.
+    pub fn notify_natural_advance(&self) {
+        let gen = self.generation.load(Ordering::SeqCst);
+        let _ = self.tx.send(PrefetchCmd::NaturalAdvance { generation: gen });
+    }
+
+    /// Signal that the user skipped to a different track. Aborts
+    /// in-flight work, then schedules a new cycle.
+    pub fn notify_skip(&self) {
+        let gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = self.tx.send(PrefetchCmd::Skipped { generation: gen });
+    }
+
+    /// Signal that the queue was replaced or playback was stopped.
+    /// Aborts in-flight work; no new cycle is scheduled until the next
+    /// natural advance.
+    pub fn notify_cancel(&self) {
+        let gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = self.tx.send(PrefetchCmd::Cancel { generation: gen });
+    }
+}
+
+/// Spawn the single long-lived prefetch worker task. Returns the handle
+/// that callers use to pump commands in. Call this once at app startup.
+pub fn spawn_worker(
+    player: Arc<AudioPlayer>,
+    http_client: reqwest::Client,
+    app: AppHandle,
+) -> PrefetchHandle {
+    // Rehydrate the in-memory DownloadCache from any audio files already
+    // on disk from a previous session.
+    if let Ok(cfg_dir) = ramus_core::plex::token_store::config_dir() {
+        rehydrate_cache_from_disk(&player, &cfg_dir.join("audio_cache"));
+    }
+
+    let (tx, rx) = mpsc::unbounded_channel();
+    let generation = Arc::new(AtomicU64::new(0));
+
+    let worker_gen = generation.clone();
+    tauri::async_runtime::spawn(async move {
+        worker_loop(player, http_client, app, rx, worker_gen).await;
+    });
+
+    PrefetchHandle { tx, generation }
+}
+
+/// Scan the audio cache directory and register any files matching the
+/// `<rating_key>_<len>.<ext>` naming convention into the in-memory
+/// `DownloadCache`. Runs once at worker startup.
+fn rehydrate_cache_from_disk(player: &AudioPlayer, cache_dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(cache_dir) else {
+        return;
+    };
+    let mut count: usize = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(filename) = path.file_name().and_then(|f| f.to_str()) else {
+            continue;
+        };
+        if filename.ends_with(".spec") {
+            continue;
+        }
+        let Some((stem, _ext)) = filename.rsplit_once('.') else {
+            continue;
+        };
+        let Some((id, len_str)) = stem.rsplit_once('_') else {
+            continue;
+        };
+        let Ok(expected_len) = len_str.parse::<usize>() else {
+            continue;
+        };
+        if id.len() != expected_len {
+            continue;
+        }
+        let Ok(meta) = path.metadata() else { continue };
+        let size = meta.len();
+        if size == 0 {
+            let _ = std::fs::remove_file(&path);
+            continue;
+        }
+        player.with_cache(|cache| {
+            cache.insert(id.to_string(), path.clone(), size);
+        });
+        count += 1;
+    }
+    if count > 0 {
+        log::info!("prefetch: rehydrated {count} cached track(s) from disk");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Worker loop
+// ---------------------------------------------------------------------------
+
+async fn worker_loop(
+    player: Arc<AudioPlayer>,
+    http: reqwest::Client,
+    app: AppHandle,
+    mut rx: mpsc::UnboundedReceiver<PrefetchCmd>,
+    shared_gen: Arc<AtomicU64>,
+) {
+    let mut cycle_task: Option<JoinHandle<()>> = None;
+
+    while let Some(cmd) = rx.recv().await {
+        match cmd {
+            PrefetchCmd::Cancel { .. } => {
+                if let Some(h) = cycle_task.take() {
+                    h.abort();
+                }
+                log::debug!("prefetch: cancel");
+            }
+            PrefetchCmd::NaturalAdvance { generation } => {
+                // Natural advance: let in-flight finish naturally — its
+                // loop will pick up the shifted window automatically.
+                // Only spawn a fresh cycle if idle.
+                let idle = cycle_task.as_ref().is_none_or(|h| h.is_finished());
+                if idle {
+                    log::debug!(
+                        "prefetch: natural advance, starting cycle gen={generation}"
+                    );
+                    player.mark_network_active();
+                    cycle_task = Some(spawn_cycle(
+                        player.clone(),
+                        http.clone(),
+                        app.clone(),
+                        shared_gen.clone(),
+                        generation,
+                        false,
+                    ));
+                }
+            }
+            PrefetchCmd::Skipped { generation } => {
+                if let Some(h) = cycle_task.take() {
+                    h.abort();
+                }
+                log::debug!("prefetch: skip, starting cycle gen={generation}");
+                player.mark_network_active();
+                cycle_task = Some(spawn_cycle(
+                    player.clone(),
+                    http.clone(),
+                    app.clone(),
+                    shared_gen.clone(),
+                    generation,
+                    true,
+                ));
+            }
+        }
+    }
+}
+
+fn spawn_cycle(
+    player: Arc<AudioPlayer>,
+    http: reqwest::Client,
+    app: AppHandle,
+    shared_gen: Arc<AtomicU64>,
+    my_gen: u64,
+    is_skip: bool,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        run_cycle(player, http, app, shared_gen, my_gen, is_skip).await;
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Cycle — branches on LAN vs Remote
+// ---------------------------------------------------------------------------
+
+async fn run_cycle(
+    player: Arc<AudioPlayer>,
+    http: reqwest::Client,
+    app: AppHandle,
+    shared_gen: Arc<AtomicU64>,
+    my_gen: u64,
+    is_skip: bool,
+) {
+    let is_remote = player.is_remote();
+
+    let gap = match (is_remote, is_skip) {
+        (true, false) => REMOTE_NATURAL_GAP,
+        (true, true) => REMOTE_SKIP_GAP,
+        (false, false) => LAN_NATURAL_GAP,
+        (false, true) => LAN_SKIP_GAP,
+    };
+
+    // Phase 1: idle wait (remote only — on LAN we have bandwidth to spare)
+    if is_remote
+        && !wait_for_mpv_network_idle(&player, &shared_gen, my_gen).await
+    {
+        return; // superseded
+    }
+
+    // Phase 2: safety gap
+    tokio::time::sleep(gap).await;
+    if shared_gen.load(Ordering::SeqCst) != my_gen {
+        return;
+    }
+
+    // Phase 3: stream-record ingest (remote only — on LAN the prefetch
+    // worker downloads the current track directly, so there's no
+    // stream-record file to ingest).
+    if is_remote {
+        if let Some(current_id) = player.current_track_id() {
+            try_ingest_stream_record(&player, &app, &current_id);
+        }
+    }
+
+    // Phase 4: download
     let cache_dir = match ramus_core::plex::token_store::config_dir() {
         Ok(dir) => dir.join("audio_cache"),
         Err(_) => return,
     };
-
-    // Bump generation so any in-flight prefetch batch from a previous trigger
-    // will notice and stop before starting its next download.
-    let gen = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
-
-    // --- Fast path: current track ---
-    //
-    // Only spawned if the current track has a direct-play target and
-    // isn't already in the cache. Transcoded tracks return None here and
-    // get handled by `get_spectrum`'s `would_transcode` check instead —
-    // they never hit the analyser.
-    if let Some((current_id, current_url)) = player.current_track_download_target() {
-        let fp_player = player.clone();
-        let fp_http = http_client.clone();
-        let fp_app = app.clone();
-        let fp_cache_dir = cache_dir.clone();
-        tauri::async_runtime::spawn(async move {
-            if GENERATION.load(Ordering::SeqCst) != gen {
-                return;
-            }
-            match download_with_resume(
-                &fp_player,
-                &fp_http,
-                &fp_cache_dir,
-                &current_id,
-                &current_url,
-                gen,
-            )
-            .await
-            {
-                Ok(()) => {
-                    if GENERATION.load(Ordering::SeqCst) != gen {
-                        return;
-                    }
-                    spawn_analyse_task(&fp_player, current_id, fp_app);
-                }
-                Err(e) => {
-                    if GENERATION.load(Ordering::SeqCst) == gen {
-                        log::debug!("current-track download failed: {e}");
-                    }
-                }
-            }
-        });
-    }
-
-    // --- Slow path: upcoming tracks ---
-    //
-    // Unchanged from the pre-Option-A behaviour — wait for mpv's buffer
-    // to settle, then walk the upcoming queue downloading + analysing
-    // each track in turn.
-    let targets = player.prefetch_targets();
-    if targets.is_empty() {
+    if let Err(e) = tokio::fs::create_dir_all(&cache_dir).await {
+        log::debug!("prefetch: cache dir create failed: {e}");
         return;
     }
 
-    tauri::async_runtime::spawn(async move {
-        let start = tokio::time::Instant::now();
-        let deadline = start + std::time::Duration::from_secs(120);
-        let min_wait = std::time::Duration::from_secs(15);
+    if is_remote {
+        log::debug!("prefetch: remote mode — serial downloads");
+        run_serial_downloads(&player, &http, &app, &shared_gen, my_gen, &cache_dir).await;
+    } else {
+        log::debug!("prefetch: LAN mode — {LAN_CONCURRENCY} concurrent downloads");
+        run_concurrent_downloads(
+            &player,
+            &http,
+            &app,
+            &shared_gen,
+            my_gen,
+            &cache_dir,
+            LAN_CONCURRENCY,
+        )
+        .await;
+    }
+}
 
-        // Phase 1: wait for mpv's buffer to fill (playback is stable)
-        loop {
-            if GENERATION.load(Ordering::SeqCst) != gen {
-                return;
-            }
-            if player.is_fully_buffered() {
-                break;
-            }
-            if tokio::time::Instant::now() >= deadline {
-                log::debug!("prefetch: timed out waiting for buffer, starting anyway");
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        }
+// ---------------------------------------------------------------------------
+// Serial downloads (remote mode — preserves original behaviour)
+// ---------------------------------------------------------------------------
 
-        // Phase 2: ensure minimum wait since trigger so mpv finishes
-        // downloading the full file, not just filling its cache buffer
-        let elapsed = start.elapsed();
-        if elapsed < min_wait {
-            let remaining = min_wait - elapsed;
-            tokio::time::sleep(remaining).await;
-        }
+async fn run_serial_downloads(
+    player: &Arc<AudioPlayer>,
+    http: &reqwest::Client,
+    app: &AppHandle,
+    shared_gen: &Arc<AtomicU64>,
+    my_gen: u64,
+    cache_dir: &std::path::Path,
+) {
+    let mut failed_in_cycle: HashSet<String> = HashSet::new();
 
-        if GENERATION.load(Ordering::SeqCst) != gen {
+    loop {
+        if shared_gen.load(Ordering::SeqCst) != my_gen {
+            log::debug!("prefetch: serial cycle superseded, exiting");
             return;
         }
 
+        let Some((track_id, url)) = player.next_uncached_target_in_lookahead() else {
+            log::debug!("prefetch: lookahead window exhausted (serial), idle");
+            return;
+        };
+
+        if failed_in_cycle.contains(&track_id) {
+            log::debug!(
+                "prefetch: {track_id} already failed in this cycle, ending"
+            );
+            return;
+        }
+
+        match download_with_resume(player, http, cache_dir, &track_id, &url).await {
+            Ok(()) => {
+                player.swap_playlist_entry_to_cached(&track_id);
+                spawn_analyse_task(player, track_id, app.clone());
+            }
+            Err(e) => {
+                log::debug!("prefetch: serial download failed for {track_id}: {e}");
+                failed_in_cycle.insert(track_id);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Concurrent downloads (LAN mode)
+// ---------------------------------------------------------------------------
+
+async fn run_concurrent_downloads(
+    player: &Arc<AudioPlayer>,
+    http: &reqwest::Client,
+    app: &AppHandle,
+    shared_gen: &Arc<AtomicU64>,
+    my_gen: u64,
+    cache_dir: &std::path::Path,
+    max_concurrent: usize,
+) {
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent));
+    let mut join_set = tokio::task::JoinSet::new();
+    let failed_in_cycle: Arc<std::sync::Mutex<HashSet<String>>> =
+        Arc::new(std::sync::Mutex::new(HashSet::new()));
+
+    loop {
+        if shared_gen.load(Ordering::SeqCst) != my_gen {
+            join_set.shutdown().await;
+            return;
+        }
+
+        let targets = player.all_uncached_targets_in_lookahead(true);
+
+        // Filter out targets that already failed this cycle.
+        let targets: Vec<_> = {
+            let failed = failed_in_cycle.lock().unwrap();
+            targets
+                .into_iter()
+                .filter(|(id, _)| !failed.contains(id))
+                .collect()
+        };
+
+        if targets.is_empty() {
+            // Wait for any in-flight downloads to finish, then re-check
+            // in case the window shifted (user advanced).
+            if join_set.is_empty() {
+                log::debug!("prefetch: lookahead exhausted (concurrent), idle");
+                return;
+            }
+            let _ = join_set.join_next().await;
+            continue;
+        }
+
         for (track_id, url) in targets {
-            if GENERATION.load(Ordering::SeqCst) != gen {
-                log::debug!("prefetch: batch superseded, stopping");
+            if shared_gen.load(Ordering::SeqCst) != my_gen {
+                join_set.shutdown().await;
                 return;
             }
 
-            let cached = player.with_cache(|c| c.get(&track_id).is_some());
-            if !cached {
-                if let Err(e) = download_with_resume(
-                    &player,
-                    &http_client,
-                    &cache_dir,
-                    &track_id,
-                    &url,
-                    gen,
-                )
-                .await
-                {
-                    if GENERATION.load(Ordering::SeqCst) != gen {
-                        log::debug!("prefetch: batch superseded, stopping");
-                        return;
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => return, // semaphore closed
+            };
+
+            let player = player.clone();
+            let http = http.clone();
+            let app = app.clone();
+            let gen = shared_gen.clone();
+            let cache_dir = cache_dir.to_path_buf();
+            let failed = failed_in_cycle.clone();
+
+            join_set.spawn(async move {
+                let _permit = permit; // held until task completes
+
+                if gen.load(Ordering::SeqCst) != my_gen {
+                    return;
+                }
+
+                match download_with_resume(&player, &http, &cache_dir, &track_id, &url).await {
+                    Ok(()) => {
+                        player.swap_playlist_entry_to_cached(&track_id);
+                        spawn_analyse_task(&player, track_id, app);
                     }
-                    log::debug!("prefetch failed for {track_id}: {e}");
-                    continue;
+                    Err(e) => {
+                        log::debug!(
+                            "prefetch: concurrent download failed for {track_id}: {e}"
+                        );
+                        failed.lock().unwrap().insert(track_id);
+                    }
+                }
+            });
+        }
+
+        // Wait for all dispatched downloads to complete before
+        // re-checking the window. Prevents re-dispatching targets
+        // that are still in-flight.
+        while join_set.join_next().await.is_some() {}
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Idle detection (remote mode only)
+// ---------------------------------------------------------------------------
+
+/// Poll `player.mpv_network_idle_for()` until it returns true, or until
+/// `IDLE_SIGNAL_TIMEOUT` elapses. Returns false if the current generation
+/// has moved on (cycle superseded).
+async fn wait_for_mpv_network_idle(
+    player: &AudioPlayer,
+    shared_gen: &Arc<AtomicU64>,
+    my_gen: u64,
+) -> bool {
+    let start = Instant::now();
+    loop {
+        if shared_gen.load(Ordering::SeqCst) != my_gen {
+            return false;
+        }
+        if player.mpv_network_idle_for(IDLE_SIGNAL_REQUIRED_DURATION) {
+            log::debug!("prefetch: mpv idle detected");
+            return true;
+        }
+        if start.elapsed() >= IDLE_SIGNAL_TIMEOUT {
+            log::debug!("prefetch: idle signal timeout, proceeding anyway");
+            return true;
+        }
+        tokio::time::sleep(IDLE_POLL_INTERVAL).await;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Stream-record ingest
+// ---------------------------------------------------------------------------
+
+/// Attempt to decode the stream-record file mpv has been writing for a
+/// track, persist a `.spec`, insert the audio into `DownloadCache`, and
+/// swap mpv's playlist entry to `file://`. Fire-and-forget.
+pub fn try_ingest_stream_record(player: &Arc<AudioPlayer>, app: &AppHandle, track_id: &str) {
+    let Some(path) = player.stream_record_path_for(track_id) else {
+        return;
+    };
+    if !path.exists() {
+        return;
+    }
+    // Already ingested — skip re-analysis.
+    if player.with_cache(|c| c.get(track_id).is_some()) {
+        // But still make sure the `.spec` is on disk for the viz.
+        if read_spec_file(&path).is_none() {
+            spawn_ingest_analysis(player.clone(), app.clone(), track_id.to_string(), path);
+        }
+        return;
+    }
+    spawn_ingest_analysis(player.clone(), app.clone(), track_id.to_string(), path);
+}
+
+fn spawn_ingest_analysis(
+    player: Arc<AudioPlayer>,
+    app: AppHandle,
+    track_id: String,
+    audio_path: PathBuf,
+) {
+    tokio::task::spawn_blocking(move || {
+        match spectrum_analyzer::analyse_file(&audio_path) {
+            Ok(frames) => {
+                let size = std::fs::metadata(&audio_path)
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                let current = player.current_track_id();
+                let evicted = player.with_cache(|cache| {
+                    cache.insert(track_id.clone(), audio_path.clone(), size);
+                    cache.evict_if_needed(current.as_deref())
+                });
+                let state = SpectrumState::Ready(frames);
+                let _ = ramus_core::playback::spectrum::write_spec_file(&audio_path, &state);
+                player.swap_playlist_entry_to_cached(&track_id);
+                emit_spectrum_ready(&app, track_id);
+                for p in evicted {
+                    let spec = spec_file_path(&p);
+                    let _ = std::fs::remove_file(&p);
+                    let _ = std::fs::remove_file(&spec);
                 }
             }
-
-            spawn_analyse_task(&player, track_id, app.clone());
+            Err(err) => {
+                log::debug!(
+                    "prefetch: stream-record probe failed for {track_id}: {err}, deleting {audio_path:?}"
+                );
+                let _ = std::fs::remove_file(&audio_path);
+            }
         }
     });
 }
 
-/// Fire-and-forget analyser task. Expects the audio file to already be
-/// in the player's download cache (by rating_key). Runs symphonia +
-/// FFT on `spawn_blocking` so the ~1-2 s CPU spike doesn't park a
-/// tokio worker, then emits `spectrum-ready` so the focus visualiser
-/// can pull the result via `get_spectrum`.
-///
-/// If a valid `.spec` file already sits next to the cached audio, we
-/// skip the analyse pass entirely and just re-emit `spectrum-ready` so
-/// the frontend hydrates from disk. Without this short-circuit every
-/// `trigger()` call (i.e. every track change) would burn 1-2 s of CPU
-/// re-analysing already-analysed upcoming tracks.
+// ---------------------------------------------------------------------------
+// Spectrum analysis (for files downloaded via the worker)
+// ---------------------------------------------------------------------------
+
 fn spawn_analyse_task(player: &AudioPlayer, track_id: String, app: AppHandle) {
-    let Some(audio_path) = player.with_cache(|c| c.get(&track_id).map(|p| p.to_path_buf())) else {
+    let Some(audio_path) = player.with_cache(|c| c.get(&track_id).map(|p| p.to_path_buf()))
+    else {
         return;
     };
     if read_spec_file(&audio_path).is_some() {
@@ -189,57 +610,61 @@ fn spawn_analyse_task(player: &AudioPlayer, track_id: String, app: AppHandle) {
     });
 }
 
-/// Download a file using resumable Range requests. Plex's remote server
-/// may drop connections after ~700KB — we resume from where we left off
-/// until the full file is on disk.
+// ---------------------------------------------------------------------------
+// Downloader (shared by both LAN and Remote paths)
+// ---------------------------------------------------------------------------
+
+/// Download a file using resumable Range requests. Cancellation is
+/// external: callers wrap this in a `tokio::spawn` and abort if needed.
+/// Partial files are kept on abort so a follow-up cycle can resume.
 async fn download_with_resume(
     player: &AudioPlayer,
     client: &reqwest::Client,
-    cache_dir: &PathBuf,
+    cache_dir: &std::path::Path,
     track_id: &str,
     url: &str,
-    gen: u64,
 ) -> Result<(), String> {
     if player.with_cache(|c| c.get(track_id).is_some()) {
         return Ok(());
     }
 
-    tokio::fs::create_dir_all(cache_dir)
-        .await
-        .map_err(|e| e.to_string())?;
-
     let ext = url::Url::parse(url)
         .ok()
-        .and_then(|u| {
-            u.path()
-                .rsplit('.')
-                .next()
-                .map(|e| e.to_lowercase())
-        })
+        .and_then(|u| u.path().rsplit('.').next().map(|e| e.to_lowercase()))
         .filter(|e| is_allowed_extension(e))
         .unwrap_or_else(|| "bin".to_string());
 
-    let filename = format!("{}_{}.{}", sanitize_filename(track_id), track_id.len(), ext);
+    let filename = format!(
+        "{}_{}.{}",
+        sanitize_filename(track_id),
+        track_id.len(),
+        ext
+    );
     let file_path = cache_dir.join(&filename);
+
+    // Resume from any existing partial file.
+    let mut written: u64 = tokio::fs::metadata(&file_path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
 
     let mut file = tokio::fs::OpenOptions::new()
         .create(true)
         .write(true)
-        .truncate(true)
+        .truncate(false)
         .open(&file_path)
         .await
         .map_err(|e| format!("create file: {e}"))?;
+    if written > 0 {
+        file.seek(std::io::SeekFrom::Start(written))
+            .await
+            .map_err(|e| format!("seek partial: {e}"))?;
+    }
 
-    let mut written: u64 = 0;
     let mut expected_size: Option<u64> = None;
     let mut retries: u32 = 0;
 
     loop {
-        if GENERATION.load(Ordering::SeqCst) != gen {
-            let _ = tokio::fs::remove_file(&file_path).await;
-            return Err("superseded".into());
-        }
-
         let mut request = client.get(url);
         if written > 0 {
             request = request.header(reqwest::header::RANGE, format!("bytes={written}-"));
@@ -250,17 +675,16 @@ async fn download_with_resume(
             Err(e) => {
                 retries += 1;
                 if retries >= MAX_RETRIES {
-                    let _ = tokio::fs::remove_file(&file_path).await;
                     return Err(format!("request error after {retries} retries: {e}"));
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
                 continue;
             }
         };
 
         let status = response.status();
 
-        if written == 0 {
+        if written == 0 || expected_size.is_none() {
             let cl = response
                 .headers()
                 .get(reqwest::header::CONTENT_LENGTH)
@@ -268,18 +692,29 @@ async fn download_with_resume(
                 .unwrap_or("(none)")
                 .to_string();
             log::debug!("prefetch {track_id}: {status}, content-length={cl}");
-            expected_size = cl.parse().ok();
+            expected_size = cl.parse().ok().map(|cl: u64| cl + written);
+        }
+
+        // 416 Range Not Satisfiable: stale/complete partial on disk.
+        if status.as_u16() == 416 {
+            drop(file);
+            let _ = tokio::fs::remove_file(&file_path).await;
+            return Err(format!(
+                "HTTP 416 — stale partial at {} bytes removed, will retry next cycle",
+                written
+            ));
         }
 
         if !status.is_success() && status.as_u16() != 206 {
-            let _ = tokio::fs::remove_file(&file_path).await;
             return Err(format!("HTTP {status}"));
         }
 
-        // Server ignored our Range header — start over
+        // Server ignored our Range header — start over from scratch.
         if written > 0 && status.as_u16() == 200 {
             written = 0;
-            file.seek(std::io::SeekFrom::Start(0)).await.map_err(|e| e.to_string())?;
+            file.seek(std::io::SeekFrom::Start(0))
+                .await
+                .map_err(|e| e.to_string())?;
             file.set_len(0).await.map_err(|e| e.to_string())?;
         }
 
@@ -315,19 +750,22 @@ async fn download_with_resume(
 
         retries += 1;
         if retries >= MAX_RETRIES {
-            let _ = tokio::fs::remove_file(&file_path).await;
             return Err(format!(
                 "gave up after {retries} retries: got {written} of {} bytes",
-                expected_size.map(|s| s.to_string()).unwrap_or_else(|| "unknown".into())
+                expected_size
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "unknown".into())
             ));
         }
 
         log::debug!(
             "prefetch {track_id}: resuming at {written}/{} (attempt {retries})",
-            expected_size.map(|s| s.to_string()).unwrap_or_else(|| "?".into())
+            expected_size
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "?".into())
         );
 
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
 
     file.flush().await.map_err(|e| format!("flush: {e}"))?;
@@ -335,15 +773,11 @@ async fn download_with_resume(
 
     let current_id = player.current_track_id();
     let evicted = player.with_cache(|cache| {
-        cache.insert(track_id.to_string(), file_path, size);
+        cache.insert(track_id.to_string(), file_path.clone(), size);
         cache.evict_if_needed(current_id.as_deref())
     });
 
     for path in evicted {
-        // Drop the sibling .spec alongside the audio file. The .spec
-        // isn't tracked in DownloadCache so without this it would
-        // accumulate on disk forever — orphaned spectrograms for
-        // tracks whose audio is long gone.
         let spec = spec_file_path(&path);
         let _ = tokio::fs::remove_file(&path).await;
         let _ = tokio::fs::remove_file(&spec).await;

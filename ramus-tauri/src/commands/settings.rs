@@ -4,6 +4,7 @@ use tauri::State;
 use ramus_core::genre::mapper::GenreMapper;
 use ramus_core::genre::parser::CustomGenreParser;
 use ramus_core::models::Settings;
+use ramus_core::playback::spectrum::spec_file_path;
 
 use crate::state::AppState;
 
@@ -12,6 +13,13 @@ use super::CmdResult;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageCacheStats {
+    pub entry_count: usize,
+    pub total_size_bytes: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioCacheStats {
     pub entry_count: usize,
     pub total_size_bytes: u64,
 }
@@ -118,4 +126,31 @@ pub async fn remove_custom_genres(state: State<'_, AppState>) -> CmdResult<()> {
         *state.genre_mapper.write() = None;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn clear_audio_cache(state: State<'_, AppState>) -> CmdResult<()> {
+    // Cancel any in-flight prefetch work first
+    state.prefetch_handle.notify_cancel();
+
+    // Clear the in-memory DownloadCache, collect paths to delete
+    let paths = state.player.with_cache(|cache| cache.clear());
+
+    // Delete audio files + sibling .spec files from disk
+    for path in paths {
+        let spec = spec_file_path(&path);
+        let _ = tokio::fs::remove_file(&path).await;
+        let _ = tokio::fs::remove_file(&spec).await;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_audio_cache_stats(state: State<'_, AppState>) -> CmdResult<AudioCacheStats> {
+    let (count, size) = state.player.with_cache(|cache| (cache.len(), cache.total_size()));
+    Ok(AudioCacheStats {
+        entry_count: count,
+        total_size_bytes: size,
+    })
 }

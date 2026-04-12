@@ -89,8 +89,15 @@ export default function SuggestionView() {
   // Prime the store with a previously-extracted vibrant palette if we have
   // one cached in the DB. Skip the legacy API-sourced ultraBlurColors entirely
   // — dynamic extraction in handleArtLoad is the source of truth.
+  // Depends only on `album` — not `status`. SuggestionView only renders
+  // when playback is stopped (App.tsx routes away otherwise), so the
+  // `status` guard is unnecessary and would cause palette flashes on
+  // every status flicker.
   useEffect(() => {
-    if (!album || status !== "stopped") return;
+    if (!album) return;
+    // Clear stale palette from the previous suggestion so handleArtLoad
+    // falls through to extractPalette() for the new image.
+    usePlaybackStore.setState({ vibrantPalette: null, ultraBlurColors: null });
     getAlbumColors(album.ratingKey)
       .then((result) => {
         if (result.palette) {
@@ -101,7 +108,7 @@ export default function SuggestionView() {
         }
       })
       .catch(() => {});
-  }, [album, status]);
+  }, [album]);
 
   const handleArtLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {

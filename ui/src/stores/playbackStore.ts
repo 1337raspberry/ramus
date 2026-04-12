@@ -174,7 +174,10 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       status: status as PlaybackState["status"],
       currentTrack: track,
       queueIndex,
-      ...(trackChanged ? { position: 0, duration: 0 } : {}),
+      // Use the track's Plex-reported duration as the initial value so
+      // the waveform + seek bar are functional immediately, even before
+      // mpv's first time-pos tick delivers the precise playback duration.
+      ...(trackChanged ? { position: 0, duration: track?.duration ?? 0 } : {}),
     });
 
     if (trackChanged && track) {

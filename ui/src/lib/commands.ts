@@ -190,3 +190,8 @@ export const flushImageCache = () => invoke<void>("flush_image_cache");
 
 export const getImageCacheStats = () =>
   invoke<{ entryCount: number; totalSizeBytes: number }>("get_image_cache_stats");
+
+export const clearAudioCache = () => invoke<void>("clear_audio_cache");
+
+export const getAudioCacheStats = () =>
+  invoke<{ entryCount: number; totalSizeBytes: number }>("get_audio_cache_stats");
