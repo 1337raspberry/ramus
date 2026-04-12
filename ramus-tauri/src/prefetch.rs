@@ -57,14 +57,36 @@ use crate::spectrum_analyzer;
 // Tunables
 // ---------------------------------------------------------------------------
 
-/// Max resume attempts per track before giving up.
-const MAX_RETRIES: u32 = 6;
+/// Per-track download time budget. Retries as many times as needed
+/// within this window. Fast LAN finishes in 1-2 retries; throttled
+/// connections (e.g. Windows Defender network inspection) get dozens of
+/// small-chunk resumes. 90s is enough for a 40MB FLAC at ~500KB/s
+/// effective throughput.
+const DOWNLOAD_TIME_BUDGET: Duration = Duration::from_secs(90);
+
+/// Hard cap on retries even within the time budget — safety net against
+/// infinite loops if the server responds but sends 0-byte chunks.
+const MAX_RETRIES: u32 = 60;
+
+/// Initial backoff between resume attempts. Doubles on consecutive
+/// retries that make no progress, resets when real progress is made.
+const INITIAL_BACKOFF: Duration = Duration::from_millis(200);
+
+/// Maximum backoff between resume attempts.
+const MAX_BACKOFF: Duration = Duration::from_secs(5);
+
+/// A retry must gain at least this many bytes to count as "progress"
+/// for backoff-reset purposes.
+const MIN_PROGRESS_BYTES: u64 = 4096;
 
 // --- LAN mode ---
 
-/// Max concurrent prefetch downloads on LAN. Matches the iOS port's
-/// 3-slot semaphore. Plex servers handle this fine on local connections.
-const LAN_CONCURRENCY: usize = 3;
+/// Max concurrent prefetch downloads on LAN. Reduced from 3 to 2 so
+/// total concurrent connections (2 prefetch + 1 mpv) stay at 3. Plex
+/// servers throttle aggressively beyond 3 concurrent connections, and
+/// Windows Defender network inspection can further reduce per-connection
+/// throughput.
+const LAN_CONCURRENCY: usize = 2;
 
 /// Delay before starting prefetch on LAN after a natural advance.
 /// Just enough for mpv to issue its initial request.
@@ -453,10 +475,16 @@ async fn run_concurrent_downloads(
             continue;
         }
 
-        for (track_id, url) in targets {
+        for (i, (track_id, url)) in targets.into_iter().enumerate() {
             if shared_gen.load(Ordering::SeqCst) != my_gen {
                 join_set.shutdown().await;
                 return;
+            }
+
+            // Stagger launches so concurrent requests don't hit the
+            // server in the same instant, which triggers rate limiting.
+            if i > 0 {
+                tokio::time::sleep(Duration::from_millis(150)).await;
             }
 
             let permit = match semaphore.clone().acquire_owned().await {
@@ -684,8 +712,13 @@ async fn download_with_resume(
 
     let mut expected_size: Option<u64> = None;
     let mut retries: u32 = 0;
+    let download_start = Instant::now();
+    let deadline = download_start + DOWNLOAD_TIME_BUDGET;
+    let mut current_backoff = INITIAL_BACKOFF;
 
     loop {
+        let written_before_attempt = written;
+
         let mut request = client.get(url);
         if written > 0 {
             request = request.header(reqwest::header::RANGE, format!("bytes={written}-"));
@@ -695,10 +728,15 @@ async fn download_with_resume(
             Ok(r) => r,
             Err(e) => {
                 retries += 1;
-                if retries >= MAX_RETRIES {
+                let now = Instant::now();
+                if retries >= MAX_RETRIES || now >= deadline {
                     return Err(format!("request error after {retries} retries: {e}"));
                 }
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                log::debug!(
+                    "prefetch {track_id}: request error (attempt {retries}): {e}"
+                );
+                current_backoff = (current_backoff * 2).min(MAX_BACKOFF);
+                tokio::time::sleep(current_backoff).await;
                 continue;
             }
         };
@@ -749,7 +787,10 @@ async fn download_with_resume(
                     written += chunk.len() as u64;
                 }
                 Ok(None) => break,
-                Err(_) => {
+                Err(e) => {
+                    log::debug!(
+                        "prefetch {track_id}: chunk error at {written} bytes: {e}"
+                    );
                     if let Some(expected) = expected_size {
                         if written >= expected {
                             break;
@@ -770,23 +811,41 @@ async fn download_with_resume(
         }
 
         retries += 1;
-        if retries >= MAX_RETRIES {
+        let now = Instant::now();
+        let bytes_this_attempt = written - written_before_attempt;
+
+        if retries >= MAX_RETRIES || now >= deadline {
             return Err(format!(
-                "gave up after {retries} retries: got {written} of {} bytes",
+                "gave up after {retries} retries ({:.1}s): got {written} of {} bytes",
+                (now - download_start).as_secs_f64(),
                 expected_size
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| "unknown".into())
             ));
         }
 
+        // Adaptive backoff: reset when making real progress, escalate
+        // when stalled. Keeps fast connections fast while backing off
+        // when the server is actively throttling.
+        if bytes_this_attempt >= MIN_PROGRESS_BYTES {
+            current_backoff = INITIAL_BACKOFF;
+        } else {
+            current_backoff = (current_backoff * 2).min(MAX_BACKOFF);
+        }
+
+        let remaining = deadline.saturating_duration_since(now);
         log::debug!(
-            "prefetch {track_id}: resuming at {written}/{} (attempt {retries})",
+            "prefetch {track_id}: resuming at {written}/{} \
+             (attempt {retries}, +{}B, backoff {}ms, {:.0}s left)",
             expected_size
                 .map(|s| s.to_string())
-                .unwrap_or_else(|| "?".into())
+                .unwrap_or_else(|| "?".into()),
+            bytes_this_attempt,
+            current_backoff.as_millis(),
+            remaining.as_secs_f64(),
         );
 
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(current_backoff).await;
     }
 
     file.flush().await.map_err(|e| format!("flush: {e}"))?;

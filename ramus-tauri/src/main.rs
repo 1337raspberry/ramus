@@ -61,6 +61,7 @@ fn main() {
             // profile doesn't leak into metadata fetches.
             let prefetch_http_client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(300))
+                .tcp_nodelay(true)
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new());
 
