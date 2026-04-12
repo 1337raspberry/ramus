@@ -15,6 +15,7 @@ env_logger = "0.11"
 url = "2"
 parking_lot = "0.12"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+tauri-plugin-window-state = "2"
 uuid = { version = "1", features = ["v4"] }
 urlencoding = "2"
 rand = "0.8"
