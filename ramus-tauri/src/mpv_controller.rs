@@ -4,7 +4,7 @@
 //! on a background thread, and dispatches callbacks to the caller.
 
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_int, c_void};
+use std::os::raw::{c_char, c_int, c_void};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -123,7 +123,7 @@ impl MpvController {
     fn command(&self, args: &[&str]) {
         unsafe {
             let c_args: Vec<CString> = args.iter().map(|s| CString::new(*s).unwrap()).collect();
-            let mut ptrs: Vec<*const i8> = c_args.iter().map(|s| s.as_ptr()).collect();
+            let mut ptrs: Vec<*const c_char> = c_args.iter().map(|s| s.as_ptr()).collect();
             ptrs.push(std::ptr::null());
             self.lib.command(self.handle.ptr(), ptrs.as_ptr());
         }
