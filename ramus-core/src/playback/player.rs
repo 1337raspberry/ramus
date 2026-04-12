@@ -561,6 +561,26 @@ impl AudioPlayer {
         }
     }
 
+    /// Unconditionally pause playback. Safe to call when already paused.
+    pub fn pause(&self) {
+        let mut inner = self.inner.lock();
+        if inner.state.status == PlaybackStatus::Playing {
+            inner.state.status = PlaybackStatus::Paused;
+            drop(inner);
+            self.mpv.set_pause(true);
+        }
+    }
+
+    /// Unconditionally resume playback. Safe to call when already playing.
+    pub fn resume(&self) {
+        let mut inner = self.inner.lock();
+        if inner.state.status == PlaybackStatus::Paused {
+            inner.state.status = PlaybackStatus::Playing;
+            drop(inner);
+            self.mpv.set_pause(false);
+        }
+    }
+
     /// Seek to an absolute position in seconds.
     pub fn seek(&self, position: f64) {
         let mut inner = self.inner.lock();

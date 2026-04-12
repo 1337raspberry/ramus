@@ -32,6 +32,7 @@ ramus/
 │       ├── mpv_ffi.rs   # Raw libmpv C FFI bindings
 │       ├── mpv_controller.rs  # High-level MpvPlayer implementation over FFI
 │       ├── session_reporter.rs # Scrobble + timeline reporting orchestration
+│       ├── media_controls.rs  # OS media keys + Now Playing via souvlaki (MPRIS/SMTC/MPRemoteCommandCenter)
 │       ├── prefetch.rs  # Background audio cache prefetch
 │       └── auto_sync.rs # Background periodic sync scheduler
 ├── ui/                  # React frontend — Vite + TypeScript + Zustand
@@ -75,6 +76,7 @@ cd ui && npm run build                      # Production build (tsc + vite)
 - **Phases 1-11 are pure Rust** with comprehensive unit tests. No frontend work until the Rust core is fully tested. Each phase produces a testable module — never proceed with failing tests.
 - **rusqlite** (not GRDB) for SQLite. WAL mode, FTS5 for track search, `parking_lot::Mutex` for connection safety.
 - **libmpv via runtime FFI** — loaded dynamically at startup through `libloading`, not statically linked. `mpv_ffi.rs` defines an `MpvLib` struct that holds the `Library` plus one cached function pointer per symbol; `MpvController` takes an `Arc<MpvLib>` so the same library is shared across the controller and its background event thread. **Drop order matters**: `_lib` is declared as the last field of `MpvLib` so it's dropped last — dropping it earlier would invalidate the function pointers. Don't reorder those fields. This approach means the app compiles on every platform without libmpv headers or import libs; `MpvLib::load()` searches `MPV_LIB_PATH`, paths next to the executable, and standard brew/apt locations, returning a multi-line error listing everything it tried.
+- **System media controls** use the `souvlaki` crate for all three platforms (MPRIS2 on Linux, SMTC on Windows, MPRemoteCommandCenter on macOS). The `MediaControlsHandle` in `media_controls.rs` wraps souvlaki and implements `MediaKeyHandler` from ramus-core. Position is only reported on meaningful events (track change, pause, seek) — NOT at 30fps — because the OS auto-extrapolates from playback rate. Album art is resolved from the image cache by trying the frontend's cached sizes in priority order (`300`, `1200`, `72`); on miss it self-downloads at 300 from Plex's transcode endpoint, then the `file:///` path is passed to souvlaki. Init is non-fatal: if souvlaki fails (no D-Bus, etc.), the app works fine without it. `AudioPlayer::pause()` and `resume()` exist specifically so the OS can send explicit play/pause without race-prone toggling.
 - **Token encryption** uses AES-256-GCM keyed to platform hardware UUID (IOKit on macOS, registry on Windows, `/etc/machine-id` on Linux).
 - **Plex API durations are in milliseconds** — convert to seconds at the boundary.
 - **Search operator syntax** (`/genre`, `@artist`, `!track`, `%album`, `year:>2000`, `fav:`) segments on `" AND "` (case-sensitive uppercase). Without AND, entire input belongs to the first operator.
@@ -165,6 +167,7 @@ When implementing a Rust module, consult the corresponding Swift source:
 | `playback/mpv.rs` | `RamusMusicCore/Sources/Playback/MPVController.swift` |
 | `playback/player.rs` | `RamusMusicCore/Sources/Playback/AudioPlayer.swift` |
 | `playback/session.rs` | `RamusMusicCore/Sources/Playback/SessionReporter.swift` |
+| `playback/media_keys.rs` + `media_controls.rs` | `RamusMusicCore/Sources/Playback/NowPlayingBridge.swift` |
 | `playback/transcode.rs` | `RamusMusicCore/Sources/Playback/TranscodeHelper.swift` |
 | `playback/lyrics.rs` | `RamusMusicCore/Sources/Playback/LyricsProvider.swift` |
 | `playback/waveform.rs` | `RamusMusicCore/Sources/Playback/WaveformProcessor.swift` |
