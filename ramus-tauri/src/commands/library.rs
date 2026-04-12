@@ -67,11 +67,20 @@ pub async fn get_albums_for_genre(
     state: State<'_, AppState>,
     genre: String,
 ) -> CmdResult<Vec<Album>> {
-    // Expand parent genre to include all descendant genres
+    // Expand parent genre to include all descendant genres.
+    // Guard against bad fuzzy matches: if the expanded set doesn't
+    // contain the original genre name (case-insensitive), the mapper
+    // fuzzy-matched to a different genre family — fall back to the
+    // raw DB name so "Other" genres return correct results.
     let mapper = state.genre_mapper.read();
     let names: Vec<String> = if let Some(mapper) = mapper.as_ref() {
         if let Some(expanded) = mapper.expand_genre(&genre) {
-            expanded.into_iter().collect()
+            let genre_lower = genre.to_lowercase();
+            if expanded.iter().any(|n| n.to_lowercase() == genre_lower) {
+                expanded.into_iter().collect()
+            } else {
+                vec![genre.clone()]
+            }
         } else {
             vec![genre.clone()]
         }
@@ -81,6 +90,18 @@ pub async fn get_albums_for_genre(
     drop(mapper);
 
     let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+    with_cache(&state, |db| db.albums_for_genres(&name_refs))
+}
+
+/// Fetch albums for an explicit list of genre names (no expansion).
+/// Used by the frontend when clicking parent nodes like "Other" where
+/// the children's names are already known.
+#[tauri::command]
+pub async fn get_albums_for_genre_names(
+    state: State<'_, AppState>,
+    genres: Vec<String>,
+) -> CmdResult<Vec<Album>> {
+    let name_refs: Vec<&str> = genres.iter().map(|s| s.as_str()).collect();
     with_cache(&state, |db| db.albums_for_genres(&name_refs))
 }
 

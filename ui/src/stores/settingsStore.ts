@@ -17,6 +17,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   libraryPadding: 0,
   refuseHttp: false,
   lastSyncTimeSecs: 0,
+  disableSpectrum: false,
+  flatGenres: false,
 
   loadSettings: async () => {
     try {

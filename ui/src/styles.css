@@ -651,6 +651,14 @@ textarea {
   margin-top: 2px;
 }
 
+.adv-link {
+  cursor: pointer;
+}
+
+.adv-link:hover {
+  text-decoration: underline;
+}
+
 .adv-hero-play {
   width: 48px;
   height: 48px;

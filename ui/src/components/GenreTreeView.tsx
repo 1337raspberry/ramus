@@ -24,6 +24,27 @@ function flattenTree(nodes: GenreNode[], expanded: Set<string>, depth = 0): Flat
   return rows;
 }
 
+/** Flatten the full tree into an A-Z list of every genre that has albums. */
+function flattenToAZ(nodes: GenreNode[]): FlatRow[] {
+  const byName = new Map<string, GenreNode>();
+  const collect = (list: GenreNode[]) => {
+    for (const n of list) {
+      if (n.albumCount > 0) {
+        const key = n.name.toLowerCase();
+        const existing = byName.get(key);
+        if (!existing || n.albumCount > existing.albumCount) {
+          byName.set(key, n);
+        }
+      }
+      if (n.children) collect(n.children);
+    }
+  };
+  collect(nodes);
+  return [...byName.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((node) => ({ node, depth: 0, hasChildren: false }));
+}
+
 export default function GenreTreeView() {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -43,11 +64,12 @@ export default function GenreTreeView() {
   const { chevronSize, chevronWidth, textSize, padH, rowHeight, indentDepth } =
     useGenreDebugStore();
   const libraryPadding = useSettingsStore((s) => s.libraryPadding);
+  const flatGenres = useSettingsStore((s) => s.flatGenres);
   const effectiveRowHeight = Math.max(12, rowHeight + libraryPadding * 2);
 
   const rows = useMemo(
-    () => flattenTree(genreTree, expandedGenreIds),
-    [genreTree, expandedGenreIds],
+    () => (flatGenres ? flattenToAZ(genreTree) : flattenTree(genreTree, expandedGenreIds)),
+    [genreTree, expandedGenreIds, flatGenres],
   );
 
   const allExpanded = useMemo(() => {
@@ -74,6 +96,11 @@ export default function GenreTreeView() {
   useEffect(() => {
     virtualizer.measure();
   }, [effectiveRowHeight, virtualizer]);
+
+  // Reset scroll when switching between flat and hierarchical mode
+  useEffect(() => {
+    if (parentRef.current) parentRef.current.scrollTop = 0;
+  }, [flatGenres]);
 
   if (!genreTree.length) {
     return <div className="empty-state">No genres loaded</div>;
@@ -128,16 +155,20 @@ export default function GenreTreeView() {
                   }
                 }}
               >
-                <span
-                  className={`genre-chevron${allExpanded ? " expanded" : ""}`}
-                  style={chevronStyle}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    allExpanded ? collapseAll() : expandAll();
-                  }}
-                >
-                  <IconChevronRight />
-                </span>
+                {flatGenres ? (
+                  <span style={{ width: chevronWidth, flexShrink: 0 }} />
+                ) : (
+                  <span
+                    className={`genre-chevron${allExpanded ? " expanded" : ""}`}
+                    style={chevronStyle}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      allExpanded ? collapseAll() : expandAll();
+                    }}
+                  >
+                    <IconChevronRight />
+                  </span>
+                )}
                 <span className="genre-name" style={{ fontWeight: 600 }}>
                   All
                 </span>
@@ -172,8 +203,10 @@ export default function GenreTreeView() {
                 <span style={{ width: chevronWidth, flexShrink: 0 }} />
               )}
               <span className="genre-name">{row.node.name}</span>
-              {row.node.deduplicatedTotalCount > 0 && (
-                <span className="genre-count">{row.node.deduplicatedTotalCount}</span>
+              {(flatGenres ? row.node.albumCount : row.node.deduplicatedTotalCount) > 0 && (
+                <span className="genre-count">
+                  {flatGenres ? row.node.albumCount : row.node.deduplicatedTotalCount}
+                </span>
               )}
             </div>
           );

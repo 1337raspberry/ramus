@@ -96,6 +96,8 @@ export interface Settings {
   libraryPadding: number;
   refuseHttp: boolean;
   lastSyncTimeSecs: number;
+  disableSpectrum: boolean;
+  flatGenres: boolean;
 }
 
 export interface CacheStats {

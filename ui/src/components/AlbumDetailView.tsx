@@ -19,6 +19,8 @@ export default function AlbumDetailView() {
   const playAlbum = useLibraryStore((s) => s.playAlbum);
   const toggleAlbumFav = useLibraryStore((s) => s.toggleAlbumFav);
   const toggleTrackFav = useLibraryStore((s) => s.toggleTrackFav);
+  const loadAlbumsForArtistName = useLibraryStore((s) => s.loadAlbumsForArtistName);
+  const loadAlbumsForYear = useLibraryStore((s) => s.loadAlbumsForYear);
 
   const [artSrc, setArtSrc] = useState<string | null>(null);
   const [artErr, setArtErr] = useState(false);
@@ -95,8 +97,17 @@ export default function AlbumDetailView() {
           )}
         </div>
         <div className="adv-hero-info">
-          <div className="adv-artist">{album.artistName}</div>
-          {album.year && <div className="adv-year">{album.year}</div>}
+          <div
+            className="adv-artist adv-link"
+            onClick={() => loadAlbumsForArtistName(album.artistName)}
+          >
+            {album.artistName}
+          </div>
+          {album.year && (
+            <div className="adv-year adv-link" onClick={() => loadAlbumsForYear(album.year!)}>
+              {album.year}
+            </div>
+          )}
         </div>
         <button className="adv-hero-play" onClick={handlePlayAlbum} title="Play Album">
           <IconPlay />

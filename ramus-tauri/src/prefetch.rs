@@ -45,7 +45,7 @@ use std::time::{Duration, Instant};
 
 use ramus_core::playback::player::{is_allowed_extension, sanitize_filename, AudioPlayer};
 use ramus_core::playback::spectrum::{read_spec_file, spec_file_path, SpectrumState};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -543,15 +543,26 @@ pub fn try_ingest_stream_record(player: &Arc<AudioPlayer>, app: &AppHandle, trac
     if !path.exists() {
         return;
     }
+    let spectrum_disabled = app
+        .state::<crate::state::AppState>()
+        .settings
+        .read()
+        .disable_spectrum;
     // Already ingested — skip re-analysis.
     if player.with_cache(|c| c.get(track_id).is_some()) {
         // But still make sure the `.spec` is on disk for the viz.
-        if read_spec_file(&path).is_none() {
-            spawn_ingest_analysis(player.clone(), app.clone(), track_id.to_string(), path);
+        if !spectrum_disabled && read_spec_file(&path).is_none() {
+            spawn_ingest_analysis(player.clone(), app.clone(), track_id.to_string(), path, false);
         }
         return;
     }
-    spawn_ingest_analysis(player.clone(), app.clone(), track_id.to_string(), path);
+    spawn_ingest_analysis(
+        player.clone(),
+        app.clone(),
+        track_id.to_string(),
+        path,
+        spectrum_disabled,
+    );
 }
 
 fn spawn_ingest_analysis(
@@ -559,8 +570,12 @@ fn spawn_ingest_analysis(
     app: AppHandle,
     track_id: String,
     audio_path: PathBuf,
+    skip_spectrum: bool,
 ) {
     tokio::task::spawn_blocking(move || {
+        // Always try to decode the file so we can ingest it into the
+        // download cache (local-first playback). Spectrum analysis is
+        // a bonus that rides on the same decode pass.
         match spectrum_analyzer::analyse_file(&audio_path) {
             Ok(frames) => {
                 let size = std::fs::metadata(&audio_path)
@@ -571,10 +586,13 @@ fn spawn_ingest_analysis(
                     cache.insert(track_id.clone(), audio_path.clone(), size);
                     cache.evict_if_needed(current.as_deref())
                 });
-                let state = SpectrumState::Ready(frames);
-                let _ = ramus_core::playback::spectrum::write_spec_file(&audio_path, &state);
+                if !skip_spectrum {
+                    let state = SpectrumState::Ready(frames);
+                    let _ =
+                        ramus_core::playback::spectrum::write_spec_file(&audio_path, &state);
+                    emit_spectrum_ready(&app, track_id.clone());
+                }
                 player.swap_playlist_entry_to_cached(&track_id);
-                emit_spectrum_ready(&app, track_id);
                 for p in evicted {
                     let spec = spec_file_path(&p);
                     let _ = std::fs::remove_file(&p);
@@ -596,6 +614,9 @@ fn spawn_ingest_analysis(
 // ---------------------------------------------------------------------------
 
 fn spawn_analyse_task(player: &AudioPlayer, track_id: String, app: AppHandle) {
+    if app.state::<crate::state::AppState>().settings.read().disable_spectrum {
+        return;
+    }
     let Some(audio_path) = player.with_cache(|c| c.get(&track_id).map(|p| p.to_path_buf()))
     else {
         return;

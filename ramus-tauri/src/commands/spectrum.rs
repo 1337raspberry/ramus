@@ -36,6 +36,12 @@ pub async fn get_spectrum(
     state: State<'_, AppState>,
     rating_key: String,
 ) -> CmdResult<SpectrumState> {
+    if state.settings.read().disable_spectrum {
+        return Ok(SpectrumState::Unavailable {
+            reason: "disabled".into(),
+        });
+    }
+
     // 1. Cached file → trust whatever the .spec says (or Analysing if
     //    the analyser hasn't written one yet).
     let audio_path = state

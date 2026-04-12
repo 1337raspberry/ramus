@@ -332,6 +332,15 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
           <ImageCacheRow />
           <AudioCacheRow />
 
+          <label className="settings-row">
+            <span>Disable visualiser</span>
+            <input
+              type="checkbox"
+              checked={settings.disableSpectrum}
+              onChange={(e) => save({ disableSpectrum: e.target.checked })}
+            />
+          </label>
+
           {/* Library */}
           <div className="settings-section-header">LIBRARY</div>
 
@@ -408,6 +417,15 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
 
           {/* Genre source */}
           <div className="settings-section-header">GENRES</div>
+
+          <label className="settings-row">
+            <span>Flat genres</span>
+            <input
+              type="checkbox"
+              checked={settings.flatGenres}
+              onChange={(e) => save({ flatGenres: e.target.checked })}
+            />
+          </label>
 
           <div className="settings-row">
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

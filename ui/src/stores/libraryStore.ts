@@ -4,6 +4,7 @@ import {
   getGenreTree,
   getFavouriteGenreTree,
   getAlbumsForGenre,
+  getAlbumsForGenreNames,
   getAllAlbums,
   getFavouriteAlbums,
   getAlbumsForArtist,
@@ -168,7 +169,30 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   selectGenre: (node) => {
     set({ selectedGenreId: node.id, suggestion: null, detailAlbum: null });
-    if (get().sidebarMode === "favourites") {
+    // For parent nodes with children (e.g. "Other"), collect all
+    // descendant leaf names and query them directly — expand_genre
+    // doesn't know about synthetic parents like "Other".
+    const collectLeafNames = (n: GenreNode): string[] => {
+      if (!n.children?.length) return [n.name];
+      return n.children.flatMap(collectLeafNames);
+    };
+    const useDirectNames = node.children?.length && node.id === "other";
+    if (useDirectNames) {
+      const names = collectLeafNames(node);
+      const fetch = getAlbumsForGenreNames(names);
+      if (get().sidebarMode === "favourites") {
+        fetch
+          .then((albums) => {
+            const favs = albums.filter((a) => a.isFavourite);
+            set((state) => ({ albums: sortAlbums(favs, state.albumSortOrder) }));
+          })
+          .catch(() => {});
+      } else {
+        fetch
+          .then((albums) => set((state) => ({ albums: sortAlbums(albums, state.albumSortOrder) })))
+          .catch(() => {});
+      }
+    } else if (get().sidebarMode === "favourites") {
       getAlbumsForGenre(node.name)
         .then((albums) => {
           const favs = albums.filter((a) => a.isFavourite);
