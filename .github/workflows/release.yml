@@ -12,8 +12,10 @@ name: Release
 # let Tauri bundle it as a resource so it ends up alongside ramus.exe.
 
 on:
-  push:
-    tags: ['v*']
+  # Disabled automatic triggers to save GitHub Actions minutes.
+  # Uncomment push to re-enable release builds on version tags.
+  # push:
+  #   tags: ['v*']
   workflow_dispatch:
 
 concurrency:
