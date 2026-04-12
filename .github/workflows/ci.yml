@@ -6,9 +6,11 @@ name: CI
 # installer artifacts.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # Disabled automatic triggers to save GitHub Actions minutes.
+  # Uncomment push/pull_request to re-enable.
+  # push:
+  #   branches: [main]
+  # pull_request:
   workflow_dispatch:
 
 concurrency:
