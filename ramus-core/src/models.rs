@@ -367,7 +367,7 @@ impl Default for PlaybackConfig {
     fn default() -> Self {
         Self::new(
             PlaybackMode::DirectPlay,
-            3,
+            10,
             Self::DEFAULT_CACHE_LIMIT_BYTES,
         )
     }
@@ -433,7 +433,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             playback_mode: PlaybackMode::DirectPlay,
-            lookahead_depth: 3,
+            lookahead_depth: 10,
             audio_cache_limit_bytes: PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES,
             image_cache_limit_bytes: 1_073_741_824, // 1 GB
             sync_interval_hours: 0,
@@ -669,7 +669,7 @@ mod tests {
     fn test_playback_config_default() {
         let cfg = PlaybackConfig::default();
         assert_eq!(cfg.playback_mode, PlaybackMode::DirectPlay);
-        assert_eq!(cfg.lookahead_depth, 3);
+        assert_eq!(cfg.lookahead_depth, 10);
         assert_eq!(cfg.audio_cache_limit_bytes, 2_147_483_648);
     }
 

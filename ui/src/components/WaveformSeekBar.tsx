@@ -226,10 +226,10 @@ export default function WaveformSeekBar() {
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
+      const el = containerRef.current;
+      if (!el || duration <= 0) return;
       handleSeekStart(e.clientX);
 
-      const el = containerRef.current;
-      if (!el) return;
       const rect = el.getBoundingClientRect();
 
       const onMove = (ev: MouseEvent) => {

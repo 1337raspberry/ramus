@@ -999,6 +999,7 @@ textarea {
   --art-size: min(100cqw, 100cqh);
   width: var(--art-size);
   height: var(--art-size);
+  aspect-ratio: 1;
   position: absolute;
   top: 50%;
   left: 50%;
@@ -2700,6 +2701,7 @@ body.is-fullscreen .focus-body {
   --art-size: min(100cqw, 100cqh);
   width: var(--art-size);
   height: var(--art-size);
+  aspect-ratio: 1;
   position: absolute;
   top: 50%;
   left: 50%;
@@ -2850,6 +2852,121 @@ body.is-fullscreen .focus-body {
   display: flex;
   flex-direction: column;
   padding-top: 8px;
+}
+
+/* Focus stopped state — suggestion card when queue is exhausted */
+
+.focus-stopped-view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  z-index: 2;
+}
+
+.focus-stopped-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.focus-stopped-card:hover {
+  transform: scale(1.02);
+}
+
+.focus-stopped-art-container {
+  width: min(360px, 50vw);
+  height: min(360px, 50vw);
+  aspect-ratio: 1;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.55),
+    0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.focus-stopped-meta {
+  text-align: center;
+  max-width: min(500px, 70vw);
+}
+
+.focus-stopped-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.focus-stopped-shuffle {
+  position: absolute;
+  top: 44px;
+  left: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.focus-stopped-shuffle:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+}
+
+.focus-stopped-dismiss {
+  position: absolute;
+  top: 44px;
+  right: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.focus-stopped-dismiss:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+}
+
+.focus-stopped-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.focus-stopped-genres {
+  max-width: min(500px, 70vw);
+}
+
+.focus-stopped-loading {
+  width: 32px;
+  height: 32px;
 }
 
 /* The compact panel's expand-to-focus-mode button */

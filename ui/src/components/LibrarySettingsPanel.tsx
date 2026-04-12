@@ -52,6 +52,41 @@ function ImageCacheRow() {
   );
 }
 
+function AudioCacheRow() {
+  const [stats, setStats] = useState<{ entryCount: number; totalSizeBytes: number } | null>(null);
+  const refresh = useCallback(() => {
+    import("../lib/commands").then(({ getAudioCacheStats }) =>
+      getAudioCacheStats()
+        .then(setStats)
+        .catch(() => {}),
+    );
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+  const mb = stats ? (stats.totalSizeBytes / 1_048_576).toFixed(1) : "—";
+  const count = stats?.entryCount ?? 0;
+  return (
+    <div className="settings-row">
+      <span>
+        {count} tracks, {mb} MB
+      </span>
+      <button
+        className="settings-btn"
+        onClick={() => {
+          import("../lib/commands").then(({ clearAudioCache }) =>
+            clearAudioCache()
+              .then(refresh)
+              .catch(() => {}),
+          );
+        }}
+      >
+        Clear
+      </button>
+    </div>
+  );
+}
+
 interface Props {
   onDismiss: () => void;
   onSignOut: () => void;
@@ -295,6 +330,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
           </label>
 
           <ImageCacheRow />
+          <AudioCacheRow />
 
           {/* Library */}
           <div className="settings-section-header">LIBRARY</div>

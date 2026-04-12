@@ -20,21 +20,33 @@ use crate::events::{
 };
 use crate::mpv_controller::MpvController;
 use crate::mpv_ffi::MpvLib;
+use crate::prefetch::PrefetchHandle;
 use crate::session_reporter::ReporterRef;
 
+/// Deferred-population slot for the prefetch control handle. `main.rs`
+/// builds it, then `spawn_worker()` returns the real handle which is
+/// stored here — the mpv callback closures read from this slot whenever
+/// they need to pump a command (natural-advance / skip / cancel) into
+/// the worker.
+pub type PrefetchHandleRef = Arc<parking_lot::Mutex<Option<PrefetchHandle>>>;
+
 /// Create an AudioPlayer backed by libmpv with Tauri event callbacks.
-/// Returns the player and a deferred `SessionReporter` slot that must
-/// be populated after construction.
+///
+/// `prefetch_handle_ref` is a deferred slot: `main.rs` passes an empty
+/// `Arc<Mutex<None>>` here, then populates it after `spawn_worker()`
+/// returns. The callbacks below read the slot each time they fire.
 pub fn create_mpv_player(
     app_handle: AppHandle,
-    http_client: reqwest::Client,
+    prefetch_handle_ref: PrefetchHandleRef,
 ) -> (Arc<ramus_core::playback::player::AudioPlayer>, ReporterRef) {
     let app1 = app_handle.clone();
+    let app2 = app_handle.clone();
     let app3 = app_handle.clone();
     let app4 = app_handle.clone();
     let app5 = app_handle.clone();
     let app6 = app_handle.clone();
     let app7 = app_handle.clone();
+    let app9 = app_handle.clone();
 
     // The player is needed inside callbacks but holds the MpvController.
     // Use a shared Arc populated after construction to break the cycle.
@@ -49,12 +61,16 @@ pub fn create_mpv_player(
     let pr7 = player_ref.clone();
     let pr8 = player_ref.clone();
     let pr9 = player_ref.clone();
+    let pr10 = player_ref.clone();
 
     // Deferred session reporter, populated after player construction.
     let reporter_ref: ReporterRef = Arc::new(parking_lot::Mutex::new(None));
     let sr1 = reporter_ref.clone();
     let sr2 = reporter_ref.clone();
     let sr3 = reporter_ref.clone();
+
+    let ph1 = prefetch_handle_ref.clone();
+    let ph2 = prefetch_handle_ref.clone();
 
     let callbacks = Arc::new(MpvCallbacks {
         on_position_change: Some(Box::new(move |pos| {
@@ -72,7 +88,21 @@ pub fn create_mpv_player(
         })),
         on_duration_change: Some(Box::new(move |dur| {
             if let Some(ref p) = *pr2.lock() {
+                let old_dur = p.duration();
                 p.handle_duration_change(dur);
+                // Emit immediately so the frontend gets the new duration
+                // without waiting for the next time-pos tick. Use position
+                // 0 when duration was previously 0 (track boundary) to
+                // avoid pairing the old track's position with the new
+                // track's duration during prefetch transitions.
+                let pos = if old_dur == 0.0 { 0.0 } else { p.position() };
+                emit_playback_position(
+                    &app2,
+                    PlaybackPositionPayload {
+                        position: pos,
+                        duration: dur,
+                    },
+                );
             }
         })),
         on_playlist_pos_change: Some(Box::new(move |pos| {
@@ -90,7 +120,16 @@ pub fn create_mpv_player(
                         queue_index: state.queue_index,
                     },
                 );
-                            prefetch::trigger(p.clone(), http_client.clone(), app3.clone());
+
+                // Nudge the prefetch worker: a natural advance may shift
+                // the lookahead window by one, bringing a new uncached
+                // target into scope. The worker decides whether to start
+                // a new cycle (idle) or keep its current serial loop
+                // running (which will pick up the shifted window on its
+                // next iteration automatically).
+                if let Some(ref handle) = *ph1.lock() {
+                    handle.notify_natural_advance();
+                }
 
                 // Session reporting for natural track advance only.
                 // Same rating_key as previous track indicates a queue reload;
@@ -162,6 +201,11 @@ pub fn create_mpv_player(
                 );
             }
         })),
+        on_cache_speed_change: Some(Box::new(move |bytes_per_sec| {
+            if let Some(ref p) = *pr10.lock() {
+                p.handle_cache_speed_change(bytes_per_sec);
+            }
+        })),
         on_idle_active: Some(Box::new(move || {
             if let Some(ref p) = *pr7.lock() {
                 // Scrobble the last playing track before transitioning to stopped
@@ -184,6 +228,12 @@ pub fn create_mpv_player(
                 if let Some(ref reporter) = *sr3.lock() {
                     reporter.playback_stopped();
                 }
+
+                // Queue finished — stop the prefetch worker until the
+                // next queue is loaded.
+                if let Some(ref handle) = *ph2.lock() {
+                    handle.notify_cancel();
+                }
             }
         })),
         on_file_loaded: Some(Box::new(move || {
@@ -193,7 +243,24 @@ pub fn create_mpv_player(
         })),
         on_file_ended: Some(Box::new(move |reason| {
             if let Some(ref p) = *pr9.lock() {
+                // Capture the track ID BEFORE handle_file_ended runs —
+                // on Eof mpv is about to auto-advance, and the player's
+                // `current_track_id()` may have already shifted by the
+                // time we look. We need the track that just finished so
+                // the prefetch-ingest reads the right stream-record file.
+                let ended_id = p.current_track_id();
+                let is_eof = matches!(reason, ramus_core::playback::mpv::FileEndReason::Eof);
                 p.handle_file_ended(reason);
+                if is_eof {
+                    if let Some(id) = ended_id {
+                        // Safety-net ingest: if the idle-signal path in
+                        // the prefetch worker didn't fire early (e.g. on
+                        // mega-files that never flushed), catch the
+                        // stream-record file now that playback is
+                        // definitively done with it.
+                        prefetch::try_ingest_stream_record(p, &app9, &id);
+                    }
+                }
             }
         })),
     });
@@ -212,4 +279,3 @@ pub fn create_mpv_player(
 
     (player, reporter_ref)
 }
-

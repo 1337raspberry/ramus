@@ -19,6 +19,11 @@ pub async fn play_tracks(
     // Report previous session stopped before loading a new queue
     state.session_reporter.playback_stopped();
 
+    // Abort any in-flight prefetch from the previous album — the new
+    // queue has a totally different lookahead window. The worker will
+    // start a fresh cycle once mpv's first playlist-pos-change fires.
+    state.prefetch_handle.notify_cancel();
+
     state.player.load_queue(tracks, start_at);
 
     // Emit playback state for UI update
@@ -41,6 +46,11 @@ pub async fn play_tracks(
             .track_started(track, &state.player.play_session_id());
     }
 
+    // Kick off an initial prefetch cycle for the freshly-loaded queue.
+    // If the mpv playlist-pos callback also fires natural-advance we
+    // just coalesce (the worker only starts a new cycle when idle).
+    state.prefetch_handle.notify_natural_advance();
+
     Ok(())
 }
 
@@ -52,12 +62,14 @@ pub async fn toggle_play_pause(state: State<'_, AppState>) -> CmdResult<()> {
 
 #[tauri::command]
 pub async fn next_track(state: State<'_, AppState>) -> CmdResult<()> {
+    state.prefetch_handle.notify_skip();
     state.player.next();
     Ok(())
 }
 
 #[tauri::command]
 pub async fn previous_track(state: State<'_, AppState>) -> CmdResult<()> {
+    state.prefetch_handle.notify_skip();
     state.player.previous();
     Ok(())
 }
@@ -112,6 +124,7 @@ pub async fn jump_to_queue_index(
     state: State<'_, AppState>,
     index: usize,
 ) -> CmdResult<()> {
+    state.prefetch_handle.notify_skip();
     state.player.jump_to_index(index);
     Ok(())
 }

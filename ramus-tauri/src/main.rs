@@ -54,9 +54,43 @@ fn main() {
             let connection_monitor = Arc::new(ConnectionMonitor::new(client.clone()));
             let http_client = reqwest::Client::new();
 
+            // Dedicated prefetch HTTP client with a 300s per-request timeout
+            // (matches iOS's timeoutIntervalForResource) so large FLAC files
+            // on slower LAN segments don't time out mid-download. Keeping
+            // this separate from the app-wide client means prefetch's retry
+            // profile doesn't leak into metadata fetches.
+            let prefetch_http_client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(300))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new());
+
+            // Tell the core where mpv should write stream-record output.
+            // The prefetch worker later reads back that path to run
+            // symphonia + `.spec` generation without opening a second
+            // HTTP connection.
+            let audio_cache_dir = ramus_core::plex::token_store::config_dir()
+                .map(|d| d.join("audio_cache"))
+                .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/ramus_audio_cache"));
+            let _ = std::fs::create_dir_all(&audio_cache_dir);
+
             // Create mpv player with event callbacks
-            let (player, reporter_ref) =
-                ramus_tauri::create_mpv_player(app_handle, http_client.clone());
+            let prefetch_handle_ref: Arc<
+                parking_lot::Mutex<Option<ramus_tauri::prefetch::PrefetchHandle>>,
+            > = Arc::new(parking_lot::Mutex::new(None));
+            let (player, reporter_ref) = ramus_tauri::create_mpv_player(
+                app_handle.clone(),
+                prefetch_handle_ref.clone(),
+            );
+            player.set_stream_record_dir(audio_cache_dir);
+
+            // Spawn the single long-lived prefetch worker and wire its
+            // control handle back into the callbacks.
+            let prefetch_handle = ramus_tauri::prefetch::spawn_worker(
+                player.clone(),
+                prefetch_http_client,
+                app_handle.clone(),
+            );
+            *prefetch_handle_ref.lock() = Some(prefetch_handle.clone());
 
             // Create session reporter and populate the deferred callback slot
             let session_reporter =
@@ -88,6 +122,7 @@ fn main() {
                 settings: Arc::new(RwLock::new(saved_settings)),
                 image_cache: Arc::new(parking_lot::Mutex::new(image_cache)),
                 http_client,
+                prefetch_handle,
                 discovered_servers: Arc::new(parking_lot::Mutex::new(Vec::new())),
             };
 
@@ -467,6 +502,8 @@ fn main() {
             commands::settings::has_custom_genres,
             commands::settings::flush_image_cache,
             commands::settings::get_image_cache_stats,
+            commands::settings::clear_audio_cache,
+            commands::settings::get_audio_cache_stats,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")

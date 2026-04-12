@@ -32,6 +32,11 @@ pub enum ObserverID {
     PausedForCache = 7,
     IdleActive = 9,
     CacheBufferingState = 10,
+    /// mpv `cache-speed` (bytes/sec being read from the network by the
+    /// demuxer). The prefetch worker watches this to detect when mpv has
+    /// finished pulling the current track into its cache — that's the
+    /// "safe to open a second HTTP connection for prefetch" signal.
+    CacheSpeed = 11,
 }
 
 /// mpv file load mode.
@@ -64,6 +69,7 @@ pub struct MpvCallbacks {
     pub on_pause_change: Option<Box<dyn Fn(bool) + Send + Sync>>,
     pub on_buffering_change: Option<Box<dyn Fn(bool) + Send + Sync>>,
     pub on_cache_state_change: Option<Box<dyn Fn(i64) + Send + Sync>>,
+    pub on_cache_speed_change: Option<Box<dyn Fn(f64) + Send + Sync>>,
     pub on_idle_active: Option<Box<dyn Fn() + Send + Sync>>,
     pub on_file_loaded: Option<Box<dyn Fn() + Send + Sync>>,
     pub on_file_ended: Option<Box<dyn Fn(FileEndReason) + Send + Sync>>,
@@ -92,6 +98,14 @@ pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
         ("gapless-audio", "yes"),
         ("prefetch-playlist", "yes"),
         ("audio-buffer", "0.5"),
+        // Let mpv eagerly pull the whole file into its demuxer cache, so
+        // `cache-speed` reliably drops to 0 within ~1 minute of playback
+        // start. The prefetch worker watches for that idle signal before
+        // it opens a second HTTP connection to Plex. Without these, a
+        // large FLAC would trickle all the way through playback and the
+        // worker would never get its "safe to start prefetching" go-ahead.
+        ("demuxer-max-bytes", "2GiB"),
+        ("demuxer-readahead-secs", "1200"),
         ("keep-open", "no"),
         ("idle", "yes"),
         ("input-default-bindings", "no"),
@@ -112,6 +126,7 @@ pub fn observed_properties() -> Vec<(&'static str, ObserverID)> {
         ("paused-for-cache", ObserverID::PausedForCache),
         ("idle-active", ObserverID::IdleActive),
         ("cache-buffering-state", ObserverID::CacheBufferingState),
+        ("cache-speed", ObserverID::CacheSpeed),
     ]
 }
 
@@ -120,8 +135,13 @@ pub fn observed_properties() -> Vec<(&'static str, ObserverID)> {
 /// Abstraction over mpv operations for testability.
 /// The real implementation wraps libmpv FFI calls.
 pub trait MpvPlayer: Send + Sync {
-    fn load_file(&self, url: &str, mode: LoadMode);
-    fn load_file_at(&self, url: &str, index: i64);
+    /// Load a file into the playlist. `options` is an mpv-style
+    /// comma-separated `key=value` list applied to just this entry — used
+    /// by the prefetch layer to set `stream-record=<path>` so mpv writes
+    /// the received bytes to disk as it plays, giving us a cache file
+    /// without a second HTTP connection.
+    fn load_file(&self, url: &str, mode: LoadMode, options: Option<&str>);
+    fn load_file_at(&self, url: &str, index: i64, options: Option<&str>);
     fn playlist_play_index(&self, index: i64);
     fn playlist_remove(&self, index: i64);
     fn playlist_move(&self, from: i64, to: i64);
@@ -213,7 +233,7 @@ mod tests {
     #[test]
     fn test_observed_properties_complete() {
         let props = observed_properties();
-        assert_eq!(props.len(), 7);
+        assert_eq!(props.len(), 8);
         assert!(props.iter().any(|(name, id)| *name == "time-pos" && *id == ObserverID::TimePos));
         assert!(props.iter().any(|(name, id)| *name == "duration" && *id == ObserverID::Duration));
         assert!(props.iter().any(|(name, id)| *name == "pause" && *id == ObserverID::Pause));
@@ -228,6 +248,9 @@ mod tests {
             .any(|(name, id)| *name == "idle-active" && *id == ObserverID::IdleActive));
         assert!(props.iter().any(|(name, id)| *name == "cache-buffering-state"
             && *id == ObserverID::CacheBufferingState));
+        assert!(props
+            .iter()
+            .any(|(name, id)| *name == "cache-speed" && *id == ObserverID::CacheSpeed));
     }
 
     #[test]
@@ -239,6 +262,7 @@ mod tests {
         assert_eq!(ObserverID::PausedForCache as u64, 7);
         assert_eq!(ObserverID::IdleActive as u64, 9);
         assert_eq!(ObserverID::CacheBufferingState as u64, 10);
+        assert_eq!(ObserverID::CacheSpeed as u64, 11);
     }
 
     #[test]
@@ -268,6 +292,7 @@ mod tests {
         assert!(cb.on_pause_change.is_none());
         assert!(cb.on_buffering_change.is_none());
         assert!(cb.on_cache_state_change.is_none());
+        assert!(cb.on_cache_speed_change.is_none());
         assert!(cb.on_idle_active.is_none());
         assert!(cb.on_file_loaded.is_none());
         assert!(cb.on_file_ended.is_none());

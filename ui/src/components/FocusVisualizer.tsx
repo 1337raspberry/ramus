@@ -331,9 +331,35 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
       noiseFreqsRef.current = freqs;
     }
 
+    // Timestamp of the previous RAF callback — used to compute `rawDelta`
+    // for the time-normalised easing below.
+    let lastTs = 0;
+
+    // Reference frame interval that `easeAttack` / `easeDecay` in
+    // focusVizDebugStore.ts were originally tuned against (≈ 60Hz).
+    // We treat the stored values as "fraction of the remaining gap
+    // closed in ONE 16.67ms tick" and rescale per actual frame dt so
+    // the wall-clock behaviour stays identical on 60Hz, 120Hz, 360Hz,
+    // or anything else the display happens to be. Without this the
+    // per-frame lerp converges 6× faster on a 360Hz display, which
+    // visually collapses the rise/fall animation into a snap+plateau
+    // pattern synchronised to the 30Hz spectrogram hop rate.
+    const EASE_REFERENCE_DT_MS = 1000 / 60;
+    // Clamp the dt we feed into the alpha math so a long hitch (tab
+    // backgrounded, GC pause, debugger stop) doesn't push Math.pow()
+    // into silly extremes. ~100ms covers about 6 reference frames,
+    // which already produces alpha ≈ 1 (effectively a snap) — any
+    // larger and we're just throwing arithmetic at the same result.
+    const EASE_DT_CLAMP_MS = 100;
+
     const render = () => {
       const { w, h } = resize();
       ctx.clearRect(0, 0, w, h);
+
+      // Compute frame delta for time-normalised easing.
+      const now = performance.now();
+      const rawDelta = lastTs !== 0 ? now - lastTs : 0;
+      lastTs = now;
 
       // Hot-path reads — position is the ground truth for where in the
       // spectrogram we are. Never subscribe to this via a selector.
@@ -360,14 +386,25 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
         scratch.fill(0);
       }
 
-      // Spring-ease each bar toward its target height.
+      // Spring-ease each bar toward its target height. The ease
+      // factors from the debug store are per-*reference-frame* (60Hz)
+      // fractions, so we rescale them to the actual frame dt via
+      //   alpha = 1 - (1 - ease) ^ (dt / referenceDt)
+      // which is the exponential-decay form of "apply the per-frame
+      // ease `dt/referenceDt` times in a row". Computed once per
+      // frame, not per bar — Math.pow is not cheap enough to run 256×.
+      //
+      // DEBUG (focus viz tuning): EASE_ATTACK / EASE_DECAY
+      const easeDt = Math.min(rawDelta, EASE_DT_CLAMP_MS);
+      const dtRatio = easeDt / EASE_REFERENCE_DT_MS;
+      const alphaAttack = easeDt > 0 ? 1 - Math.pow(1 - viz.easeAttack, dtRatio) : 0;
+      const alphaDecay = easeDt > 0 ? 1 - Math.pow(1 - viz.easeDecay, dtRatio) : 0;
       const current = currentRef.current;
       for (let i = 0; i < BAR_COUNT; i++) {
         const target = scratch[i] / 255;
         const prev = current[i];
-        // DEBUG (focus viz tuning): EASE_ATTACK / EASE_DECAY
-        const ease = target > prev ? viz.easeAttack : viz.easeDecay;
-        current[i] = prev + (target - prev) * ease;
+        const alpha = target > prev ? alphaAttack : alphaDecay;
+        current[i] = prev + (target - prev) * alpha;
       }
 
       // Accent colour from the cached ref — updated by the

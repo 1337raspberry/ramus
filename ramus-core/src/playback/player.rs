@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use url::Url;
@@ -208,6 +209,15 @@ struct PlayerInner {
     is_remote: bool,
     play_session_id: String,
     cache: DownloadCache,
+    /// Directory where mpv writes stream-record output for the currently
+    /// playing / upcoming tracks. Set by the Tauri layer at startup so the
+    /// core can compute per-track record paths without re-reading config.
+    stream_record_dir: Option<PathBuf>,
+    /// Last time we observed a nonzero `cache-speed` from mpv. The prefetch
+    /// worker uses this to detect when mpv has finished pulling the current
+    /// track into its demuxer cache — at that point it's safe to open a
+    /// second HTTP connection to Plex for the next upcoming track.
+    last_network_activity: Instant,
 }
 
 /// The core audio player managing queue state, mpv commands, and track resolution.
@@ -238,14 +248,28 @@ impl AudioPlayer {
                 is_remote: false,
                 play_session_id: uuid::Uuid::new_v4().to_string(),
                 cache: DownloadCache::new(PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES as u64),
+                stream_record_dir: None,
+                last_network_activity: Instant::now(),
             }),
         }
+    }
+
+    /// Configure where mpv writes its stream-record output. Called once
+    /// at startup by the Tauri layer — the core can't compute this itself
+    /// because it doesn't know the app's config directory layout.
+    pub fn set_stream_record_dir(&self, dir: PathBuf) {
+        self.inner.lock().stream_record_dir = Some(dir);
     }
 
     // --- Configuration ---
 
     /// Set server connection details.
     pub fn configure(&self, server_url: Url, token: String, client_identifier: String) {
+        // DEBUG-ONLY — leaks the user's plex.direct subdomain hash (which
+        // is derived from their server's IP and a plex.tv-issued UUID).
+        // Not as bad as a token, but still personally-identifying. Do NOT
+        // promote to info/warn without scrubbing the host.
+        log::debug!("player.configure: server_url={server_url}");
         let mut inner = self.inner.lock();
         inner.server_url = Some(server_url);
         inner.token = Some(token);
@@ -254,6 +278,10 @@ impl AudioPlayer {
 
     /// Update server connection (e.g., after failover or reconnection).
     pub fn update_server_connection(&self, server_url: Url, token: String, is_remote: bool) {
+        // DEBUG-ONLY — see note on configure() above.
+        log::debug!(
+            "player.update_server_connection: server_url={server_url} is_remote={is_remote}"
+        );
         let mut inner = self.inner.lock();
         inner.server_url = Some(server_url);
         inner.token = Some(token);
@@ -263,6 +291,13 @@ impl AudioPlayer {
     /// Update only the remote flag (e.g., after connection type is determined).
     pub fn set_remote(&self, is_remote: bool) {
         self.inner.lock().is_remote = is_remote;
+    }
+
+    /// Whether the current connection is remote. The prefetch worker
+    /// uses this to choose between aggressive (LAN) and conservative
+    /// (remote) download strategies.
+    pub fn is_remote(&self) -> bool {
+        self.inner.lock().is_remote
     }
 
     /// Update playback configuration.
@@ -283,7 +318,10 @@ impl AudioPlayer {
             return;
         }
 
-        let urls = {
+        // Snapshot the per-track (url, stream-record options) pairs under
+        // the lock, then release it before touching mpv (mpv calls may
+        // block briefly on FFI).
+        let loads: Vec<Option<(String, Option<String>)>> = {
             let mut inner = self.inner.lock();
             inner.state.queue = tracks;
             inner.state.queue_index = start_at;
@@ -293,23 +331,39 @@ impl AudioPlayer {
             inner.position = 0.0;
             inner.duration = 0.0;
             inner.is_loading = false;
+            // Reset network-activity clock so the prefetch worker waits
+            // for mpv to start pulling the new track before it considers
+            // the network idle.
+            inner.last_network_activity = Instant::now();
 
             inner
                 .state
                 .queue
                 .iter()
-                .map(|t| resolve_url(t, &inner))
-                .collect::<Vec<_>>()
+                .map(|t| {
+                    resolve_url(t, &inner)
+                        .map(|url| (url, stream_record_option_for(t, &inner)))
+                })
+                .collect()
         };
 
-        for (i, url) in urls.iter().enumerate() {
-            if let Some(url) = url {
+        for (i, load) in loads.iter().enumerate() {
+            if let Some((url, opts)) = load {
                 let mode = if i == 0 {
                     LoadMode::Replace
                 } else {
                     LoadMode::Append
                 };
-                self.mpv.load_file(url, mode);
+                // DEBUG-ONLY — SENSITIVE. The printed `url` contains
+                // `?X-Plex-Token=...`, a live credential that grants
+                // full access to the user's Plex server. Keep this at
+                // `debug!` level and never promote it. If this is ever
+                // surfaced to bug reports or telemetry, scrub the token
+                // query parameter first.
+                log::debug!(
+                    "load_queue[{i}]: mode={mode:?} url={url} opts={opts:?}"
+                );
+                self.mpv.load_file(url, mode, opts.as_deref());
             }
         }
 
@@ -326,7 +380,7 @@ impl AudioPlayer {
             return;
         }
 
-        let (was_stopped, urls) = {
+        let (was_stopped, loads) = {
             let mut inner = self.inner.lock();
             let was_stopped =
                 inner.state.queue.is_empty() || inner.state.status == PlaybackStatus::Stopped;
@@ -335,9 +389,14 @@ impl AudioPlayer {
             if was_stopped {
                 (true, Vec::new())
             } else {
-                let urls: Vec<Option<String>> =
-                    tracks.iter().map(|t| resolve_url(t, &inner)).collect();
-                (false, urls)
+                let loads: Vec<Option<(String, Option<String>)>> = tracks
+                    .iter()
+                    .map(|t| {
+                        resolve_url(t, &inner)
+                            .map(|url| (url, stream_record_option_for(t, &inner)))
+                    })
+                    .collect();
+                (false, loads)
             }
         };
 
@@ -345,8 +404,8 @@ impl AudioPlayer {
             let queue = self.inner.lock().state.queue.clone();
             self.load_queue(queue, 0);
         } else {
-            for url in urls.into_iter().flatten() {
-                self.mpv.load_file(&url, LoadMode::Append);
+            for (url, opts) in loads.into_iter().flatten() {
+                self.mpv.load_file(&url, LoadMode::Append, opts.as_deref());
             }
         }
     }
@@ -368,7 +427,7 @@ impl AudioPlayer {
             return;
         }
 
-        let (insert_base, urls) = {
+        let (insert_base, loads) = {
             let mut inner = self.inner.lock();
             let insert_base = inner.state.queue_index + 1;
 
@@ -379,15 +438,20 @@ impl AudioPlayer {
                     .insert(insert_base + offset, track.clone());
             }
 
-            let urls: Vec<Option<String>> =
-                tracks.iter().map(|t| resolve_url(t, &inner)).collect();
-            (insert_base, urls)
+            let loads: Vec<Option<(String, Option<String>)>> = tracks
+                .iter()
+                .map(|t| {
+                    resolve_url(t, &inner)
+                        .map(|url| (url, stream_record_option_for(t, &inner)))
+                })
+                .collect();
+            (insert_base, loads)
         };
 
-        for (offset, url) in urls.iter().enumerate() {
-            if let Some(url) = url {
+        for (offset, load) in loads.iter().enumerate() {
+            if let Some((url, opts)) = load {
                 self.mpv
-                    .load_file_at(url, (insert_base + offset) as i64);
+                    .load_file_at(url, (insert_base + offset) as i64, opts.as_deref());
             }
         }
     }
@@ -585,6 +649,17 @@ impl AudioPlayer {
     }
 
     /// Handle mpv playlist-pos change (track advance).
+    ///
+    /// Resets position and buffered fraction but NOT duration. For manual
+    /// skips (`next()`/`previous()`), the caller already resets duration
+    /// before calling `playlist_play_index`. For gapless auto-advance,
+    /// the duration must NOT be reset: mpv's `prefetch-playlist` pre-
+    /// demuxes the next file and may have already delivered the correct
+    /// duration via `on_duration_change`. Resetting it to 0 here would
+    /// cause every subsequent `on_position_change` tick to emit
+    /// `duration=0` to the frontend (since `observe_property` won't
+    /// re-fire for a value that hasn't changed from mpv's perspective),
+    /// permanently breaking the waveform seek bar.
     pub fn handle_playlist_pos_change(&self, pos: i64) {
         if pos < 0 {
             return;
@@ -598,7 +673,6 @@ impl AudioPlayer {
         inner.state.queue_index = pos;
         inner.state.current_track = Some(inner.state.queue[pos].clone());
         inner.position = 0.0;
-        inner.duration = 0.0;
         inner.buffered_fraction = 0.0;
     }
 
@@ -620,6 +694,16 @@ impl AudioPlayer {
     /// Handle mpv cache-buffering-state change (0–100).
     pub fn handle_cache_state_change(&self, state: i64) {
         self.inner.lock().buffered_fraction = (state as f64 / 100.0).clamp(0.0, 1.0);
+    }
+
+    /// Handle mpv `cache-speed` change. Updates `last_network_activity`
+    /// whenever mpv is actively reading from the network — the prefetch
+    /// worker checks the elapsed time since this to decide when mpv has
+    /// gone idle and it's safe to open a second connection.
+    pub fn handle_cache_speed_change(&self, bytes_per_sec: f64) {
+        if bytes_per_sec > 0.0 {
+            self.inner.lock().last_network_activity = Instant::now();
+        }
     }
 
     /// Handle mpv file-loaded event.
@@ -664,49 +748,56 @@ impl AudioPlayer {
     }
 
 
-    /// Whether the current track is fully buffered (buffered_fraction >= 1.0).
+    /// Whether the current track's buffer has reached the "unpause" threshold
+    /// according to mpv's cache-buffering-state. **This is not "whole file on
+    /// disk"** — it's mpv's 1s-ahead readiness flag. Used for the buffering
+    /// indicator in the UI; the prefetch worker uses [`mpv_network_idle_for`]
+    /// for the "mpv is done talking to Plex" signal.
     pub fn is_fully_buffered(&self) -> bool {
         self.inner.lock().buffered_fraction >= 1.0
     }
 
+    /// Whether mpv's `cache-speed` has been observed as 0 for at least
+    /// `duration`. The prefetch worker waits for this before opening a
+    /// second HTTP connection to Plex — if mpv is still reading, adding
+    /// a parallel download would split bandwidth and drop connections.
+    pub fn mpv_network_idle_for(&self, duration: Duration) -> bool {
+        let inner = self.inner.lock();
+        Instant::now().duration_since(inner.last_network_activity) >= duration
+    }
+
+    /// Reset the "last network activity" clock to now. Called by the
+    /// prefetch worker on track change so it waits for fresh activity
+    /// before deciding mpv has gone idle on the new track.
+    pub fn mark_network_active(&self) {
+        self.inner.lock().last_network_activity = Instant::now();
+    }
+
     // --- Prefetch ---
 
-    /// Identify upcoming tracks that should be prefetched (downloaded to cache).
+    /// Returns `(rating_key, direct_play_url)` for the first uncached,
+    /// non-transcode track within `lookahead_depth` of the current queue
+    /// position. Walks forward past already-cached entries. Returns
+    /// `None` when every slot in the window is either cached, transcoded,
+    /// or out of bounds.
     ///
-    /// Returns `(rating_key, download_url)` for each track that:
-    /// - Is within `lookahead_depth` of the current position
-    /// - Is not already in the download cache
-    /// - Would use direct play (not HLS transcode)
-    pub fn prefetch_targets(&self) -> Vec<(String, String)> {
+    /// Called fresh on every iteration of the prefetch worker's serial
+    /// loop so it auto-reflects queue advancement — no explicit "window
+    /// shifted" plumbing needed.
+    pub fn next_uncached_target_in_lookahead(&self) -> Option<(String, String)> {
         let inner = self.inner.lock();
         let depth = inner.config.lookahead_depth as usize;
         let pos = inner.state.queue_index;
-        let queue = &inner.state.queue;
-
-        let server_url = match inner.server_url.as_ref() {
-            Some(u) => u,
-            None => return Vec::new(),
-        };
-        let token = match inner.token.as_ref() {
-            Some(t) => t,
-            None => return Vec::new(),
-        };
-
-        let mut targets = Vec::new();
+        let server_url = inner.server_url.as_ref()?;
+        let token = inner.token.as_ref()?;
 
         for offset in 1..=depth {
             let idx = pos + offset;
-            if idx >= queue.len() {
-                break;
-            }
-            let track = &queue[idx];
+            let track = inner.state.queue.get(idx)?;
 
-            // Skip if already cached
             if inner.cache.get(&track.rating_key).is_some() {
                 continue;
             }
-
-            // Skip HLS transcode tracks (streamed on demand)
             if transcode::should_transcode(
                 track.codec.as_deref(),
                 inner.config.playback_mode,
@@ -715,23 +806,71 @@ impl AudioPlayer {
                 continue;
             }
 
-            // Build direct play URL
-            if let Some(part_key) = track.part_key.as_ref() {
-                if let Some(url) =
-                    transcode::build_direct_play_url(server_url, part_key, token)
-                {
-                    targets.push((track.rating_key.clone(), url.to_string()));
-                }
-            }
-        }
-
-        if !targets.is_empty() {
+            let Some(part_key) = track.part_key.as_ref() else {
+                continue;
+            };
+            let Some(url) = transcode::build_direct_play_url(server_url, part_key, token) else {
+                continue;
+            };
+            // DEBUG-ONLY — SENSITIVE. The built URL contains a live
+            // `X-Plex-Token` query parameter. Do NOT promote above
+            // `debug!` and scrub the token before copying this line into
+            // a bug report.
             log::debug!(
-                "prefetch_targets: {} targets, mode={:?}, remote={}",
-                targets.len(),
+                "next_uncached_target: idx={idx} rk={} server={} part_key={} -> {}",
+                track.rating_key,
+                server_url,
+                part_key,
+                url,
+            );
+            return Some((track.rating_key.clone(), url.to_string()));
+        }
+        None
+    }
+
+    /// Returns `(rating_key, direct_play_url)` for ALL uncached,
+    /// non-transcode tracks within `lookahead_depth` of the current
+    /// queue position. Used by the concurrent prefetch path to dispatch
+    /// multiple downloads at once.
+    ///
+    /// When `include_current` is true, the currently-playing track
+    /// (offset 0) is included so the LAN path can download it directly
+    /// instead of relying on mpv's stream-record.
+    pub fn all_uncached_targets_in_lookahead(&self, include_current: bool) -> Vec<(String, String)> {
+        let inner = self.inner.lock();
+        let depth = inner.config.lookahead_depth as usize;
+        let pos = inner.state.queue_index;
+        let Some(server_url) = inner.server_url.as_ref() else {
+            return vec![];
+        };
+        let Some(token) = inner.token.as_ref() else {
+            return vec![];
+        };
+
+        let mut targets = Vec::new();
+        let start_offset = if include_current { 0 } else { 1 };
+        for offset in start_offset..=depth {
+            let idx = pos + offset;
+            let Some(track) = inner.state.queue.get(idx) else {
+                break;
+            };
+            if inner.cache.get(&track.rating_key).is_some() {
+                continue;
+            }
+            if transcode::should_transcode(
+                track.codec.as_deref(),
                 inner.config.playback_mode,
                 inner.is_remote,
-            );
+            ) {
+                continue;
+            }
+            let Some(part_key) = track.part_key.as_ref() else {
+                continue;
+            };
+            let Some(url) = transcode::build_direct_play_url(server_url, part_key, token) else {
+                continue;
+            };
+            targets.push((track.rating_key.clone(), url.to_string()));
         }
         targets
     }
@@ -746,34 +885,51 @@ impl AudioPlayer {
             .map(|t| t.rating_key.clone())
     }
 
-    /// Returns `(rating_key, direct_play_url)` for the *current* track if
-    /// it's not already cached and is eligible for direct play (not being
-    /// transcoded). This is the companion to `prefetch_targets`, which
-    /// only covers upcoming tracks — together they let the prefetch task
-    /// also download the currently-playing track for spectrum analysis
-    /// without opening a second HTTP connection while mpv is still
-    /// actively streaming (timing is enforced by `prefetch.rs`).
-    pub fn current_track_download_target(&self) -> Option<(String, String)> {
+    /// Returns the on-disk path mpv is (or was) writing to for the given
+    /// track's `stream-record` output. None if the track isn't in the
+    /// queue, has an unknown extension, or the stream-record dir isn't
+    /// configured yet.
+    pub fn stream_record_path_for(&self, track_id: &str) -> Option<PathBuf> {
         let inner = self.inner.lock();
-        let track = inner.state.current_track.as_ref()?;
+        let track = inner
+            .state
+            .queue
+            .iter()
+            .find(|t| t.rating_key == track_id)?;
+        let dir = inner.stream_record_dir.as_ref()?;
+        stream_record_path(track, dir)
+    }
 
-        if inner.cache.get(&track.rating_key).is_some() {
-            return None;
-        }
-
-        if transcode::should_transcode(
-            track.codec.as_deref(),
-            inner.config.playback_mode,
-            inner.is_remote,
-        ) {
-            return None;
-        }
-
-        let server_url = inner.server_url.as_ref()?;
-        let token = inner.token.as_ref()?;
-        let part_key = track.part_key.as_ref()?;
-        let url = transcode::build_direct_play_url(server_url, part_key, token)?;
-        Some((track.rating_key.clone(), url.to_string()))
+    /// Swap a cached track's mpv playlist entry to `file://<path>` so mpv
+    /// reads from the local cache file instead of re-downloading from
+    /// Plex when it reaches that entry.
+    ///
+    /// Called by the prefetch worker after every successful download /
+    /// stream-record ingest. A no-op if the track isn't in the current
+    /// queue or is the currently-playing entry (mpv refuses to
+    /// playlist-remove the active index — and we wouldn't want to anyway,
+    /// since it's already streaming).
+    pub fn swap_playlist_entry_to_cached(&self, track_id: &str) {
+        let (idx, file_url) = {
+            let inner = self.inner.lock();
+            let Some(idx) = inner
+                .state
+                .queue
+                .iter()
+                .position(|t| t.rating_key == track_id)
+            else {
+                return;
+            };
+            if idx == inner.state.queue_index {
+                return;
+            }
+            let Some(path) = inner.cache.get(track_id) else {
+                return;
+            };
+            (idx, format!("file://{}", path.display()))
+        };
+        self.mpv.playlist_remove(idx as i64);
+        self.mpv.load_file_at(&file_url, idx as i64, None);
     }
 
     /// Would the given track get transcoded under the current settings?
@@ -831,6 +987,68 @@ fn resolve_url(track: &Track, inner: &PlayerInner) -> Option<String> {
     }
 }
 
+/// Compute the on-disk path that mpv should write its `stream-record`
+/// output to for this track. Matches the `download_with_resume` naming
+/// convention (`<sanitized>_<len>.<ext>`) so the cache file produced by
+/// mpv is interchangeable with one produced by the fallback downloader.
+fn stream_record_path(track: &Track, dir: &Path) -> Option<PathBuf> {
+    let ext = track
+        .part_key
+        .as_ref()
+        .and_then(|k| k.rsplit('.').next())
+        .map(|e| e.to_lowercase())
+        .filter(|e| is_allowed_extension(e))?;
+    let filename = format!(
+        "{}_{}.{}",
+        sanitize_filename(&track.rating_key),
+        track.rating_key.len(),
+        ext
+    );
+    Some(dir.join(filename))
+}
+
+/// Build the mpv loadfile `options` string for a track — returns the
+/// `stream-record=<path>` option so mpv writes received bytes to disk
+/// as it plays, unless the track is already cached, will be transcoded,
+/// or has no computable record path. Returns `None` to let the caller
+/// fall back to a plain loadfile (no per-track options).
+///
+/// **Windows path gotcha**: mpv's options parser treats `\` as an
+/// escape character. A plain Windows path like
+/// `C:\Users\chees\...\171990_6.flac` would get its `\U`, `\1`, etc.
+/// silently mangled on the way into mpv, leaving `stream-record` with
+/// a bogus path and the whole loadfile failing to start. Convert to
+/// forward slashes — mpv accepts those on Windows and they don't
+/// conflict with the escape parser.
+fn stream_record_option_for(track: &Track, inner: &PlayerInner) -> Option<String> {
+    // LAN: the concurrent prefetch worker downloads every track
+    // (including the currently-playing one) directly, so there's no
+    // need for mpv to write a stream-record. Disabling it avoids the
+    // encoder-delay / VBR misalignment that stream-record files cause
+    // in symphonia analysis (mpv strips priming samples, symphonia
+    // doesn't, so the .spec drifts out of sync with time-pos).
+    if !inner.is_remote {
+        return None;
+    }
+    // Already cached — mpv will be loading a file:// URL, no record needed.
+    if inner.cache.get(&track.rating_key).is_some() {
+        return None;
+    }
+    // Transcoded tracks stream HLS fragments — stream-record would capture
+    // manifest/segment bytes that symphonia can't decode.
+    if transcode::should_transcode(
+        track.codec.as_deref(),
+        inner.config.playback_mode,
+        inner.is_remote,
+    ) {
+        return None;
+    }
+    let dir = inner.stream_record_dir.as_ref()?;
+    let path = stream_record_path(track, dir)?;
+    let path_str = path.to_string_lossy().replace('\\', "/");
+    Some(format!("stream-record={path_str}"))
+}
+
 // --- Tests ---
 
 #[cfg(test)]
@@ -844,8 +1062,16 @@ mod tests {
     #[derive(Debug, Clone)]
     #[allow(dead_code)] // Fields read via Debug/pattern matching in assertions
     enum MockCall {
-        LoadFile { url: String, mode: LoadMode },
-        LoadFileAt { url: String, index: i64 },
+        LoadFile {
+            url: String,
+            mode: LoadMode,
+            options: Option<String>,
+        },
+        LoadFileAt {
+            url: String,
+            index: i64,
+            options: Option<String>,
+        },
         PlaylistPlayIndex(i64),
         PlaylistRemove(i64),
         PlaylistMove { from: i64, to: i64 },
@@ -881,16 +1107,18 @@ mod tests {
     }
 
     impl MpvPlayer for MockMpv {
-        fn load_file(&self, url: &str, mode: LoadMode) {
+        fn load_file(&self, url: &str, mode: LoadMode, options: Option<&str>) {
             self.calls.lock().push(MockCall::LoadFile {
                 url: url.to_string(),
                 mode,
+                options: options.map(|s| s.to_string()),
             });
         }
-        fn load_file_at(&self, url: &str, index: i64) {
+        fn load_file_at(&self, url: &str, index: i64, options: Option<&str>) {
             self.calls.lock().push(MockCall::LoadFileAt {
                 url: url.to_string(),
                 index,
+                options: options.map(|s| s.to_string()),
             });
         }
         fn playlist_play_index(&self, index: i64) {
