@@ -38,6 +38,16 @@ export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
     [queueSetOpen],
   );
 
+  const handleToggleQueue = useCallback(() => {
+    queue.toggle();
+    // Scroll down to reveal the track listing when opening
+    if (!queue.open && elRef.current) {
+      requestAnimationFrame(() => {
+        elRef.current?.scrollTo({ top: elRef.current.scrollHeight, behavior: "smooth" });
+      });
+    }
+  }, [queue.open, queue.toggle]);
+
   if (!currentTrack) {
     return <div className="empty-state">Select an album</div>;
   }
@@ -53,7 +63,7 @@ export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
         onOpenEQ={onOpenEQ}
         panelHeight={panelHeight}
         showQueue={queue.open}
-        onToggleQueue={queue.toggle}
+        onToggleQueue={handleToggleQueue}
       />
     </div>
   );
