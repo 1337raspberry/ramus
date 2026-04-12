@@ -30,12 +30,12 @@ import { IconClose, IconMinimize, IconFullscreen } from "./components/Icons";
 const appWindow = getCurrentWindow();
 
 /**
- * Custom traffic lights + drag region. Replicates the macOS behaviour
- * that the native green button has (dedicated fullscreen Space) while
- * still letting the user double-click the title area to maximise on
- * the current desktop — matching the distinction macOS makes between
- * "click green" (fullscreen) and "option-click green / double-click
- * titlebar" (zoom / maximise).
+ * Custom traffic lights + drag region. The green button enters a
+ * dedicated fullscreen Space via `setFullscreen`; double-clicking the
+ * drag area zooms/maximises on the current desktop — this is handled
+ * natively by Tauri's `data-tauri-drag-region` attribute (no JS
+ * handler needed; adding one causes a double-fire that bounces the
+ * window back to its original size).
  *
  * The Rust setup hook flips the NSWindow `collectionBehavior` flag so
  * that a `decorations: false` window is allowed to enter native
@@ -49,17 +49,8 @@ function TrafficLights() {
     await appWindow.setFullscreen(!isFs);
   };
 
-  // Double-click on the drag region = zoom / maximise on the current
-  // desktop (matches the default macOS title-bar double-click). Ignore
-  // double-clicks that originated inside a child button so hitting the
-  // green light twice in quick succession doesn't also zoom.
-  const handleDragDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest("button")) return;
-    appWindow.toggleMaximize();
-  };
-
   return (
-    <div className="drag-region" data-tauri-drag-region onDoubleClick={handleDragDoubleClick}>
+    <div className="drag-region" data-tauri-drag-region>
       <div className="traffic-lights">
         <button className="traffic-light tl-close" title="Close" onClick={() => appWindow.close()}>
           <IconClose size={10} />
