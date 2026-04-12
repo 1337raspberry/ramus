@@ -221,6 +221,35 @@ impl SyncEngine {
             on_progress.as_ref(),
         )?;
 
+        // Prune: remove local items that no longer exist on Plex.
+        // Both full and incremental fetched ALL items, so we have the
+        // complete "live" set of sourceIds for each type.
+        let plex_artist_ids: HashSet<String> =
+            artist_items.iter().map(|i| i.rating_key.clone()).collect();
+        let plex_album_ids: HashSet<String> =
+            album_items.iter().map(|i| i.rating_key.clone()).collect();
+        let plex_track_ids: HashSet<String> =
+            track_items.iter().map(|i| i.rating_key.clone()).collect();
+
+        let prune_counts =
+            self.cache
+                .prune_removed(&plex_artist_ids, &plex_album_ids, &plex_track_ids)?;
+
+        if prune_counts.total() > 0 {
+            on_progress(SyncProgress {
+                phase: SyncPhase::Tracks,
+                current: 1,
+                total: 1,
+                detail: format!(
+                    "Pruned {} removed items ({} artists, {} albums, {} tracks)",
+                    prune_counts.total(),
+                    prune_counts.artists,
+                    prune_counts.albums,
+                    prune_counts.tracks,
+                ),
+            });
+        }
+
         Ok((album_map, changed_source_ids))
     }
 
