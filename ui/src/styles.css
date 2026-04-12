@@ -190,6 +190,7 @@ textarea {
   right: 0;
   height: 32px;
   z-index: 9999;
+  display: flex;
   -webkit-app-region: drag;
 }
 
