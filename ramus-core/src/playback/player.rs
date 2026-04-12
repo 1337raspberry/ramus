@@ -784,14 +784,15 @@ impl AudioPlayer {
     /// Called fresh on every iteration of the prefetch worker's serial
     /// loop so it auto-reflects queue advancement — no explicit "window
     /// shifted" plumbing needed.
-    pub fn next_uncached_target_in_lookahead(&self) -> Option<(String, String)> {
+    pub fn next_uncached_target_in_lookahead(&self, include_current: bool) -> Option<(String, String)> {
         let inner = self.inner.lock();
         let depth = inner.config.lookahead_depth as usize;
         let pos = inner.state.queue_index;
         let server_url = inner.server_url.as_ref()?;
         let token = inner.token.as_ref()?;
 
-        for offset in 1..=depth {
+        let start_offset = if include_current { 0 } else { 1 };
+        for offset in start_offset..=depth {
             let idx = pos + offset;
             let track = inner.state.queue.get(idx)?;
 
@@ -826,53 +827,6 @@ impl AudioPlayer {
             return Some((track.rating_key.clone(), url.to_string()));
         }
         None
-    }
-
-    /// Returns `(rating_key, direct_play_url)` for ALL uncached,
-    /// non-transcode tracks within `lookahead_depth` of the current
-    /// queue position. Used by the concurrent prefetch path to dispatch
-    /// multiple downloads at once.
-    ///
-    /// When `include_current` is true, the currently-playing track
-    /// (offset 0) is included so the LAN path can download it directly
-    /// instead of relying on mpv's stream-record.
-    pub fn all_uncached_targets_in_lookahead(&self, include_current: bool) -> Vec<(String, String)> {
-        let inner = self.inner.lock();
-        let depth = inner.config.lookahead_depth as usize;
-        let pos = inner.state.queue_index;
-        let Some(server_url) = inner.server_url.as_ref() else {
-            return vec![];
-        };
-        let Some(token) = inner.token.as_ref() else {
-            return vec![];
-        };
-
-        let mut targets = Vec::new();
-        let start_offset = if include_current { 0 } else { 1 };
-        for offset in start_offset..=depth {
-            let idx = pos + offset;
-            let Some(track) = inner.state.queue.get(idx) else {
-                break;
-            };
-            if inner.cache.get(&track.rating_key).is_some() {
-                continue;
-            }
-            if transcode::should_transcode(
-                track.codec.as_deref(),
-                inner.config.playback_mode,
-                inner.is_remote,
-            ) {
-                continue;
-            }
-            let Some(part_key) = track.part_key.as_ref() else {
-                continue;
-            };
-            let Some(url) = transcode::build_direct_play_url(server_url, part_key, token) else {
-                continue;
-            };
-            targets.push((track.rating_key.clone(), url.to_string()));
-        }
-        targets
     }
 
     /// Get the rating_key of the currently playing track (for cache eviction protection).

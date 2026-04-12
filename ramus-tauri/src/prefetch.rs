@@ -64,10 +64,6 @@ use crate::spectrum_analyzer;
 /// effective throughput.
 const DOWNLOAD_TIME_BUDGET: Duration = Duration::from_secs(90);
 
-/// Hard cap on retries even within the time budget — safety net against
-/// infinite loops if the server responds but sends 0-byte chunks.
-const MAX_RETRIES: u32 = 60;
-
 /// Initial backoff between resume attempts. Doubles on consecutive
 /// retries that make no progress, resets when real progress is made.
 const INITIAL_BACKOFF: Duration = Duration::from_millis(200);
@@ -80,15 +76,6 @@ const MAX_BACKOFF: Duration = Duration::from_secs(5);
 const MIN_PROGRESS_BYTES: u64 = 4096;
 
 // --- LAN mode ---
-
-/// Max concurrent prefetch downloads on LAN. Serial (1) keeps total
-/// connections at 2 (1 prefetch + 1 mpv). Plex servers actively reset
-/// streams when they see 3+ concurrent downloads, causing resumes even
-/// on fast LANs. Serial is barely slower in practice — a 40MB FLAC at
-/// gigabit speed takes ~0.5s, so 6 tracks finish in ~3s vs ~2s with
-/// concurrency. The time-budget retry strategy handles the rare resume
-/// if Plex still complains.
-const LAN_CONCURRENCY: usize = 1;
 
 /// Delay before starting prefetch on LAN after a natural advance.
 /// Just enough for mpv to issue its initial request.
@@ -368,26 +355,20 @@ async fn run_cycle(
         return;
     }
 
-    if is_remote {
-        log::debug!("prefetch: remote mode — serial downloads");
-        run_serial_downloads(&player, &http, &app, &shared_gen, my_gen, &cache_dir).await;
-    } else {
-        log::debug!("prefetch: LAN mode — {LAN_CONCURRENCY} concurrent downloads");
-        run_concurrent_downloads(
-            &player,
-            &http,
-            &app,
-            &shared_gen,
-            my_gen,
-            &cache_dir,
-            LAN_CONCURRENCY,
-        )
-        .await;
-    }
+    // LAN includes the current track (for FFT visualiser — no stream-record
+    // on LAN). Remote excludes it (stream-record ingest handles the current
+    // track in phase 3 above).
+    let include_current = !is_remote;
+    log::debug!(
+        "prefetch: {} mode — serial downloads{}",
+        if is_remote { "remote" } else { "LAN" },
+        if include_current { " (incl. current)" } else { "" },
+    );
+    run_serial_downloads(&player, &http, &app, &shared_gen, my_gen, &cache_dir, include_current).await;
 }
 
 // ---------------------------------------------------------------------------
-// Serial downloads (remote mode — preserves original behaviour)
+// Serial downloads (used by both LAN and remote modes)
 // ---------------------------------------------------------------------------
 
 async fn run_serial_downloads(
@@ -397,6 +378,7 @@ async fn run_serial_downloads(
     shared_gen: &Arc<AtomicU64>,
     my_gen: u64,
     cache_dir: &std::path::Path,
+    include_current: bool,
 ) {
     let mut failed_in_cycle: HashSet<String> = HashSet::new();
 
@@ -406,7 +388,7 @@ async fn run_serial_downloads(
             return;
         }
 
-        let Some((track_id, url)) = player.next_uncached_target_in_lookahead() else {
+        let Some((track_id, url)) = player.next_uncached_target_in_lookahead(include_current) else {
             log::debug!("prefetch: lookahead window exhausted (serial), idle");
             return;
         };
@@ -428,105 +410,6 @@ async fn run_serial_downloads(
                 failed_in_cycle.insert(track_id);
             }
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Concurrent downloads (LAN mode)
-// ---------------------------------------------------------------------------
-
-async fn run_concurrent_downloads(
-    player: &Arc<AudioPlayer>,
-    http: &reqwest::Client,
-    app: &AppHandle,
-    shared_gen: &Arc<AtomicU64>,
-    my_gen: u64,
-    cache_dir: &std::path::Path,
-    max_concurrent: usize,
-) {
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent));
-    let mut join_set = tokio::task::JoinSet::new();
-    let failed_in_cycle: Arc<std::sync::Mutex<HashSet<String>>> =
-        Arc::new(std::sync::Mutex::new(HashSet::new()));
-
-    loop {
-        if shared_gen.load(Ordering::SeqCst) != my_gen {
-            join_set.shutdown().await;
-            return;
-        }
-
-        let targets = player.all_uncached_targets_in_lookahead(true);
-
-        // Filter out targets that already failed this cycle.
-        let targets: Vec<_> = {
-            let failed = failed_in_cycle.lock().unwrap();
-            targets
-                .into_iter()
-                .filter(|(id, _)| !failed.contains(id))
-                .collect()
-        };
-
-        if targets.is_empty() {
-            // Wait for any in-flight downloads to finish, then re-check
-            // in case the window shifted (user advanced).
-            if join_set.is_empty() {
-                log::debug!("prefetch: lookahead exhausted (concurrent), idle");
-                return;
-            }
-            let _ = join_set.join_next().await;
-            continue;
-        }
-
-        for (i, (track_id, url)) in targets.into_iter().enumerate() {
-            if shared_gen.load(Ordering::SeqCst) != my_gen {
-                join_set.shutdown().await;
-                return;
-            }
-
-            // Stagger launches so concurrent requests don't hit the
-            // server in the same instant, which triggers rate limiting.
-            if i > 0 {
-                tokio::time::sleep(Duration::from_millis(150)).await;
-            }
-
-            let permit = match semaphore.clone().acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => return, // semaphore closed
-            };
-
-            let player = player.clone();
-            let http = http.clone();
-            let app = app.clone();
-            let gen = shared_gen.clone();
-            let cache_dir = cache_dir.to_path_buf();
-            let failed = failed_in_cycle.clone();
-
-            join_set.spawn(async move {
-                let _permit = permit; // held until task completes
-
-                if gen.load(Ordering::SeqCst) != my_gen {
-                    return;
-                }
-
-                match download_with_resume(&player, &http, &cache_dir, &track_id, &url).await {
-                    Ok(()) => {
-                        player.swap_playlist_entry_to_cached(&track_id);
-                        spawn_analyse_task(&player, track_id, app);
-                    }
-                    Err(e) => {
-                        log::debug!(
-                            "prefetch: concurrent download failed for {track_id}: {e}"
-                        );
-                        failed.lock().unwrap().insert(track_id);
-                    }
-                }
-            });
-        }
-
-        // Wait for all dispatched downloads to complete before
-        // re-checking the window. Prevents re-dispatching targets
-        // that are still in-flight.
-        while join_set.join_next().await.is_some() {}
     }
 }
 
@@ -730,8 +613,7 @@ async fn download_with_resume(
             Ok(r) => r,
             Err(e) => {
                 retries += 1;
-                let now = Instant::now();
-                if retries >= MAX_RETRIES || now >= deadline {
+                if Instant::now() >= deadline {
                     return Err(format!("request error after {retries} retries: {e}"));
                 }
                 log::debug!(
@@ -773,6 +655,7 @@ async fn download_with_resume(
         // Server ignored our Range header — start over from scratch.
         if written > 0 && status.as_u16() == 200 {
             written = 0;
+            expected_size = None;
             file.seek(std::io::SeekFrom::Start(0))
                 .await
                 .map_err(|e| e.to_string())?;
@@ -816,7 +699,7 @@ async fn download_with_resume(
         let now = Instant::now();
         let bytes_this_attempt = written - written_before_attempt;
 
-        if retries >= MAX_RETRIES || now >= deadline {
+        if now >= deadline {
             return Err(format!(
                 "gave up after {retries} retries ({:.1}s): got {written} of {} bytes",
                 (now - download_start).as_secs_f64(),
