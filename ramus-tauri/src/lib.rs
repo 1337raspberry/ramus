@@ -1,6 +1,7 @@
 pub mod auto_sync;
 pub mod commands;
 pub mod events;
+pub mod media_controls;
 pub mod mpv_controller;
 pub mod mpv_ffi;
 pub mod prefetch;
@@ -14,10 +15,13 @@ use tauri::AppHandle;
 
 use ramus_core::playback::mpv::MpvCallbacks;
 
+use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
+
 use crate::events::{
     emit_playback_buffering, emit_playback_position, emit_playback_state,
     PlaybackBufferingPayload, PlaybackPositionPayload, PlaybackStatePayload,
 };
+use crate::media_controls::MediaControlsRef;
 use crate::mpv_controller::MpvController;
 use crate::mpv_ffi::MpvLib;
 use crate::prefetch::PrefetchHandle;
@@ -38,7 +42,11 @@ pub type PrefetchHandleRef = Arc<parking_lot::Mutex<Option<PrefetchHandle>>>;
 pub fn create_mpv_player(
     app_handle: AppHandle,
     prefetch_handle_ref: PrefetchHandleRef,
-) -> (Arc<ramus_core::playback::player::AudioPlayer>, ReporterRef) {
+) -> (
+    Arc<ramus_core::playback::player::AudioPlayer>,
+    ReporterRef,
+    MediaControlsRef,
+) {
     let app1 = app_handle.clone();
     let app2 = app_handle.clone();
     let app3 = app_handle.clone();
@@ -68,6 +76,12 @@ pub fn create_mpv_player(
     let sr1 = reporter_ref.clone();
     let sr2 = reporter_ref.clone();
     let sr3 = reporter_ref.clone();
+
+    // Deferred media controls, populated after window creation in main.rs.
+    let media_controls_ref: MediaControlsRef = Arc::new(parking_lot::Mutex::new(None));
+    let mc1 = media_controls_ref.clone();
+    let mc2 = media_controls_ref.clone();
+    let mc3 = media_controls_ref.clone();
 
     let ph1 = prefetch_handle_ref.clone();
     let ph2 = prefetch_handle_ref.clone();
@@ -103,6 +117,15 @@ pub fn create_mpv_player(
                         duration: dur,
                     },
                 );
+
+                // Push full metadata to OS media controls once we know the
+                // real duration (fires shortly after track change).
+                if let Some(ref mc) = *mc1.lock() {
+                    if let Some(ref track) = p.state().current_track {
+                        let meta = MediaMetadata::from_track(track, pos, dur, true);
+                        mc.update_metadata(&meta);
+                    }
+                }
             }
         })),
         on_playlist_pos_change: Some(Box::new(move |pos| {
@@ -174,6 +197,11 @@ pub fn create_mpv_player(
                         reporter.playback_resumed();
                     }
                 }
+
+                // Update OS media controls with play/pause state + position
+                if let Some(ref mc) = *mc2.lock() {
+                    mc.update_playback_state(!paused, p.position());
+                }
             }
         })),
         on_buffering_change: Some(Box::new(move |buffering| {
@@ -229,6 +257,11 @@ pub fn create_mpv_player(
                     reporter.playback_stopped();
                 }
 
+                // Clear OS media controls (Now Playing widget)
+                if let Some(ref mc) = *mc3.lock() {
+                    mc.clear();
+                }
+
                 // Queue finished — stop the prefetch worker until the
                 // next queue is loaded.
                 if let Some(ref handle) = *ph2.lock() {
@@ -277,5 +310,5 @@ pub fn create_mpv_player(
     // Populate the deferred player reference for callbacks
     *player_ref.lock() = Some(player.clone());
 
-    (player, reporter_ref)
+    (player, reporter_ref, media_controls_ref)
 }

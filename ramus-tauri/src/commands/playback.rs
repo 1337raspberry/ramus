@@ -2,6 +2,7 @@ use tauri::{AppHandle, State};
 
 use ramus_core::models::Track;
 use ramus_core::playback::lyrics::{self, LyricsResult};
+use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
 use ramus_core::playback::waveform;
 
 use crate::events::{emit_playback_state, PlaybackStatePayload};
@@ -44,6 +45,13 @@ pub async fn play_tracks(
         state
             .session_reporter
             .track_started(track, &state.player.play_session_id());
+
+        // Push metadata to OS media controls (duration will be 0 until
+        // on_duration_change fires, which re-pushes with the real value)
+        if let Some(ref mc) = *state.media_controls.lock() {
+            let meta = MediaMetadata::from_track(track, 0.0, track.duration, true);
+            mc.update_metadata(&meta);
+        }
     }
 
     // Kick off an initial prefetch cycle for the freshly-loaded queue.
@@ -78,6 +86,12 @@ pub async fn previous_track(state: State<'_, AppState>) -> CmdResult<()> {
 pub async fn seek(state: State<'_, AppState>, position: f64) -> CmdResult<()> {
     state.player.seek(position);
     state.session_reporter.playback_seeked(position);
+    // Report new position to OS media controls so the scrubber jumps
+    if let Some(ref mc) = *state.media_controls.lock() {
+        let is_playing =
+            state.player.state().status == ramus_core::models::PlaybackStatus::Playing;
+        mc.update_playback_state(is_playing, position);
+    }
     Ok(())
 }
 

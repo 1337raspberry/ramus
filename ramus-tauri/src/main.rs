@@ -12,6 +12,7 @@ use ramus_core::cache::db::CacheDatabase;
 use ramus_core::cache::sync::SyncEngine;
 use ramus_core::genre::mapper::GenreMapper;
 use ramus_core::models::PlexServer;
+use ramus_core::playback::media_keys::MediaKeyHandler;
 use ramus_core::plex::auth;
 use ramus_core::plex::client::PlexClient;
 use ramus_core::plex::connection::ConnectionMonitor;
@@ -89,7 +90,7 @@ fn main() {
             let prefetch_handle_ref: Arc<
                 parking_lot::Mutex<Option<ramus_tauri::prefetch::PrefetchHandle>>,
             > = Arc::new(parking_lot::Mutex::new(None));
-            let (player, reporter_ref) = ramus_tauri::create_mpv_player(
+            let (player, reporter_ref, media_controls_ref) = ramus_tauri::create_mpv_player(
                 app_handle.clone(),
                 prefetch_handle_ref.clone(),
             );
@@ -122,6 +123,8 @@ fn main() {
                 saved_settings.image_cache_limit_bytes as u64,
             );
 
+            let image_cache_arc = Arc::new(parking_lot::Mutex::new(image_cache));
+
             let state = AppState {
                 client: client.clone(),
                 cache: Arc::new(parking_lot::Mutex::new(None)),
@@ -132,10 +135,11 @@ fn main() {
                 session_reporter: session_reporter.clone(),
                 connection_monitor: connection_monitor.clone(),
                 settings: Arc::new(RwLock::new(saved_settings)),
-                image_cache: Arc::new(parking_lot::Mutex::new(image_cache)),
-                http_client,
+                image_cache: image_cache_arc.clone(),
+                http_client: http_client.clone(),
                 prefetch_handle,
                 discovered_servers: Arc::new(parking_lot::Mutex::new(Vec::new())),
+                media_controls: media_controls_ref.clone(),
             };
 
             // Restore previous session. State is set synchronously (no blocking
@@ -442,6 +446,28 @@ fn main() {
                 }
             }
 
+            // Initialize OS media controls (Now Playing overlay + media keys).
+            // Must be after window creation for Windows HWND requirement.
+            {
+                let mc_result = ramus_tauri::media_controls::create_media_controls(
+                    #[cfg(target_os = "windows")]
+                    &app.get_webview_window("main").expect("main window must exist"),
+                    player.clone(),
+                    image_cache_arc,
+                    client.clone(),
+                    http_client,
+                );
+                match mc_result {
+                    Ok(handle) => {
+                        *media_controls_ref.lock() = Some(handle);
+                        log::info!("media controls initialized");
+                    }
+                    Err(e) => {
+                        log::warn!("media controls unavailable: {e}");
+                    }
+                }
+            }
+
             app.manage(state);
 
             session_reporter.ensure_loop_spawned();
@@ -525,6 +551,10 @@ fn main() {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 if let Some(state) = app_handle.try_state::<AppState>() {
                     state.session_reporter.stop_sync();
+                    // Clear Now Playing so the OS widget disappears on quit
+                    if let Some(ref mc) = *state.media_controls.lock() {
+                        mc.clear();
+                    }
                 }
             }
         });

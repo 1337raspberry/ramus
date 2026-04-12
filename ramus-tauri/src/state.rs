@@ -30,4 +30,7 @@ pub struct AppState {
     /// Servers from the last `discover_servers` call — keyed by machine_identifier.
     /// Holds full data including tokens so the frontend never needs them.
     pub discovered_servers: Arc<parking_lot::Mutex<Vec<PlexServer>>>,
+    /// OS-level media controls (Now Playing, media keys). May be None if
+    /// platform init failed (e.g., no D-Bus on Linux).
+    pub media_controls: crate::media_controls::MediaControlsRef,
 }
