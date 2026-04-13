@@ -1830,6 +1830,50 @@ textarea {
   background: var(--bg-hover);
 }
 
+.search-hint {
+  padding: 4px 12px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+  opacity: 0.7;
+}
+
+.search-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 10px;
+  border-radius: 12px;
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.15);
+  border: 1px solid rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.3);
+  max-width: 260px;
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.search-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.search-pill-clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.search-pill-clear:hover {
+  color: var(--text-primary);
+}
+
 /* --- Equalizer Panel --- */
 
 .eq-backdrop {

@@ -371,4 +371,108 @@ impl CacheDatabase {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
+
+    // --- ID-returning search variants (for grid loading) ---
+
+    /// Returns internal album IDs matching album title (LIKE contains).
+    /// No limit applied — returns all matches.
+    pub fn album_ids_by_title(
+        &self,
+        query: &str,
+        constrain_to: Option<&HashSet<i64>>,
+    ) -> Result<HashSet<i64>, CacheError> {
+        if matches!(constrain_to, Some(ids) if ids.is_empty()) {
+            return Ok(HashSet::new());
+        }
+        let conn = self.conn.lock();
+        let pattern = format!("%{}%", escape_like(query));
+        let (id_filter, id_vec) = build_id_filter(constrain_to);
+        let sql = format!(
+            "SELECT DISTINCT a.id FROM albums a
+             JOIN artists ar ON ar.id = a.artistId
+             WHERE a.title LIKE ?1 ESCAPE '\\'{}",
+            id_filter
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(pattern)];
+        for id in &id_vec {
+            all_params.push(Box::new(*id));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            all_params.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(param_refs.as_slice(), |row| row.get::<_, i64>(0))?;
+        let mut set = HashSet::new();
+        for row in rows {
+            set.insert(row?);
+        }
+        Ok(set)
+    }
+
+    /// Returns internal album IDs matching artist name (LIKE contains).
+    /// No limit applied — returns all matches.
+    pub fn album_ids_by_artist(
+        &self,
+        query: &str,
+        constrain_to: Option<&HashSet<i64>>,
+    ) -> Result<HashSet<i64>, CacheError> {
+        if matches!(constrain_to, Some(ids) if ids.is_empty()) {
+            return Ok(HashSet::new());
+        }
+        let conn = self.conn.lock();
+        let pattern = format!("%{}%", escape_like(query));
+        let (id_filter, id_vec) = build_id_filter(constrain_to);
+        let sql = format!(
+            "SELECT DISTINCT a.id FROM albums a
+             JOIN artists ar ON ar.id = a.artistId
+             WHERE ar.name LIKE ?1 ESCAPE '\\'{}",
+            id_filter
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(pattern)];
+        for id in &id_vec {
+            all_params.push(Box::new(*id));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            all_params.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(param_refs.as_slice(), |row| row.get::<_, i64>(0))?;
+        let mut set = HashSet::new();
+        for row in rows {
+            set.insert(row?);
+        }
+        Ok(set)
+    }
+
+    /// Returns internal album IDs matching artist name OR album title (LIKE contains).
+    /// No limit applied — returns all matches.
+    pub fn album_ids_by_artist_or_title(
+        &self,
+        query: &str,
+        constrain_to: Option<&HashSet<i64>>,
+    ) -> Result<HashSet<i64>, CacheError> {
+        if matches!(constrain_to, Some(ids) if ids.is_empty()) {
+            return Ok(HashSet::new());
+        }
+        let conn = self.conn.lock();
+        let pattern = format!("%{}%", escape_like(query));
+        let (id_filter, id_vec) = build_id_filter(constrain_to);
+        let sql = format!(
+            "SELECT DISTINCT a.id FROM albums a
+             JOIN artists ar ON ar.id = a.artistId
+             WHERE (ar.name LIKE ?1 ESCAPE '\\' OR a.title LIKE ?1 ESCAPE '\\'){}",
+            id_filter
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(pattern)];
+        for id in &id_vec {
+            all_params.push(Box::new(*id));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            all_params.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(param_refs.as_slice(), |row| row.get::<_, i64>(0))?;
+        let mut set = HashSet::new();
+        for row in rows {
+            set.insert(row?);
+        }
+        Ok(set)
+    }
 }

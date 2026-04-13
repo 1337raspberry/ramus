@@ -13,6 +13,7 @@ import {
   getTracksForAlbum,
   getAllArtists,
   getRandomAlbum,
+  searchAlbumsForGrid,
   toggleAlbumFavourite,
   toggleTrackFavourite,
   playTracks,
@@ -73,6 +74,11 @@ interface LibraryState {
   detailTracks: Track[];
   openAlbumDetail: (album: Album) => Promise<void>;
   closeAlbumDetail: () => void;
+
+  // --- Search Results ---
+  searchQuery: string | null;
+  loadSearchResults: (query: string) => Promise<void>;
+  clearSearchResults: () => void;
 
   // --- Actions ---
   toggleAlbumFav: (album: Album) => Promise<void>;
@@ -283,6 +289,49 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   shuffleAlbums: () => set((state) => ({ albums: sortAlbums(state.albums, "random") })),
+
+  // --- Search Results ---
+  searchQuery: null,
+
+  loadSearchResults: async (query) => {
+    try {
+      const albums = await searchAlbumsForGrid(query);
+      set((state) => ({
+        albums: sortAlbums(albums, state.albumSortOrder),
+        searchQuery: query,
+        detailAlbum: null,
+        suggestion: null,
+      }));
+    } catch {
+      set({ albums: [], searchQuery: query, detailAlbum: null, suggestion: null });
+    }
+  },
+
+  clearSearchResults: () => {
+    set({ searchQuery: null });
+    const { sidebarMode, selectedGenreId, selectedArtistId } = get();
+    if (sidebarMode === "favourites") {
+      get().loadFavouriteAlbums();
+    } else if (sidebarMode === "artists" && selectedArtistId) {
+      get().loadAlbumsForArtist(selectedArtistId);
+    } else if (selectedGenreId === "__all__") {
+      get().loadAllAlbums();
+    } else if (selectedGenreId) {
+      // Re-derive the genre name from the tree and reload
+      const findNode = (nodes: GenreNode[], id: string): GenreNode | null => {
+        for (const n of nodes) {
+          if (n.id === id) return n;
+          const found = findNode(n.children, id);
+          if (found) return found;
+        }
+        return null;
+      };
+      const node = findNode(get().genreTree, selectedGenreId);
+      if (node) get().selectGenre(node);
+    } else {
+      set({ albums: [] });
+    }
+  },
 
   // --- Suggestion ---
   suggestion: null,

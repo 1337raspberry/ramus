@@ -118,6 +118,8 @@ export default function AlbumGridView() {
   const albumSortOrder = useLibraryStore((s) => s.albumSortOrder);
   const setAlbumSortOrder = useLibraryStore((s) => s.setAlbumSortOrder);
   const sidebarMode = useLibraryStore((s) => s.sidebarMode);
+  const searchQuery = useLibraryStore((s) => s.searchQuery);
+  const clearSearchResults = useLibraryStore((s) => s.clearSearchResults);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const { cols, cardWidth, callbackRef } = useGridLayout();
 
@@ -171,13 +173,34 @@ export default function AlbumGridView() {
   }, []);
 
   if (!albums.length) {
-    return <div className="empty-state">Select a genre to browse albums</div>;
+    return (
+      <div className="empty-state">
+        {searchQuery ? (
+          <>
+            No albums found for &ldquo;{searchQuery}&rdquo;
+            <button className="search-pill-clear" onClick={clearSearchResults} title="Clear search">
+              Clear
+            </button>
+          </>
+        ) : (
+          "Select a genre to browse albums"
+        )}
+      </div>
+    );
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div className="album-grid-header">
-        {sidebarMode === "favourites" && (
+        {searchQuery && (
+          <div className="search-pill" title={searchQuery}>
+            <span className="search-pill-text">{searchQuery}</span>
+            <button className="search-pill-clear" onClick={clearSearchResults} title="Clear search">
+              &times;
+            </button>
+          </div>
+        )}
+        {sidebarMode === "favourites" && !searchQuery && (
           <button
             className="shuffle-favs-btn"
             onClick={handleShuffleFavs}

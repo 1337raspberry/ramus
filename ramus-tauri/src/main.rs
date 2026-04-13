@@ -17,11 +17,22 @@ use ramus_core::plex::auth;
 use ramus_core::plex::client::PlexClient;
 use ramus_core::plex::connection::ConnectionMonitor;
 use ramus_core::plex::token_store::{TokenKey, TokenStore};
-use ramus_core::search::engine::SearchEngine;
+use ramus_core::search::engine::{GenreExpander, SearchEngine};
 
 use ramus_tauri::commands;
 use ramus_tauri::state::AppState;
 
+/// Adapter that lets SearchEngine read the genre mapper through the shared RwLock.
+/// Reads lazily — returns None before the mapper is loaded, same as passing None.
+struct SharedGenreExpander {
+    mapper: Arc<RwLock<Option<GenreMapper>>>,
+}
+
+impl GenreExpander for SharedGenreExpander {
+    fn expand_genre(&self, name: &str) -> Option<std::collections::HashSet<String>> {
+        self.mapper.read().as_ref()?.expand_genre(name)
+    }
+}
 
 fn main() {
     env_logger::Builder::from_env(
@@ -165,7 +176,11 @@ fn main() {
                                         let sync = SyncEngine::new(db_arc.clone(), client.clone());
                                         *state.sync_engine.lock() = Some(sync);
 
-                                        let search = SearchEngine::new(db_arc.clone(), None);
+                                        let expander = Arc::new(SharedGenreExpander {
+                                            mapper: state.genre_mapper.clone(),
+                                        });
+                                        let search =
+                                            SearchEngine::new(db_arc.clone(), Some(expander));
                                         *state.search_engine.write() = Some(search);
 
                                         if let Ok(db2) = CacheDatabase::open(&db_path) {
@@ -520,6 +535,7 @@ fn main() {
             commands::spectrum::get_spectrum,
             // search
             commands::search::search,
+            commands::search::search_albums_for_grid,
             // sync
             commands::sync::start_full_sync,
             commands::sync::start_incremental_sync,

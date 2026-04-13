@@ -170,6 +170,9 @@ export const getSpectrum = (ratingKey: string) =>
 export const search = (query: string, limit?: number) =>
   invoke<SearchResult[]>("search", { query, limit });
 
+export const searchAlbumsForGrid = (query: string) =>
+  invoke<Album[]>("search_albums_for_grid", { query });
+
 // --- Sync ---
 
 export const startFullSync = () => invoke<void>("start_full_sync");
