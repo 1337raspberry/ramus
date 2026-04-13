@@ -1,50 +1,30 @@
-//! Connection-aware prefetch worker with concurrent LAN downloads.
-//!
-//! ## What this module does
+//! Prefetch worker — serial track downloads with resumable requests.
 //!
 //! Downloads upcoming tracks in the queue to the local audio cache so
 //! gapless playback stays gapless even if the user skips around. A
 //! secondary job is to generate per-track FFT spectrograms (`.spec`
 //! files) for the focus-mode visualiser.
 //!
-//! ## Dual-mode design: LAN vs Remote
+//! ## Strategy
 //!
-//! The worker detects whether the current Plex connection is local
-//! (LAN) or remote and adjusts its strategy:
-//!
-//! **LAN mode** — aggressive, matching the iOS port's approach:
-//!   - No idle-wait: downloads start ~1-2s after track change
-//!   - 3 concurrent downloads via `tokio::sync::Semaphore`
-//!   - Targets are batch-snapshotted and dispatched in parallel
-//!
-//! **Remote mode** — conservative, preserving the original design:
-//!   - Waits for mpv's `cache-speed` to hit 0 before starting
-//!   - 10-20s safety gaps after track changes
-//!   - Serial downloads (one at a time)
-//!   - Plex servers are known to kill concurrent remote connections
-//!
-//! ## First-track FFT via mpv `stream-record`
-//!
-//! mpv writes the bytes it reads to a file via the `stream-record`
-//! option (set per-loadfile in `player.rs::load_queue`). When the
-//! worker's cycle starts, it runs symphonia on the stream-record file
-//! to generate a `.spec` without opening an extra HTTP connection.
+//! Downloads start ~1-2s after a track change. One track at a time,
+//! serially, including the currently-playing track (for spectrum
+//! analysis — skipped when the visualiser is disabled). Each download
+//! uses resumable Range requests with automatic retry on chunk errors.
 //!
 //! ## Local-first playback
 //!
-//! As soon as a track lands in `DownloadCache` — from either a worker
-//! download or a stream-record ingest — its mpv playlist entry gets
-//! swapped to `file://<path>`. When mpv naturally advances to that
-//! track, it reads from disk with zero network traffic.
+//! As soon as a track lands in `DownloadCache`, its mpv playlist entry
+//! gets swapped to `file://<path>`. When mpv naturally advances to
+//! that track, it reads from disk with zero network traffic.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ramus_core::playback::player::{is_allowed_extension, sanitize_filename, AudioPlayer};
-use ramus_core::playback::spectrum::{read_spec_file, spec_file_path, SpectrumState};
+use ramus_core::playback::spectrum::{read_spec_file, spec_file_path};
 use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::mpsc;
@@ -75,34 +55,13 @@ const MAX_BACKOFF: Duration = Duration::from_secs(5);
 /// for backoff-reset purposes.
 const MIN_PROGRESS_BYTES: u64 = 4096;
 
-// --- LAN mode ---
-
-/// Delay before starting prefetch on LAN after a natural advance.
+/// Delay before starting prefetch after a natural advance.
 /// Just enough for mpv to issue its initial request.
-const LAN_NATURAL_GAP: Duration = Duration::from_secs(1);
+const NATURAL_GAP: Duration = Duration::from_secs(1);
 
-/// Delay after a user skip on LAN. Slightly longer so rapid skips
+/// Delay after a user skip. Slightly longer so rapid skips
 /// don't fire pointless downloads, but still fast.
-const LAN_SKIP_GAP: Duration = Duration::from_secs(2);
-
-// --- Remote mode ---
-
-/// Delay after mpv network-idle detection on a natural advance.
-const REMOTE_NATURAL_GAP: Duration = Duration::from_secs(10);
-
-/// Delay after mpv network-idle detection on a user skip.
-const REMOTE_SKIP_GAP: Duration = Duration::from_secs(20);
-
-/// How long `cache-speed` must read 0 before we declare mpv idle.
-/// Only used in remote mode.
-const IDLE_SIGNAL_REQUIRED_DURATION: Duration = Duration::from_secs(3);
-
-/// Fallback — if the idle signal never fires (e.g. file > demuxer-max-bytes),
-/// start the prefetch loop anyway after this long. Remote mode only.
-const IDLE_SIGNAL_TIMEOUT: Duration = Duration::from_secs(60);
-
-/// Poll interval while waiting for mpv to go idle. Remote mode only.
-const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(500);
+const SKIP_GAP: Duration = Duration::from_secs(2);
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -259,7 +218,7 @@ async fn worker_loop(
                     log::debug!(
                         "prefetch: natural advance, starting cycle gen={generation}"
                     );
-                    player.mark_network_active();
+
                     cycle_task = Some(spawn_cycle(
                         player.clone(),
                         http.clone(),
@@ -275,7 +234,6 @@ async fn worker_loop(
                     h.abort();
                 }
                 log::debug!("prefetch: skip, starting cycle gen={generation}");
-                player.mark_network_active();
                 cycle_task = Some(spawn_cycle(
                     player.clone(),
                     http.clone(),
@@ -303,7 +261,7 @@ fn spawn_cycle(
 }
 
 // ---------------------------------------------------------------------------
-// Cycle — branches on LAN vs Remote
+// Cycle
 // ---------------------------------------------------------------------------
 
 async fn run_cycle(
@@ -314,38 +272,14 @@ async fn run_cycle(
     my_gen: u64,
     is_skip: bool,
 ) {
-    let is_remote = player.is_remote();
+    let gap = if is_skip { SKIP_GAP } else { NATURAL_GAP };
 
-    let gap = match (is_remote, is_skip) {
-        (true, false) => REMOTE_NATURAL_GAP,
-        (true, true) => REMOTE_SKIP_GAP,
-        (false, false) => LAN_NATURAL_GAP,
-        (false, true) => LAN_SKIP_GAP,
-    };
-
-    // Phase 1: idle wait (remote only — on LAN we have bandwidth to spare)
-    if is_remote
-        && !wait_for_mpv_network_idle(&player, &shared_gen, my_gen).await
-    {
-        return; // superseded
-    }
-
-    // Phase 2: safety gap
+    // Brief safety gap so mpv can issue its initial request.
     tokio::time::sleep(gap).await;
     if shared_gen.load(Ordering::SeqCst) != my_gen {
         return;
     }
 
-    // Phase 3: stream-record ingest (remote only — on LAN the prefetch
-    // worker downloads the current track directly, so there's no
-    // stream-record file to ingest).
-    if is_remote {
-        if let Some(current_id) = player.current_track_id() {
-            try_ingest_stream_record(&player, &app, &current_id);
-        }
-    }
-
-    // Phase 4: download
     let cache_dir = match ramus_core::plex::token_store::config_dir() {
         Ok(dir) => dir.join("audio_cache"),
         Err(_) => return,
@@ -355,20 +289,24 @@ async fn run_cycle(
         return;
     }
 
-    // LAN includes the current track (for FFT visualiser — no stream-record
-    // on LAN). Remote excludes it (stream-record ingest handles the current
-    // track in phase 3 above).
-    let include_current = !is_remote;
+    // Include the currently-playing track when spectrum analysis is enabled
+    // — the download provides a clean file for FFT. When disabled, skip it
+    // (the swap-to-local is a no-op for the active mpv index anyway).
+    let spectrum_disabled = app
+        .state::<crate::state::AppState>()
+        .settings
+        .read()
+        .disable_spectrum;
+    let include_current = !spectrum_disabled;
     log::debug!(
-        "prefetch: {} mode — serial downloads{}",
-        if is_remote { "remote" } else { "LAN" },
+        "prefetch: serial downloads{}",
         if include_current { " (incl. current)" } else { "" },
     );
     run_serial_downloads(&player, &http, &app, &shared_gen, my_gen, &cache_dir, include_current).await;
 }
 
 // ---------------------------------------------------------------------------
-// Serial downloads (used by both LAN and remote modes)
+// Serial downloads
 // ---------------------------------------------------------------------------
 
 async fn run_serial_downloads(
@@ -414,116 +352,7 @@ async fn run_serial_downloads(
 }
 
 // ---------------------------------------------------------------------------
-// Idle detection (remote mode only)
-// ---------------------------------------------------------------------------
-
-/// Poll `player.mpv_network_idle_for()` until it returns true, or until
-/// `IDLE_SIGNAL_TIMEOUT` elapses. Returns false if the current generation
-/// has moved on (cycle superseded).
-async fn wait_for_mpv_network_idle(
-    player: &AudioPlayer,
-    shared_gen: &Arc<AtomicU64>,
-    my_gen: u64,
-) -> bool {
-    let start = Instant::now();
-    loop {
-        if shared_gen.load(Ordering::SeqCst) != my_gen {
-            return false;
-        }
-        if player.mpv_network_idle_for(IDLE_SIGNAL_REQUIRED_DURATION) {
-            log::debug!("prefetch: mpv idle detected");
-            return true;
-        }
-        if start.elapsed() >= IDLE_SIGNAL_TIMEOUT {
-            log::debug!("prefetch: idle signal timeout, proceeding anyway");
-            return true;
-        }
-        tokio::time::sleep(IDLE_POLL_INTERVAL).await;
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Stream-record ingest
-// ---------------------------------------------------------------------------
-
-/// Attempt to decode the stream-record file mpv has been writing for a
-/// track, persist a `.spec`, insert the audio into `DownloadCache`, and
-/// swap mpv's playlist entry to `file://`. Fire-and-forget.
-pub fn try_ingest_stream_record(player: &Arc<AudioPlayer>, app: &AppHandle, track_id: &str) {
-    let Some(path) = player.stream_record_path_for(track_id) else {
-        return;
-    };
-    if !path.exists() {
-        return;
-    }
-    let spectrum_disabled = app
-        .state::<crate::state::AppState>()
-        .settings
-        .read()
-        .disable_spectrum;
-    // Already ingested — skip re-analysis.
-    if player.with_cache(|c| c.get(track_id).is_some()) {
-        // But still make sure the `.spec` is on disk for the viz.
-        if !spectrum_disabled && read_spec_file(&path).is_none() {
-            spawn_ingest_analysis(player.clone(), app.clone(), track_id.to_string(), path, false);
-        }
-        return;
-    }
-    spawn_ingest_analysis(
-        player.clone(),
-        app.clone(),
-        track_id.to_string(),
-        path,
-        spectrum_disabled,
-    );
-}
-
-fn spawn_ingest_analysis(
-    player: Arc<AudioPlayer>,
-    app: AppHandle,
-    track_id: String,
-    audio_path: PathBuf,
-    skip_spectrum: bool,
-) {
-    tokio::task::spawn_blocking(move || {
-        // Always try to decode the file so we can ingest it into the
-        // download cache (local-first playback). Spectrum analysis is
-        // a bonus that rides on the same decode pass.
-        match spectrum_analyzer::analyse_file(&audio_path) {
-            Ok(frames) => {
-                let size = std::fs::metadata(&audio_path)
-                    .map(|m| m.len())
-                    .unwrap_or(0);
-                let current = player.current_track_id();
-                let evicted = player.with_cache(|cache| {
-                    cache.insert(track_id.clone(), audio_path.clone(), size);
-                    cache.evict_if_needed(current.as_deref())
-                });
-                if !skip_spectrum {
-                    let state = SpectrumState::Ready(frames);
-                    let _ =
-                        ramus_core::playback::spectrum::write_spec_file(&audio_path, &state);
-                    emit_spectrum_ready(&app, track_id.clone());
-                }
-                player.swap_playlist_entry_to_cached(&track_id);
-                for p in evicted {
-                    let spec = spec_file_path(&p);
-                    let _ = std::fs::remove_file(&p);
-                    let _ = std::fs::remove_file(&spec);
-                }
-            }
-            Err(err) => {
-                log::debug!(
-                    "prefetch: stream-record probe failed for {track_id}: {err}, deleting {audio_path:?}"
-                );
-                let _ = std::fs::remove_file(&audio_path);
-            }
-        }
-    });
-}
-
-// ---------------------------------------------------------------------------
-// Spectrum analysis (for files downloaded via the worker)
+// Spectrum analysis
 // ---------------------------------------------------------------------------
 
 fn spawn_analyse_task(player: &AudioPlayer, track_id: String, app: AppHandle) {
@@ -545,7 +374,7 @@ fn spawn_analyse_task(player: &AudioPlayer, track_id: String, app: AppHandle) {
 }
 
 // ---------------------------------------------------------------------------
-// Downloader (shared by both LAN and Remote paths)
+// Downloader
 // ---------------------------------------------------------------------------
 
 /// Download a file using resumable Range requests. Cancellation is

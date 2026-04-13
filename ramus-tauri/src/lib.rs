@@ -54,7 +54,6 @@ pub fn create_mpv_player(
     let app5 = app_handle.clone();
     let app6 = app_handle.clone();
     let app7 = app_handle.clone();
-    let app9 = app_handle.clone();
 
     // The player is needed inside callbacks but holds the MpvController.
     // Use a shared Arc populated after construction to break the cycle.
@@ -69,7 +68,6 @@ pub fn create_mpv_player(
     let pr7 = player_ref.clone();
     let pr8 = player_ref.clone();
     let pr9 = player_ref.clone();
-    let pr10 = player_ref.clone();
 
     // Deferred session reporter, populated after player construction.
     let reporter_ref: ReporterRef = Arc::new(parking_lot::Mutex::new(None));
@@ -229,11 +227,6 @@ pub fn create_mpv_player(
                 );
             }
         })),
-        on_cache_speed_change: Some(Box::new(move |bytes_per_sec| {
-            if let Some(ref p) = *pr10.lock() {
-                p.handle_cache_speed_change(bytes_per_sec);
-            }
-        })),
         on_idle_active: Some(Box::new(move || {
             if let Some(ref p) = *pr7.lock() {
                 // Scrobble the last playing track before transitioning to stopped
@@ -276,24 +269,7 @@ pub fn create_mpv_player(
         })),
         on_file_ended: Some(Box::new(move |reason| {
             if let Some(ref p) = *pr9.lock() {
-                // Capture the track ID BEFORE handle_file_ended runs —
-                // on Eof mpv is about to auto-advance, and the player's
-                // `current_track_id()` may have already shifted by the
-                // time we look. We need the track that just finished so
-                // the prefetch-ingest reads the right stream-record file.
-                let ended_id = p.current_track_id();
-                let is_eof = matches!(reason, ramus_core::playback::mpv::FileEndReason::Eof);
                 p.handle_file_ended(reason);
-                if is_eof {
-                    if let Some(id) = ended_id {
-                        // Safety-net ingest: if the idle-signal path in
-                        // the prefetch worker didn't fire early (e.g. on
-                        // mega-files that never flushed), catch the
-                        // stream-record file now that playback is
-                        // definitively done with it.
-                        prefetch::try_ingest_stream_record(p, &app9, &id);
-                    }
-                }
             }
         })),
     });
