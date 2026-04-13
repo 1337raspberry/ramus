@@ -377,10 +377,80 @@ textarea {
 
 .album-grid-header {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 0;
+  min-height: 0;
+}
+
+/* --- Breadcrumb Bar --- */
+
+.breadcrumb-bar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.breadcrumb-trail {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.crumb {
+  color: var(--text-muted);
+  border-radius: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crumb-link {
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.crumb-link:hover {
+  color: var(--text-primary);
+}
+
+/* Last crumb (current location) */
+.breadcrumb-trail > span:last-of-type .crumb:not(.crumb-link) {
+  color: var(--text-secondary);
+}
+
+.crumb-sep {
+  color: var(--text-muted);
+  opacity: 0.5;
+  font-size: 0.85em;
+  flex-shrink: 0;
+}
+
+.crumb-clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1.1em;
+  padding: 0 4px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.crumb-clear:hover {
+  color: var(--text-primary);
+}
+
+.breadcrumb-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-right: 16px;
 }
 
 .shuffle-favs-btn {
@@ -1836,42 +1906,6 @@ textarea {
   color: var(--text-muted);
   text-align: right;
   opacity: 0.7;
-}
-
-.search-pill {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px 3px 10px;
-  border-radius: 12px;
-  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.15);
-  border: 1px solid rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.3);
-  max-width: 260px;
-  margin-right: auto;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.search-pill-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-}
-
-.search-pill-clear {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-  padding: 0 2px;
-  flex-shrink: 0;
-}
-
-.search-pill-clear:hover {
-  color: var(--text-primary);
 }
 
 /* --- Equalizer Panel --- */

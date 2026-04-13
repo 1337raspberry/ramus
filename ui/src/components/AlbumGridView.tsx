@@ -5,6 +5,8 @@ import { usePlaybackStore } from "../stores/playbackStore";
 import type { Album } from "../lib/types";
 import { ART_SIZE, getArtUrl, getFavouriteTracks, playTracks, getQueue } from "../lib/commands";
 import { IconPlay, IconStarFilled, IconStarEmpty, IconMusicNote, IconShuffle } from "./Icons";
+import BreadcrumbBar from "./BreadcrumbBar";
+import { useBreadcrumbDebugStore } from "./BreadcrumbDebugPanel";
 
 const SORT_OPTIONS: { value: AlbumSortOrder; label: string }[] = [
   { value: "alphabetical", label: "A-Z" },
@@ -120,7 +122,10 @@ export default function AlbumGridView() {
   const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const searchQuery = useLibraryStore((s) => s.searchQuery);
   const clearSearchResults = useLibraryStore((s) => s.clearSearchResults);
+  const fadeHeight = useBreadcrumbDebugStore((s) => s.fadeHeight);
+  const fadeStartOpacity = useBreadcrumbDebugStore((s) => s.fadeStartOpacity);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [scrolled, setScrolled] = useState(false);
   const { cols, cardWidth, callbackRef } = useGridLayout();
 
   const setRef = useCallback(
@@ -130,6 +135,14 @@ export default function AlbumGridView() {
     },
     [callbackRef],
   );
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => setScrolled(el.scrollTop > 0);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [albums.length]);
 
   const rowCount = Math.ceil(albums.length / cols);
 
@@ -172,19 +185,48 @@ export default function AlbumGridView() {
       .catch(() => {});
   }, []);
 
+  const maskImage =
+    fadeHeight > 0 && scrolled
+      ? `linear-gradient(to bottom, rgba(0,0,0,${fadeStartOpacity}) 0px, black ${fadeHeight}px)`
+      : undefined;
+
   if (!albums.length) {
     return (
-      <div className="empty-state">
-        {searchQuery ? (
-          <>
-            No albums found for &ldquo;{searchQuery}&rdquo;
-            <button className="search-pill-clear" onClick={clearSearchResults} title="Clear search">
-              Clear
-            </button>
-          </>
-        ) : (
-          "Select a genre to browse albums"
-        )}
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <div className="album-grid-header">
+          <BreadcrumbBar />
+          <div className="breadcrumb-right">
+            {sidebarMode === "favourites" && !searchQuery && (
+              <button
+                className="shuffle-favs-btn"
+                onClick={handleShuffleFavs}
+                title="Shuffle all favourite tracks"
+              >
+                <IconShuffle size={14} />
+                <span>Shuffle</span>
+              </button>
+            )}
+            <select className="sort-select" value={albumSortOrder} onChange={onSortChange}>
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="empty-state">
+          {searchQuery ? (
+            <>
+              No albums found for &ldquo;{searchQuery}&rdquo;
+              <button className="crumb-clear" onClick={clearSearchResults} title="Clear search">
+                Clear
+              </button>
+            </>
+          ) : (
+            "Select a genre to browse albums"
+          )}
+        </div>
       </div>
     );
   }
@@ -192,33 +234,37 @@ export default function AlbumGridView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div className="album-grid-header">
-        {searchQuery && (
-          <div className="search-pill" title={searchQuery}>
-            <span className="search-pill-text">{searchQuery}</span>
-            <button className="search-pill-clear" onClick={clearSearchResults} title="Clear search">
-              &times;
+        <BreadcrumbBar />
+        <div className="breadcrumb-right">
+          {sidebarMode === "favourites" && !searchQuery && (
+            <button
+              className="shuffle-favs-btn"
+              onClick={handleShuffleFavs}
+              title="Shuffle all favourite tracks"
+            >
+              <IconShuffle size={14} />
+              <span>Shuffle</span>
             </button>
-          </div>
-        )}
-        {sidebarMode === "favourites" && !searchQuery && (
-          <button
-            className="shuffle-favs-btn"
-            onClick={handleShuffleFavs}
-            title="Shuffle all favourite tracks"
-          >
-            <IconShuffle size={14} />
-            <span>Shuffle</span>
-          </button>
-        )}
-        <select className="sort-select" value={albumSortOrder} onChange={onSortChange}>
-          {SORT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          )}
+          <select className="sort-select" value={albumSortOrder} onChange={onSortChange}>
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
-      <div ref={setRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+      <div
+        ref={setRef}
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          overflowX: "hidden",
+          WebkitMaskImage: maskImage,
+          maskImage,
+        }}
+      >
         <div
           style={{
             height: virtualizer.getTotalSize(),

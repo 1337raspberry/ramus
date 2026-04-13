@@ -222,9 +222,7 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
     (genre: string) => {
       clearSuggestion();
       toggleFocusMode();
-      const store = useLibraryStore.getState();
-      store.setSidebarMode("genres");
-      store.loadAlbumsForGenre(genre);
+      useLibraryStore.getState().selectGenreByName(genre);
     },
     [clearSuggestion, toggleFocusMode],
   );

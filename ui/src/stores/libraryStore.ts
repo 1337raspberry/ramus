@@ -39,6 +39,7 @@ interface LibraryState {
   expandAll: () => void;
   collapseAll: () => void;
   selectGenre: (node: GenreNode) => void;
+  selectGenreByName: (name: string) => Promise<void>;
 
   // --- Artists ---
   artists: ArtistInfo[];
@@ -75,6 +76,10 @@ interface LibraryState {
   openAlbumDetail: (album: Album) => Promise<void>;
   closeAlbumDetail: () => void;
 
+  // --- Browse context (from album detail clicks) ---
+  browseArtistName: string | null;
+  browseYear: number | null;
+
   // --- Search Results ---
   searchQuery: string | null;
   loadSearchResults: (query: string) => Promise<void>;
@@ -109,6 +114,26 @@ function sortAlbums(albums: Album[], order: AlbumSortOrder): Album[] {
   return sorted;
 }
 
+/** Find a genre node by display name. If the name appears at multiple
+ *  depths (e.g. "Dream Pop" under both Pop and Rock), prefer the deeper
+ *  entry so the breadcrumb trail is as specific as possible. */
+function findDeepestNodeByName(nodes: GenreNode[], name: string): GenreNode | null {
+  const nameLower = name.toLowerCase();
+  let best: GenreNode | null = null;
+  let bestDepth = -1;
+  const walk = (list: GenreNode[], depth: number) => {
+    for (const n of list) {
+      if (n.name.toLowerCase() === nameLower && depth > bestDepth) {
+        best = n;
+        bestDepth = depth;
+      }
+      if (n.children) walk(n.children, depth + 1);
+    }
+  };
+  walk(nodes, 0);
+  return best;
+}
+
 function collectAllIds(nodes: GenreNode[]): Set<string> {
   const ids = new Set<string>();
   const visit = (node: GenreNode) => {
@@ -123,7 +148,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   // --- Sidebar ---
   sidebarMode: "genres",
   setSidebarMode: (mode) => {
-    set({ sidebarMode: mode, suggestion: null, detailAlbum: null });
+    set({
+      sidebarMode: mode,
+      suggestion: null,
+      detailAlbum: null,
+      browseArtistName: null,
+      browseYear: null,
+      searchQuery: null,
+    });
     if (mode === "genres") {
       get().loadGenreTree();
       get().loadAllAlbums();
@@ -174,7 +206,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   collapseAll: () => set({ expandedGenreIds: new Set() }),
 
   selectGenre: (node) => {
-    set({ selectedGenreId: node.id, suggestion: null, detailAlbum: null });
+    set({
+      selectedGenreId: node.id,
+      suggestion: null,
+      detailAlbum: null,
+      browseArtistName: null,
+      browseYear: null,
+      searchQuery: null,
+    });
     // For parent nodes with children (e.g. "Other"), collect all
     // descendant leaf names and query them directly — expand_genre
     // doesn't know about synthetic parents like "Other".
@@ -210,6 +249,32 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
   },
 
+  selectGenreByName: async (name) => {
+    // Switch to genres mode without triggering loadAllAlbums() — we're
+    // about to load genre-specific albums and don't want a race.
+    // Await the tree load so findDeepestNodeByName has data to search.
+    if (get().sidebarMode !== "genres") {
+      set({ sidebarMode: "genres" });
+      await get().loadGenreTree();
+    }
+
+    const node = findDeepestNodeByName(get().genreTree, name);
+    if (node) {
+      get().selectGenre(node);
+    } else {
+      // Fallback: no tree match (custom/flat genres or unmapped name)
+      set({
+        selectedGenreId: name.toLowerCase(),
+        browseArtistName: null,
+        browseYear: null,
+        searchQuery: null,
+        detailAlbum: null,
+        suggestion: null,
+      });
+      get().loadAlbumsForGenre(name);
+    }
+  },
+
   // --- Artists ---
   artists: [],
   selectedArtistId: null,
@@ -222,7 +287,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   selectArtist: (sourceId) => {
-    set({ selectedArtistId: sourceId, suggestion: null, detailAlbum: null });
+    set({
+      selectedArtistId: sourceId,
+      suggestion: null,
+      detailAlbum: null,
+      browseArtistName: null,
+      browseYear: null,
+      searchQuery: null,
+    });
     get().loadAlbumsForArtist(sourceId);
   },
 
@@ -271,6 +343,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const albums = await getAlbumsForArtistName(name);
       set((state) => ({
         albums: sortAlbums(albums, state.albumSortOrder),
+        browseArtistName: name,
+        browseYear: null,
+        searchQuery: null,
         detailAlbum: null,
         suggestion: null,
       }));
@@ -282,6 +357,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const albums = await getAlbumsForYear(year);
       set((state) => ({
         albums: sortAlbums(albums, state.albumSortOrder),
+        browseYear: year,
+        browseArtistName: null,
+        searchQuery: null,
         detailAlbum: null,
         suggestion: null,
       }));
@@ -289,6 +367,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   shuffleAlbums: () => set((state) => ({ albums: sortAlbums(state.albums, "random") })),
+
+  // --- Browse context (from album detail clicks) ---
+  browseArtistName: null,
+  browseYear: null,
 
   // --- Search Results ---
   searchQuery: null,
@@ -299,17 +381,35 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       set((state) => ({
         albums: sortAlbums(albums, state.albumSortOrder),
         searchQuery: query,
+        browseArtistName: null,
+        browseYear: null,
         detailAlbum: null,
         suggestion: null,
       }));
     } catch {
-      set({ albums: [], searchQuery: query, detailAlbum: null, suggestion: null });
+      set({
+        albums: [],
+        searchQuery: query,
+        browseArtistName: null,
+        browseYear: null,
+        detailAlbum: null,
+        suggestion: null,
+      });
     }
   },
 
   clearSearchResults: () => {
-    set({ searchQuery: null });
-    const { sidebarMode, selectedGenreId, selectedArtistId } = get();
+    // Read browse context before clearing so we know what to fall back to
+    const { sidebarMode, selectedGenreId, selectedArtistId, browseArtistName, browseYear } = get();
+    set({ searchQuery: null, browseArtistName: null, browseYear: null });
+
+    // Was in a name/year browse — fall back to all albums for current mode
+    if (browseArtistName || browseYear) {
+      if (sidebarMode === "favourites") get().loadFavouriteAlbums();
+      else get().loadAllAlbums();
+      return;
+    }
+
     if (sidebarMode === "favourites") {
       get().loadFavouriteAlbums();
     } else if (sidebarMode === "artists" && selectedArtistId) {
@@ -321,7 +421,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const findNode = (nodes: GenreNode[], id: string): GenreNode | null => {
         for (const n of nodes) {
           if (n.id === id) return n;
-          const found = findNode(n.children, id);
+          const found = n.children ? findNode(n.children, id) : null;
           if (found) return found;
         }
         return null;
