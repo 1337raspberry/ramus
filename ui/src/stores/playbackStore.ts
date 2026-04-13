@@ -348,7 +348,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         clearTimeout(placeholderTimer);
         if (gen !== spectrumGen) return;
         console.warn("[spectrum] getSpectrum failed:", err);
-        set({ spectrumState: "analysing" });
+        set({ spectrumState: { unavailable: { reason: "Failed to load spectrum data" } } });
       });
   },
 

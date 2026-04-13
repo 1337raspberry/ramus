@@ -145,7 +145,9 @@ fn server_config_path() -> Result<PathBuf, PlexAuthError> {
 /// Store server config. The access token goes to the encrypted token store;
 /// non-secret fields go to a JSON file in the config directory.
 pub fn store_server_config(config: &ServerConfig, token_store: &TokenStore) -> bool {
-    token_store.write(TokenKey::ServerToken, &config.access_token);
+    if !token_store.write(TokenKey::ServerToken, &config.access_token) {
+        return false;
+    }
 
     let path = match server_config_path() {
         Ok(p) => p,

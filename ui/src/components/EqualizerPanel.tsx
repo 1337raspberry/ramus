@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyEqualizer } from "../lib/commands";
+import { applyEqualizer, updateSettings } from "../lib/commands";
+import { useSettingsStore } from "../stores/settingsStore";
 
 const BAND_LABELS = ["31", "62", "125", "250", "500", "1K", "2K", "4K", "8K", "16K"];
 const MAX_GAIN = 12;
@@ -75,14 +76,21 @@ function VerticalEQSlider({
 }
 
 export default function EqualizerPanel({ onDismiss }: Props) {
-  const [enabled, setEnabled] = useState(true);
-  const [bands, setBands] = useState<number[]>(() => new Array(10).fill(0));
+  const settings = useSettingsStore();
+  const [enabled, setEnabled] = useState(() => settings.eqEnabled);
+  const [bands, setBands] = useState<number[]>(() => [
+    ...(settings.eqBands ?? new Array(10).fill(0)),
+  ]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const applyDebounced = useCallback((newEnabled: boolean, newBands: number[]) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       applyEqualizer(newEnabled, newBands).catch(() => {});
+      const s = useSettingsStore.getState();
+      const updated = { ...s, eqEnabled: newEnabled, eqBands: newBands };
+      useSettingsStore.setState(updated);
+      updateSettings(updated).catch(() => {});
     }, 50);
   }, []);
 
@@ -123,15 +131,25 @@ export default function EqualizerPanel({ onDismiss }: Props) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [onDismiss]);
 
+  const mouseDownOnBackdrop = useRef(false);
+
+  const handleBackdropMouseDown = useCallback((e: React.MouseEvent) => {
+    mouseDownOnBackdrop.current = e.target === e.currentTarget;
+  }, []);
+
   const handleBackdropClick = useCallback(
     (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget) onDismiss();
+      if (e.target === e.currentTarget && mouseDownOnBackdrop.current) onDismiss();
     },
     [onDismiss],
   );
 
   return (
-    <div className="eq-backdrop" onClick={handleBackdropClick}>
+    <div
+      className="eq-backdrop"
+      onMouseDown={handleBackdropMouseDown}
+      onClick={handleBackdropClick}
+    >
       <div className="eq-panel glass">
         {/* Header */}
         <div className="eq-header">

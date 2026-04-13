@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -11,13 +12,15 @@ use ramus_core::models::Settings;
 pub fn spawn(
     settings: Arc<RwLock<Settings>>,
     sync_engine: Arc<Mutex<Option<SyncEngine>>>,
+    sync_in_progress: Arc<AtomicBool>,
 ) {
-    tauri::async_runtime::spawn(auto_sync_loop(settings, sync_engine));
+    tauri::async_runtime::spawn(auto_sync_loop(settings, sync_engine, sync_in_progress));
 }
 
 async fn auto_sync_loop(
     settings: Arc<RwLock<Settings>>,
     sync_engine: Arc<Mutex<Option<SyncEngine>>>,
+    sync_in_progress: Arc<AtomicBool>,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(60));
 
@@ -61,6 +64,12 @@ async fn auto_sync_loop(
             continue;
         };
 
+        // Skip if a manual sync is already running
+        if sync_in_progress.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
+            log::info!("auto-sync: skipping, sync already in progress");
+            continue;
+        }
+
         let sync = SyncEngine::new(cache, client);
 
         log::info!(
@@ -69,6 +78,7 @@ async fn auto_sync_loop(
         );
 
         let result = sync.incremental_sync(&library_key, |_| {}).await;
+        sync_in_progress.store(false, Ordering::Release);
 
         match result {
             Ok(_) => log::info!("auto-sync: completed successfully"),

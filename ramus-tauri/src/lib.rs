@@ -162,6 +162,7 @@ pub fn create_mpv_player(
                             .as_ref()
                             .is_some_and(|cur| cur.rating_key == prev.rating_key);
                         if !same_track {
+                            reporter.playback_stopped();
                             reporter.track_ended(prev);
                             if let Some(ref track) = state.current_track {
                                 reporter.track_started(track, &p.play_session_id());
