@@ -6,88 +6,60 @@ import { hexToRgb } from "../lib/vibrantColor";
 // Each entry has ultrablur corner colors and a matching accent.
 const PRESETS: { accent: [number, number, number]; blur: UltraBlurColors }[] = [
   {
-    accent: [26, 221, 255],
-    blur: { topLeft: "5a0319", topRight: "890523", bottomRight: "94082c", bottomLeft: "b0012e" },
+    accent: [199, 81, 147],
+    blur: { topLeft: "5c366a", topRight: "310817", bottomRight: "5c366a", bottomLeft: "a7568a" },
   },
   {
-    accent: [106, 174, 117],
-    blur: { topLeft: "08380c", topRight: "037203", bottomRight: "954026", bottomLeft: "681b04" },
+    accent: [34, 246, 202],
+    blur: { topLeft: "365747", topRight: "041c17", bottomRight: "365747", bottomLeft: "699c9c" },
   },
   {
-    accent: [51, 137, 230],
-    blur: { topLeft: "1e2957", topRight: "97394c", bottomRight: "54652f", bottomLeft: "2b6866" },
+    accent: [255, 155, 25],
+    blur: { topLeft: "4c3424", topRight: "870d04", bottomRight: "4c3424", bottomLeft: "8a584b" },
   },
   {
-    accent: [30, 250, 193],
-    blur: { topLeft: "043729", topRight: "a41f58", bottomRight: "a22555", bottomLeft: "823439" },
+    accent: [73, 208, 189],
+    blur: { topLeft: "573e3e", topRight: "14767e", bottomRight: "573e3e", bottomLeft: "4e9c8a" },
   },
   {
-    accent: [241, 207, 69],
-    blur: { topLeft: "312f0f", topRight: "695e1e", bottomRight: "665f26", bottomLeft: "695e20" },
+    accent: [255, 7, 26],
+    blur: { topLeft: "39556f", topRight: "c70606", bottomRight: "39556f", bottomLeft: "637a9a" },
   },
   {
-    accent: [249, 32, 57],
-    blur: { topLeft: "022c5e", topRight: "b10519", bottomRight: "0656ac", bottomLeft: "0d427f" },
+    accent: [255, 210, 10],
+    blur: { topLeft: "625036", topRight: "845c04", bottomRight: "625036", bottomLeft: "977401" },
   },
   {
-    accent: [252, 243, 29],
-    blur: { topLeft: "511715", topRight: "382e6b", bottomRight: "832e26", bottomLeft: "a52a1d" },
+    accent: [255, 189, 13],
+    blur: { topLeft: "603538", topRight: "ba8b14", bottomRight: "603538", bottomLeft: "74a494" },
   },
   {
-    accent: [254, 26, 35],
-    blur: { topLeft: "1c0303", topRight: "440403", bottomRight: "260303", bottomLeft: "420403" },
+    accent: [216, 103, 64],
+    blur: { topLeft: "486237", topRight: "721417", bottomRight: "486237", bottomLeft: "a8754c" },
   },
   {
-    accent: [251, 233, 30],
-    blur: { topLeft: "281674", topRight: "47215e", bottomRight: "5b38cb", bottomLeft: "4a1c60" },
+    accent: [33, 139, 247],
+    blur: { topLeft: "124b86", topRight: "104174", bottomRight: "124b86", bottomLeft: "8ba5c0" },
   },
   {
-    accent: [204, 77, 119],
-    blur: { topLeft: "35101c", topRight: "1d4372", bottomRight: "a91847", bottomLeft: "46131f" },
+    accent: [210, 224, 56],
+    blur: { topLeft: "3e5443", topRight: "0f1004", bottomRight: "3e5443", bottomLeft: "678e88" },
   },
   {
-    accent: [247, 103, 34],
-    blur: { topLeft: "0b2f52", topRight: "082340", bottomRight: "155488", bottomLeft: "183963" },
+    accent: [20, 255, 255],
+    blur: { topLeft: "2c4c51", topRight: "08577d", bottomRight: "2c4c51", bottomLeft: "6666ad" },
   },
   {
-    accent: [80, 137, 203],
-    blur: { topLeft: "480d53", topRight: "761d62", bottomRight: "4d2354", bottomLeft: "761858" },
+    accent: [138, 203, 78],
+    blur: { topLeft: "445c34", topRight: "4c612c", bottomRight: "445c34", bottomLeft: "948464" },
   },
   {
-    accent: [98, 182, 161],
-    blur: { topLeft: "042b32", topRight: "072a35", bottomRight: "072531", bottomLeft: "031d23" },
+    accent: [19, 220, 255],
+    blur: { topLeft: "132625", topRight: "1c789c", bottomRight: "132625", bottomLeft: "a56e5a" },
   },
   {
-    accent: [240, 85, 54],
-    blur: { topLeft: "10312e", topRight: "146152", bottomRight: "0b2f2a", bottomLeft: "156053" },
-  },
-  {
-    accent: [242, 235, 53],
-    blur: { topLeft: "222a34", topRight: "252658", bottomRight: "324885", bottomLeft: "98393c" },
-  },
-  {
-    accent: [255, 26, 26],
-    blur: { topLeft: "1f040c", topRight: "310511", bottomRight: "280311", bottomLeft: "4d0304" },
-  },
-  {
-    accent: [201, 239, 82],
-    blur: { topLeft: "123713", topRight: "40582a", bottomRight: "183f16", bottomLeft: "296e3a" },
-  },
-  {
-    accent: [238, 216, 51],
-    blur: { topLeft: "370b2b", topRight: "9b2671", bottomRight: "992875", bottomLeft: "41193e" },
-  },
-  {
-    accent: [254, 27, 205],
-    blur: { topLeft: "270423", topRight: "520347", bottomRight: "400436", bottomLeft: "850473" },
-  },
-  {
-    accent: [232, 181, 74],
-    blur: { topLeft: "153617", topRight: "055f54", bottomRight: "130f31", bottomLeft: "6c2f03" },
-  },
-  {
-    accent: [254, 229, 27],
-    blur: { topLeft: "43174e", topRight: "a01c44", bottomRight: "ad1a12", bottomLeft: "a21b42" },
+    accent: [234, 47, 106],
+    blur: { topLeft: "343454", topRight: "642451", bottomRight: "343454", bottomLeft: "753e74" },
   },
 ];
 
