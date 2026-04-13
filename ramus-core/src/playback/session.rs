@@ -199,6 +199,22 @@ impl SessionTracker {
     pub fn active_track_key(&self) -> Option<&str> {
         self.active_track_key.as_deref()
     }
+
+    /// Whether the given track should be scrobbled (>= 90% progress and
+    /// not already scrobbled this session).
+    pub fn should_scrobble_track(&self, rating_key: &str) -> bool {
+        let progress = if self.duration > 0.0 {
+            self.position / self.duration
+        } else {
+            0.0
+        };
+        progress >= SCROBBLE_THRESHOLD && self.scrobbled_key.as_deref() != Some(rating_key)
+    }
+
+    /// Record that a track has been scrobbled to prevent double-scrobbling.
+    pub fn mark_scrobbled(&mut self, rating_key: String) {
+        self.scrobbled_key = Some(rating_key);
+    }
 }
 
 impl Default for SessionTracker {

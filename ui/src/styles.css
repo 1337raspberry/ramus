@@ -2640,9 +2640,8 @@ body.is-fullscreen .drag-region {
   display: none;
 }
 
-body.is-fullscreen .sidebar-col,
-body.is-fullscreen .column-content,
-body.is-fullscreen .detail-col {
+body.is-fullscreen .column-sidebar,
+body.is-fullscreen .column-content {
   padding-top: 0;
 }
 

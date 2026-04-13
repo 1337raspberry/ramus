@@ -58,8 +58,17 @@ impl SessionReporter {
         self.start_periodic();
     }
 
-    /// Report a track ended naturally (auto-advance) and scrobble it.
+    /// Scrobble a track if it passed the 90% threshold.
+    /// Called on natural auto-advance and skip transitions.
     pub fn track_ended(&self, track: &Track) {
+        self.update_tracker_position();
+        let mut tracker = self.tracker.lock();
+        if !tracker.should_scrobble_track(&track.rating_key) {
+            return;
+        }
+        tracker.mark_scrobbled(track.rating_key.clone());
+        drop(tracker);
+
         let rk = track.rating_key.clone();
         let client = self.client.clone();
         tauri::async_runtime::spawn(async move {

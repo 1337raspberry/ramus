@@ -185,12 +185,11 @@ impl PlexClient {
             let (base, token) = self.read_state()?;
             let url = base.join(path).map_err(|_| PlexClientError::InvalidResponse)?;
 
-            let mut pairs: Vec<(String, String)> =
+            let pairs: Vec<(String, String)> =
                 query.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-            pairs.push(("X-Plex-Token".to_string(), token.clone()));
 
             let builder = self.http.put(url).query(&pairs);
-            let builder = self.apply_standard_headers(builder, None);
+            let builder = self.apply_standard_headers(builder, Some(&token));
 
             let resp = builder.send().await.map_err(|e| {
                 if Self::is_connection_error(&e) {
@@ -603,8 +602,8 @@ impl PlexClient {
         let builder = self
             .http
             .get(url)
-            .query(&[("X-Plex-Token", &token)])
             .header("Accept", "*/*")
+            .header("X-Plex-Token", &token)
             .header("X-Plex-Client-Identifier", &self.client_identifier)
             .header("X-Plex-Product", "ramus")
             .header("X-Plex-Platform", Self::platform())
@@ -681,8 +680,8 @@ impl PlexClient {
                 ("time", time_str.as_str()),
                 ("duration", dur_str.as_str()),
                 ("identifier", "com.plexapp.plugins.library"),
-                ("X-Plex-Token", token.as_str()),
             ])
+            .header("X-Plex-Token", token.as_str())
             .header("X-Plex-Session-Identifier", session_identifier)
             .header("Accept", "application/json")
             .header("X-Plex-Client-Identifier", &self.client_identifier)
@@ -711,8 +710,8 @@ impl PlexClient {
             .query(&[
                 ("key", format!("/library/metadata/{}", rating_key).as_str()),
                 ("identifier", "com.plexapp.plugins.library"),
-                ("X-Plex-Token", token.as_str()),
             ])
+            .header("X-Plex-Token", token.as_str())
             .header("Accept", "application/json")
             .header("X-Plex-Client-Identifier", &self.client_identifier)
             .header("X-Plex-Product", "ramus")

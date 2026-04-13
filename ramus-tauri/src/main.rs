@@ -114,6 +114,7 @@ fn main() {
             // Load saved settings and apply playback config (defaults to DirectPlay)
             let saved_settings = ramus_core::settings::load();
             player.update_config(saved_settings.to_playback_config());
+            player.apply_equalizer(saved_settings.eq_enabled, &saved_settings.eq_bands);
 
             // Initialize image cache
             let image_cache_dir = ramus_core::plex::token_store::config_dir()
@@ -141,6 +142,7 @@ fn main() {
                 prefetch_handle,
                 discovered_servers: Arc::new(parking_lot::Mutex::new(Vec::new())),
                 media_controls: media_controls_ref.clone(),
+                sync_in_progress: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             };
 
             // Restore previous session. State is set synchronously (no blocking
@@ -413,6 +415,7 @@ fn main() {
             // Spawn auto-sync background task and start periodic session reporting
             let auto_sync_settings = state.settings.clone();
             let auto_sync_engine = state.sync_engine.clone();
+            let auto_sync_flag = state.sync_in_progress.clone();
 
             // macOS: opt the (borderless) main NSWindow into native fullscreen.
             // With `decorations: false` the window is created with a borderless
@@ -477,7 +480,7 @@ fn main() {
 
             session_reporter.ensure_loop_spawned();
 
-            ramus_tauri::auto_sync::spawn(auto_sync_settings, auto_sync_engine);
+            ramus_tauri::auto_sync::spawn(auto_sync_settings, auto_sync_engine, auto_sync_flag);
 
             Ok(())
         })

@@ -231,13 +231,14 @@ pub async fn toggle_album_favourite(
     source_id: String,
     favourite: bool,
 ) -> CmdResult<()> {
-    let rating = if favourite { 10.0 } else { 0.0 };
+    let api_rating = if favourite { 10.0 } else { 0.0 };
+    let db_rating = if favourite { Some(10.0) } else { None };
     state
         .client
-        .rate_item(&source_id, rating)
+        .rate_item(&source_id, api_rating)
         .await
         .map_err(|e| e.to_string())?;
-    with_cache(&state, |db| db.update_album_rating(&source_id, Some(rating)))?;
+    with_cache(&state, |db| db.update_album_rating(&source_id, db_rating))?;
     Ok(())
 }
 
@@ -247,13 +248,14 @@ pub async fn toggle_track_favourite(
     source_id: String,
     favourite: bool,
 ) -> CmdResult<()> {
-    let rating = if favourite { 10.0 } else { 0.0 };
+    let api_rating = if favourite { 10.0 } else { 0.0 };
+    let db_rating = if favourite { Some(10.0) } else { None };
     state
         .client
-        .rate_item(&source_id, rating)
+        .rate_item(&source_id, api_rating)
         .await
         .map_err(|e| e.to_string())?;
-    with_cache(&state, |db| db.update_track_rating(&source_id, Some(rating)))?;
+    with_cache(&state, |db| db.update_track_rating(&source_id, db_rating))?;
     Ok(())
 }
 

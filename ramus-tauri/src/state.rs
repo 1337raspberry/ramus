@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
@@ -33,4 +34,6 @@ pub struct AppState {
     /// OS-level media controls (Now Playing, media keys). May be None if
     /// platform init failed (e.g., no D-Bus on Linux).
     pub media_controls: crate::media_controls::MediaControlsRef,
+    /// Prevents overlapping sync operations from corrupting the database.
+    pub sync_in_progress: Arc<AtomicBool>,
 }

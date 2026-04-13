@@ -98,6 +98,8 @@ export interface Settings {
   lastSyncTimeSecs: number;
   disableSpectrum: boolean;
   flatGenres: boolean;
+  eqEnabled: boolean;
+  eqBands: number[];
 }
 
 export interface CacheStats {

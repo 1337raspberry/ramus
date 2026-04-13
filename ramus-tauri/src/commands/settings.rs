@@ -40,6 +40,9 @@ pub async fn update_settings(
     let config = settings.to_playback_config();
     state.player.update_config(config);
 
+    // Apply EQ settings to the audio player
+    state.player.apply_equalizer(settings.eq_enabled, &settings.eq_bands);
+
     // Sync HTTP policy with connection monitor
     state.connection_monitor.set_allow_http(!settings.refuse_http);
 

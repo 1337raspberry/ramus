@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -34,6 +35,10 @@ pub async fn start_full_sync(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
+    if state.sync_in_progress.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
+        return Err("Sync already in progress".into());
+    }
+
     let library_key = get_library_key()?;
     let engine_lock = state.sync_engine.lock();
     let engine = engine_lock.as_ref().ok_or("Sync engine not initialized")?;
@@ -46,6 +51,7 @@ pub async fn start_full_sync(
     let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
     let app_handle = app.clone();
     let settings = state.settings.clone();
+    let flag = state.sync_in_progress.clone();
 
     tokio::spawn(async move {
         let _ = sync
@@ -54,6 +60,7 @@ pub async fn start_full_sync(
             })
             .await;
         update_last_sync_time(&settings);
+        flag.store(false, Ordering::Release);
     });
 
     Ok(())
@@ -64,6 +71,10 @@ pub async fn start_incremental_sync(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
+    if state.sync_in_progress.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
+        return Err("Sync already in progress".into());
+    }
+
     let library_key = get_library_key()?;
     let engine_lock = state.sync_engine.lock();
     let engine = engine_lock.as_ref().ok_or("Sync engine not initialized")?;
@@ -75,6 +86,7 @@ pub async fn start_incremental_sync(
     let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
     let app_handle = app.clone();
     let settings = state.settings.clone();
+    let flag = state.sync_in_progress.clone();
 
     tokio::spawn(async move {
         let _ = sync
@@ -83,6 +95,7 @@ pub async fn start_incremental_sync(
             })
             .await;
         update_last_sync_time(&settings);
+        flag.store(false, Ordering::Release);
     });
 
     Ok(())
@@ -93,6 +106,10 @@ pub async fn start_genre_sync(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
+    if state.sync_in_progress.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
+        return Err("Sync already in progress".into());
+    }
+
     let engine_lock = state.sync_engine.lock();
     let engine = engine_lock.as_ref().ok_or("Sync engine not initialized")?;
 
@@ -103,6 +120,7 @@ pub async fn start_genre_sync(
     let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
     let app_handle = app.clone();
     let settings = state.settings.clone();
+    let flag = state.sync_in_progress.clone();
 
     tokio::spawn(async move {
         let _ = sync
@@ -111,6 +129,7 @@ pub async fn start_genre_sync(
             })
             .await;
         update_last_sync_time(&settings);
+        flag.store(false, Ordering::Release);
     });
 
     Ok(())

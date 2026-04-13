@@ -112,10 +112,10 @@ impl CustomGenreParser {
             }
 
             // Validate name length
-            if name.len() > MAX_NAME_LENGTH {
+            if name.chars().count() > MAX_NAME_LENGTH {
                 return Err(CustomGenreParseError::NameTooLong(
                     line_number,
-                    name[..40].to_string(),
+                    name.chars().take(40).collect(),
                 ));
             }
 

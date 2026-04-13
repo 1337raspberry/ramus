@@ -429,6 +429,8 @@ pub struct Settings {
     pub last_sync_time_secs: i64,
     pub disable_spectrum: bool,
     pub flat_genres: bool,
+    pub eq_enabled: bool,
+    pub eq_bands: [f32; 10],
 }
 
 impl Default for Settings {
@@ -445,6 +447,8 @@ impl Default for Settings {
             last_sync_time_secs: 0,
             disable_spectrum: false,
             flat_genres: false,
+            eq_enabled: false,
+            eq_bands: [0.0; 10],
         }
     }
 }
