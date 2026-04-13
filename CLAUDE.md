@@ -4,11 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**ramus** is a cross-platform desktop music player for Plex media servers, being rewritten from a native Swift/SwiftUI macOS app into **Rust + Tauri 2 + React (TypeScript)**. The full specification lives in `IMPLEMENTATION_PLAN.md` — treat it as the authoritative source for all architecture, API contracts, data models, and test expectations.
-
-The existing Swift codebase under `swift-project/` serves as the reference implementation. It contains two parts:
-- `swift-project/ramus/` — the SwiftUI macOS app (views, view models, utilities)
-- `swift-project/RamusMusicCore/` — SPM package with all business logic (PlexAPI, Playback, Cache, Search, GenreTree, Models)
+**ramus** is a cross-platform desktop music player for Plex media servers, built with **Rust + Tauri 2 + React (TypeScript)**.
 
 ## Target Architecture (Rust + Tauri + React)
 
@@ -20,13 +16,13 @@ ramus/
 │       ├── settings.rs  # Settings I/O (load/save to disk)
 │       ├── util.rs      # Shared utilities (FTS5/LIKE escaping, percent-encoding, codec checks)
 │       ├── plex/        # HTTP client, OAuth, token store, connection monitor
-│       ├── playback/    # mpv wrapper, audio player, queue, EQ, lyrics, waveform, session reporting
+│       ├── playback/    # audio player, queue, EQ, lyrics, media key trait, transcode, waveform, spectrum, session reporting
 │       ├── cache/       # rusqlite SQLite (WAL, FTS5), sync engine, image cache
 │       ├── search/      # Query parser (operator syntax), search engine
 │       └── genre/       # Genre tree, fuzzy mapper, custom genre parser
 ├── ramus-tauri/         # Tauri 2 app shell
 │   └── src/
-│       ├── commands/    # Tauri IPC command handlers (auth, library, playback, search, settings, sync)
+│       ├── commands/    # Tauri IPC command handlers (auth, library, playback, search, settings, spectrum, sync)
 │       ├── events.rs    # Event emission helpers (playback-state, accent-color, sync-progress, etc.)
 │       ├── state.rs     # AppState — Arc-wrapped shared state
 │       ├── mpv_ffi.rs   # Raw libmpv C FFI bindings
@@ -34,9 +30,10 @@ ramus/
 │       ├── session_reporter.rs # Scrobble + timeline reporting orchestration
 │       ├── media_controls.rs  # OS media keys + Now Playing via souvlaki (MPRIS/SMTC/MPRemoteCommandCenter)
 │       ├── prefetch.rs  # Background audio cache prefetch
+│       ├── spectrum_analyzer.rs # Per-track FFT analysis (symphonia decode → spectrum .spec files)
 │       └── auto_sync.rs # Background periodic sync scheduler
 ├── ui/                  # React frontend — Vite + TypeScript + Zustand
-└── swift-project/       # Original Swift/SwiftUI reference implementation
+└── scripts/             # Build helpers (bundle-macos-libmpv.py, bundle-linux-libmpv.py, codesign-macos-main-binary.sh)
 ```
 
 ## Build & Test Commands
@@ -73,7 +70,7 @@ cd ui && npm run build                      # Production build (tsc + vite)
 
 ## Key Design Decisions
 
-- **Phases 1-11 are pure Rust** with comprehensive unit tests. No frontend work until the Rust core is fully tested. Each phase produces a testable module — never proceed with failing tests.
+- **All business logic lives in ramus-core** with comprehensive unit tests — never proceed with failing tests.
 - **rusqlite** (not GRDB) for SQLite. WAL mode, FTS5 for track search, `parking_lot::Mutex` for connection safety.
 - **libmpv via runtime FFI** — loaded dynamically at startup through `libloading`, not statically linked. `mpv_ffi.rs` defines an `MpvLib` struct that holds the `Library` plus one cached function pointer per symbol; `MpvController` takes an `Arc<MpvLib>` so the same library is shared across the controller and its background event thread. **Drop order matters**: `_lib` is declared as the last field of `MpvLib` so it's dropped last — dropping it earlier would invalidate the function pointers. Don't reorder those fields. This approach means the app compiles on every platform without libmpv headers or import libs; `MpvLib::load()` searches `MPV_LIB_PATH`, paths next to the executable, and standard brew/apt locations, returning a multi-line error listing everything it tried.
 - **System media controls** use the `souvlaki` crate for all three platforms (MPRIS2 on Linux, SMTC on Windows, MPRemoteCommandCenter on macOS). The `MediaControlsHandle` in `media_controls.rs` wraps souvlaki and implements `MediaKeyHandler` from ramus-core. Position is only reported on meaningful events (track change, pause, seek) — NOT at 30fps — because the OS auto-extrapolates from playback rate. Album art is resolved from the image cache by trying the frontend's cached sizes in priority order (`300`, `1200`, `72`); on miss it self-downloads at 300 from Plex's transcode endpoint, then the `file:///` path is passed to souvlaki. Init is non-fatal: if souvlaki fails (no D-Bus, etc.), the app works fine without it. `AudioPlayer::pause()` and `resume()` exist specifically so the OS can send explicit play/pause without race-prone toggling.
@@ -123,6 +120,17 @@ Color helpers live in `ui/src/lib/vibrantColor.ts`:
 - `hexToRgb(hex)` — returns `[r, g, b]` (0-255), exported for shared use
 - `accentFromPalette(p)`, `blurColorsFromPalette(p)`, `extractPalette(img)`
 
+Tauri IPC wrappers live in `ui/src/lib/commands.ts`:
+- All `invoke()` calls are typed here — components import these, never call `invoke()` directly
+
+Shared TS types live in `ui/src/lib/types.ts`:
+- `Album`, `Track`, `PlaybackStatePayload`, `SpectrumState`, `Settings`, etc.
+
+Shared React hooks live in `ui/src/lib/`:
+- `useArtUrl(thumb, size)` — resolves Plex art thumb to a cache path via `getArtUrl` IPC, with cancellation on unmount/change
+- `useNowPlayingActions(options?)` — derived now-playing values + click handlers (fav toggles, artist/album/year/genre nav) shared between compact and focus views
+- `useQueuePanel()` — wheel-down-to-open / scroll-top-to-close state machine for the queue sidebar
+
 ### Naming conventions by layer
 
 | Layer | Convention | Examples |
@@ -153,34 +161,6 @@ Color helpers live in `ui/src/lib/vibrantColor.ts`:
 - Tauri event names are kebab-case strings; keep them in sync between `ramus-tauri/src/events.rs` (emit) and `ui/src/App.tsx` / stores (listen)
 - DB column names are camelCase for Plex API compatibility — this is intentional, do not change to snake_case
 
-## Swift Reference Mapping
-
-When implementing a Rust module, consult the corresponding Swift source:
-
-| Rust Module | Swift Reference |
-|---|---|
-| `models.rs` | `RamusMusicCore/Sources/Models/Types.swift`, `PlaybackConfig.swift` |
-| `plex/client.rs` | `RamusMusicCore/Sources/PlexAPI/PlexClient.swift` |
-| `plex/auth.rs` | `RamusMusicCore/Sources/PlexAPI/PlexAuth.swift` |
-| `plex/token_store.rs` | `RamusMusicCore/Sources/PlexAPI/TokenStore.swift` |
-| `plex/connection.rs` | `RamusMusicCore/Sources/PlexAPI/ConnectionMonitor.swift` |
-| `playback/mpv.rs` | `RamusMusicCore/Sources/Playback/MPVController.swift` |
-| `playback/player.rs` | `RamusMusicCore/Sources/Playback/AudioPlayer.swift` |
-| `playback/session.rs` | `RamusMusicCore/Sources/Playback/SessionReporter.swift` |
-| `playback/media_keys.rs` + `media_controls.rs` | `RamusMusicCore/Sources/Playback/NowPlayingBridge.swift` |
-| `playback/transcode.rs` | `RamusMusicCore/Sources/Playback/TranscodeHelper.swift` |
-| `playback/lyrics.rs` | `RamusMusicCore/Sources/Playback/LyricsProvider.swift` |
-| `playback/waveform.rs` | `RamusMusicCore/Sources/Playback/WaveformProcessor.swift` |
-| `cache/db.rs` | `RamusMusicCore/Sources/Cache/CacheDatabase*.swift` (4 files) |
-| `cache/sync.rs` | `RamusMusicCore/Sources/Cache/SyncEngine.swift` |
-| `search/parser.rs` | `RamusMusicCore/Sources/Search/QueryParser.swift` |
-| `search/engine.rs` | `RamusMusicCore/Sources/Search/SearchEngine.swift` |
-| `genre/node.rs` | `RamusMusicCore/Sources/GenreTree/GenreNode.swift` |
-| `genre/mapper.rs` | `RamusMusicCore/Sources/GenreTree/GenreMapper.swift` |
-| `genre/parser.rs` | `RamusMusicCore/Sources/GenreTree/CustomGenreParser.swift` |
-
-Swift test files live under `swift-project/RamusMusicCore/Tests/` — port these to Rust (122+ tests specified in Appendix D of IMPLEMENTATION_PLAN.md).
-
 ## Sync Engine Details
 
 The sync has 4 phases: Artists (type=8) → Albums (type=9) → Tracks (type=10) → Deep Genre Fetch. Three modes:
@@ -192,7 +172,7 @@ Deep genre fetch uses bounded concurrency (8 concurrent via `tokio::sync::Semaph
 
 ## Database Schema
 
-Full schema is in Appendix A of `IMPLEMENTATION_PLAN.md`. Tables: `artists`, `albums`, `tracks`, `tracks_fts` (FTS5), `genres` (NOCASE), `album_genres` (junction). Album upserts use `COALESCE` to preserve existing rating/studio/colors that may only come from deep metadata fetches.
+Tables: `artists`, `albums`, `tracks`, `tracks_fts` (FTS5), `genres` (NOCASE), `album_genres` (junction). Album upserts use `COALESCE` to preserve existing rating/studio/colors that may only come from deep metadata fetches.
 
 ## Tauri IPC
 
