@@ -4,14 +4,13 @@
 //! the playback queue, track URL resolution, audio download cache (LRU),
 //! and 10-band parametric equalizer filter strings.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
 use url::Url;
 
 use crate::models::{PlaybackConfig, PlaybackStatus, PlayerState, Track};
+use crate::playback::download_cache::DownloadCache;
 use crate::playback::mpv::{FileEndReason, LoadMode, MpvPlayer};
 use crate::playback::transcode;
 
@@ -75,106 +74,6 @@ pub fn sanitize_filename(s: &str) -> String {
 /// Check if a file extension is in the allowed set for audio caching.
 pub fn is_allowed_extension(ext: &str) -> bool {
     ALLOWED_EXTENSIONS.contains(&ext.to_lowercase().as_str())
-}
-
-// --- DownloadCache (LRU) ---
-
-/// LRU download cache tracking cached audio files.
-///
-/// Manages metadata only — the caller handles actual file I/O.
-/// `evict_if_needed` returns paths to delete; the caller removes them from disk.
-pub struct DownloadCache {
-    entries: HashMap<String, PathBuf>,
-    sizes: HashMap<String, u64>,
-    access_order: Vec<String>, // oldest first
-    limit_bytes: u64,
-}
-
-impl DownloadCache {
-    pub fn new(limit_bytes: u64) -> Self {
-        Self {
-            entries: HashMap::new(),
-            sizes: HashMap::new(),
-            access_order: Vec::new(),
-            limit_bytes,
-        }
-    }
-
-    /// Get the cached file path for a track, if present.
-    pub fn get(&self, track_id: &str) -> Option<&Path> {
-        self.entries.get(track_id).map(|p| p.as_path())
-    }
-
-    /// Insert a cached file entry.
-    pub fn insert(&mut self, track_id: String, path: PathBuf, size: u64) {
-        // Remove existing entry if present (update)
-        self.access_order.retain(|k| k != &track_id);
-        self.entries.insert(track_id.clone(), path);
-        self.sizes.insert(track_id.clone(), size);
-        self.access_order.push(track_id);
-    }
-
-    /// Touch a cache entry, moving it to the most-recently-used position.
-    pub fn touch(&mut self, track_id: &str) {
-        if self.entries.contains_key(track_id) {
-            self.access_order.retain(|k| k != track_id);
-            self.access_order.push(track_id.to_string());
-        }
-    }
-
-    /// Evict oldest entries until total size is within the limit.
-    /// Never evicts the currently playing track.
-    /// Returns paths that should be deleted from disk.
-    pub fn evict_if_needed(&mut self, current_track_id: Option<&str>) -> Vec<PathBuf> {
-        let mut evicted = Vec::new();
-
-        while self.total_size() > self.limit_bytes && !self.access_order.is_empty() {
-            // Find the oldest entry that isn't the current track
-            let idx = self
-                .access_order
-                .iter()
-                .position(|k| current_track_id.is_none_or(|c| k != c));
-
-            if let Some(idx) = idx {
-                let key = self.access_order.remove(idx);
-                if let Some(path) = self.entries.remove(&key) {
-                    evicted.push(path);
-                }
-                self.sizes.remove(&key);
-            } else {
-                break; // Only current track left
-            }
-        }
-
-        evicted
-    }
-
-    pub fn total_size(&self) -> u64 {
-        self.sizes.values().sum()
-    }
-
-    /// Remove a specific entry. Returns the path if it was present.
-    pub fn remove(&mut self, track_id: &str) -> Option<PathBuf> {
-        self.access_order.retain(|k| k != track_id);
-        self.sizes.remove(track_id);
-        self.entries.remove(track_id)
-    }
-
-    /// Clear all entries. Returns all paths for disk cleanup.
-    pub fn clear(&mut self) -> Vec<PathBuf> {
-        let paths: Vec<PathBuf> = self.entries.drain().map(|(_, p)| p).collect();
-        self.sizes.clear();
-        self.access_order.clear();
-        paths
-    }
-
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
 }
 
 // --- AudioPlayer ---
@@ -884,6 +783,7 @@ fn resolve_url(track: &Track, inner: &PlayerInner) -> Option<String> {
 mod tests {
     use super::*;
     use crate::playback::mpv::MpvPlayer;
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     // --- Mock MpvPlayer ---
@@ -1111,100 +1011,6 @@ mod tests {
         assert!(!is_allowed_extension("exe"));
         assert!(!is_allowed_extension("sh"));
         assert!(!is_allowed_extension(""));
-    }
-
-    // --- DownloadCache tests ---
-
-    #[test]
-    fn test_cache_insert_and_get() {
-        let mut cache = DownloadCache::new(1_000_000);
-        assert!(cache.get("1").is_none());
-
-        cache.insert("1".into(), PathBuf::from("/tmp/1.flac"), 500_000);
-        assert_eq!(cache.get("1"), Some(Path::new("/tmp/1.flac")));
-        assert_eq!(cache.len(), 1);
-        assert_eq!(cache.total_size(), 500_000);
-    }
-
-    #[test]
-    fn test_cache_lru_eviction() {
-        let mut cache = DownloadCache::new(1000);
-        cache.insert("a".into(), PathBuf::from("/a"), 400);
-        cache.insert("b".into(), PathBuf::from("/b"), 400);
-        cache.insert("c".into(), PathBuf::from("/c"), 400);
-        // Total = 1200 > 1000
-
-        let evicted = cache.evict_if_needed(None);
-        // Should evict oldest ("a") first
-        assert!(evicted.contains(&PathBuf::from("/a")));
-        assert!(cache.get("a").is_none());
-        assert_eq!(cache.total_size(), 800);
-    }
-
-    #[test]
-    fn test_cache_touch_updates_order() {
-        let mut cache = DownloadCache::new(1000);
-        cache.insert("a".into(), PathBuf::from("/a"), 400);
-        cache.insert("b".into(), PathBuf::from("/b"), 400);
-        cache.insert("c".into(), PathBuf::from("/c"), 400);
-        // Touch "a" — makes it most recently used
-        cache.touch("a");
-        // Total = 1200 > 1000
-
-        let evicted = cache.evict_if_needed(None);
-        // Should evict "b" (now oldest) instead of "a"
-        assert!(evicted.contains(&PathBuf::from("/b")));
-        assert!(cache.get("a").is_some());
-        assert!(cache.get("b").is_none());
-    }
-
-    #[test]
-    fn test_cache_protects_current_track() {
-        let mut cache = DownloadCache::new(500);
-        cache.insert("playing".into(), PathBuf::from("/playing"), 400);
-        cache.insert("next".into(), PathBuf::from("/next"), 400);
-        // Total = 800 > 500
-
-        let evicted = cache.evict_if_needed(Some("playing"));
-        // Should evict "next", not "playing"
-        assert!(evicted.contains(&PathBuf::from("/next")));
-        assert!(cache.get("playing").is_some());
-    }
-
-    #[test]
-    fn test_cache_clear() {
-        let mut cache = DownloadCache::new(1_000_000);
-        cache.insert("a".into(), PathBuf::from("/a"), 100);
-        cache.insert("b".into(), PathBuf::from("/b"), 200);
-
-        let paths = cache.clear();
-        assert_eq!(paths.len(), 2);
-        assert!(cache.is_empty());
-        assert_eq!(cache.total_size(), 0);
-    }
-
-    #[test]
-    fn test_cache_remove() {
-        let mut cache = DownloadCache::new(1_000_000);
-        cache.insert("a".into(), PathBuf::from("/a"), 100);
-        cache.insert("b".into(), PathBuf::from("/b"), 200);
-
-        let removed = cache.remove("a");
-        assert_eq!(removed, Some(PathBuf::from("/a")));
-        assert!(cache.get("a").is_none());
-        assert_eq!(cache.len(), 1);
-        assert_eq!(cache.total_size(), 200);
-    }
-
-    #[test]
-    fn test_cache_update_existing_entry() {
-        let mut cache = DownloadCache::new(1_000_000);
-        cache.insert("a".into(), PathBuf::from("/old"), 100);
-        cache.insert("a".into(), PathBuf::from("/new"), 200);
-
-        assert_eq!(cache.get("a"), Some(Path::new("/new")));
-        assert_eq!(cache.len(), 1);
-        assert_eq!(cache.total_size(), 200);
     }
 
     // --- Queue operation tests ---
