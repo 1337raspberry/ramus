@@ -6,10 +6,11 @@ interface Props {
 }
 
 export default function OAuthSignIn({ onSuccess }: Props) {
-  const [pinCode, setPinCode] = useState<string | null>(null);
   const [pinId, setPinId] = useState<number | null>(null);
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [polling, setPolling] = useState(false);
+  const [copied, setCopied] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const startAuth = useCallback(async () => {
@@ -18,8 +19,8 @@ export default function OAuthSignIn({ onSuccess }: Props) {
       const raw = await startOauth();
       // start_oauth returns JSON: { authUrl, pinId, code }
       const data = JSON.parse(raw);
-      setPinCode(data.code);
       setPinId(data.pinId);
+      setAuthUrl(data.authUrl);
       setPolling(true);
 
       // Browser is opened from Rust side via open::that()
@@ -27,6 +28,13 @@ export default function OAuthSignIn({ onSuccess }: Props) {
       setError(String(e));
     }
   }, []);
+
+  const copyUrl = useCallback(async () => {
+    if (!authUrl) return;
+    await navigator.clipboard.writeText(authUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [authUrl]);
 
   useEffect(() => {
     if (!polling || pinId === null) return;
@@ -55,17 +63,21 @@ export default function OAuthSignIn({ onSuccess }: Props) {
       <h2>Welcome to ramus</h2>
       <p className="onboarding-subtitle">Sign in with your Plex account to get started.</p>
 
-      {!polling && !pinCode && (
+      {!polling && (
         <button className="onboarding-primary-btn" onClick={startAuth}>
           Sign in with Plex
         </button>
       )}
 
-      {polling && pinCode && (
+      {polling && (
         <div className="onboarding-polling">
-          <div className="onboarding-pin-label">Enter this code in your browser:</div>
-          <div className="onboarding-pin-code">{pinCode}</div>
-          <div className="onboarding-polling-text">Waiting for authorization...</div>
+          <div className="onboarding-polling-text">
+            A sign-in page has been opened in your browser.
+          </div>
+          <div className="onboarding-polling-subtext">Complete the sign-in there to continue.</div>
+          <button className="onboarding-copy-url" onClick={copyUrl}>
+            {copied ? "Copied!" : "Wrong browser? Copy link to open manually"}
+          </button>
         </div>
       )}
 
