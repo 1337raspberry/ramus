@@ -77,15 +77,6 @@ fn main() {
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new());
 
-            // Tell the core where mpv should write stream-record output.
-            // The prefetch worker later reads back that path to run
-            // symphonia + `.spec` generation without opening a second
-            // HTTP connection.
-            let audio_cache_dir = ramus_core::plex::token_store::config_dir()
-                .map(|d| d.join("audio_cache"))
-                .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/ramus_audio_cache"));
-            let _ = std::fs::create_dir_all(&audio_cache_dir);
-
             // Create mpv player with event callbacks
             let prefetch_handle_ref: Arc<
                 parking_lot::Mutex<Option<ramus_tauri::prefetch::PrefetchHandle>>,
@@ -94,7 +85,6 @@ fn main() {
                 app_handle.clone(),
                 prefetch_handle_ref.clone(),
             );
-            player.set_stream_record_dir(audio_cache_dir);
 
             // Spawn the single long-lived prefetch worker and wire its
             // control handle back into the callbacks.

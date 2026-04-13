@@ -223,8 +223,12 @@ pub async fn finalize_onboarding(
     let db2 = CacheDatabase::open(&db_path).map_err(|e| e.to_string())?;
     *state.cache.lock() = Some(db2);
 
-    // Configure audio player with server connection details
-    let is_local = server.connections.iter().any(|c| c.uri == server_url && c.local);
+    // Configure audio player with server connection details.
+    // Normalize trailing slashes: url::Url::parse adds one but Plex connection URIs don't.
+    let server_url_norm = server_url.trim_end_matches('/');
+    let is_local = server.connections.iter().any(|c| {
+        c.uri.trim_end_matches('/') == server_url_norm && c.local
+    });
     state.player.configure(
         url.clone(),
         server_token.clone(),
