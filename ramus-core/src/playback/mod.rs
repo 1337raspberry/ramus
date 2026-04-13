@@ -1,3 +1,4 @@
+pub mod download_cache;
 pub mod lyrics;
 pub mod media_keys;
 pub mod mpv;

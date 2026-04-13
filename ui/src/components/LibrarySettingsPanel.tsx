@@ -16,76 +16,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { SyncProgress } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
-
-function ImageCacheRow() {
-  const [stats, setStats] = useState<{ entryCount: number; totalSizeBytes: number } | null>(null);
-  const refresh = useCallback(() => {
-    import("../lib/commands").then(({ getImageCacheStats }) =>
-      getImageCacheStats()
-        .then(setStats)
-        .catch(() => {}),
-    );
-  }, []);
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-  const mb = stats ? (stats.totalSizeBytes / 1_048_576).toFixed(1) : "—";
-  const count = stats?.entryCount ?? 0;
-  return (
-    <div className="settings-row">
-      <span>
-        {count} images, {mb} MB
-      </span>
-      <button
-        className="settings-btn"
-        onClick={() => {
-          import("../lib/commands").then(({ flushImageCache }) =>
-            flushImageCache()
-              .then(refresh)
-              .catch(() => {}),
-          );
-        }}
-      >
-        Flush
-      </button>
-    </div>
-  );
-}
-
-function AudioCacheRow() {
-  const [stats, setStats] = useState<{ entryCount: number; totalSizeBytes: number } | null>(null);
-  const refresh = useCallback(() => {
-    import("../lib/commands").then(({ getAudioCacheStats }) =>
-      getAudioCacheStats()
-        .then(setStats)
-        .catch(() => {}),
-    );
-  }, []);
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-  const mb = stats ? (stats.totalSizeBytes / 1_048_576).toFixed(1) : "—";
-  const count = stats?.entryCount ?? 0;
-  return (
-    <div className="settings-row">
-      <span>
-        {count} tracks, {mb} MB
-      </span>
-      <button
-        className="settings-btn"
-        onClick={() => {
-          import("../lib/commands").then(({ clearAudioCache }) =>
-            clearAudioCache()
-              .then(refresh)
-              .catch(() => {}),
-          );
-        }}
-      >
-        Clear
-      </button>
-    </div>
-  );
-}
+import { ImageCacheRow, AudioCacheRow } from "./CacheStatsRow";
 
 interface Props {
   onDismiss: () => void;
