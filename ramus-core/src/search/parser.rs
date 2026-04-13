@@ -159,7 +159,7 @@ impl QueryParser {
             Some(SearchFilter::AlbumTitle(value.to_string()))
         } else if lower.starts_with("fav:") || lower.starts_with("favourites:") {
             Some(SearchFilter::Favourites)
-        } else if let Some(rest) = segment.strip_prefix('$') {
+        } else if let Some(rest) = segment.strip_prefix('#') {
             Self::parse_range(RangeField::Year, rest)
                 .or_else(|| Some(SearchFilter::FreeText(segment.to_string())))
         } else if lower.starts_with("year:") {

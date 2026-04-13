@@ -328,16 +328,14 @@ impl SearchEngine {
             if excluding.contains(&candidate.id) {
                 continue;
             }
-            // Match against track title, artist name, and album title individually,
-            // take the best similarity score. This handles typos like "paranoyd" → "paranoid".
-            let title_sim =
+            // Only match against track title — consistent with FTS5 (which also
+            // only indexes titles). Album/artist name matching is already handled
+            // by the LIKE queries on the albums table. Matching short album names
+            // (e.g. "Woe") against longer queries inflates Jaro-Winkler scores and
+            // pulls in every track on that album as a false positive.
+            let similarity =
                 strsim::jaro_winkler(&candidate.track_title.to_lowercase(), &query_lower);
-            let artist_sim =
-                strsim::jaro_winkler(&candidate.artist_name.to_lowercase(), &query_lower);
-            let album_sim =
-                strsim::jaro_winkler(&candidate.album_title.to_lowercase(), &query_lower);
-            let similarity = title_sim.max(artist_sim).max(album_sim);
-            if similarity > 0.6 {
+            if similarity > 0.7 {
                 scored.push((
                     SearchResult {
                         id: format!("track-{}", candidate.id),
@@ -370,6 +368,60 @@ impl SearchEngine {
                 result
             })
             .collect())
+    }
+
+    /// Return all internal album IDs matching the given query, with no limit.
+    /// Used for "load into grid" — resolves constraints and text searches, then
+    /// returns the union/intersection of matching album IDs.
+    pub fn search_album_ids(
+        &self,
+        query: &ParsedQuery,
+    ) -> Result<HashSet<i64>, crate::cache::db::CacheError> {
+        if query.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let constraint_ids = self.resolve_album_constraints(query)?;
+        if let Some(ref ids) = constraint_ids {
+            if ids.is_empty() {
+                return Ok(HashSet::new());
+            }
+        }
+
+        let has_text_search = query.free_text().is_some()
+            || !query.artist_filters().is_empty()
+            || !query.album_title_filters().is_empty();
+
+        if !has_text_search {
+            // Constraint-only query (genre/year/rating/fav) — return the constraint set
+            return Ok(constraint_ids.unwrap_or_default());
+        }
+
+        // Collect album IDs from text searches
+        let mut text_ids = HashSet::new();
+
+        for title_query in query.album_title_filters() {
+            let ids = self
+                .db
+                .album_ids_by_title(title_query, constraint_ids.as_ref())?;
+            text_ids.extend(ids);
+        }
+
+        for artist_query in query.artist_filters() {
+            let ids = self
+                .db
+                .album_ids_by_artist(artist_query, constraint_ids.as_ref())?;
+            text_ids.extend(ids);
+        }
+
+        if let Some(text) = query.free_text() {
+            let ids = self
+                .db
+                .album_ids_by_artist_or_title(text, constraint_ids.as_ref())?;
+            text_ids.extend(ids);
+        }
+
+        Ok(text_ids)
     }
 }
 
@@ -547,13 +599,19 @@ mod tests {
     #[test]
     fn test_free_text_search_returns_albums_and_tracks() {
         let (_db, engine) = setup();
+        // "radiohead" matches artist name via LIKE → album results
         let q = QueryParser::parse("radiohead");
         let results = engine.search(&q, 100).unwrap();
         let albums: Vec<_> = results.iter().filter(|r| r.kind == SearchResultKind::Album).collect();
-        let tracks: Vec<_> = results.iter().filter(|r| r.kind == SearchResultKind::Track).collect();
         assert!(!albums.is_empty(), "Should have album results");
         assert!(albums.iter().all(|r| r.artist_name == "Radiohead"));
-        assert!(!tracks.is_empty(), "Free text should also return tracks");
+
+        // "paranoid" matches track title via FTS5 → track results
+        let q2 = QueryParser::parse("paranoid");
+        let results2 = engine.search(&q2, 100).unwrap();
+        let tracks: Vec<_> = results2.iter().filter(|r| r.kind == SearchResultKind::Track).collect();
+        assert!(!tracks.is_empty(), "Should have track results for title match");
+        assert!(tracks.iter().any(|r| r.track_title.as_deref() == Some("Paranoid Android")));
     }
 
     #[test]

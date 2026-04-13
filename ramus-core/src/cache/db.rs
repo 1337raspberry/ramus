@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use parking_lot::Mutex;
@@ -413,6 +414,49 @@ impl CacheDatabase {
         )?;
         let mut albums = Self::map_album_rows(&mut stmt, params![], &conn)?;
         Ok(albums.pop())
+    }
+
+    /// Get albums by a set of internal (rowid) IDs. Returns full Album objects.
+    pub fn albums_by_internal_ids(&self, ids: &HashSet<i64>) -> Result<Vec<Album>, CacheError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock();
+
+        const CHUNK_SIZE: usize = 500;
+        let id_vec: Vec<i64> = ids.iter().copied().collect();
+        let mut all = Vec::new();
+
+        for chunk in id_vec.chunks(CHUNK_SIZE) {
+            let placeholders = (0..chunk.len()).map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
+                        a.rating, a.studio, a.addedAt, a.lastViewedAt
+                 FROM albums a
+                 JOIN artists ar ON ar.id = a.artistId
+                 WHERE a.id IN ({})
+                 ORDER BY ar.name COLLATE NOCASE, a.year",
+                placeholders
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let params: Vec<Box<dyn rusqlite::types::ToSql>> =
+                chunk.iter().map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>).collect();
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                params.iter().map(|p| p.as_ref()).collect();
+            let albums = Self::map_album_rows(&mut stmt, param_refs.as_slice(), &conn)?;
+            all.extend(albums);
+        }
+
+        if id_vec.len() > CHUNK_SIZE {
+            // Multi-chunk: re-sort to get consistent ordering
+            all.sort_by(|a, b| {
+                a.artist_name
+                    .to_lowercase()
+                    .cmp(&b.artist_name.to_lowercase())
+                    .then_with(|| a.year.cmp(&b.year))
+            });
+        }
+        Ok(all)
     }
 
     /// Cache statistics.

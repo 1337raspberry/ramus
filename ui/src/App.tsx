@@ -120,6 +120,7 @@ document.documentElement.style.setProperty("--accent-b", String(initialPalette.a
 export default function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [showSearch, setShowSearch] = useState(false);
+  const [searchInitial, setSearchInitial] = useState<string | undefined>();
   const [showEQ, setShowEQ] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showColorDebug, setShowColorDebug] = useState(false);
@@ -260,6 +261,7 @@ export default function App() {
 
       if (mod && e.key === "f") {
         e.preventDefault();
+        setSearchInitial(undefined);
         setShowSearch((s) => !s);
         return;
       }
@@ -279,6 +281,32 @@ export default function App() {
       if (mod && e.shiftKey && e.key === "D") {
         e.preventDefault();
         setShowColorDebug((s) => !s);
+        return;
+      }
+
+      // Operator keys open search with that character pre-loaded
+      if (
+        !mod &&
+        !e.shiftKey &&
+        "/!".includes(e.key) &&
+        !(e.target instanceof HTMLInputElement) &&
+        !(e.target instanceof HTMLTextAreaElement)
+      ) {
+        e.preventDefault();
+        setSearchInitial(e.key);
+        setShowSearch(true);
+        return;
+      }
+      if (
+        !mod &&
+        e.shiftKey &&
+        ["@", "%", "#"].includes(e.key) &&
+        !(e.target instanceof HTMLInputElement) &&
+        !(e.target instanceof HTMLTextAreaElement)
+      ) {
+        e.preventDefault();
+        setSearchInitial(e.key);
+        setShowSearch(true);
         return;
       }
 
@@ -348,7 +376,15 @@ export default function App() {
         detail={<DetailColumn onOpenEQ={() => setShowEQ(true)} />}
       />
       {isFocusMode && <FocusNowPlayingView onOpenEQ={() => setShowEQ(true)} />}
-      {showSearch && <SearchOverlay onDismiss={() => setShowSearch(false)} />}
+      {showSearch && (
+        <SearchOverlay
+          initialQuery={searchInitial}
+          onDismiss={() => {
+            setShowSearch(false);
+            setSearchInitial(undefined);
+          }}
+        />
+      )}
       {showEQ && <EqualizerPanel onDismiss={() => setShowEQ(false)} />}
       {showSettings && (
         <LibrarySettingsPanel

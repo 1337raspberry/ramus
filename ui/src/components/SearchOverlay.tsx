@@ -17,6 +17,7 @@ import { IconMusicNote, IconPlay, IconStarFilled, IconMoreDots, IconSearch } fro
 
 interface Props {
   onDismiss: () => void;
+  initialQuery?: string;
 }
 
 function SearchThumb({ artPath, onPlay }: { artPath: string | null; onPlay: () => void }) {
@@ -74,8 +75,8 @@ function refreshQueue() {
     .catch(() => {});
 }
 
-export default function SearchOverlay({ onDismiss }: Props) {
-  const [query, setQuery] = useState("");
+export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
+  const [query, setQuery] = useState(initialQuery ?? "");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searching, setSearching] = useState(false);
@@ -105,7 +106,8 @@ export default function SearchOverlay({ onDismiss }: Props) {
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!query.trim()) {
+    const trimmed = query.trim();
+    if (!trimmed || /^[/@!%#]$/.test(trimmed)) {
       setResults([]);
       setSelectedIndex(0);
       return;
@@ -206,6 +208,14 @@ export default function SearchOverlay({ onDismiss }: Props) {
         setSelectedIndex((i) => Math.max(i - 1, 0));
         return;
       }
+      if (e.key === "Enter" && e.shiftKey) {
+        e.preventDefault();
+        if (query.trim()) {
+          onDismiss();
+          useLibraryStore.getState().loadSearchResults(query.trim());
+        }
+        return;
+      }
       if (e.key === "Enter") {
         e.preventDefault();
         if (ordered[selectedIndex]) {
@@ -214,7 +224,7 @@ export default function SearchOverlay({ onDismiss }: Props) {
         return;
       }
     },
-    [ordered, selectedIndex, onDismiss, handleSelect],
+    [ordered, selectedIndex, onDismiss, handleSelect, query],
   );
 
   const handleBackdropClick = useCallback(
@@ -298,7 +308,7 @@ export default function SearchOverlay({ onDismiss }: Props) {
             ref={inputRef}
             className="search-input"
             type="text"
-            placeholder="/genre @artist %album !track year:>2000"
+            placeholder="/genre @artist %album !track #>2000"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoComplete="off"
@@ -324,6 +334,10 @@ export default function SearchOverlay({ onDismiss }: Props) {
               </>
             )}
           </div>
+        )}
+
+        {hasResults && albums.length > 0 && (
+          <div className="search-hint">Shift+Enter to browse in grid</div>
         )}
       </div>
     </div>
