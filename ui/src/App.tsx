@@ -20,6 +20,7 @@ import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
 import OnboardingFlow from "./components/onboarding/OnboardingFlow";
 import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackground";
 import ColorDebugPanel from "./components/ColorDebugPanel";
+import BreadcrumbDebugPanel from "./components/BreadcrumbDebugPanel";
 
 // Generate once at module level so it persists across re-renders
 const initialPalette = randomPalette();
@@ -37,6 +38,7 @@ export default function App() {
   const [showEQ, setShowEQ] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showColorDebug, setShowColorDebug] = useState(false);
+  const [showBreadcrumbDebug, setShowBreadcrumbDebug] = useState(false);
   const suggestion = useLibraryStore((s) => s.suggestion);
   const detailAlbum = useLibraryStore((s) => s.detailAlbum);
   const albumColors = usePlaybackStore((s) => s.ultraBlurColors);
@@ -80,6 +82,7 @@ export default function App() {
     setShowEQ,
     setShowSettings,
     setShowColorDebug,
+    setShowBreadcrumbDebug,
     toggleFocusMode,
   });
 
@@ -143,6 +146,7 @@ export default function App() {
         />
       )}
       {showColorDebug && <ColorDebugPanel />}
+      {showBreadcrumbDebug && <BreadcrumbDebugPanel />}
     </>
   );
 }

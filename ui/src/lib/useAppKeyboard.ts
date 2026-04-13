@@ -8,6 +8,7 @@ interface UseAppKeyboardParams {
   setShowEQ: React.Dispatch<React.SetStateAction<boolean>>;
   setShowSettings: React.Dispatch<React.SetStateAction<boolean>>;
   setShowColorDebug: React.Dispatch<React.SetStateAction<boolean>>;
+  setShowBreadcrumbDebug: React.Dispatch<React.SetStateAction<boolean>>;
   toggleFocusMode: () => void;
 }
 
@@ -20,6 +21,7 @@ export function useAppKeyboard({
   setShowEQ,
   setShowSettings,
   setShowColorDebug,
+  setShowBreadcrumbDebug,
   toggleFocusMode,
 }: UseAppKeyboardParams): void {
   const handleKeyDown = useCallback(
@@ -63,6 +65,12 @@ export function useAppKeyboard({
       if (mod && e.shiftKey && e.key === "D") {
         e.preventDefault();
         setShowColorDebug((s) => !s);
+        return;
+      }
+
+      if (mod && e.shiftKey && e.key === "L") {
+        e.preventDefault();
+        setShowBreadcrumbDebug((s) => !s);
         return;
       }
 
@@ -120,6 +128,7 @@ export function useAppKeyboard({
       setShowEQ,
       setShowSettings,
       setShowColorDebug,
+      setShowBreadcrumbDebug,
       setSearchInitial,
       toggleFocusMode,
     ],

@@ -145,10 +145,8 @@ export default function SuggestionView() {
   }, [album, playAlbum, clearSuggestion]);
 
   const handleGenreClick = useCallback((genre: string) => {
-    const store = useLibraryStore.getState();
-    store.clearSuggestion();
-    store.setSidebarMode("genres");
-    store.loadAlbumsForGenre(genre);
+    useLibraryStore.getState().clearSuggestion();
+    useLibraryStore.getState().selectGenreByName(genre);
   }, []);
 
   if (!album) return null;

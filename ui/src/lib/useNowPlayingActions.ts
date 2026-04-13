@@ -68,9 +68,7 @@ export function useNowPlayingActions(options?: Options) {
 
   const handleGenreClick = useCallback(
     (genre: string) => {
-      const store = useLibraryStore.getState();
-      store.setSidebarMode("genres");
-      store.loadAlbumsForGenre(genre);
+      useLibraryStore.getState().selectGenreByName(genre);
       onNavigate?.();
     },
     [onNavigate],
