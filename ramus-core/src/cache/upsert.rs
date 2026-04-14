@@ -29,6 +29,13 @@ pub struct AlbumUpsertRow {
     pub updated_at: Option<i64>,
     pub added_at: Option<i64>,
     pub last_viewed_at: Option<i64>,
+    /// First genre in Plex API response order, lowercased. Compared against
+    /// the API-order first genre on every incremental sync to detect
+    /// genre-only edits (Plex doesn't always bump updatedAt for those).
+    /// Must come from the same list call that sets updatedAt — storing a
+    /// sorted/alphabetical value here causes every multi-genre album to
+    /// look "changed" on every sync.
+    pub first_genre: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -97,8 +104,8 @@ impl CacheDatabase {
 
         {
             let mut stmt = tx.prepare_cached(
-                "INSERT INTO albums (title, artistId, year, sourceId, artUrl, updatedAt, addedAt, lastViewedAt)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                "INSERT INTO albums (title, artistId, year, sourceId, artUrl, updatedAt, addedAt, lastViewedAt, firstGenre)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                  ON CONFLICT(sourceId) DO UPDATE SET
                      title = excluded.title,
                      artistId = excluded.artistId,
@@ -108,7 +115,8 @@ impl CacheDatabase {
                      studio = COALESCE(excluded.studio, albums.studio),
                      updatedAt = excluded.updatedAt,
                      addedAt = COALESCE(excluded.addedAt, albums.addedAt),
-                     lastViewedAt = COALESCE(excluded.lastViewedAt, albums.lastViewedAt)
+                     lastViewedAt = COALESCE(excluded.lastViewedAt, albums.lastViewedAt),
+                     firstGenre = COALESCE(excluded.firstGenre, albums.firstGenre)
                  RETURNING id, sourceId",
             )?;
 
@@ -123,6 +131,7 @@ impl CacheDatabase {
                         row.updated_at,
                         row.added_at,
                         row.last_viewed_at,
+                        row.first_genre,
                     ],
                     |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
                 )?;

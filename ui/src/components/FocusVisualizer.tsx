@@ -3,11 +3,6 @@ import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { spectrumKind, type SpectrumFrames, type SpectrumState } from "../lib/types";
 import { accentFromPalette } from "../lib/vibrantColor";
-// DEBUG (focus viz tuning): runtime-tunable parameters via the slider panel.
-// Remove this import + every line tagged `DEBUG (focus viz tuning)` to
-// rip out the debug system. See stores/focusVizDebugStore.ts for the
-// full removal checklist.
-import { useFocusVizDebugStore } from "../stores/focusVizDebugStore";
 
 /**
  * Focus-mode FFT visualiser — 128-band mirrored spectrogram.
@@ -41,8 +36,8 @@ import { useFocusVizDebugStore } from "../stores/focusVizDebugStore";
  *     from the top edge down. Uses the same underlying eased bar
  *     heights but passes them through a moving-average window and
  *     draws a filled path with quadratic curves between points for a
- *     glassy organic look. Smoothing window is tuned via the debug
- *     slider (`lineSmoothingWindow`).
+ *     glassy organic look. Smoothing window size is controlled by
+ *     `LINE_SMOOTHING_WINDOW`.
  *
  * Mode switches don't remount the canvas — the draw loop reads
  * `playbackStore.visualizerMode` via `getState()` each frame and
@@ -53,30 +48,20 @@ import { useFocusVizDebugStore } from "../stores/focusVizDebugStore";
 const BAR_COUNT = 256; // 128 bands × 2 mirrored halves
 const HALF_BAR_COUNT = BAR_COUNT / 2;
 
-// DEBUG (focus viz tuning): the constants that used to live here have
-// been moved into `focusVizDebugStore.ts` so the slider panel can tune
-// them live. When you remove the debug system, restore them here.
-// These are the current baked defaults (kept in sync with
-// FOCUS_VIZ_DEFAULTS in focusVizDebugStore.ts):
-//
-//   const BAR_MAX_HEIGHT_PCT = 20;       // top 20% of the focus window
-//   const BAR_GAP_PX = 1;                // px between adjacent bars
-//   const MIN_VISIBLE_HEIGHT_PX = 0.5;   // skip-draw threshold
-//   const EASE_ATTACK = 0.55;            // snappy rise on transients
-//   const EASE_DECAY = 0.35;             // slower fall to filter jitter
-//   const GRADIENT_TOP_OPACITY = 0.95;   // alpha at the top of bars
-//   const GRADIENT_BOTTOM_OPACITY = 0.3; // alpha at the bottom tips
-//   const GLOBAL_ALPHA = 0.3;            // ctx.globalAlpha multiplier
-//   const BORDER_WIDTH_PX = 0;           // no border by default
-//   const BORDER_OPACITY = 0;
-//   const PLACEHOLDER_TOP_VH = 1.5;      // "Analysing audio…" offset
-//   const BASS_NOISE_AMOUNT = 0.08;      // ±8% wobble on bass bars
-//   const BASS_NOISE_BAND_CUTOFF = 40;   // apply to bands 0..39
-//   const BASS_NOISE_GATE = 0.08;        // skip bars below 8% height
-//   const LINE_SMOOTHING_WINDOW = 12;    // moving-average window (line mode)
-//
-// (or whichever values you've settled on after tuning — check the
-// `focus-viz-debug` localStorage key in DevTools to see them.)
+const BAR_MAX_HEIGHT_PCT = 20;
+const BAR_GAP_PX = 1;
+const MIN_VISIBLE_HEIGHT_PX = 0.5;
+const EASE_ATTACK = 0.55;
+const EASE_DECAY = 0.35;
+const GRADIENT_TOP_OPACITY = 0.95;
+const GRADIENT_BOTTOM_OPACITY = 0.3;
+const GLOBAL_ALPHA = 0.3;
+const BORDER_WIDTH_PX = 0;
+const BORDER_OPACITY = 0;
+const BASS_NOISE_AMOUNT = 0.08;
+const BASS_NOISE_BAND_CUTOFF = 40;
+const BASS_NOISE_GATE = 0.08;
+const LINE_SMOOTHING_WINDOW = 12;
 
 /** Map a canvas bar index (0..255) to its source band index (0..127). */
 function barToBand(barIndex: number): number {
@@ -171,12 +156,6 @@ export default function FocusVisualizer() {
 // --- Placeholder layer ---
 
 function PlaceholderLayer({ state }: { state: SpectrumState | null }) {
-  // DEBUG (focus viz tuning): vertical position is store-driven so the
-  // panel slider can move the label without re-render churn. When the
-  // debug system is removed, drop this selector and let the CSS
-  // `padding-top` value (also tagged DEBUG in styles.css) take over.
-  const placeholderTopVh = useFocusVizDebugStore((s) => s.placeholderTopVh);
-
   let label: string;
   let muted = false;
   if (state === null || state === "analysing") {
@@ -198,11 +177,7 @@ function PlaceholderLayer({ state }: { state: SpectrumState | null }) {
   }
 
   return (
-    <div
-      className={`focus-visualizer focus-visualizer-placeholder${muted ? " is-muted" : ""}`}
-      // DEBUG (focus viz tuning): inline style overrides CSS padding-top.
-      style={{ paddingTop: `${placeholderTopVh}vh` }}
-    >
+    <div className={`focus-visualizer focus-visualizer-placeholder${muted ? " is-muted" : ""}`}>
       <span className="focus-visualizer-placeholder-label">{label}</span>
     </div>
   );
@@ -249,8 +224,8 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
   // slow-ish frequency per band means adjacent bands wobble out of
   // phase with each other, which breaks the lockstep on sub-bin
   // bands that all read the same FFT bin. See the draw loop below
-  // for the gating logic, and the physics explanation is in the
-  // `bassNoiseAmount` doc in focusVizDebugStore.ts.
+  // for the gating logic — BASS_NOISE_AMOUNT controls the peak
+  // wobble magnitude as a fraction of bar height.
   // Only used by the "bars" draw branch — the "line" branch's
   // horizontal smoothing averages the lockstep out on its own.
   const noisePhasesRef = useRef<Float32Array | null>(null);
@@ -340,15 +315,15 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
     // for the time-normalised easing below.
     let lastTs = 0;
 
-    // Reference frame interval that `easeAttack` / `easeDecay` in
-    // focusVizDebugStore.ts were originally tuned against (≈ 60Hz).
-    // We treat the stored values as "fraction of the remaining gap
-    // closed in ONE 16.67ms tick" and rescale per actual frame dt so
-    // the wall-clock behaviour stays identical on 60Hz, 120Hz, 360Hz,
-    // or anything else the display happens to be. Without this the
-    // per-frame lerp converges 6× faster on a 360Hz display, which
-    // visually collapses the rise/fall animation into a snap+plateau
-    // pattern synchronised to the 30Hz spectrogram hop rate.
+    // Reference frame interval that EASE_ATTACK / EASE_DECAY were
+    // originally tuned against (≈ 60Hz). We treat the stored values
+    // as "fraction of the remaining gap closed in ONE 16.67ms tick"
+    // and rescale per actual frame dt so the wall-clock behaviour
+    // stays identical on 60Hz, 120Hz, 360Hz, or anything else the
+    // display happens to be. Without this the per-frame lerp
+    // converges 6× faster on a 360Hz display, which visually
+    // collapses the rise/fall animation into a snap+plateau pattern
+    // synchronised to the 30Hz spectrogram hop rate.
     const EASE_REFERENCE_DT_MS = 1000 / 60;
     // Clamp the dt we feed into the alpha math so a long hitch (tab
     // backgrounded, GC pause, debugger stop) doesn't push Math.pow()
@@ -376,12 +351,6 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
       // without remounting the canvas / resetting the eased buffer.
       const mode = playback.visualizerMode;
 
-      // DEBUG (focus viz tuning): pull all tunable params via getState()
-      // each frame so slider tweaks take effect on the very next paint.
-      // When removing the debug system, replace each `viz.X` reference
-      // below with the constant from the block at the top of this file.
-      const viz = useFocusVizDebugStore.getState();
-
       const scratch = scratchRef.current;
       if (isPlaying) {
         readFrameInto(frames, positionMs, scratch);
@@ -391,19 +360,17 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
         scratch.fill(0);
       }
 
-      // Spring-ease each bar toward its target height. The ease
-      // factors from the debug store are per-*reference-frame* (60Hz)
-      // fractions, so we rescale them to the actual frame dt via
+      // Spring-ease each bar toward its target height. EASE_ATTACK /
+      // EASE_DECAY are per-*reference-frame* (60Hz) fractions, so we
+      // rescale them to the actual frame dt via
       //   alpha = 1 - (1 - ease) ^ (dt / referenceDt)
       // which is the exponential-decay form of "apply the per-frame
       // ease `dt/referenceDt` times in a row". Computed once per
       // frame, not per bar — Math.pow is not cheap enough to run 256×.
-      //
-      // DEBUG (focus viz tuning): EASE_ATTACK / EASE_DECAY
       const easeDt = Math.min(rawDelta, EASE_DT_CLAMP_MS);
       const dtRatio = easeDt / EASE_REFERENCE_DT_MS;
-      const alphaAttack = easeDt > 0 ? 1 - Math.pow(1 - viz.easeAttack, dtRatio) : 0;
-      const alphaDecay = easeDt > 0 ? 1 - Math.pow(1 - viz.easeDecay, dtRatio) : 0;
+      const alphaAttack = easeDt > 0 ? 1 - Math.pow(1 - EASE_ATTACK, dtRatio) : 0;
+      const alphaDecay = easeDt > 0 ? 1 - Math.pow(1 - EASE_DECAY, dtRatio) : 0;
       const current = currentRef.current;
       for (let i = 0; i < BAR_COUNT; i++) {
         const target = scratch[i] / 255;
@@ -416,18 +383,15 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
       // vibrantPalette effect above, no per-frame style-recalc cost.
       const { r, g, b } = accentRef.current;
 
-      // DEBUG (focus viz tuning): GLOBAL_ALPHA
-      ctx.globalAlpha = viz.globalAlpha;
+      ctx.globalAlpha = GLOBAL_ALPHA;
 
       // Gradient fill: opaque near the top edge (where the bars
       // originate), fading to transparent at their bottom tips. Creates
       // a cohesive glow that doesn't compete with the track title below.
-      // DEBUG (focus viz tuning): BAR_MAX_HEIGHT_PCT
-      const maxH = (h * viz.barMaxHeightPct) / 100;
+      const maxH = (h * BAR_MAX_HEIGHT_PCT) / 100;
       const grad = ctx.createLinearGradient(0, 0, 0, maxH);
-      // DEBUG (focus viz tuning): GRADIENT_TOP_OPACITY / GRADIENT_BOTTOM_OPACITY
-      grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${viz.gradientTopOpacity})`);
-      grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${viz.gradientBottomOpacity})`);
+      grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${GRADIENT_TOP_OPACITY})`);
+      grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${GRADIENT_BOTTOM_OPACITY})`);
       ctx.fillStyle = grad;
 
       if (mode === "line") {
@@ -448,9 +412,8 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
         // its own, and adding per-band wobble on top would just add
         // high-frequency ripple to an otherwise smooth curve.
         //
-        // DEBUG (focus viz tuning): LINE_SMOOTHING_WINDOW
         const smoothed = smoothedLineRef.current;
-        smoothLineInto(current, viz.lineSmoothingWindow, smoothed);
+        smoothLineInto(current, LINE_SMOOTHING_WINDOW, smoothed);
 
         const n = BAR_COUNT;
         const xStep = n > 1 ? w / (n - 1) : w;
@@ -488,18 +451,16 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
       } else {
         // --- Bars mode (default) ---
         //
-        // DEBUG (focus viz tuning): BORDER_WIDTH_PX / BORDER_OPACITY.
         // Stroke is applied per-bar after the fill, only when width > 0.
-        const drawBorder = viz.borderWidthPx > 0 && viz.borderOpacity > 0;
+        const drawBorder = BORDER_WIDTH_PX > 0 && BORDER_OPACITY > 0;
         if (drawBorder) {
-          ctx.lineWidth = viz.borderWidthPx;
-          ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${viz.borderOpacity})`;
+          ctx.lineWidth = BORDER_WIDTH_PX;
+          ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${BORDER_OPACITY})`;
         }
 
         // Bar layout: evenly spaced across the full width. Width is
         // computed once per frame (resize-aware) from the canvas size.
-        // DEBUG (focus viz tuning): BAR_GAP_PX
-        const totalGap = viz.barGapPx * (BAR_COUNT - 1);
+        const totalGap = BAR_GAP_PX * (BAR_COUNT - 1);
         const barWidth = Math.max(0.5, (w - totalGap) / BAR_COUNT);
 
         // Bass decorrelation: for low-frequency bands below the cutoff,
@@ -512,7 +473,7 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
         // init block above for the phase/frequency table.
         const noisePhases = noisePhasesRef.current;
         const noiseFreqs = noiseFreqsRef.current;
-        const noiseActive = viz.bassNoiseAmount > 0 && viz.bassNoiseBandCutoff > 0;
+        const noiseActive = BASS_NOISE_AMOUNT > 0 && BASS_NOISE_BAND_CUTOFF > 0;
         const noiseT = noiseActive ? performance.now() / 1000 : 0;
 
         for (let i = 0; i < BAR_COUNT; i++) {
@@ -520,18 +481,17 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
 
           if (noiseActive && noisePhases && noiseFreqs) {
             const band = barToBand(i);
-            if (band < viz.bassNoiseBandCutoff && barH > viz.bassNoiseGate) {
+            if (band < BASS_NOISE_BAND_CUTOFF && barH > BASS_NOISE_GATE) {
               const wobble = Math.sin(noiseT * noiseFreqs[band] + noisePhases[band]);
-              barH = barH * (1 + wobble * viz.bassNoiseAmount);
+              barH = barH * (1 + wobble * BASS_NOISE_AMOUNT);
               if (barH < 0) barH = 0;
               else if (barH > 1) barH = 1;
             }
           }
 
           const barHeight = barH * maxH;
-          // DEBUG (focus viz tuning): MIN_VISIBLE_HEIGHT_PX
-          if (barHeight < viz.minVisibleHeightPx) continue;
-          const x = i * (barWidth + viz.barGapPx);
+          if (barHeight < MIN_VISIBLE_HEIGHT_PX) continue;
+          const x = i * (barWidth + BAR_GAP_PX);
           ctx.fillRect(x, 0, barWidth, barHeight);
           if (drawBorder) {
             ctx.strokeRect(x, 0, barWidth, barHeight);
@@ -539,8 +499,8 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
         }
       }
 
-      // DEBUG (focus viz tuning): reset globalAlpha so anything else
-      // sharing the canvas (none today, but defensive) starts fresh.
+      // Reset globalAlpha so anything else sharing the canvas (none
+      // today, but defensive) starts fresh.
       ctx.globalAlpha = 1.0;
 
       rafRef.current = requestAnimationFrame(render);

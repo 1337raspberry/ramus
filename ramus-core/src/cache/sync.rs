@@ -344,16 +344,25 @@ impl SyncEngine {
                 },
             };
 
+            // API-order first genre, lowercased — stored as firstGenre and
+            // compared against the next sync's first-in-API-order genre to
+            // detect genre-only edits. MUST be API order, not alphabetical,
+            // or every multi-genre album looks "changed" on every sync.
+            let api_genre = item
+                .genre
+                .as_ref()
+                .and_then(|g| g.first())
+                .map(|g| g.tag.to_lowercase());
+
             let is_changed = if incremental {
                 if let Some(info) = cached.get(&item.rating_key) {
                     let timestamp_changed = info.updated_at != item.updated_at;
-                    let api_genre = item
-                        .genre
-                        .as_ref()
-                        .and_then(|g| g.first())
-                        .map(|g| g.tag.to_lowercase());
+                    // Only compare when we have a cached value. NULL
+                    // firstGenre means the row predates this column — trust
+                    // updatedAt for this sync; the row will get a real
+                    // value written below.
                     let cached_genre = info.first_genre.as_ref().map(|g| g.to_lowercase());
-                    let genre_changed = api_genre.is_some() && api_genre != cached_genre;
+                    let genre_changed = cached_genre.is_some() && api_genre != cached_genre;
                     timestamp_changed || genre_changed
                 } else {
                     true // new album
@@ -372,6 +381,7 @@ impl SyncEngine {
                     updated_at: item.updated_at,
                     added_at: item.added_at,
                     last_viewed_at: item.last_viewed_at,
+                    first_genre: api_genre.clone(),
                 });
                 changed_ids.insert(item.rating_key.clone());
 

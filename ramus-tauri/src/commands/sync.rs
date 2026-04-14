@@ -78,12 +78,14 @@ pub async fn start_full_sync(
     let flag = state.sync_in_progress.clone();
 
     tokio::spawn(async move {
-        let _ = sync
+        let result = sync
             .full_sync(&library_key, move |progress| {
                 events::emit_sync_progress(&app_handle, progress);
             })
             .await;
-        update_last_sync_time(&settings);
+        if result.is_ok() {
+            update_last_sync_time(&settings);
+        }
         flag.store(false, Ordering::Release);
     });
 
@@ -113,12 +115,14 @@ pub async fn start_incremental_sync(
     let flag = state.sync_in_progress.clone();
 
     tokio::spawn(async move {
-        let _ = sync
+        let result = sync
             .incremental_sync(&library_key, move |progress| {
                 events::emit_sync_progress(&app_handle, progress);
             })
             .await;
-        update_last_sync_time(&settings);
+        if result.is_ok() {
+            update_last_sync_time(&settings);
+        }
         flag.store(false, Ordering::Release);
     });
 
@@ -147,12 +151,14 @@ pub async fn start_genre_sync(
     let flag = state.sync_in_progress.clone();
 
     tokio::spawn(async move {
-        let _ = sync
+        let result = sync
             .genre_sync(move |progress| {
                 events::emit_sync_progress(&app_handle, progress);
             })
             .await;
-        update_last_sync_time(&settings);
+        if result.is_ok() {
+            update_last_sync_time(&settings);
+        }
         flag.store(false, Ordering::Release);
     });
 

@@ -7,7 +7,7 @@ use ramus_core::cache::db::CacheDatabase;
 use ramus_core::cache::sync::SyncEngine;
 use ramus_core::genre::mapper::GenreMapper;
 use ramus_core::models::{LibrarySection, PlexServer};
-use ramus_core::plex::auth::{self, PlexAuth};
+use ramus_core::plex::auth::{self, PlexAuth, PlexAuthError};
 use ramus_core::plex::token_store::{TokenKey, TokenStore};
 use ramus_core::search::engine::SearchEngine;
 
@@ -58,6 +58,16 @@ pub async fn poll_oauth(
             state.client.set_token(Some(token));
             Ok(true)
         }
+        // Terminal states — the frontend should surface these and let the
+        // user restart the flow. PollingTimeout with max_attempts=1 shouldn't
+        // happen in practice, but treat it as terminal to be safe.
+        Err(PlexAuthError::PinExpired) => {
+            Err("Sign-in code expired — please try again".into())
+        }
+        Err(PlexAuthError::PollingTimeout) => {
+            Err("Sign-in timed out — please try again".into())
+        }
+        // Transient — keep polling.
         Err(_) => Ok(false),
     }
 }

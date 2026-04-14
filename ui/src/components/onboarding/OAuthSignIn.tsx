@@ -47,8 +47,14 @@ export default function OAuthSignIn({ onSuccess }: Props) {
           if (intervalRef.current) clearInterval(intervalRef.current);
           onSuccess();
         }
-      } catch {
-        // Poll continues until token is granted or timeout
+      } catch (e) {
+        // Terminal error from the backend (PIN expired, polling timeout).
+        // Stop polling, surface the message, and re-enable the button so
+        // the user can start a fresh flow.
+        setPolling(false);
+        setPinId(null);
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        setError(String(e));
       }
     }, 2000);
 

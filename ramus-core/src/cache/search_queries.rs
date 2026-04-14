@@ -228,6 +228,13 @@ impl CacheDatabase {
     }
 
     /// Search albums by artist OR title (LIKE), with optional album ID filter.
+    ///
+    /// The query is tokenised on whitespace; each token is required to match
+    /// *either* the artist name or the album title (OR), and tokens are
+    /// ANDed together. Single-token queries reduce to the previous behaviour
+    /// ("radiohead" finds Radiohead albums). Multi-token queries like
+    /// "radiohead ok computer" find albums where the tokens span fields —
+    /// "radiohead" hits the artist, "ok"/"computer" hit the title.
     pub fn search_albums_by_artist_or_title(
         &self,
         query: &str,
@@ -237,21 +244,38 @@ impl CacheDatabase {
         if matches!(album_ids, Some(ids) if ids.is_empty()) {
             return Ok(Vec::new());
         }
+        let tokens: Vec<String> = query
+            .split_whitespace()
+            .filter(|t| !t.is_empty())
+            .map(|t| format!("%{}%", escape_like(t)))
+            .collect();
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
         let conn = self.conn.lock();
-        let pattern = format!("%{}%", escape_like(query));
         let (id_filter, id_vec) = build_id_filter(album_ids);
+        // Each token takes two positional placeholders — one per column it
+        // could match (artist or album title). Bind each pattern twice below.
+        let token_clauses: Vec<&str> = tokens
+            .iter()
+            .map(|_| "(ar.name LIKE ? ESCAPE '\\' OR a.title LIKE ? ESCAPE '\\')")
+            .collect();
+        let where_tokens = token_clauses.join(" AND ");
         let sql = format!(
             "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl, a.rating
              FROM albums a
              JOIN artists ar ON ar.id = a.artistId
-             WHERE (ar.name LIKE ?1 ESCAPE '\\' OR a.title LIKE ?1 ESCAPE '\\'){}
+             WHERE {}{}
              ORDER BY a.title COLLATE NOCASE
-             LIMIT ?2",
-            id_filter
+             LIMIT ?",
+            where_tokens, id_filter
         );
         let mut stmt = conn.prepare(&sql)?;
         let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        all_params.push(Box::new(pattern));
+        for pattern in &tokens {
+            all_params.push(Box::new(pattern.clone()));
+            all_params.push(Box::new(pattern.clone()));
+        }
         for id in &id_vec {
             all_params.push(Box::new(*id));
         }
@@ -259,6 +283,66 @@ impl CacheDatabase {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> = all_params.iter().map(|p| p.as_ref()).collect();
         let rows = stmt
             .query_map(param_refs.as_slice(), map_album_search_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Cross-field tokenised track search: each whitespace-separated token
+    /// must match at least one of (track title, album title, artist name),
+    /// and tokens are ANDed. Fills the gap FTS5 can't cover — `tracks_fts`
+    /// only indexes the track title, so a query like "radiohead karma"
+    /// (artist + title) returns zero FTS5 hits. This method joins on
+    /// albums/artists so the tokens can span fields.
+    pub fn search_tracks_by_tokens_cross_field(
+        &self,
+        query: &str,
+        album_ids: Option<&HashSet<i64>>,
+        limit: usize,
+    ) -> Result<Vec<TrackSearchRow>, CacheError> {
+        if matches!(album_ids, Some(ids) if ids.is_empty()) {
+            return Ok(Vec::new());
+        }
+        let tokens: Vec<String> = query
+            .split_whitespace()
+            .filter(|t| !t.is_empty())
+            .map(|t| format!("%{}%", escape_like(t)))
+            .collect();
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock();
+        let (id_filter, id_vec) = build_track_id_filter(album_ids);
+        // Each token takes three positional placeholders (track title OR
+        // album title OR artist name). Bind each pattern thrice below.
+        let token_clauses: Vec<&str> = tokens
+            .iter()
+            .map(|_| "(t.title LIKE ? ESCAPE '\\' OR al.title LIKE ? ESCAPE '\\' OR ar.name LIKE ? ESCAPE '\\')")
+            .collect();
+        let where_tokens = token_clauses.join(" AND ");
+        let sql = format!(
+            "SELECT t.id, t.sourceId, t.title, ar.name, al.title, al.sourceId, al.artUrl, t.trackArtist, t.userRating
+             FROM tracks t
+             JOIN albums al ON al.id = t.albumId
+             JOIN artists ar ON ar.id = t.artistId
+             WHERE {}{}
+             ORDER BY t.title COLLATE NOCASE
+             LIMIT ?",
+            where_tokens, id_filter
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        for pattern in &tokens {
+            all_params.push(Box::new(pattern.clone()));
+            all_params.push(Box::new(pattern.clone()));
+            all_params.push(Box::new(pattern.clone()));
+        }
+        for id in &id_vec {
+            all_params.push(Box::new(*id));
+        }
+        all_params.push(Box::new(limit as i64));
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = all_params.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt
+            .query_map(param_refs.as_slice(), map_track_search_row)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }

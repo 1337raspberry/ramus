@@ -18,8 +18,23 @@ export default function WaveformSeekBar() {
   const lastLevelsRef = useRef<number[] | null>(null);
   const lastSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
 
+  // Bumped by a ResizeObserver whenever the container's CSS size
+  // changes. Included in both effects' deps so the offscreen shape and
+  // progress overlay get re-rendered at the new pixel dimensions —
+  // otherwise stretching the column / entering fullscreen leaves the
+  // backing store at its old size and CSS scales it up blurry.
+  const [sizeVersion, setSizeVersion] = useState(0);
+
   const displayPos = isSeeking ? seekPos : position;
   const fraction = duration > 0 ? displayPos / duration : 0;
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setSizeVersion((v) => v + 1));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -80,7 +95,7 @@ export default function WaveformSeekBar() {
 
       shapeCanvasRef.current = offscreen;
     }
-  }, [levels]);
+  }, [levels, sizeVersion]);
 
   // Draw progress overlay (runs on every position tick; inexpensive)
   useEffect(() => {
@@ -164,7 +179,7 @@ export default function WaveformSeekBar() {
     }
 
     ctx.restore();
-  }, [levels, fraction]);
+  }, [levels, fraction, sizeVersion]);
 
   const handleSeekStart = useCallback(
     (clientX: number) => {
