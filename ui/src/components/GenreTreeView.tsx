@@ -102,6 +102,16 @@ export default function GenreTreeView() {
     if (parentRef.current) parentRef.current.scrollTop = 0;
   }, [flatGenres]);
 
+  // Scroll the selected genre into view when it changes. The "All" row is
+  // at virtual index 0, so the row's virtual index is rowIdx + 1.
+  useEffect(() => {
+    if (!selectedGenreId || selectedGenreId === "__all__") return;
+    const rowIdx = rows.findIndex((r) => r.node.id === selectedGenreId);
+    if (rowIdx >= 0) {
+      virtualizer.scrollToIndex(rowIdx + 1, { align: "auto" });
+    }
+  }, [selectedGenreId, rows, virtualizer]);
+
   if (!genreTree.length) {
     return <div className="empty-state">No genres loaded</div>;
   }

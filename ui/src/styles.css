@@ -728,6 +728,10 @@ textarea {
   margin-top: 2px;
 }
 
+.adv-genres {
+  margin-top: 6px;
+}
+
 .adv-link {
   cursor: pointer;
 }

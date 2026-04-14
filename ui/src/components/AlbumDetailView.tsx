@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
-import { ART_SIZE, getArtUrl, getQueue, insertNext, appendToQueue } from "../lib/commands";
+import {
+  ART_SIZE,
+  getArtUrl,
+  getQueue,
+  insertNext,
+  appendToQueue,
+  getAlbumGenres,
+} from "../lib/commands";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { formatDuration, formatCodec } from "../lib/format";
 import {
@@ -11,6 +18,7 @@ import {
   IconPlay,
   IconMoreDots,
 } from "./Icons";
+import FlowLayout from "./FlowLayout";
 
 export default function AlbumDetailView() {
   const album = useLibraryStore((s) => s.detailAlbum);
@@ -21,10 +29,20 @@ export default function AlbumDetailView() {
   const toggleTrackFav = useLibraryStore((s) => s.toggleTrackFav);
   const loadAlbumsForArtistName = useLibraryStore((s) => s.loadAlbumsForArtistName);
   const loadAlbumsForYear = useLibraryStore((s) => s.loadAlbumsForYear);
+  const selectGenreByName = useLibraryStore((s) => s.selectGenreByName);
+
+  const handleGenreClick = useCallback(
+    (genre: string) => {
+      closeAlbumDetail();
+      selectGenreByName(genre);
+    },
+    [closeAlbumDetail, selectGenreByName],
+  );
 
   const [artSrc, setArtSrc] = useState<string | null>(null);
   const [artErr, setArtErr] = useState(false);
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
+  const [genres, setGenres] = useState<string[]>([]);
 
   useEffect(() => {
     if (!album?.thumb) {
@@ -45,6 +63,30 @@ export default function AlbumDetailView() {
       cancelled = true;
     };
   }, [album?.thumb]);
+
+  useEffect(() => {
+    if (!album) {
+      setGenres([]);
+      return;
+    }
+    // Use album.genres if available, otherwise fetch via IPC —
+    // map_album_rows in the DB layer leaves genres empty by default.
+    if (album.genres.length) {
+      setGenres(album.genres);
+      return;
+    }
+    let cancelled = false;
+    getAlbumGenres(album.ratingKey)
+      .then((g) => {
+        if (!cancelled) setGenres(g);
+      })
+      .catch(() => {
+        if (!cancelled) setGenres([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [album]);
 
   // Close dropdown on outside click (only when menu is open)
   useEffect(() => {
@@ -106,6 +148,11 @@ export default function AlbumDetailView() {
           {album.year && (
             <div className="adv-year adv-link" onClick={() => loadAlbumsForYear(album.year!)}>
               {album.year}
+            </div>
+          )}
+          {genres.length > 0 && (
+            <div className="adv-genres">
+              <FlowLayout genres={genres} onGenreClick={handleGenreClick} />
             </div>
           )}
         </div>
