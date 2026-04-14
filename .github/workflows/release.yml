@@ -17,6 +17,17 @@ on:
   # push:
   #   tags: ['v*']
   workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Which platform(s) to build'
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - macos
+          - linux
+          - windows
 
 concurrency:
   group: release-${{ github.ref }}
@@ -31,6 +42,10 @@ permissions:
 jobs:
   build:
     name: ${{ matrix.label }}
+    # Skip matrix entries that weren't selected. `inputs.platform` is only set
+    # for workflow_dispatch; if push/tag triggers get re-enabled later, the
+    # first clause lets all three platforms build unconditionally.
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == matrix.id
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -41,15 +56,18 @@ jobs:
           # Now possible because libloading means we don't need a libmpv
           # binary for each arch at link time — only at runtime, where
           # each user's brew install provides the right one.
-          - platform: macos-14
+          - id: macos
+            platform: macos-14
             label: macOS (Universal)
             rust-target: aarch64-apple-darwin,x86_64-apple-darwin
             tauri-args: --target universal-apple-darwin
-          - platform: ubuntu-22.04
+          - id: linux
+            platform: ubuntu-22.04
             label: Linux (x86_64)
             rust-target: ''
             tauri-args: ''
-          - platform: windows-latest
+          - id: windows
+            platform: windows-latest
             label: Windows (x86_64)
             rust-target: ''
             tauri-args: ''
