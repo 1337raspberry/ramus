@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { isAuthenticated } from "./lib/commands";
 import { usePlaybackEvents } from "./lib/usePlaybackEvents";
+import { useWindowTitle } from "./lib/useWindowTitle";
 import { useFullscreenSync } from "./lib/useFullscreenSync";
 import { useAppKeyboard } from "./lib/useAppKeyboard";
 import { usePlaybackStore } from "./stores/playbackStore";
@@ -52,6 +53,7 @@ export default function App() {
   }, []);
 
   usePlaybackEvents();
+  useWindowTitle();
 
   // Toggle a body class rather than conditionally rendering: the compact
   // NowPlayingView must stay mounted because its image onLoad handler extracts
