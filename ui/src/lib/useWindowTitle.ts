@@ -19,7 +19,7 @@ export function useWindowTitle(): void {
   const title = usePlaybackStore((s) => s.currentTrack?.title ?? null);
 
   useEffect(() => {
-    const display = artistName && title ? `${artistName} \u2014 ${title}` : DEFAULT_TITLE;
+    const display = artistName && title ? `${title} \u2014 ${artistName}` : DEFAULT_TITLE;
     appWindow.setTitle(display).catch(() => {});
   }, [artistName, title]);
 }
