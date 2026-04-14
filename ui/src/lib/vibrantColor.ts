@@ -12,12 +12,48 @@ export interface VibrantPalette {
   lightMuted: string | null;
 }
 
+// Override node-vibrant defaults (quality 5, maxColorCount 64): lower quality
+// = more pixels sampled; higher maxColorCount surfaces small vivid regions
+// the default quantiser misses on album art.
+const QUALITY = 2;
+const MAX_COLOR_COUNT = 176;
+
 const MIN_ACCENT_LIGHTNESS = 0.55;
+
+/**
+ * Ensure node-vibrant sees the image at its intrinsic pixel size.
+ *
+ * `@vibrant/image-browser` sizes its canvas from `img.width` / `img.height`,
+ * and per the HTML spec those reflect the **rendered** CSS dimensions for an
+ * in-DOM <img>. That means passing a rendered <img> causes extraction to run
+ * on a tiny (~300×300) canvas instead of the full resolution, which loses
+ * small-but-vivid regions of the album art. An off-DOM <img> instead falls
+ * back to `naturalWidth`/`naturalHeight`, which is what we want.
+ *
+ * This helper detaches the image: if the input is already off-DOM we return
+ * it as-is; otherwise we create a new Image() with the same source and wait
+ * for it to load (instant browser-cache hit in practice).
+ */
+function detachImage(img: HTMLImageElement): Promise<HTMLImageElement> {
+  if (!img.isConnected) return Promise.resolve(img);
+  const src = img.src;
+  return new Promise((resolve, reject) => {
+    const fresh = new Image();
+    fresh.crossOrigin = img.crossOrigin ?? "anonymous";
+    fresh.onload = () => resolve(fresh);
+    fresh.onerror = () => reject(new Error(`Failed to reload image: ${src}`));
+    fresh.src = src;
+  });
+}
 
 /** Extract a 6-swatch palette from an HTMLImageElement via node-vibrant. */
 export async function extractPalette(img: HTMLImageElement): Promise<VibrantPalette | null> {
   try {
-    const palette = await Vibrant.from(img).getPalette();
+    const source = await detachImage(img);
+    const palette = await Vibrant.from(source)
+      .quality(QUALITY)
+      .maxColorCount(MAX_COLOR_COUNT)
+      .getPalette();
     return {
       vibrant: palette.Vibrant?.hex ?? null,
       darkVibrant: palette.DarkVibrant?.hex ?? null,

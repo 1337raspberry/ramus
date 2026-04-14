@@ -19,7 +19,6 @@ import EqualizerPanel from "./components/EqualizerPanel";
 import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
 import OnboardingFlow from "./components/onboarding/OnboardingFlow";
 import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackground";
-import ColorDebugPanel from "./components/ColorDebugPanel";
 import BreadcrumbDebugPanel from "./components/BreadcrumbDebugPanel";
 
 const initialPalette = randomPalette();
@@ -35,7 +34,6 @@ export default function App() {
   const [searchInitial, setSearchInitial] = useState<string | undefined>();
   const [showEQ, setShowEQ] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showColorDebug, setShowColorDebug] = useState(false);
   const [showBreadcrumbDebug, setShowBreadcrumbDebug] = useState(false);
   const suggestion = useLibraryStore((s) => s.suggestion);
   const detailAlbum = useLibraryStore((s) => s.detailAlbum);
@@ -72,7 +70,6 @@ export default function App() {
     setSearchInitial,
     setShowEQ,
     setShowSettings,
-    setShowColorDebug,
     setShowBreadcrumbDebug,
     toggleFocusMode,
   });
@@ -131,7 +128,6 @@ export default function App() {
           }}
         />
       )}
-      {showColorDebug && <ColorDebugPanel />}
       {showBreadcrumbDebug && <BreadcrumbDebugPanel />}
     </>
   );
