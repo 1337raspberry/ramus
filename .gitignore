@@ -22,3 +22,6 @@ ramus-tauri/tauri.macos.conf.json
 # build from apt's libmpv2 install — never commit these.
 ramus-tauri/linux-libs/
 ramus-tauri/tauri.linux.conf.json
+
+# Personal code-review scratch notes (area*-pass*.md, review-pass*.md)
+*-pass*.md
