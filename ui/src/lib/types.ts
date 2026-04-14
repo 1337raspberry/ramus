@@ -139,17 +139,6 @@ export interface PlaybackPositionPayload {
   duration: number;
 }
 
-export interface PlaybackBufferingPayload {
-  isBuffering: boolean;
-  bufferedFraction: number;
-}
-
-export interface ConnectionChangedPayload {
-  serverUrl: string;
-  isLocal: boolean;
-  isHttp: boolean;
-}
-
 export interface AccentColorPayload {
   r: number;
   g: number;

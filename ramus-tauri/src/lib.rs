@@ -18,8 +18,7 @@ use ramus_core::playback::mpv::MpvCallbacks;
 use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
 
 use crate::events::{
-    emit_playback_buffering, emit_playback_position, emit_playback_state,
-    PlaybackBufferingPayload, PlaybackPositionPayload, PlaybackStatePayload,
+    emit_playback_position, emit_playback_state, PlaybackPositionPayload, PlaybackStatePayload,
 };
 use crate::media_controls::MediaControlsRef;
 use crate::mpv_controller::MpvController;
@@ -51,8 +50,6 @@ pub fn create_mpv_player(
     let app2 = app_handle.clone();
     let app3 = app_handle.clone();
     let app4 = app_handle.clone();
-    let app5 = app_handle.clone();
-    let app6 = app_handle.clone();
     let app7 = app_handle.clone();
 
     // The player is needed inside callbacks but holds the MpvController.
@@ -63,8 +60,6 @@ pub fn create_mpv_player(
     let pr2 = player_ref.clone();
     let pr3 = player_ref.clone();
     let pr4 = player_ref.clone();
-    let pr5 = player_ref.clone();
-    let pr6 = player_ref.clone();
     let pr7 = player_ref.clone();
     let pr8 = player_ref.clone();
     let pr9 = player_ref.clone();
@@ -201,31 +196,6 @@ pub fn create_mpv_player(
                 if let Some(ref mc) = *mc2.lock() {
                     mc.update_playback_state(!paused, p.position());
                 }
-            }
-        })),
-        on_buffering_change: Some(Box::new(move |buffering| {
-            if let Some(ref p) = *pr5.lock() {
-                p.handle_buffering_change(buffering);
-                let snap = p.snapshot();
-                emit_playback_buffering(
-                    &app5,
-                    PlaybackBufferingPayload {
-                        is_buffering: buffering,
-                        buffered_fraction: snap.buffered_fraction,
-                    },
-                );
-            }
-        })),
-        on_cache_state_change: Some(Box::new(move |state| {
-            if let Some(ref p) = *pr6.lock() {
-                p.handle_cache_state_change(state);
-                emit_playback_buffering(
-                    &app6,
-                    PlaybackBufferingPayload {
-                        is_buffering: false,
-                        buffered_fraction: (state as f64 / 100.0).clamp(0.0, 1.0),
-                    },
-                );
             }
         })),
         on_idle_active: Some(Box::new(move || {

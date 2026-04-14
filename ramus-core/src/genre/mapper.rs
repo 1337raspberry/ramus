@@ -37,8 +37,13 @@ struct GenreNodeRaw {
 pub struct GenreMapper {
     /// The full hierarchy as loaded from JSON.
     pub root_nodes: Vec<GenreNode>,
-    /// Case-insensitive lookup: lowercased genre name → GenreNode.
-    exact_lookup: HashMap<String, GenreNode>,
+    /// Case-insensitive lookup: lowercased genre name → list of nodes
+    /// with that name. A list (not a single node) because the beets
+    /// hierarchy — and user-imported custom trees even more so — can
+    /// have the same display name under multiple parents (e.g. "Funk"
+    /// under both R&B and Pop). Matching must expand all of them or
+    /// `expand_genre` silently returns an incomplete subtree.
+    exact_lookup: HashMap<String, Vec<GenreNode>>,
     /// All genre names for fuzzy search.
     all_names: Vec<String>,
     /// Cache for matchGenre results.
@@ -46,7 +51,7 @@ pub struct GenreMapper {
 }
 
 struct MatchCache {
-    matches: HashMap<String, GenreNode>,
+    matches: HashMap<String, Vec<GenreNode>>,
     misses: HashSet<String>,
 }
 
@@ -66,9 +71,22 @@ impl GenreMapper {
             .map(|r| Self::convert_raw_node(r, ""))
             .collect();
 
-        let mut lookup = HashMap::new();
+        let mut lookup: HashMap<String, Vec<GenreNode>> = HashMap::new();
         Self::build_lookup(&nodes, &mut lookup);
-        let all_names: Vec<String> = lookup.values().map(|n| n.name.clone()).collect();
+        // Deduplicate display names so fuzzy search doesn't try the same
+        // string multiple times when a name appears in several subtrees.
+        let mut seen: HashSet<String> = HashSet::new();
+        let all_names: Vec<String> = lookup
+            .values()
+            .flat_map(|v| v.iter())
+            .filter_map(|n| {
+                if seen.insert(n.name.to_lowercase()) {
+                    Some(n.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         Ok(Self {
             root_nodes: nodes,
@@ -83,25 +101,36 @@ impl GenreMapper {
 
     /// Match a Plex genre string to the genre hierarchy.
     /// Tries exact (case-insensitive) first, then fuzzy via strsim.
+    ///
+    /// Returns the first matching node when a name appears under
+    /// multiple parents. Callers that need to collect descendants
+    /// across all same-named subtrees should go via `expand_genre` on
+    /// the `GenreExpander` trait, which unions all of them.
     pub fn match_genre(&self, plex_genre: &str) -> Option<GenreNode> {
+        self.match_all(plex_genre).into_iter().next()
+    }
+
+    /// Match a Plex genre string to every node in the hierarchy that
+    /// shares that display name. Returns an empty Vec on miss.
+    fn match_all(&self, plex_genre: &str) -> Vec<GenreNode> {
         let key = plex_genre.to_lowercase();
 
         // Check caches first
         {
             let cache = self.cache.lock();
-            if let Some(node) = cache.matches.get(&key) {
-                return Some(node.clone());
+            if let Some(nodes) = cache.matches.get(&key) {
+                return nodes.clone();
             }
             if cache.misses.contains(&key) {
-                return None;
+                return Vec::new();
             }
         }
 
         // Exact match
-        if let Some(node) = self.exact_lookup.get(&key) {
-            let node = node.clone();
-            self.cache.lock().matches.insert(key, node.clone());
-            return Some(node);
+        if let Some(nodes) = self.exact_lookup.get(&key) {
+            let nodes = nodes.clone();
+            self.cache.lock().matches.insert(key, nodes.clone());
+            return nodes;
         }
 
         // Fuzzy fallback via strsim (expensive — runs outside lock)
@@ -119,16 +148,16 @@ impl GenreMapper {
         // Threshold ~0.8 for jaro_winkler (maps to ~0.4 Fuse threshold)
         if best_score > 0.8 {
             if let Some(name) = best_name {
-                if let Some(node) = self.exact_lookup.get(&name.to_lowercase()) {
-                    let node = node.clone();
-                    self.cache.lock().matches.insert(key, node.clone());
-                    return Some(node);
+                if let Some(nodes) = self.exact_lookup.get(&name.to_lowercase()) {
+                    let nodes = nodes.clone();
+                    self.cache.lock().matches.insert(key, nodes.clone());
+                    return nodes;
                 }
             }
         }
 
         self.cache.lock().misses.insert(key);
-        None
+        Vec::new()
     }
 
     /// Build a display tree from album sets, pruning empty branches and computing
@@ -215,9 +244,12 @@ impl GenreMapper {
 
     // --- Private: Lookup ---
 
-    fn build_lookup(nodes: &[GenreNode], lookup: &mut HashMap<String, GenreNode>) {
+    fn build_lookup(nodes: &[GenreNode], lookup: &mut HashMap<String, Vec<GenreNode>>) {
         for node in nodes {
-            lookup.insert(node.name.to_lowercase(), node.clone());
+            lookup
+                .entry(node.name.to_lowercase())
+                .or_default()
+                .push(node.clone());
             if let Some(ref children) = node.children {
                 Self::build_lookup(children, lookup);
             }
@@ -287,11 +319,15 @@ impl GenreMapper {
 
 impl GenreExpander for GenreMapper {
     fn expand_genre(&self, name: &str) -> Option<HashSet<String>> {
-        self.match_genre(name).map(|node| {
-            let mut set = HashSet::new();
+        let nodes = self.match_all(name);
+        if nodes.is_empty() {
+            return None;
+        }
+        let mut set = HashSet::new();
+        for node in &nodes {
             node.collect_descendant_names(&mut set);
-            set
-        })
+        }
+        Some(set)
     }
 }
 
@@ -437,6 +473,37 @@ mod tests {
         assert_ne!(rb_funk.id, pop_funk.id);
         assert_eq!(rb_funk.id, "r&b/funk");
         assert_eq!(pop_funk.id, "pop/funk");
+    }
+
+    #[test]
+    fn test_expand_genre_unions_duplicate_name_subtrees() {
+        // Two nodes named "Funk" under different parents, each with
+        // a distinct descendant. `expand_genre("Funk")` must return
+        // the union of both subtrees, not just one.
+        let json = r#"{
+          "genres": [
+            {
+              "name": "R&B",
+              "children": [{
+                "name": "Funk",
+                "children": [{ "name": "P-Funk", "children": [] }]
+              }]
+            },
+            {
+              "name": "Pop",
+              "children": [{
+                "name": "Funk",
+                "children": [{ "name": "Disco Funk", "children": [] }]
+              }]
+            }
+          ]
+        }"#;
+        let mapper = make_mapper(json);
+        let expanded = mapper.expand_genre("Funk").expect("Funk should match");
+        assert!(expanded.contains("Funk"));
+        assert!(expanded.contains("P-Funk"));
+        assert!(expanded.contains("Disco Funk"));
+        assert_eq!(expanded.len(), 3);
     }
 
     // --- Exact Matching ---

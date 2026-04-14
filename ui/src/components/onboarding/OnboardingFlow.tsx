@@ -16,6 +16,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const [step, setStep] = useState<Step>("signIn");
   const [server, setServer] = useState<PlexServer | null>(null);
   const [serverUrl, setServerUrl] = useState<string>("");
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
 
   const handleSignInSuccess = useCallback(() => {
     setStep("discoverServers");
@@ -34,9 +35,10 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const handleLibrarySelect = useCallback(
     (lib: LibrarySection) => {
       if (!server) return;
+      setFinalizeError(null);
       finalizeOnboarding(server.machineIdentifier, lib.key, serverUrl)
         .then(() => setStep("initialSync"))
-        .catch(() => {});
+        .catch((e) => setFinalizeError(String(e)));
     },
     [server, serverUrl],
   );
@@ -56,7 +58,12 @@ export default function OnboardingFlow({ onComplete }: Props) {
         {step === "signIn" && <OAuthSignIn onSuccess={handleSignInSuccess} />}
         {step === "discoverServers" && <ServerPicker onSelect={handleServerSelect} />}
         {step === "selectLibrary" && server && (
-          <LibraryPicker server={server} onSelect={handleLibrarySelect} />
+          <>
+            <LibraryPicker server={server} onSelect={handleLibrarySelect} />
+            {finalizeError && (
+              <div className="onboarding-error">Couldn't finish setup: {finalizeError}</div>
+            )}
+          </>
         )}
         {step === "initialSync" && (
           <InitialSync onComplete={handleSyncComplete} onSkip={handleSkip} />

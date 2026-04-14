@@ -200,9 +200,18 @@ pub async fn fetch_lyrics(
         Err(_) => {}
     }
 
-    // LRCLIB fallback
+    // LRCLIB fallback — look up the requested track from the queue by
+    // rating_key. Falling back to `current_track` would return lyrics
+    // for whatever's playing right now, which is wrong if the user
+    // opened the lyrics view for a queued track or if mpv advanced
+    // between the Plex attempt and this call.
     let player_state = state.player.state();
-    if let Some(ref track) = player_state.current_track {
+    let track = player_state
+        .queue
+        .iter()
+        .find(|t| t.rating_key == rating_key)
+        .or(player_state.current_track.as_ref());
+    if let Some(track) = track {
         if let Some(result) = lyrics::fetch_from_lrclib(
             &state.http_client,
             &track.title,

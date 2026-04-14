@@ -457,13 +457,12 @@ impl PlexClient {
     }
 
     /// Connect to a Plex server and verify connectivity.
+    ///
+    /// The server URL and token are only written into live state after
+    /// `/identity` returns a successful response. A failed connect leaves
+    /// any previously-stored credentials untouched rather than poisoning
+    /// the client with unverified values.
     pub async fn connect(&self, server_url: Url, token: String) -> Result<(), PlexClientError> {
-        {
-            let mut state = self.state.write();
-            state.server_url = Some(server_url.clone());
-            state.token = Some(token.clone());
-        }
-
         let url = server_url
             .join("identity")
             .map_err(|_| PlexClientError::ConnectionFailed)?;
@@ -478,6 +477,10 @@ impl PlexClient {
         if !(200..300).contains(&(resp.status().as_u16() as usize)) {
             return Err(PlexClientError::ConnectionFailed);
         }
+
+        let mut state = self.state.write();
+        state.server_url = Some(server_url);
+        state.token = Some(token);
         Ok(())
     }
 

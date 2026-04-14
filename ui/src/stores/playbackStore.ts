@@ -35,8 +35,6 @@ interface PlaybackState {
   queueIndex: number;
   position: number;
   duration: number;
-  isBuffering: boolean;
-  bufferedFraction: number;
   volume: number;
 
   // --- Lyrics ---
@@ -85,7 +83,6 @@ interface PlaybackState {
   // --- Event Handlers ---
   onPlaybackState: (status: string, track: Track | null, queueIndex: number) => void;
   onPlaybackPosition: (position: number, duration: number) => void;
-  onBuffering: (isBuffering: boolean, bufferedFraction: number) => void;
   /// Called on `spectrum-ready` events from Rust AND once at track change
   /// to hydrate from the cache. Safe to call unconditionally; it only
   /// invokes `getSpectrum` when there's a current track.
@@ -135,8 +132,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   queueIndex: 0,
   position: 0,
   duration: 0,
-  isBuffering: false,
-  bufferedFraction: 0,
   volume: 100,
 
   lyrics: null,
@@ -256,10 +251,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   onPlaybackPosition: (position, duration) => {
     set({ position, duration });
-  },
-
-  onBuffering: (isBuffering, bufferedFraction) => {
-    set({ isBuffering, bufferedFraction });
   },
 
   refreshSpectrum: (forRatingKey) => {
