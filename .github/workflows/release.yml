@@ -40,37 +40,47 @@ permissions:
   contents: write
 
 jobs:
+  # Emits the filtered matrix as JSON so the `build` job only spins up
+  # runners for the platforms the user actually asked for. We can't gate
+  # matrix entries with a job-level `if:` because the `matrix` context
+  # isn't available in job-level conditions — only `github`, `needs`,
+  # `vars`, `inputs`. So we compute the matrix dynamically up front instead.
+  setup:
+    name: Select platforms
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - id: select
+        env:
+          # Default to 'all' so tag-push triggers (if re-enabled) still build everything.
+          PLATFORM: ${{ inputs.platform || 'all' }}
+        shell: bash
+        run: |
+          # macOS Universal: builds for both Apple Silicon and Intel on a
+          # single arm64 runner, then `lipo`s them together into one .dmg.
+          # Possible because libloading means we don't need a libmpv binary
+          # for each arch at link time — only at runtime, where each user's
+          # brew install provides the right one.
+          macos='{"id":"macos","platform":"macos-14","label":"macOS (Universal)","rust-target":"aarch64-apple-darwin,x86_64-apple-darwin","tauri-args":"--target universal-apple-darwin"}'
+          linux='{"id":"linux","platform":"ubuntu-22.04","label":"Linux (x86_64)","rust-target":"","tauri-args":""}'
+          windows='{"id":"windows","platform":"windows-latest","label":"Windows (x86_64)","rust-target":"","tauri-args":""}'
+          case "$PLATFORM" in
+            all)     include="[$macos,$linux,$windows]" ;;
+            macos)   include="[$macos]" ;;
+            linux)   include="[$linux]" ;;
+            windows) include="[$windows]" ;;
+            *) echo "Unknown platform: $PLATFORM" >&2; exit 1 ;;
+          esac
+          echo "matrix={\"include\":$include}" >> "$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.label }}
-    # Skip matrix entries that weren't selected. `inputs.platform` is only set
-    # for workflow_dispatch; if push/tag triggers get re-enabled later, the
-    # first clause lets all three platforms build unconditionally.
-    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == matrix.id
+    needs: setup
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # macOS Universal: builds for both Apple Silicon and Intel on a
-          # single arm64 runner, then `lipo`s them together into one .dmg.
-          # Now possible because libloading means we don't need a libmpv
-          # binary for each arch at link time — only at runtime, where
-          # each user's brew install provides the right one.
-          - id: macos
-            platform: macos-14
-            label: macOS (Universal)
-            rust-target: aarch64-apple-darwin,x86_64-apple-darwin
-            tauri-args: --target universal-apple-darwin
-          - id: linux
-            platform: ubuntu-22.04
-            label: Linux (x86_64)
-            rust-target: ''
-            tauri-args: ''
-          - id: windows
-            platform: windows-latest
-            label: Windows (x86_64)
-            rust-target: ''
-            tauri-args: ''
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
 
     steps:
       - name: Checkout
