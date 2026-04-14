@@ -4,15 +4,14 @@ import type {
   AccentColorPayload,
   PlaybackStatePayload,
   PlaybackPositionPayload,
-  PlaybackBufferingPayload,
   SpectrumReadyPayload,
 } from "./types";
 import { usePlaybackStore } from "../stores/playbackStore";
 
 /**
  * Subscribe to Tauri playback events (accent-color, playback-state,
- * playback-position, playback-buffering, spectrum-ready) and load
- * the saved volume on mount. Side-effect only — returns nothing.
+ * playback-position, spectrum-ready) and load the saved volume on
+ * mount. Side-effect only — returns nothing.
  */
 export function usePlaybackEvents(): void {
   // Listen for accent color events
@@ -40,14 +39,10 @@ export function usePlaybackEvents(): void {
       const { position, duration } = event.payload;
       store.onPlaybackPosition(position, duration);
     });
-    const u3 = listen<PlaybackBufferingPayload>("playback-buffering", (event) => {
-      const { isBuffering, bufferedFraction } = event.payload;
-      store.onBuffering(isBuffering, bufferedFraction);
-    });
     // Focus-mode spectrum: Rust emits this when a prefetched track or
     // the current track finishes analysis. Re-pull the spectrum for the
     // currently playing track if it matches; otherwise ignore.
-    const u4 = listen<SpectrumReadyPayload>("spectrum-ready", (event) => {
+    const u3 = listen<SpectrumReadyPayload>("spectrum-ready", (event) => {
       store.refreshSpectrum(event.payload.ratingKey);
     });
 
@@ -57,7 +52,6 @@ export function usePlaybackEvents(): void {
       u1.then((fn) => fn());
       u2.then((fn) => fn());
       u3.then((fn) => fn());
-      u4.then((fn) => fn());
     };
   }, []);
 }

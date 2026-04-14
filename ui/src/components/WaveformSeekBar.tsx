@@ -6,15 +6,12 @@ export default function WaveformSeekBar() {
   const levels = usePlaybackStore((s) => s.waveformLevels);
   const position = usePlaybackStore((s) => s.position);
   const duration = usePlaybackStore((s) => s.duration);
-  const bufferedFraction = usePlaybackStore((s) => s.bufferedFraction);
-  const isBuffering = usePlaybackStore((s) => s.isBuffering);
   const seek = usePlaybackStore((s) => s.seek);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPos, setSeekPos] = useState(0);
-  const animRef = useRef<number>(0);
 
   // Cache the static waveform shape on an offscreen canvas
   const shapeCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -100,7 +97,6 @@ export default function WaveformSeekBar() {
 
     const midY = h / 2;
     const progressX = fraction * w;
-    const bufferedX = bufferedFraction * w;
 
     const style = getComputedStyle(document.documentElement);
     const r = style.getPropertyValue("--accent-r").trim();
@@ -156,16 +152,6 @@ export default function WaveformSeekBar() {
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Buffered line
-      if (bufferedX > progressX) {
-        ctx.beginPath();
-        ctx.moveTo(progressX, midY);
-        ctx.lineTo(bufferedX, midY);
-        ctx.strokeStyle = "rgba(153, 153, 153, 0.5)";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-
       // Progress line
       if (progressX > 0) {
         ctx.beginPath();
@@ -177,39 +163,8 @@ export default function WaveformSeekBar() {
       }
     }
 
-    // Buffering scan animation
-    if (isBuffering) {
-      const scanWidth = w * 0.18;
-      const t = (performance.now() % 1400) / 1400;
-      const scanX = t * (w - scanWidth);
-      const gradient = ctx.createLinearGradient(scanX, 0, scanX + scanWidth, 0);
-      gradient.addColorStop(0, "transparent");
-      gradient.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, 0.45)`);
-      gradient.addColorStop(1, "transparent");
-      ctx.fillStyle = gradient;
-      ctx.fillRect(scanX, 0, scanWidth, h);
-    }
-
     ctx.restore();
-  }, [levels, fraction, bufferedFraction, isBuffering]);
-
-  useEffect(() => {
-    if (!isBuffering) return;
-    let running = true;
-    const animate = () => {
-      if (!running) return;
-      // Repaint via requestAnimationFrame with direct canvas rendering
-      const canvas = canvasRef.current;
-      if (canvas) {
-        animRef.current = requestAnimationFrame(animate);
-      }
-    };
-    animRef.current = requestAnimationFrame(animate);
-    return () => {
-      running = false;
-      cancelAnimationFrame(animRef.current);
-    };
-  }, [isBuffering]);
+  }, [levels, fraction]);
 
   const handleSeekStart = useCallback(
     (clientX: number) => {

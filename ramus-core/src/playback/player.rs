@@ -86,9 +86,7 @@ pub struct AudioPlayerState {
     pub position: f64,
     pub duration: f64,
     pub is_loading: bool,
-    pub is_buffering: bool,
     pub waveform_levels: Option<Vec<f32>>,
-    pub buffered_fraction: f64,
     pub volume: f64,
 }
 
@@ -97,8 +95,6 @@ struct PlayerInner {
     position: f64,
     duration: f64,
     is_loading: bool,
-    is_buffering: bool,
-    buffered_fraction: f64,
     volume: f64,
     config: PlaybackConfig,
     server_url: Option<Url>,
@@ -127,8 +123,6 @@ impl AudioPlayer {
                 position: 0.0,
                 duration: 0.0,
                 is_loading: false,
-                is_buffering: false,
-                buffered_fraction: 0.0,
                 volume: 100.0,
                 config: PlaybackConfig::default(),
                 server_url: None,
@@ -487,9 +481,7 @@ impl AudioPlayer {
             position: inner.position,
             duration: inner.duration,
             is_loading: inner.is_loading,
-            is_buffering: inner.is_buffering,
             waveform_levels: None,
-            buffered_fraction: inner.buffered_fraction,
             volume: inner.volume,
         }
     }
@@ -528,8 +520,8 @@ impl AudioPlayer {
 
     /// Handle mpv playlist-pos change (track advance).
     ///
-    /// Resets position and buffered fraction but NOT duration. For manual
-    /// skips (`next()`/`previous()`), the caller already resets duration
+    /// Resets position but NOT duration. For manual skips
+    /// (`next()`/`previous()`), the caller already resets duration
     /// before calling `playlist_play_index`. For gapless auto-advance,
     /// the duration must NOT be reset: mpv's `prefetch-playlist` pre-
     /// demuxes the next file and may have already delivered the correct
@@ -551,7 +543,6 @@ impl AudioPlayer {
         inner.state.queue_index = pos;
         inner.state.current_track = Some(inner.state.queue[pos].clone());
         inner.position = 0.0;
-        inner.buffered_fraction = 0.0;
     }
 
     /// Handle mpv pause state change.
@@ -564,21 +555,9 @@ impl AudioPlayer {
         }
     }
 
-    /// Handle mpv buffering state change (paused-for-cache).
-    pub fn handle_buffering_change(&self, buffering: bool) {
-        self.inner.lock().is_buffering = buffering;
-    }
-
-    /// Handle mpv cache-buffering-state change (0–100).
-    pub fn handle_cache_state_change(&self, state: i64) {
-        self.inner.lock().buffered_fraction = (state as f64 / 100.0).clamp(0.0, 1.0);
-    }
-
     /// Handle mpv file-loaded event.
     pub fn handle_file_loaded(&self) {
-        let mut inner = self.inner.lock();
-        inner.is_loading = false;
-        inner.is_buffering = false;
+        self.inner.lock().is_loading = false;
     }
 
     /// Handle mpv file-ended event.
@@ -615,14 +594,6 @@ impl AudioPlayer {
         f(&mut inner.cache)
     }
 
-
-    /// Whether the current track's buffer has reached the "unpause" threshold
-    /// according to mpv's cache-buffering-state. **This is not "whole file on
-    /// disk"** — it's mpv's 1s-ahead readiness flag. Used for the buffering
-    /// indicator in the UI.
-    pub fn is_fully_buffered(&self) -> bool {
-        self.inner.lock().buffered_fraction >= 1.0
-    }
 
     // --- Prefetch ---
 
@@ -1561,14 +1532,12 @@ mod tests {
         {
             let mut inner = player.inner.lock();
             inner.is_loading = true;
-            inner.is_buffering = true;
         }
 
         player.handle_file_loaded();
 
         let snapshot = player.snapshot();
         assert!(!snapshot.is_loading);
-        assert!(!snapshot.is_buffering);
     }
 
     #[test]
@@ -1584,14 +1553,6 @@ mod tests {
         // Should have advanced to next track
         let state = player.state();
         assert_eq!(state.queue_index, 1);
-    }
-
-    #[test]
-    fn test_handle_cache_state_change() {
-        let (player, _) = make_player();
-        player.handle_cache_state_change(50);
-        let snapshot = player.snapshot();
-        assert!((snapshot.buffered_fraction - 0.5).abs() < 0.01);
     }
 
     // --- URL resolution tests ---

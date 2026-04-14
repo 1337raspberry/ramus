@@ -1,4 +1,4 @@
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,6 +13,29 @@ use crate::events;
 use crate::state::AppState;
 
 use super::CmdResult;
+
+/// RAII guard for the `sync_in_progress` atomic flag. The flag is set to
+/// `true` on construction; on drop it's reset to `false`. The spawned
+/// background task takes ownership of the guard and forgets it after it
+/// finishes, so the guard's drop path only runs for the early-return
+/// error cases on the command thread.
+struct SyncGuard(Arc<AtomicBool>);
+
+impl Drop for SyncGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+fn acquire_sync_guard(flag: &Arc<AtomicBool>) -> CmdResult<SyncGuard> {
+    if flag
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return Err("Sync already in progress".into());
+    }
+    Ok(SyncGuard(flag.clone()))
+}
 
 fn get_library_key() -> CmdResult<String> {
     let token_store = TokenStore::new().map_err(|e| e.to_string())?;
@@ -35,15 +58,12 @@ pub async fn start_full_sync(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
-    if state.sync_in_progress.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
-        return Err("Sync already in progress".into());
-    }
+    let guard = acquire_sync_guard(&state.sync_in_progress)?;
 
     let library_key = get_library_key()?;
     let engine_lock = state.sync_engine.lock();
     let engine = engine_lock.as_ref().ok_or("Sync engine not initialized")?;
 
-    // Clone internals needed for the spawned task
     let cache = engine.cache.clone();
     let client = engine.client.clone();
     drop(engine_lock);
@@ -51,6 +71,10 @@ pub async fn start_full_sync(
     let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
     let app_handle = app.clone();
     let settings = state.settings.clone();
+
+    // Hand ownership of the flag to the background task — forget the
+    // guard so its drop doesn't race the task clearing the flag itself.
+    std::mem::forget(guard);
     let flag = state.sync_in_progress.clone();
 
     tokio::spawn(async move {
@@ -71,9 +95,7 @@ pub async fn start_incremental_sync(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
-    if state.sync_in_progress.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
-        return Err("Sync already in progress".into());
-    }
+    let guard = acquire_sync_guard(&state.sync_in_progress)?;
 
     let library_key = get_library_key()?;
     let engine_lock = state.sync_engine.lock();
@@ -86,6 +108,8 @@ pub async fn start_incremental_sync(
     let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
     let app_handle = app.clone();
     let settings = state.settings.clone();
+
+    std::mem::forget(guard);
     let flag = state.sync_in_progress.clone();
 
     tokio::spawn(async move {
@@ -106,9 +130,7 @@ pub async fn start_genre_sync(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
-    if state.sync_in_progress.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
-        return Err("Sync already in progress".into());
-    }
+    let guard = acquire_sync_guard(&state.sync_in_progress)?;
 
     let engine_lock = state.sync_engine.lock();
     let engine = engine_lock.as_ref().ok_or("Sync engine not initialized")?;
@@ -120,6 +142,8 @@ pub async fn start_genre_sync(
     let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
     let app_handle = app.clone();
     let settings = state.settings.clone();
+
+    std::mem::forget(guard);
     let flag = state.sync_in_progress.clone();
 
     tokio::spawn(async move {

@@ -56,7 +56,7 @@ export default function App() {
       .catch(() => setAuthed(false));
   }, []);
 
-  // Tauri event subscriptions (accent-color, playback state/position/buffering, spectrum)
+  // Tauri event subscriptions (accent-color, playback state/position, spectrum)
   usePlaybackEvents();
 
   // When focus mode is active, visually hide the three-column layout so the

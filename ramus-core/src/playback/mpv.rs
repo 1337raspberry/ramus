@@ -29,9 +29,7 @@ pub enum ObserverID {
     Duration = 2,
     Pause = 3,
     PlaylistPos = 5,
-    PausedForCache = 7,
     IdleActive = 9,
-    CacheBufferingState = 10,
 }
 
 /// mpv file load mode.
@@ -62,8 +60,6 @@ pub struct MpvCallbacks {
     pub on_duration_change: Option<Box<dyn Fn(f64) + Send + Sync>>,
     pub on_playlist_pos_change: Option<Box<dyn Fn(i64) + Send + Sync>>,
     pub on_pause_change: Option<Box<dyn Fn(bool) + Send + Sync>>,
-    pub on_buffering_change: Option<Box<dyn Fn(bool) + Send + Sync>>,
-    pub on_cache_state_change: Option<Box<dyn Fn(i64) + Send + Sync>>,
     pub on_idle_active: Option<Box<dyn Fn() + Send + Sync>>,
     pub on_file_loaded: Option<Box<dyn Fn() + Send + Sync>>,
     pub on_file_ended: Option<Box<dyn Fn(FileEndReason) + Send + Sync>>,
@@ -113,9 +109,7 @@ pub fn observed_properties() -> Vec<(&'static str, ObserverID)> {
         ("duration", ObserverID::Duration),
         ("pause", ObserverID::Pause),
         ("playlist-pos", ObserverID::PlaylistPos),
-        ("paused-for-cache", ObserverID::PausedForCache),
         ("idle-active", ObserverID::IdleActive),
-        ("cache-buffering-state", ObserverID::CacheBufferingState),
     ]
 }
 
@@ -220,7 +214,7 @@ mod tests {
     #[test]
     fn test_observed_properties_complete() {
         let props = observed_properties();
-        assert_eq!(props.len(), 7);
+        assert_eq!(props.len(), 5);
         assert!(props.iter().any(|(name, id)| *name == "time-pos" && *id == ObserverID::TimePos));
         assert!(props.iter().any(|(name, id)| *name == "duration" && *id == ObserverID::Duration));
         assert!(props.iter().any(|(name, id)| *name == "pause" && *id == ObserverID::Pause));
@@ -229,12 +223,7 @@ mod tests {
             .any(|(name, id)| *name == "playlist-pos" && *id == ObserverID::PlaylistPos));
         assert!(props
             .iter()
-            .any(|(name, id)| *name == "paused-for-cache" && *id == ObserverID::PausedForCache));
-        assert!(props
-            .iter()
             .any(|(name, id)| *name == "idle-active" && *id == ObserverID::IdleActive));
-        assert!(props.iter().any(|(name, id)| *name == "cache-buffering-state"
-            && *id == ObserverID::CacheBufferingState));
     }
 
     #[test]
@@ -243,9 +232,7 @@ mod tests {
         assert_eq!(ObserverID::Duration as u64, 2);
         assert_eq!(ObserverID::Pause as u64, 3);
         assert_eq!(ObserverID::PlaylistPos as u64, 5);
-        assert_eq!(ObserverID::PausedForCache as u64, 7);
         assert_eq!(ObserverID::IdleActive as u64, 9);
-        assert_eq!(ObserverID::CacheBufferingState as u64, 10);
     }
 
     #[test]
@@ -273,8 +260,6 @@ mod tests {
         assert!(cb.on_duration_change.is_none());
         assert!(cb.on_playlist_pos_change.is_none());
         assert!(cb.on_pause_change.is_none());
-        assert!(cb.on_buffering_change.is_none());
-        assert!(cb.on_cache_state_change.is_none());
         assert!(cb.on_idle_active.is_none());
         assert!(cb.on_file_loaded.is_none());
         assert!(cb.on_file_ended.is_none());

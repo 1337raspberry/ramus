@@ -77,10 +77,8 @@ impl MpvController {
                 let n = CString::new(*name).unwrap();
                 let fmt = match id {
                     ObserverID::TimePos | ObserverID::Duration => MPV_FORMAT_DOUBLE,
-                    ObserverID::Pause | ObserverID::PausedForCache | ObserverID::IdleActive => {
-                        MPV_FORMAT_FLAG
-                    }
-                    ObserverID::PlaylistPos | ObserverID::CacheBufferingState => MPV_FORMAT_INT64,
+                    ObserverID::Pause | ObserverID::IdleActive => MPV_FORMAT_FLAG,
+                    ObserverID::PlaylistPos => MPV_FORMAT_INT64,
                 };
                 lib.observe_property(ctx, *id as u64, n.as_ptr(), fmt);
             }
@@ -324,14 +322,6 @@ fn event_loop(
                             }
                         }
                     }
-                    id if id == ObserverID::PausedForCache as u64 => {
-                        if prop.format == MPV_FORMAT_FLAG {
-                            let val = unsafe { *(prop.data as *const c_int) };
-                            if let Some(ref cb) = callbacks.on_buffering_change {
-                                cb(val != 0);
-                            }
-                        }
-                    }
                     id if id == ObserverID::IdleActive as u64 => {
                         if prop.format == MPV_FORMAT_FLAG {
                             let val = unsafe { *(prop.data as *const c_int) };
@@ -339,14 +329,6 @@ fn event_loop(
                                 if let Some(ref cb) = callbacks.on_idle_active {
                                     cb();
                                 }
-                            }
-                        }
-                    }
-                    id if id == ObserverID::CacheBufferingState as u64 => {
-                        if prop.format == MPV_FORMAT_INT64 {
-                            let val = unsafe { *(prop.data as *const i64) };
-                            if let Some(ref cb) = callbacks.on_cache_state_change {
-                                cb(val);
                             }
                         }
                     }
