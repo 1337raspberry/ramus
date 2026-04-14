@@ -1,7 +1,5 @@
 use crate::models::{RangeField, RangeOp};
 
-// --- Types ---
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum SearchFilter {
     FreeText(String),
@@ -97,14 +95,12 @@ impl ParsedQuery {
     }
 }
 
-// --- Parser ---
-
 pub struct QueryParser;
 
 impl QueryParser {
-    /// Parse a raw query string into structured filters.
-    /// Each operator consumes all text until an explicit `AND` delimiter.
-    /// Without `AND`, the entire input belongs to the first operator.
+    /// Parse a raw query string into structured filters. Each operator
+    /// consumes all text until an explicit `AND` delimiter. Without
+    /// `AND`, the entire input belongs to the first operator.
     pub fn parse(input: &str) -> ParsedQuery {
         let trimmed = input.trim();
         if trimmed.is_empty() {
@@ -113,7 +109,7 @@ impl QueryParser {
             };
         }
 
-        // Split on " AND " (case-sensitive, literal uppercase)
+        // Segment on literal uppercase " AND " (case-sensitive).
         let segments: Vec<&str> = trimmed.split(" AND ").collect();
         let mut filters = Vec::new();
 
@@ -123,12 +119,9 @@ impl QueryParser {
                 continue;
             }
             if let Some(filter) = Self::parse_segment(s) {
-                // Fold consecutive free-text segments into one. Splitting on
-                // " AND " + parse_segment can produce multiple FreeText
-                // filters (e.g. "radiohead AND karma" or "year:abc AND
-                // jazz" where the year-prefixed segment falls back to free
-                // text). Without this merge, only the first FreeText is
-                // searched — see parser.free_text() which find_maps.
+                // Fold consecutive free-text segments into one so
+                // `free_text()` (a `find_map`) returns their concatenation
+                // rather than only the first.
                 if let SearchFilter::FreeText(new_text) = &filter {
                     if let Some(existing) = filters.iter_mut().find_map(|f| match f {
                         SearchFilter::FreeText(t) => Some(t),
@@ -208,8 +201,6 @@ impl QueryParser {
         Some(SearchFilter::Range(field, op, number))
     }
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {

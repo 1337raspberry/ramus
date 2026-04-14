@@ -1,10 +1,10 @@
 //! Connection monitoring and failover for Plex server connections.
 //!
-//! Monitors network interface changes, debounces rapid transitions (500ms),
+//! Monitors network interface changes, debounces rapid transitions (500 ms),
 //! and evaluates connections with a three-tier failover strategy:
-//! 1. Test current connection (3s timeout)
-//! 2. Try cached connections sorted by priority (5s timeout each)
-//! 3. Re-discover from plex.tv as last resort
+//! 1. Test the current connection (3 s timeout).
+//! 2. Try cached connections in priority order (5 s timeout each).
+//! 3. Re-discover from plex.tv as a last resort.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -16,8 +16,6 @@ use url::Url;
 use crate::models::PlexServer;
 use crate::plex::client::PlexClient;
 
-// --- Constants ---
-
 /// Debounce window for network interface changes.
 const DEBOUNCE_MS: u64 = 500;
 
@@ -27,16 +25,12 @@ const FAST_PATH_TIMEOUT: Duration = Duration::from_secs(3);
 /// Timeout for testing cached alternative connections.
 const CACHED_TIMEOUT: Duration = Duration::from_secs(5);
 
-// --- Callback types ---
-
-/// Callback fired when a new working connection is found.
-/// Parameters: (server_url, access_token, is_local, is_http)
+/// Fired when a new working connection is found.
+/// Parameters: `(server_url, access_token, is_local, is_http)`.
 pub type ConnectionChangedCallback = Arc<dyn Fn(Url, String, bool, bool) + Send + Sync>;
 
-/// Callback fired when all connections fail.
+/// Fired when all connections fail.
 pub type ConnectionLostCallback = Arc<dyn Fn() + Send + Sync>;
-
-// --- ConnectionMonitor ---
 
 struct MonitorInner {
     cached_server: Option<PlexServer>,
@@ -52,8 +46,8 @@ struct MonitorInner {
 
 /// Monitors network changes and manages Plex server connection failover.
 ///
-/// Create with `Arc<ConnectionMonitor>` — the `handle_path_update` method
-/// requires `&Arc<Self>` to spawn debounced evaluation tasks.
+/// Must be wrapped in `Arc<ConnectionMonitor>`. `handle_path_update` requires
+/// `&Arc<Self>` to spawn debounced evaluation tasks.
 pub struct ConnectionMonitor {
     client: Arc<PlexClient>,
     inner: Mutex<MonitorInner>,
@@ -76,8 +70,6 @@ impl ConnectionMonitor {
             }),
         }
     }
-
-    // -- Configuration --
 
     pub fn set_on_connection_changed(&self, handler: ConnectionChangedCallback) {
         self.inner.lock().on_connection_changed = Some(handler);
@@ -116,12 +108,12 @@ impl ConnectionMonitor {
         self.inner.lock().active_uri.clone()
     }
 
-    /// Update the active URI (e.g. after a background failover).
+    /// Update the active URI, e.g. after a background failover.
     pub fn update_active_uri(&self, uri: String) {
         self.inner.lock().active_uri = Some(uri);
     }
 
-    /// Replace the cached server (e.g. after re-discovery brings fresh connections).
+    /// Replace the cached server, e.g. after re-discovery returns fresh connections.
     pub fn update_server(&self, server: PlexServer) {
         self.inner.lock().cached_server = Some(server);
     }
@@ -131,27 +123,22 @@ impl ConnectionMonitor {
         self.inner.lock().is_evaluating
     }
 
-    // -- Network change handling --
-
     /// Called when network interfaces change (from platform-specific monitoring).
     ///
-    /// Compares interfaces with the previous set and only triggers evaluation
-    /// if the set changed. Debounces with a 500ms delay.
+    /// Triggers an evaluation only when the interface set differs from the
+    /// previous one. Debounces with a 500 ms delay.
     pub fn handle_path_update(self: &Arc<Self>, interfaces: HashSet<String>) {
         let mut inner = self.inner.lock();
 
-        // Skip spurious events (no actual change)
         if interfaces == inner.last_interfaces {
             return;
         }
         inner.last_interfaces = interfaces;
 
-        // Cancel previous debounce
         if let Some(handle) = inner.debounce_handle.take() {
             handle.abort();
         }
 
-        // Spawn debounced evaluation
         let monitor = Arc::clone(self);
         let handle = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS)).await;
@@ -160,15 +147,12 @@ impl ConnectionMonitor {
         inner.debounce_handle = Some(handle.abort_handle());
     }
 
-    // -- Connection evaluation --
-
-    /// Evaluate the connection using a three-tier failover strategy.
+    /// Evaluate the connection using the three-tier failover strategy.
     ///
-    /// 1. Fast path: test current URI (3s timeout)
-    /// 2. Cached: test sorted connections (5s timeout each)
-    /// 3. Re-discover from plex.tv
+    /// 1. Fast path: test current URI (3 s timeout).
+    /// 2. Cached: test sorted connections (5 s timeout each).
+    /// 3. Re-discover from plex.tv.
     pub async fn evaluate_connection(&self) {
-        // Reentrancy guard
         {
             let mut inner = self.inner.lock();
             if inner.is_evaluating {
@@ -177,12 +161,10 @@ impl ConnectionMonitor {
             inner.is_evaluating = true;
         }
 
-        // Ensure we clear the flag on exit
         let result = self.do_evaluate().await;
 
         self.inner.lock().is_evaluating = false;
 
-        // Fire appropriate callback based on result
         match result {
             EvalResult::Unchanged => {}
             EvalResult::Changed { url, token, is_local, is_http } => {
@@ -211,7 +193,7 @@ impl ConnectionMonitor {
             }
         };
 
-        // 1. Fast path: test current connection
+        // Fast path: test current connection.
         log::debug!("monitor: testing active URI: {}", active_uri);
         if matches_http_policy(&active_uri, allow_http)
             && self
@@ -223,7 +205,7 @@ impl ConnectionMonitor {
         }
         log::debug!("monitor: active URI failed, trying {} cached connection(s)", server.connections.len());
 
-        // 2. Try cached connections in priority order
+        // Cached connections in priority order.
         for conn in server.sorted_connections() {
             if conn.uri == active_uri {
                 continue;
@@ -261,7 +243,7 @@ impl ConnectionMonitor {
             }
         }
 
-        // 3. Re-discover from plex.tv
+        // Re-discover from plex.tv.
         log::info!("monitor: all cached connections failed, re-discovering from plex.tv");
         match self.client.discover_servers(&auth_token).await {
             Ok(servers) => {
@@ -278,13 +260,11 @@ impl ConnectionMonitor {
                         if let Ok(url) = Url::parse(&conn.uri) {
                             let is_local = conn.local;
 
-                            // Update cached server with fresh data and new active URI
                             {
                                 let mut inner = self.inner.lock();
                                 inner.cached_server = Some(found.clone());
                                 inner.active_uri = Some(conn.uri.clone());
                             }
-                            // Persist fresh connections and active URI to disk
                             crate::plex::auth::patch_stored_config(
                                 Some(&found.connections),
                                 Some(&conn.uri),
@@ -314,7 +294,6 @@ impl ConnectionMonitor {
             }
         }
 
-        // All tiers failed
         log::warn!("monitor: all connection tiers exhausted");
         EvalResult::Lost
     }
@@ -331,10 +310,8 @@ enum EvalResult {
     Lost,
 }
 
-// --- Pure helpers ---
-
-/// Check if a URI matches the HTTP policy.
-/// If `allow_http` is true, all URIs pass. Otherwise, only HTTPS.
+/// Check whether a URI matches the HTTP policy. When `allow_http` is true,
+/// any scheme passes; otherwise only HTTPS.
 fn matches_http_policy(uri: &str, allow_http: bool) -> bool {
     if allow_http {
         return true;
@@ -342,20 +319,16 @@ fn matches_http_policy(uri: &str, allow_http: bool) -> bool {
     uri.starts_with("https://")
 }
 
-/// Detect whether a network interface set change warrants re-evaluation.
+/// Detect whether a network interface-set change warrants re-evaluation.
 pub fn interfaces_changed(current: &HashSet<String>, new: &HashSet<String>) -> bool {
     current != new
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::models::PlexServerConnection;
     use std::sync::atomic::{AtomicBool, Ordering};
-
-    // -- Pure logic tests --
 
     #[test]
     fn test_http_policy_allows_all_when_enabled() {
@@ -375,9 +348,9 @@ mod tests {
         let set2: HashSet<String> = ["en0", "lo0"].iter().map(|s| s.to_string()).collect();
         let set3: HashSet<String> = ["en0", "utun0"].iter().map(|s| s.to_string()).collect();
 
-        assert!(!interfaces_changed(&set1, &set2)); // Same
-        assert!(interfaces_changed(&set1, &set3)); // Different
-        assert!(interfaces_changed(&set1, &HashSet::new())); // All removed
+        assert!(!interfaces_changed(&set1, &set2));
+        assert!(interfaces_changed(&set1, &set3));
+        assert!(interfaces_changed(&set1, &HashSet::new()));
     }
 
     #[test]
@@ -399,14 +372,11 @@ mod tests {
     fn test_allow_http_default() {
         let client = Arc::new(PlexClient::new("test".into()));
         let monitor = ConnectionMonitor::new(client);
-        // Default is allow HTTP
         assert!(matches_http_policy("http://test", monitor.inner.lock().allow_http));
 
         monitor.set_allow_http(false);
         assert!(!matches_http_policy("http://test", monitor.inner.lock().allow_http));
     }
-
-    // -- Debounce tests --
 
     #[tokio::test]
     async fn test_debounce_skips_unchanged_interfaces() {
@@ -418,14 +388,12 @@ mod tests {
 
         let interfaces: HashSet<String> = ["en0"].iter().map(|s| s.to_string()).collect();
 
-        // First update should be accepted
         monitor.handle_path_update(interfaces.clone());
         assert!(monitor.inner.lock().debounce_handle.is_some());
 
-        // Cancel the debounce task to prevent it from running
         monitor.inner.lock().debounce_handle.take().unwrap().abort();
 
-        // Same interfaces — should be skipped (no new debounce)
+        // Identical interfaces should not schedule a new debounce.
         monitor.handle_path_update(interfaces);
         assert!(monitor.inner.lock().debounce_handle.is_none());
     }
@@ -438,7 +406,7 @@ mod tests {
         let server = make_test_server("server-1");
         monitor.start(server, "https://local:32400".into(), "token".into());
 
-        // Rapid interface changes — each cancels the previous debounce
+        // Rapid interface changes should each cancel the previous debounce.
         let set1: HashSet<String> = ["en0"].iter().map(|s| s.to_string()).collect();
         let set2: HashSet<String> = ["en0", "utun0"].iter().map(|s| s.to_string()).collect();
         let set3: HashSet<String> = ["en0", "utun0", "en1"]
@@ -450,17 +418,11 @@ mod tests {
         monitor.handle_path_update(set2);
         monitor.handle_path_update(set3);
 
-        // After rapid changes, should have exactly one pending debounce
         assert!(monitor.inner.lock().debounce_handle.is_some());
-
-        // Interfaces should reflect the latest update
         assert_eq!(monitor.inner.lock().last_interfaces.len(), 3);
 
-        // Clean up
         monitor.inner.lock().debounce_handle.take().unwrap().abort();
     }
-
-    // -- Evaluation tests --
 
     #[tokio::test]
     async fn test_evaluate_reentrancy_guard() {
@@ -470,16 +432,13 @@ mod tests {
         let server = make_test_server("server-1");
         monitor.start(server, "https://local:32400".into(), "token".into());
 
-        // Manually set evaluating flag
         monitor.inner.lock().is_evaluating = true;
 
-        // Should return immediately without doing anything
         monitor.evaluate_connection().await;
 
-        // Flag should still be set (wasn't cleared because we entered the guard)
+        // Flag remains set because the reentrancy guard short-circuited.
         assert!(monitor.inner.lock().is_evaluating);
 
-        // Clean up
         monitor.inner.lock().is_evaluating = false;
     }
 
@@ -488,7 +447,6 @@ mod tests {
         let client = Arc::new(PlexClient::new("test".into()));
         let monitor = ConnectionMonitor::new(client);
 
-        // No server configured — should be a no-op
         monitor.evaluate_connection().await;
         assert!(!monitor.is_evaluating());
     }
@@ -497,7 +455,6 @@ mod tests {
     async fn test_evaluate_fast_path_success() {
         let mock = wiremock::MockServer::start().await;
 
-        // Mock /identity endpoint
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .and(wiremock::matchers::path("identity"))
             .respond_with(wiremock::ResponseTemplate::new(200))
@@ -523,7 +480,7 @@ mod tests {
         monitor.start(server, mock.uri(), "token".into());
         monitor.evaluate_connection().await;
 
-        // Fast path succeeded — no callbacks fired
+        // Fast path succeeded; no callbacks fire.
         assert!(!changed.load(Ordering::SeqCst));
         assert!(!lost.load(Ordering::SeqCst));
     }
@@ -533,11 +490,9 @@ mod tests {
         let mock_dead = wiremock::MockServer::start().await;
         let mock_backup = wiremock::MockServer::start().await;
 
-        // Dead server: no mock (connection refused or timeout)
-        // Actually, wiremock returns 404 by default, which is not 200
-        // So test_connection will return false
-
-        // Backup server: respond with 200
+        // `mock_dead` has no mock mounted; wiremock returns 404 by default,
+        // which makes `test_connection` return false. Only `mock_backup`
+        // responds 200.
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .and(wiremock::matchers::path("identity"))
             .respond_with(wiremock::ResponseTemplate::new(200))
@@ -577,7 +532,6 @@ mod tests {
         monitor.start(server, mock_dead.uri(), "token".into());
         monitor.evaluate_connection().await;
 
-        // Should have failed over to backup
         let new_uri = changed_uri.lock().clone();
         assert!(
             new_uri.contains(&mock_backup.address().port().to_string()),
@@ -588,7 +542,7 @@ mod tests {
     #[tokio::test]
     async fn test_evaluate_all_fail_signals_lost() {
         let mock_dead = wiremock::MockServer::start().await;
-        // No mocks → all return 404 → test_connection fails
+        // No mocks mounted, so all requests 404 and `test_connection` fails.
 
         let client = Arc::new(PlexClient::new("test".into()));
         let monitor = ConnectionMonitor::new(client);
@@ -630,9 +584,9 @@ mod tests {
 
         let client = Arc::new(PlexClient::new("test".into()));
         let monitor = ConnectionMonitor::new(client);
-        monitor.set_allow_http(false); // Reject HTTP
+        monitor.set_allow_http(false);
 
-        // Active URI is HTTP (wiremock uses http)
+        // wiremock serves over plaintext HTTP.
         let server = PlexServer {
             machine_identifier: "s1".into(),
             name: "Test".into(),
@@ -655,7 +609,7 @@ mod tests {
         monitor.start(server, mock_http.uri(), "token".into());
         monitor.evaluate_connection().await;
 
-        // HTTP connection should be rejected, resulting in connection lost
+        // HTTP is rejected, which surfaces as connection lost.
         assert!(lost.load(Ordering::SeqCst));
     }
 
@@ -674,12 +628,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_evaluate_failover_priority_order() {
-        // Create mock servers
         let mock_local = wiremock::MockServer::start().await;
         let mock_remote = wiremock::MockServer::start().await;
         let mock_relay = wiremock::MockServer::start().await;
 
-        // Only relay responds (local and remote are "dead")
+        // Only the relay is mounted; `mock_local` and `mock_remote` 404.
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .and(wiremock::matchers::path("identity"))
             .respond_with(wiremock::ResponseTemplate::new(200))
@@ -722,19 +675,16 @@ mod tests {
             *changed_flag.lock() = url.to_string();
         }));
 
-        // Start with a fake dead URI so fast path fails
+        // A fake dead URI forces the fast path to fail.
         monitor.start(server, "https://dead:32400".into(), "token".into());
         monitor.evaluate_connection().await;
 
-        // Should have found the relay (only one responding)
         let result = changed_uri.lock().clone();
         assert!(
             result.contains(&mock_relay.address().port().to_string()),
             "Expected relay connection, got: {result}"
         );
     }
-
-    // -- Test helpers --
 
     fn make_test_server(id: &str) -> PlexServer {
         PlexServer {

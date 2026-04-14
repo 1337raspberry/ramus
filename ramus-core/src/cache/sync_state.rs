@@ -5,8 +5,6 @@ use rusqlite::params;
 use super::db::{CacheDatabase, CachedAlbumInfo, CachedItemInfo, CacheError};
 
 impl CacheDatabase {
-    // --- Timestamp lookups (for incremental sync) ---
-
     pub fn all_artist_timestamps(&self) -> Result<HashMap<String, CachedItemInfo>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare("SELECT sourceId, id, updatedAt FROM artists")?;
@@ -29,11 +27,10 @@ impl CacheDatabase {
 
     pub fn all_album_timestamps(&self) -> Result<HashMap<String, CachedAlbumInfo>, CacheError> {
         let conn = self.conn.lock();
-        // firstGenre is the API-order first genre captured at shallow-sync
-        // time. It's compared against the same API-order first genre on
-        // the next incremental sync to catch genre-only edits. See
-        // sync_albums for the comparison. Don't substitute MIN(g.name)
-        // here — that's alphabetical order, not API order, and mismatches
+        // `firstGenre` is the API-order first genre captured at shallow-sync
+        // time. `sync_albums` compares it against the next sync's API-order
+        // first genre to catch genre-only edits. Do not substitute
+        // `MIN(g.name)` — that is alphabetical order, and mismatches would
         // trigger false-positive re-fetches.
         let mut stmt = conn.prepare(
             "SELECT sourceId, id, updatedAt, firstGenre FROM albums",
@@ -75,8 +72,6 @@ impl CacheDatabase {
         }
         Ok(map)
     }
-
-    // --- ID lookups ---
 
     pub fn artist_id(&self, source_id: &str) -> Result<Option<i64>, CacheError> {
         let conn = self.conn.lock();

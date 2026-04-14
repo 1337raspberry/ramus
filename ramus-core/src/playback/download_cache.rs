@@ -1,7 +1,5 @@
-//! LRU download cache tracking cached audio files.
-//!
-//! Manages metadata only — the caller handles actual file I/O.
-//! `evict_if_needed` returns paths to delete; the caller removes them from disk.
+//! LRU download cache tracking cached audio file metadata. The caller
+//! handles file I/O; `evict_if_needed` returns paths to delete.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -9,7 +7,8 @@ use std::path::{Path, PathBuf};
 pub struct DownloadCache {
     entries: HashMap<String, PathBuf>,
     sizes: HashMap<String, u64>,
-    access_order: Vec<String>, // oldest first
+    /// Oldest first.
+    access_order: Vec<String>,
     pub(crate) limit_bytes: u64,
 }
 
@@ -30,7 +29,6 @@ impl DownloadCache {
 
     /// Insert a cached file entry.
     pub fn insert(&mut self, track_id: String, path: PathBuf, size: u64) {
-        // Remove existing entry if present (update)
         self.access_order.retain(|k| k != &track_id);
         self.entries.insert(track_id.clone(), path);
         self.sizes.insert(track_id.clone(), size);
@@ -45,14 +43,12 @@ impl DownloadCache {
         }
     }
 
-    /// Evict oldest entries until total size is within the limit.
-    /// Never evicts the currently playing track.
-    /// Returns paths that should be deleted from disk.
+    /// Evict oldest entries until total size is within the limit. Never
+    /// evicts the currently playing track. Returns paths to delete from disk.
     pub fn evict_if_needed(&mut self, current_track_id: Option<&str>) -> Vec<PathBuf> {
         let mut evicted = Vec::new();
 
         while self.total_size() > self.limit_bytes && !self.access_order.is_empty() {
-            // Find the oldest entry that isn't the current track
             let idx = self
                 .access_order
                 .iter()
@@ -65,7 +61,7 @@ impl DownloadCache {
                 }
                 self.sizes.remove(&key);
             } else {
-                break; // Only current track left
+                break;
             }
         }
 
@@ -121,10 +117,8 @@ mod tests {
         cache.insert("a".into(), PathBuf::from("/a"), 400);
         cache.insert("b".into(), PathBuf::from("/b"), 400);
         cache.insert("c".into(), PathBuf::from("/c"), 400);
-        // Total = 1200 > 1000
 
         let evicted = cache.evict_if_needed(None);
-        // Should evict oldest ("a") first
         assert!(evicted.contains(&PathBuf::from("/a")));
         assert!(cache.get("a").is_none());
         assert_eq!(cache.total_size(), 800);
@@ -136,12 +130,9 @@ mod tests {
         cache.insert("a".into(), PathBuf::from("/a"), 400);
         cache.insert("b".into(), PathBuf::from("/b"), 400);
         cache.insert("c".into(), PathBuf::from("/c"), 400);
-        // Touch "a" — makes it most recently used
         cache.touch("a");
-        // Total = 1200 > 1000
 
         let evicted = cache.evict_if_needed(None);
-        // Should evict "b" (now oldest) instead of "a"
         assert!(evicted.contains(&PathBuf::from("/b")));
         assert!(cache.get("a").is_some());
         assert!(cache.get("b").is_none());
@@ -152,10 +143,8 @@ mod tests {
         let mut cache = DownloadCache::new(500);
         cache.insert("playing".into(), PathBuf::from("/playing"), 400);
         cache.insert("next".into(), PathBuf::from("/next"), 400);
-        // Total = 800 > 500
 
         let evicted = cache.evict_if_needed(Some("playing"));
-        // Should evict "next", not "playing"
         assert!(evicted.contains(&PathBuf::from("/next")));
         assert!(cache.get("playing").is_some());
     }

@@ -50,7 +50,7 @@ export default function SuggestionView() {
       setGenres([]);
       return;
     }
-    // Use album.genres if available, otherwise fetch
+    // Use album.genres when present; otherwise fetch.
     if (album.genres.length) {
       setGenres(album.genres);
     } else {
@@ -86,17 +86,15 @@ export default function SuggestionView() {
     };
   }, [album]);
 
-  // Prime the store with a previously-extracted vibrant palette if we have
-  // one cached in the DB. Skip the legacy API-sourced ultraBlurColors entirely
-  // — dynamic extraction in handleArtLoad is the source of truth.
-  // Depends only on `album` — not `status`. SuggestionView only renders
-  // when playback is stopped (App.tsx routes away otherwise), so the
-  // `status` guard is unnecessary and would cause palette flashes on
-  // every status flicker.
+  // Prime the store with a cached vibrant palette. Dynamic extraction
+  // in handleArtLoad is the source of truth; the legacy API-sourced
+  // ultraBlurColors path is intentionally skipped. Depends only on
+  // `album`: SuggestionView only renders while stopped, so a `status`
+  // guard would just cause palette flashes on status flicker.
   useEffect(() => {
     if (!album) return;
-    // Clear stale palette from the previous suggestion so handleArtLoad
-    // falls through to extractPalette() for the new image.
+    // Clear the previous suggestion's palette so handleArtLoad falls
+    // through to extractPalette() for the new image.
     usePlaybackStore.setState({ vibrantPalette: null, ultraBlurColors: null });
     getAlbumColors(album.ratingKey)
       .then((result) => {
@@ -113,7 +111,7 @@ export default function SuggestionView() {
   const handleArtLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
       if (status !== "stopped") return;
-      // Skip if palette was already loaded from the DB cache
+      // Skip when a palette was already loaded from the DB cache.
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);

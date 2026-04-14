@@ -2,14 +2,10 @@ import { usePlaybackStore } from "../stores/playbackStore";
 import LyricsView from "./LyricsView";
 
 /**
- * Shared lyrics overlay for Now Playing surfaces. Reads its state directly
- * from `playbackStore` so both `NowPlayingView` (compact panel) and
- * `FocusNowPlayingView` can drop it inside their album-art container with
- * a single JSX element — no prop drilling.
- *
- * Renders nothing when `showLyrics` is false. Uses the existing
- * `.np-lyrics-overlay` class for the scale-in animation so the visual is
- * identical to the inline version this replaces.
+ * Shared lyrics overlay for Now Playing surfaces. Reads state directly
+ * from `playbackStore`, so both NowPlayingView and FocusNowPlayingView
+ * can drop it into their album-art container without prop drilling.
+ * Renders nothing when `showLyrics` is false.
  */
 export default function LyricsOverlay() {
   const showLyrics = usePlaybackStore((s) => s.showLyrics);

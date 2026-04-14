@@ -69,8 +69,8 @@ export default function AlbumDetailView() {
       setGenres([]);
       return;
     }
-    // Use album.genres if available, otherwise fetch via IPC —
-    // map_album_rows in the DB layer leaves genres empty by default.
+    // Use album.genres when present; otherwise fetch via IPC. The DB
+    // layer's `map_album_rows` leaves genres empty by default.
     if (album.genres.length) {
       setGenres(album.genres);
       return;
@@ -88,7 +88,7 @@ export default function AlbumDetailView() {
     };
   }, [album]);
 
-  // Close dropdown on outside click (only when menu is open)
+  // Close dropdown on outside click.
   useEffect(() => {
     if (!openMenuKey) return;
     const handler = (e: MouseEvent) => {
@@ -113,7 +113,6 @@ export default function AlbumDetailView() {
 
   return (
     <div className="adv-root">
-      {/* Header */}
       <div className="adv-header">
         <button className="adv-back" onClick={closeAlbumDetail}>
           <IconChevronLeft />
@@ -127,7 +126,6 @@ export default function AlbumDetailView() {
         </button>
       </div>
 
-      {/* Hero */}
       <div className="adv-hero">
         <div className="adv-art-wrap">
           {artSrc && !artErr ? (
@@ -161,13 +159,11 @@ export default function AlbumDetailView() {
         </button>
       </div>
 
-      {/* Track summary */}
       <div className="adv-summary">
         {tracks.length} {tracks.length === 1 ? "track" : "tracks"} &mdash;{" "}
         {Math.round(totalDuration / 60)} minutes
       </div>
 
-      {/* Track list */}
       <div className="adv-tracks">
         {tracks.map((track, i) => {
           const showDiscHeader =
@@ -243,7 +239,6 @@ export default function AlbumDetailView() {
         })}
       </div>
 
-      {/* Footer */}
       <div className="adv-footer">
         <span className="adv-footer-left">
           {album.studio ?? ""}

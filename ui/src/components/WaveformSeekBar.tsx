@@ -13,16 +13,16 @@ export default function WaveformSeekBar() {
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPos, setSeekPos] = useState(0);
 
-  // Cache the static waveform shape on an offscreen canvas
+  // Cache the static waveform shape on an offscreen canvas.
   const shapeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastLevelsRef = useRef<number[] | null>(null);
   const lastSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
 
-  // Bumped by a ResizeObserver whenever the container's CSS size
-  // changes. Included in both effects' deps so the offscreen shape and
-  // progress overlay get re-rendered at the new pixel dimensions —
-  // otherwise stretching the column / entering fullscreen leaves the
-  // backing store at its old size and CSS scales it up blurry.
+  // Bumped by the ResizeObserver on container size change, and listed
+  // in both effects' deps so the offscreen shape and progress overlay
+  // re-render at the new pixel dimensions. Without this, resizing or
+  // entering fullscreen leaves the backing store at the old size and
+  // CSS scales it up blurry.
   const [sizeVersion, setSizeVersion] = useState(0);
 
   const displayPos = isSeeking ? seekPos : position;
@@ -45,7 +45,7 @@ export default function WaveformSeekBar() {
     const w = rect.width;
     const h = rect.height;
 
-    // Resize canvas backing store only when dimensions change
+    // Resize canvas backing store only when dimensions change.
     const needsResize = lastSizeRef.current.w !== w || lastSizeRef.current.h !== h;
     if (needsResize) {
       canvas.width = w * dpr;
@@ -88,7 +88,7 @@ export default function WaveformSeekBar() {
           }
         }
         ctx.closePath();
-        // Fill with white — we'll composite with colors later
+        // Fill white; colour comes from a later composite pass.
         ctx.fillStyle = "#fff";
         ctx.fill();
       }
@@ -97,7 +97,7 @@ export default function WaveformSeekBar() {
     }
   }, [levels, sizeVersion]);
 
-  // Draw progress overlay (runs on every position tick; inexpensive)
+  // Progress overlay; runs on every position tick.
   useEffect(() => {
     const canvas = canvasRef.current;
     const shape = shapeCanvasRef.current;
@@ -123,32 +123,30 @@ export default function WaveformSeekBar() {
     ctx.clearRect(0, 0, w, h);
 
     if (shape && levels && levels.length > 0) {
-      // Unplayed
+      // Unplayed silhouette.
       ctx.globalAlpha = 0.15;
       ctx.globalCompositeOperation = "source-over";
       ctx.drawImage(shape, 0, 0, w, h);
 
-      // Played portion (accent color)
+      // Played portion, tinted with the accent colour.
       if (progressX > 0) {
         ctx.save();
         ctx.beginPath();
         ctx.rect(0, 0, progressX, h);
         ctx.clip();
         ctx.globalAlpha = 0.9;
-        // Draw shape as mask, then tint
+        // Mask with the shape, then multiply with the accent.
         ctx.globalCompositeOperation = "source-over";
         ctx.drawImage(shape, 0, 0, w, h);
-        // Multiply with accent color
         ctx.globalCompositeOperation = "multiply";
         ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
         ctx.fillRect(0, 0, w, h);
-        // Restore alpha from shape
+        // Restore alpha from the shape.
         ctx.globalCompositeOperation = "destination-in";
         ctx.drawImage(shape, 0, 0, w, h);
         ctx.restore();
       }
 
-      // Center line
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
       ctx.beginPath();
@@ -159,7 +157,6 @@ export default function WaveformSeekBar() {
       ctx.stroke();
     } else {
       ctx.globalAlpha = 1;
-      // Background line
       ctx.beginPath();
       ctx.moveTo(0, midY);
       ctx.lineTo(w, midY);
@@ -167,7 +164,6 @@ export default function WaveformSeekBar() {
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Progress line
       if (progressX > 0) {
         ctx.beginPath();
         ctx.moveTo(0, midY);

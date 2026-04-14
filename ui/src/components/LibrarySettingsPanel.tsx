@@ -126,7 +126,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
           .then((warnings) => {
             if (warnings.length > 0) setGenreWarnings(warnings);
             setHasCustomGenres(true);
-            // Backend already updated genreSource — re-fetch to sync
+            // Backend has already updated genreSource; re-fetch to sync.
             return getSettings();
           })
           .then((fresh) => {
@@ -145,7 +145,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
     removeCustomGenres()
       .then(() => {
         setHasCustomGenres(false);
-        // Backend already updated genreSource — re-fetch to sync
+        // Backend has already updated genreSource; re-fetch to sync.
         return getSettings();
       })
       .then((fresh) => {
@@ -193,7 +193,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
         <div className="settings-body">
           {error && <div className="settings-error">{error}</div>}
 
-          {/* Playback */}
           <div className="settings-section-header">PLAYBACK</div>
 
           <label className="settings-row">
@@ -272,7 +271,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
             />
           </label>
 
-          {/* Library */}
           <div className="settings-section-header">LIBRARY</div>
 
           <label className="settings-row">
@@ -346,7 +344,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
             </div>
           )}
 
-          {/* Genre source */}
           <div className="settings-section-header">GENRES</div>
 
           <label className="settings-row">
@@ -415,7 +412,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
             </div>
           )}
 
-          {/* Security */}
           <div className="settings-section-header">SECURITY</div>
 
           <label className="settings-row">
@@ -427,7 +423,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
             />
           </label>
 
-          {/* Account */}
           <div className="settings-section-header">ACCOUNT</div>
 
           <button className="settings-btn settings-signout" onClick={handleSignOut}>

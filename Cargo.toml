@@ -3,15 +3,14 @@ members = ["ramus-core", "ramus-tauri"]
 resolver = "2"
 
 # Optimise the CPU-heavy spectrum-analyser deps even in debug builds.
-# Symphonia, rustfft and realfft are pure-Rust numerical code that
-# runs at roughly 25× real-time in `opt-level = 0` but 300×+ in
+# Symphonia, rustfft and realfft are pure-Rust numerical code that runs
+# at roughly 25x real-time at `opt-level = 0` but 300x+ at
 # `opt-level = 3`. Leaving them unoptimised in `cargo tauri dev` makes
-# a 5-minute track take ~14 s to analyse on first play instead of ~1 s.
+# a 5-minute track take ~14s to analyse on first play instead of ~1s.
 #
-# Our own crates stay at `opt-level = 0` (the dev default) so
-# incremental rebuilds are still fast — only the dependencies get the
-# fully-optimised treatment. Compile time cost is paid once on a clean
-# build and then cached in `target/` for every subsequent rebuild.
+# Local crates stay at `opt-level = 0` (the dev default) so incremental
+# rebuilds remain fast — only the dependencies get fully optimised.
+# Compile cost is paid once per clean build and cached in `target/`.
 [profile.dev.package.symphonia]
 opt-level = 3
 [profile.dev.package.symphonia-core]

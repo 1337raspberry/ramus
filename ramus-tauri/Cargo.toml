@@ -20,12 +20,13 @@ uuid = { version = "1", features = ["v4"] }
 urlencoding = "2"
 rand = "0.8"
 open = "5"
-# libmpv is loaded at runtime (not statically linked) so the app compiles
-# on any platform without headers or import libs. See src/mpv_ffi.rs.
+# libmpv is loaded at runtime (not statically linked) so the app
+# compiles on any platform without headers or import libs. See
+# src/mpv_ffi.rs.
 libloading = "0.8"
 # Pure-Rust audio decoder. Feeds decoded f32 samples into ramus-core's
-# spectrum analyser so the focus visualiser has real per-track FFT data.
-# No libav linkage — cross-platform compiles without native deps.
+# spectrum analyser so the focus visualiser gets real per-track FFT
+# data. No libav linkage — cross-platform without native deps.
 symphonia = { version = "0.5", default-features = false, features = [
     "flac",
     "mp3",
@@ -43,12 +44,12 @@ souvlaki = "0.8"
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# Used to opt the borderless NSWindow into native fullscreen
-# (NSWindowCollectionBehaviorFullScreenPrimary). Without this, macOS refuses
-# to let a window with `decorations: false` enter fullscreen at all — the
-# green traffic light is dead and View > Enter Full Screen is disabled.
-# objc2 is already a transitive dependency of Tauri, so we reuse the same
-# version without pulling anything new.
+# Opts the borderless NSWindow into native fullscreen
+# (NSWindowCollectionBehaviorFullScreenPrimary). Without this, macOS
+# refuses to let a window with `decorations: false` enter fullscreen —
+# the green traffic light is dead and View > Enter Full Screen is
+# disabled. objc2 is already a transitive dependency of Tauri, so this
+# reuses the same version.
 objc2 = "0.6"
 
 [build-dependencies]

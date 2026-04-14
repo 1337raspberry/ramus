@@ -1,17 +1,13 @@
-//! Plex session timeline reporting and scrobble tracking.
-//!
-//! Manages the logic of what/when to report to the Plex server.
-//! Actual HTTP calls are handled by the caller (PlexClient).
+//! Plex session timeline reporting and scrobble tracking. Determines what
+//! and when to report; actual HTTP calls are handled by the caller.
 
 use crate::models::{PlaybackStatus, Track};
 
-/// Scrobble threshold: report as scrobbled at >= 90% progress.
+/// Scrobble at >= 90% progress.
 pub const SCROBBLE_THRESHOLD: f64 = 0.9;
 
 /// Periodic report interval in seconds.
 pub const REPORT_INTERVAL_SECS: u64 = 10;
-
-// --- TimelineState ---
 
 /// Timeline state payload for Plex session reporting.
 /// Positions are in milliseconds (Plex API convention).
@@ -39,13 +35,11 @@ impl TimelineState {
     }
 }
 
-// --- SessionTracker ---
-
 /// Tracks session reporting state for Plex timeline updates.
 ///
-/// Call methods on state transitions and periodically during playback.
-/// Use the returned `TimelineState` to send reports to the Plex server,
-/// and the optional scrobble key to trigger scrobble API calls.
+/// Call methods on state transitions and periodically during playback. Use
+/// the returned `TimelineState` to send reports to Plex, and the optional
+/// scrobble key to trigger scrobble API calls.
 pub struct SessionTracker {
     active_track_key: Option<String>,
     active_session_id: Option<String>,
@@ -65,8 +59,7 @@ impl SessionTracker {
         }
     }
 
-    /// Called when a new track starts playing.
-    /// Returns a timeline state to report to Plex.
+    /// Register a new track starting. Returns the timeline state to report.
     pub fn track_started(&mut self, track: &Track, session_id: &str) -> TimelineState {
         self.active_track_key = Some(track.rating_key.clone());
         self.active_session_id = Some(session_id.to_string());
@@ -83,8 +76,8 @@ impl SessionTracker {
         }
     }
 
-    /// Update position (called periodically or on seek).
-    /// Returns a timeline + optional scrobble rating key if threshold crossed.
+    /// Update position (called periodically or on seek). Returns a timeline
+    /// plus an optional scrobble rating key if the threshold was crossed.
     pub fn update_position(
         &mut self,
         position: f64,
@@ -117,7 +110,7 @@ impl SessionTracker {
         Some((timeline, scrobble))
     }
 
-    /// Called when playback pauses. Returns paused timeline.
+    /// Returns the paused timeline.
     pub fn playback_paused(&self) -> Option<TimelineState> {
         let (track_key, session_id) = match (&self.active_track_key, &self.active_session_id) {
             (Some(k), Some(s)) => (k.clone(), s.clone()),
@@ -133,7 +126,7 @@ impl SessionTracker {
         })
     }
 
-    /// Called when playback resumes. Returns playing timeline.
+    /// Returns the playing timeline on resume.
     pub fn playback_resumed(&self) -> Option<TimelineState> {
         let (track_key, session_id) = match (&self.active_track_key, &self.active_session_id) {
             (Some(k), Some(s)) => (k.clone(), s.clone()),
@@ -149,8 +142,7 @@ impl SessionTracker {
         })
     }
 
-    /// Called when playback stops entirely. Returns stopped timeline.
-    /// Clears active session state.
+    /// Returns the stopped timeline and clears active session state.
     pub fn playback_stopped(&mut self) -> Option<TimelineState> {
         let (track_key, session_id) = match (&self.active_track_key, &self.active_session_id) {
             (Some(k), Some(s)) => (k.clone(), s.clone()),
@@ -171,8 +163,7 @@ impl SessionTracker {
         Some(timeline)
     }
 
-    /// Called when the user seeks to a new position.
-    /// Returns an immediate position update timeline.
+    /// Returns an immediate position update timeline after a user seek.
     pub fn playback_seeked(&mut self, position: f64) -> Option<TimelineState> {
         self.position = position;
 
@@ -200,8 +191,8 @@ impl SessionTracker {
         self.active_track_key.as_deref()
     }
 
-    /// Whether the given track should be scrobbled (>= 90% progress and
-    /// not already scrobbled this session).
+    /// Whether the given track should be scrobbled: >= 90% progress and
+    /// not already scrobbled this session.
     pub fn should_scrobble_track(&self, rating_key: &str) -> bool {
         let progress = if self.duration > 0.0 {
             self.position / self.duration
@@ -222,8 +213,6 @@ impl Default for SessionTracker {
         Self::new()
     }
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -268,15 +257,12 @@ mod tests {
         let track = make_track("123", 100.0);
         tracker.track_started(&track, "s1");
 
-        // At 89% — no scrobble
         let (_, scrobble) = tracker.update_position(89.0, 100.0).unwrap();
         assert!(scrobble.is_none());
 
-        // At 90% — scrobble fires
         let (_, scrobble) = tracker.update_position(90.0, 100.0).unwrap();
         assert_eq!(scrobble, Some("123".to_string()));
 
-        // At 95% — no double scrobble
         let (_, scrobble) = tracker.update_position(95.0, 100.0).unwrap();
         assert!(scrobble.is_none());
     }
@@ -290,7 +276,6 @@ mod tests {
         let (_, scrobble) = tracker.update_position(95.0, 100.0).unwrap();
         assert!(scrobble.is_some());
 
-        // Start new track — scrobble state resets
         let track2 = make_track("456", 200.0);
         tracker.track_started(&track2, "s1");
 
@@ -333,7 +318,6 @@ mod tests {
         assert_eq!(tl.state, PlaybackStatus::Stopped);
         assert!(!tracker.has_active_session());
 
-        // Subsequent stop returns None
         assert!(tracker.playback_stopped().is_none());
     }
 
@@ -393,7 +377,7 @@ mod tests {
     #[test]
     fn test_positions_in_milliseconds() {
         let mut tracker = SessionTracker::new();
-        let track = make_track("1", 180.5); // 3:00.5
+        let track = make_track("1", 180.5);
         let tl = tracker.track_started(&track, "s");
         assert_eq!(tl.duration_ms, 180500);
 
@@ -413,7 +397,6 @@ mod tests {
         assert_eq!(tl.position_ms, 90000);
         assert_eq!(tl.duration_ms, 200000);
 
-        // Subsequent pause should reflect seeked position
         let tl = tracker.playback_paused().unwrap();
         assert_eq!(tl.position_ms, 90000);
     }

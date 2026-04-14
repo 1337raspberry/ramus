@@ -28,15 +28,15 @@ export function useAppKeyboard({
     (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
 
-      // Esc exits focus mode (before any other Esc-based dismissal)
+      // Esc exits focus mode before any other Esc-based dismissal.
       if (e.key === "Escape" && usePlaybackStore.getState().isFocusMode) {
         e.preventDefault();
         toggleFocusMode();
         return;
       }
 
-      // Cmd/Ctrl+Shift+N toggles focus "Now Playing" mode
-      // (with Shift held, e.key is always uppercase)
+      // Cmd/Ctrl+Shift+N toggles focus Now Playing. `e.key` is uppercase
+      // while Shift is held.
       if (mod && e.shiftKey && e.key === "N") {
         e.preventDefault();
         toggleFocusMode();
@@ -74,7 +74,7 @@ export function useAppKeyboard({
         return;
       }
 
-      // Operator keys open search with that character pre-loaded
+      // Operator keys open search with that character pre-loaded.
       if (
         !mod &&
         !e.shiftKey &&

@@ -3,14 +3,13 @@ import type { Album, LyricsResult, SpectrumState, Track, UltraBlurColors } from 
 import { blurColorsFromPalette, type VibrantPalette } from "../lib/vibrantColor";
 
 /**
- * Which rendering mode the focus-mode visualiser is in.
+ * Focus-mode visualiser rendering mode.
  *
- * - `"off"`  — viz is unmounted entirely (RAF loop stops)
+ * - `"off"`  — viz is unmounted, RAF loop stops
  * - `"bars"` — 256-bar mirrored spectrum, bass centred, treble at edges
  * - `"line"` — smoothed averaged curve filled from the top edge down
  *
- * Cycled by clicking the wave-icon button in the focus-mode track row;
- * see `cycleVisualizerMode`.
+ * Cycled via `cycleVisualizerMode`.
  */
 export type VisualizerMode = "off" | "bars" | "line";
 import {
@@ -60,10 +59,7 @@ interface PlaybackState {
 
   // --- Focus mode ---
   isFocusMode: boolean;
-  // Which visualiser rendering mode is active in focus mode. Session-
-  // only — resets to `"bars"` on reload. Cycled `bars → line → off` by
-  // clicking the IconWave button next to the equalizer in
-  // FocusNowPlayingView's track row (see `cycleVisualizerMode`).
+  // Session-only; resets to `"bars"` on reload. Cycled bars → line → off.
   visualizerMode: VisualizerMode;
 
   // --- Focus-mode FFT spectrogram ---
@@ -71,21 +67,19 @@ interface PlaybackState {
   // Precomputed per-track bands from symphonia + realfft in Rust.
   // Hydrated on track change and on every `spectrum-ready` event.
   // FocusVisualizer reads this via getState() inside a RAF loop to avoid
-  // re-renders on every 60fps tick. Don't subscribe via a React selector.
+  // re-renders on every 60fps tick. Do not subscribe via a React selector.
   //
-  // `null` = never fetched for the current track (before the first
-  // getSpectrum call). `"analysing"` = backend knows the track but
-  // hasn't finished analysis yet; the viz shows a placeholder. When it
-  // flips to `{ ready }` the viz starts drawing bars at the current
-  // `position` lookup.
+  // `null` = never fetched for the current track. `"analysing"` = backend
+  // hasn't finished analysis; viz shows a placeholder. `{ ready }` = viz
+  // draws bars at the current position lookup.
   spectrumState: SpectrumState | null;
 
   // --- Event Handlers ---
   onPlaybackState: (status: string, track: Track | null, queueIndex: number) => void;
   onPlaybackPosition: (position: number, duration: number) => void;
-  /// Called on `spectrum-ready` events from Rust AND once at track change
-  /// to hydrate from the cache. Safe to call unconditionally; it only
-  /// invokes `getSpectrum` when there's a current track.
+  /// Called on `spectrum-ready` events from Rust and on track change to
+  /// hydrate from the cache. Safe to call unconditionally; it only invokes
+  /// `getSpectrum` when there is a current track.
   refreshSpectrum: (forRatingKey?: string) => void;
 
   // --- Actions ---
@@ -119,11 +113,9 @@ function activeLineIndex(lyrics: LyricsResult, position: number): number {
 
 export { activeLineIndex };
 
-// Monotonic generation counter for the async spectrum-refresh path. Any
-// in-flight `getSpectrum` invoke checks this against the value captured
-// when it started — if the track has changed in the meantime, the
-// result is dropped so stale data from the previous track can't bleed
-// into the new track's UI state.
+// Monotonic generation counter for async spectrum refreshes. In-flight
+// `getSpectrum` invokes compare against the captured value and drop their
+// result if the track has changed.
 let spectrumGen = 0;
 
 export const usePlaybackStore = create<PlaybackState>((set, get) => ({
@@ -159,8 +151,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     const prev = get().currentTrack;
     const trackChanged = track?.ratingKey !== prev?.ratingKey;
 
-    // Invalidate any in-flight spectrum refreshes so stale data from the
-    // previous track can't land on the new one.
+    // Invalidate in-flight spectrum refreshes so stale data from the
+    // previous track cannot land on the new one.
     if (trackChanged) {
       spectrumGen += 1;
     }
@@ -169,9 +161,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       status: status as PlaybackState["status"],
       currentTrack: track,
       queueIndex,
-      // Use the track's Plex-reported duration as the initial value so
-      // the waveform + seek bar are functional immediately, even before
-      // mpv's first time-pos tick delivers the precise playback duration.
+      // Seed duration from Plex metadata so the waveform and seek bar are
+      // functional before mpv's first time-pos tick.
       ...(trackChanged ? { position: 0, duration: track?.duration ?? 0 } : {}),
     });
 
@@ -183,11 +174,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         vibrantPalette: null,
       });
 
-      // `refreshSpectrum` below will debounce the "analysing"
-      // placeholder itself — see the comment there. We intentionally
-      // do NOT clear `spectrumState` here, because for cached tracks
-      // the fetch resolves in ~20-80 ms and debouncing avoids the
-      // placeholder ever rendering for those.
+      // Do NOT clear `spectrumState` here. `refreshSpectrum` debounces
+      // the "analysing" placeholder, and for cached tracks the fetch
+      // resolves in ~20-80 ms so the placeholder never renders.
       get().refreshSpectrum(track.ratingKey);
 
       getWaveform(track.ratingKey)
@@ -224,7 +213,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         set({ currentGenres: [], nowPlayingAlbum: null });
       }
 
-      // Auto-fetch lyrics if pinned
       if (get().lyricsPinned) {
         set({ lyricsLoading: true });
         fetchLyrics(track.ratingKey)
@@ -254,15 +242,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
 
   refreshSpectrum: (forRatingKey) => {
-    // Resolve the target rating key: either the caller-provided one
-    // (from a spectrum-ready event, where we want to match it against
-    // the current track) or the current track's key.
     const current = get().currentTrack;
     if (!current) return;
     if (forRatingKey && forRatingKey !== current.ratingKey) {
-      // The event was for a different track (probably the next
-      // prefetched one). Ignore — its state will hydrate when it
-      // actually starts playing.
+      // Event is for a different track (likely a prefetch). Its state
+      // will hydrate when it starts playing.
       return;
     }
 
@@ -270,13 +254,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     const ratingKey = current.ratingKey;
     const trackDurationS = current.duration;
 
-    // Debounced placeholder: only flip to "analysing" if the fetch
-    // takes more than 120 ms. Rationale: for cached `.spec` files the
-    // Tauri IPC resolves in ~50 ms and we want seamless bar-to-bar
-    // transitions without a placeholder flash. For cold analysis
-    // (first play of an uncached track, or a slow decode) we do want
-    // visual feedback, and 120 ms is under the threshold where users
-    // perceive "the app is frozen".
+    // Debounced placeholder: only flip to "analysing" after 120 ms.
+    // Cached `.spec` files resolve in ~50 ms, so debouncing avoids a
+    // placeholder flash during bar-to-bar transitions. Cold analysis
+    // (first play or slow decode) still gets visual feedback below
+    // the "app is frozen" perception threshold.
     let placeholderFired = false;
     const placeholderTimer = window.setTimeout(() => {
       if (gen !== spectrumGen) return;
@@ -289,18 +271,15 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       .then((state) => {
         const ipcMs = performance.now() - t0;
         clearTimeout(placeholderTimer);
-        // Drop stale results if the track has changed while we were
-        // waiting. The gen check beats comparing current.ratingKey
-        // because a new track could theoretically have the same key
-        // (replay / queue reload).
+        // Drop stale results if the track changed during the await. The
+        // gen check beats `current.ratingKey` because replay/queue reload
+        // could reuse the same key.
         if (gen !== spectrumGen) return;
 
-        // Timing sanity log: IPC latency is the key number here. If
-        // it's routinely over 500 ms for cached tracks, the JSON-array
-        // encoding of `Vec<u8>` is the bottleneck and we should switch
-        // to binary IPC via `tauri::ipc::Response`. Also
-        // cross-reference the spectrogram's own sense of duration
-        // against Plex's — large deltas mean the analyser is off.
+        // Timing log: IPC latency routinely over 500 ms for cached tracks
+        // points at the JSON-array encoding of `Vec<u8>` as the bottleneck
+        // (switch to binary IPC via `tauri::ipc::Response`). Analyser vs
+        // Plex duration deltas mean the analyser is off.
         if (typeof state === "object" && "ready" in state) {
           const frames = state.ready;
           const frameCount = Math.floor(frames.frames.length / frames.bandCount);
@@ -324,10 +303,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
           );
         }
 
-        // Measure the state-commit cost too — this is where
-        // useMemo's `Uint8Array.from` runs in FocusVisualizer, so a
-        // large value here points at the JSON-array conversion being
-        // the bottleneck rather than the IPC itself.
+        // State-commit cost. FocusVisualizer's `Uint8Array.from` runs
+        // here, so a large value points at JSON-array conversion rather
+        // than IPC.
         const tBeforeSet = performance.now();
         set({ spectrumState: state });
         const setMs = performance.now() - tBeforeSet;

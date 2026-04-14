@@ -26,18 +26,16 @@ use crate::mpv_ffi::MpvLib;
 use crate::prefetch::PrefetchHandle;
 use crate::session_reporter::ReporterRef;
 
-/// Deferred-population slot for the prefetch control handle. `main.rs`
-/// builds it, then `spawn_worker()` returns the real handle which is
-/// stored here — the mpv callback closures read from this slot whenever
-/// they need to pump a command (natural-advance / skip / cancel) into
-/// the worker.
+/// Deferred-population slot for the prefetch control handle. `main.rs` builds
+/// the empty slot and populates it after `spawn_worker()` returns; mpv callback
+/// closures read the slot to pump commands (natural-advance / skip / cancel)
+/// into the worker.
 pub type PrefetchHandleRef = Arc<parking_lot::Mutex<Option<PrefetchHandle>>>;
 
 /// Create an AudioPlayer backed by libmpv with Tauri event callbacks.
 ///
 /// `prefetch_handle_ref` is a deferred slot: `main.rs` passes an empty
-/// `Arc<Mutex<None>>` here, then populates it after `spawn_worker()`
-/// returns. The callbacks below read the slot each time they fire.
+/// `Arc<Mutex<None>>` and populates it after `spawn_worker()` returns.
 pub fn create_mpv_player(
     app_handle: AppHandle,
     prefetch_handle_ref: PrefetchHandleRef,
@@ -52,8 +50,8 @@ pub fn create_mpv_player(
     let app4 = app_handle.clone();
     let app7 = app_handle.clone();
 
-    // The player is needed inside callbacks but holds the MpvController.
-    // Use a shared Arc populated after construction to break the cycle.
+    // The player is needed inside callbacks but owns the MpvController. A
+    // shared Arc populated after construction breaks the cycle.
     let player_ref: Arc<parking_lot::Mutex<Option<Arc<ramus_core::playback::player::AudioPlayer>>>> =
         Arc::new(parking_lot::Mutex::new(None));
     let pr1 = player_ref.clone();
@@ -64,13 +62,13 @@ pub fn create_mpv_player(
     let pr8 = player_ref.clone();
     let pr9 = player_ref.clone();
 
-    // Deferred session reporter, populated after player construction.
+    // Deferred session reporter; populated after player construction.
     let reporter_ref: ReporterRef = Arc::new(parking_lot::Mutex::new(None));
     let sr1 = reporter_ref.clone();
     let sr2 = reporter_ref.clone();
     let sr3 = reporter_ref.clone();
 
-    // Deferred media controls, populated after window creation in main.rs.
+    // Deferred media controls; populated after window creation in main.rs.
     let media_controls_ref: MediaControlsRef = Arc::new(parking_lot::Mutex::new(None));
     let mc1 = media_controls_ref.clone();
     let mc2 = media_controls_ref.clone();
@@ -97,11 +95,10 @@ pub fn create_mpv_player(
             if let Some(ref p) = *pr2.lock() {
                 let old_dur = p.duration();
                 p.handle_duration_change(dur);
-                // Emit immediately so the frontend gets the new duration
-                // without waiting for the next time-pos tick. Use position
-                // 0 when duration was previously 0 (track boundary) to
-                // avoid pairing the old track's position with the new
-                // track's duration during prefetch transitions.
+                // Emit immediately so the frontend gets the new duration without
+                // waiting for the next time-pos tick. Use position 0 on a track
+                // boundary (previous duration 0) to avoid pairing the old track's
+                // position with the new track's duration during prefetch transitions.
                 let pos = if old_dur == 0.0 { 0.0 } else { p.position() };
                 emit_playback_position(
                     &app2,
@@ -111,8 +108,8 @@ pub fn create_mpv_player(
                     },
                 );
 
-                // Push full metadata to OS media controls once we know the
-                // real duration (fires shortly after track change).
+                // Push full metadata to OS media controls once the real duration
+                // is known (fires shortly after track change).
                 if let Some(ref mc) = *mc1.lock() {
                     if let Some(ref track) = p.state().current_track {
                         let meta = MediaMetadata::from_track(track, pos, dur, true);
@@ -123,7 +120,7 @@ pub fn create_mpv_player(
         })),
         on_playlist_pos_change: Some(Box::new(move |pos| {
             if let Some(ref p) = *pr3.lock() {
-                // Capture previous track before state update for scrobble reporting
+                // Capture previous track before state update for scrobble reporting.
                 let prev_track = p.state().current_track.clone();
 
                 p.handle_playlist_pos_change(pos);
@@ -137,19 +134,17 @@ pub fn create_mpv_player(
                     },
                 );
 
-                // Nudge the prefetch worker: a natural advance may shift
-                // the lookahead window by one, bringing a new uncached
-                // target into scope. The worker decides whether to start
-                // a new cycle (idle) or keep its current serial loop
-                // running (which will pick up the shifted window on its
-                // next iteration automatically).
+                // Nudge the prefetch worker: a natural advance shifts the
+                // lookahead window, potentially bringing a new uncached target
+                // into scope. The worker starts a fresh cycle if idle, or lets
+                // the running serial loop pick up the shift on its next iteration.
                 if let Some(ref handle) = *ph1.lock() {
                     handle.notify_natural_advance();
                 }
 
-                // Session reporting for natural track advance only.
-                // Same rating_key as previous track indicates a queue reload;
-                // play_tracks already handled track_started in that case.
+                // Session reporting for natural track advance only. Matching
+                // rating_key means a queue reload, which play_tracks already
+                // reported via track_started.
                 if let Some(ref reporter) = *sr1.lock() {
                     if let Some(ref prev) = prev_track {
                         let same_track = state
@@ -192,7 +187,6 @@ pub fn create_mpv_player(
                     }
                 }
 
-                // Update OS media controls with play/pause state + position
                 if let Some(ref mc) = *mc2.lock() {
                     mc.update_playback_state(!paused, p.position());
                 }
@@ -200,7 +194,7 @@ pub fn create_mpv_player(
         })),
         on_idle_active: Some(Box::new(move || {
             if let Some(ref p) = *pr7.lock() {
-                // Scrobble the last playing track before transitioning to stopped
+                // Scrobble the last playing track before transitioning to stopped.
                 if let Some(ref reporter) = *sr3.lock() {
                     if let Some(ref track) = p.state().current_track {
                         reporter.track_ended(track);
@@ -221,13 +215,11 @@ pub fn create_mpv_player(
                     reporter.playback_stopped();
                 }
 
-                // Clear OS media controls (Now Playing widget)
                 if let Some(ref mc) = *mc3.lock() {
                     mc.clear();
                 }
 
-                // Queue finished — stop the prefetch worker until the
-                // next queue is loaded.
+                // Queue finished; stop the prefetch worker until the next queue loads.
                 if let Some(ref handle) = *ph2.lock() {
                     handle.notify_cancel();
                 }
@@ -245,16 +237,14 @@ pub fn create_mpv_player(
         })),
     });
 
-    // Load libmpv at runtime. A clear error beats an obscure dlopen failure,
-    // so `MpvLib::load()` already returns a multi-line string listing every
-    // path it tried — surface that verbatim if it fails.
+    // Load libmpv at runtime. `MpvLib::load()` returns a multi-line string
+    // listing every path it tried; surface that verbatim if it fails.
     let mpv_lib = Arc::new(MpvLib::load().unwrap_or_else(|e| panic!("{e}")));
     let mpv = MpvController::new(mpv_lib, callbacks).expect("Failed to initialize libmpv");
     let player = Arc::new(ramus_core::playback::player::AudioPlayer::new(
         Arc::new(mpv),
     ));
 
-    // Populate the deferred player reference for callbacks
     *player_ref.lock() = Some(player.clone());
 
     (player, reporter_ref, media_controls_ref)

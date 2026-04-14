@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-// Shared store so GenreTreeView can read these values reactively
+// Shared store so GenreTreeView can subscribe to these values.
 export const useGenreDebugStore = create<{
   chevronSize: number;
   chevronWidth: number;

@@ -1,12 +1,7 @@
-//! Media key integration and Now Playing metadata types.
-//!
-//! Defines the types and trait for cross-platform media key handling.
-//! Platform-specific integration (souvlaki on desktop, MPRIS on Linux)
-//! is implemented in the Tauri shell layer.
+//! Cross-platform media key handling types and trait. Platform-specific
+//! integration lives in the Tauri shell layer.
 
 use crate::models::Track;
-
-// --- MediaMetadata ---
 
 /// Metadata for OS-level Now Playing / media key display.
 #[derive(Debug, Clone, PartialEq)]
@@ -22,7 +17,7 @@ pub struct MediaMetadata {
 }
 
 impl MediaMetadata {
-    /// Construct metadata from a Track and current playback state.
+    /// Build metadata from a Track and current playback state.
     pub fn from_track(track: &Track, position: f64, duration: f64, is_playing: bool) -> Self {
         Self {
             title: track.title.clone(),
@@ -36,7 +31,7 @@ impl MediaMetadata {
         }
     }
 
-    /// Update position and playing state without rebuilding all metadata.
+    /// Return a copy with position and playing state replaced.
     pub fn with_playback_state(&self, position: f64, is_playing: bool) -> Self {
         Self {
             position,
@@ -45,8 +40,6 @@ impl MediaMetadata {
         }
     }
 }
-
-// --- MediaKeyEvent ---
 
 /// Events received from OS-level media key controls.
 #[derive(Debug, Clone, PartialEq)]
@@ -60,23 +53,18 @@ pub enum MediaKeyEvent {
     Seek(f64),
 }
 
-// --- MediaKeyHandler trait ---
-
-/// Trait for platform-specific media key handlers.
-///
-/// Implemented in the Tauri shell layer using `souvlaki` or platform APIs.
+/// Platform-specific media key handler. Implemented in the Tauri shell
+/// layer using `souvlaki`.
 pub trait MediaKeyHandler: Send + Sync {
-    /// Update all Now Playing metadata (on track change).
+    /// Update Now Playing metadata on track change.
     fn update_metadata(&self, metadata: &MediaMetadata);
 
-    /// Lightweight update for play/pause/seek without full metadata rebuild.
+    /// Lightweight update for play/pause/seek without rebuilding metadata.
     fn update_playback_state(&self, is_playing: bool, position: f64);
 
-    /// Clear Now Playing info (on stop or sign out).
+    /// Clear Now Playing info.
     fn clear(&self);
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -132,7 +120,7 @@ mod tests {
         let meta = MediaMetadata::from_track(&track, 0.0, 386.0, false);
 
         let updated = meta.with_playback_state(120.0, true);
-        assert_eq!(updated.title, "Paranoid Android"); // Unchanged
+        assert_eq!(updated.title, "Paranoid Android");
         assert!((updated.position - 120.0).abs() < 0.01);
         assert!(updated.is_playing);
     }
@@ -159,7 +147,6 @@ mod tests {
 
     #[test]
     fn test_media_key_events() {
-        // Verify all variants exist and are distinguishable
         let events = [
             MediaKeyEvent::Play,
             MediaKeyEvent::Pause,

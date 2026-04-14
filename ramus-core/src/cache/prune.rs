@@ -23,8 +23,8 @@ const CHUNK_SIZE: usize = 500;
 impl CacheDatabase {
     /// Remove local items whose sourceIds are no longer present on the Plex server.
     /// Deletes in leaf-first order (tracks → albums → artists) and cleans up FTS5.
-    /// Foreign-key cascades handle any stragglers (e.g. an album delete cascades
-    /// to its tracks and album_genres rows).
+    /// Foreign-key cascades handle stragglers: deleting an album cascades to its
+    /// tracks and `album_genres` rows.
     pub fn prune_removed(
         &self,
         plex_artist_ids: &HashSet<String>,
@@ -33,12 +33,11 @@ impl CacheDatabase {
     ) -> Result<PruneCounts, CacheError> {
         let conn = self.conn.lock();
 
-        // Collect DB sourceIds for each type
         let db_artist_ids = Self::all_source_ids(&conn, "artists")?;
         let db_album_ids = Self::all_source_ids(&conn, "albums")?;
         let db_track_ids = Self::all_source_ids(&conn, "tracks")?;
 
-        // Compute items to remove (in DB but not on Plex)
+        // Items in the DB but not on Plex.
         let stale_tracks: Vec<&str> = db_track_ids
             .iter()
             .filter(|id| !plex_track_ids.contains(*id))
@@ -67,29 +66,26 @@ impl CacheDatabase {
 
         let tx = conn.unchecked_transaction()?;
 
-        // Clean FTS5 for ALL tracks that will be removed — both explicitly
-        // stale tracks AND tracks that will be cascade-deleted when their
-        // parent album or artist is removed. FK cascades don't touch the
-        // external-content FTS5 table, so skipping these would leave
-        // zombie entries that bloat the index.
+        // FK cascades do not touch the external-content FTS5 table, so any
+        // track that disappears — explicitly stale or cascade-deleted — needs
+        // an explicit FTS5 delete first, or zombie entries bloat the index.
         Self::delete_tracks_fts_for_stale(&tx, &stale_tracks, &stale_albums, &stale_artists)?;
 
-        // 1. Tracks: delete explicitly stale rows
         for chunk in stale_tracks.chunks(CHUNK_SIZE) {
             Self::delete_by_source_ids(&tx, "tracks", chunk)?;
         }
 
-        // 2. Albums (cascade deletes child tracks + album_genres)
+        // Albums cascade to child tracks and album_genres.
         for chunk in stale_albums.chunks(CHUNK_SIZE) {
             Self::delete_by_source_ids(&tx, "albums", chunk)?;
         }
 
-        // 3. Artists (cascade deletes their albums → tracks → album_genres)
+        // Artists cascade through albums → tracks → album_genres.
         for chunk in stale_artists.chunks(CHUNK_SIZE) {
             Self::delete_by_source_ids(&tx, "artists", chunk)?;
         }
 
-        // 4. Clean up orphaned genres (genres with no album links)
+        // Orphaned genres.
         tx.execute_batch(
             "DELETE FROM genres WHERE id NOT IN (SELECT DISTINCT genreId FROM album_genres)",
         )?;
@@ -112,20 +108,18 @@ impl CacheDatabase {
         Ok(set)
     }
 
-    /// Clean FTS5 entries for all tracks that will be removed — both
-    /// explicitly stale tracks and tracks that will be cascade-deleted
-    /// when their parent album or artist is removed.
+    /// Issue FTS5 delete commands for every track that will disappear —
+    /// explicitly stale rows plus those cascade-deleted through their parent
+    /// album or artist.
     fn delete_tracks_fts_for_stale(
         tx: &rusqlite::Transaction,
         stale_tracks: &[&str],
         stale_albums: &[&str],
         stale_artists: &[&str],
     ) -> Result<(), CacheError> {
-        // Collect (id, title) for every track that will disappear.
-        // A single query with OR clauses handles all three sources.
         let mut all_tracks: Vec<(i64, String)> = Vec::new();
 
-        // Explicitly stale tracks
+        // Explicitly stale tracks.
         for chunk in stale_tracks.chunks(CHUNK_SIZE) {
             let ph = Self::placeholders(chunk.len());
             let sql = format!("SELECT id, title FROM tracks WHERE sourceId IN ({ph})");
@@ -139,7 +133,7 @@ impl CacheDatabase {
             all_tracks.extend(rows);
         }
 
-        // Tracks on stale albums (will be cascade-deleted)
+        // Tracks whose parent album is stale.
         for chunk in stale_albums.chunks(CHUNK_SIZE) {
             let ph = Self::placeholders(chunk.len());
             let sql = format!(
@@ -157,7 +151,7 @@ impl CacheDatabase {
             all_tracks.extend(rows);
         }
 
-        // Tracks on stale artists (will be cascade-deleted through albums)
+        // Tracks whose parent artist is stale.
         for chunk in stale_artists.chunks(CHUNK_SIZE) {
             let ph = Self::placeholders(chunk.len());
             let sql = format!(
@@ -175,11 +169,10 @@ impl CacheDatabase {
             all_tracks.extend(rows);
         }
 
-        // Deduplicate by track id (a track may appear in multiple sets)
+        // A track may appear in more than one set.
         all_tracks.sort_unstable_by_key(|(id, _)| *id);
         all_tracks.dedup_by_key(|(id, _)| *id);
 
-        // Issue FTS5 delete commands
         let mut fts_del = tx.prepare_cached(
             "INSERT INTO tracks_fts(tracks_fts, rowid, title) VALUES('delete', ?1, ?2)",
         )?;
@@ -315,7 +308,6 @@ mod tests {
         seed_track(&db, "tr1", "Paranoid Android", al, ar);
         seed_track(&db, "tr2", "Karma Police", al, ar);
 
-        // tr2 no longer on Plex
         let counts = db
             .prune_removed(
                 &id_set(&["ar1"]),
@@ -348,7 +340,6 @@ mod tests {
         seed_track(&db, "tr1", "Paranoid Android", al1, ar);
         seed_track(&db, "tr2", "Everything In Its Right Place", al2, ar);
 
-        // al2 and its tracks no longer on Plex
         let counts = db
             .prune_removed(
                 &id_set(&["ar1"]),
@@ -375,13 +366,11 @@ mod tests {
         seed_track(&db, "tr1", "Paranoid Android", al1, ar1);
         seed_track(&db, "tr2", "Joga", al2, ar2);
 
-        // Link genres
         let genre_id = db.upsert_genre("Rock").unwrap();
         db.link_album_genre(al1, genre_id).unwrap();
         let genre_id2 = db.upsert_genre("Electronic").unwrap();
         db.link_album_genre(al2, genre_id2).unwrap();
 
-        // ar2 and all its children no longer on Plex
         let counts = db
             .prune_removed(
                 &id_set(&["ar1"]),
@@ -398,7 +387,7 @@ mod tests {
         assert_eq!(stats.artist_count, 1);
         assert_eq!(stats.album_count, 1);
         assert_eq!(stats.track_count, 1);
-        // "Electronic" genre should be pruned (orphaned), "Rock" remains
+        // "Electronic" is orphaned and pruned; "Rock" remains.
         assert_eq!(stats.genre_count, 1);
     }
 

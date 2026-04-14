@@ -14,9 +14,8 @@ fn custom_genres_path() -> Option<PathBuf> {
     token_store::config_dir().ok().map(|d| d.join(CUSTOM_GENRES_FILE))
 }
 
-/// Load settings from disk, falling back to defaults.
-/// Uses `#[serde(default)]` semantics — new fields get their default values
-/// even if the file was written by an older version.
+/// Load settings from disk, falling back to defaults. New fields get their
+/// default values when reading a file written by an older version.
 pub fn load() -> Settings {
     let Some(path) = settings_path() else {
         return Settings::default();

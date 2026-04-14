@@ -25,14 +25,14 @@ pub struct AppState {
     pub settings: Arc<RwLock<Settings>>,
     pub image_cache: Arc<parking_lot::Mutex<ImageCache>>,
     pub http_client: reqwest::Client,
-    /// Control surface for the background prefetch worker. Cheap to
-    /// clone — it's just an mpsc sender + an atomic generation counter.
+    /// Control surface for the background prefetch worker. Cheap to clone —
+    /// an mpsc sender plus an atomic generation counter.
     pub prefetch_handle: crate::prefetch::PrefetchHandle,
-    /// Servers from the last `discover_servers` call — keyed by machine_identifier.
+    /// Servers from the last `discover_servers` call, keyed by machine_identifier.
     /// Holds full data including tokens so the frontend never needs them.
     pub discovered_servers: Arc<parking_lot::Mutex<Vec<PlexServer>>>,
-    /// OS-level media controls (Now Playing, media keys). May be None if
-    /// platform init failed (e.g., no D-Bus on Linux).
+    /// OS-level media controls (Now Playing, media keys). `None` if platform
+    /// init failed (e.g. no D-Bus on Linux).
     pub media_controls: crate::media_controls::MediaControlsRef,
     /// Prevents overlapping sync operations from corrupting the database.
     pub sync_in_progress: Arc<AtomicBool>,

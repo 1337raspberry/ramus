@@ -1,7 +1,7 @@
-//! Real libmpv controller implementing the MpvPlayer trait.
+//! libmpv controller implementing the MpvPlayer trait.
 //!
-//! Creates an mpv instance for audio-only playback, runs an event loop
-//! on a background thread, and dispatches callbacks to the caller.
+//! Creates an mpv instance for audio-only playback, runs an event loop on a
+//! background thread, and dispatches callbacks to the caller.
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
@@ -13,8 +13,6 @@ use ramus_core::playback::mpv::{FileEndReason, LoadMode, MpvCallbacks, MpvPlayer
 
 use crate::mpv_ffi::*;
 
-// --- Thread-safe wrapper for the raw mpv handle ---
-
 struct MpvHandle(*mut mpv_handle);
 unsafe impl Send for MpvHandle {}
 unsafe impl Sync for MpvHandle {}
@@ -25,8 +23,6 @@ impl MpvHandle {
     }
 }
 
-// --- MpvController ---
-
 pub struct MpvController {
     lib: Arc<MpvLib>,
     handle: Arc<MpvHandle>,
@@ -35,11 +31,11 @@ pub struct MpvController {
 }
 
 impl MpvController {
-    /// Create and initialize a new mpv instance with a background event
-    /// loop thread that dispatches `callbacks`.
+    /// Create and initialize a new mpv instance with a background event loop
+    /// thread that dispatches `callbacks`.
     ///
-    /// `lib` is the runtime-loaded libmpv — load it once at app startup
-    /// (via `MpvLib::load()`) and share the `Arc` across controllers.
+    /// `lib` is the runtime-loaded libmpv; load it once at startup via
+    /// `MpvLib::load()` and share the `Arc` across controllers.
     pub fn new(lib: Arc<MpvLib>, callbacks: Arc<MpvCallbacks>) -> Result<Self, String> {
         unsafe {
             // mpv requires LC_NUMERIC=C for POSIX float formatting (e.g. EQ filters).
@@ -56,7 +52,6 @@ impl MpvController {
                 return Err("mpv_create() returned null".into());
             }
 
-            // Apply audio-only options
             let options = ramus_core::playback::mpv::default_mpv_options();
             for (key, val) in &options {
                 let k = CString::new(*key).unwrap();
@@ -71,7 +66,6 @@ impl MpvController {
                 return Err(format!("mpv_initialize failed: {}", msg.to_string_lossy()));
             }
 
-            // Register property observers
             let props = ramus_core::playback::mpv::observed_properties();
             for (name, id) in &props {
                 let n = CString::new(*name).unwrap();
@@ -83,7 +77,7 @@ impl MpvController {
                 lib.observe_property(ctx, *id as u64, n.as_ptr(), fmt);
             }
 
-            // Default volume (100 = unity gain, no attenuation)
+            // 100 = unity gain.
             let vol_name = CString::new("volume").unwrap();
             let mut vol: f64 = 100.0;
             lib.set_property(
@@ -96,7 +90,6 @@ impl MpvController {
             let handle = Arc::new(MpvHandle(ctx));
             let shutdown = Arc::new(AtomicBool::new(false));
 
-            // Spawn background event loop
             let handle_clone = handle.clone();
             let shutdown_clone = shutdown.clone();
             let lib_clone = lib.clone();
@@ -168,9 +161,11 @@ impl MpvController {
 
 impl MpvPlayer for MpvController {
     fn load_file(&self, url: &str, mode: LoadMode, options: Option<&str>) {
-        // mpv's `loadfile` command: `loadfile <url> <flags> [<index>] [<options>]`.
-        // For replace/append/append-play, <index> is unused — options goes in slot 4
-        // (we pass "-1" in the index slot as the libmpv accepted "no index" sentinel).
+        // mpv's loadfile: `loadfile <url> <flags> [<index>] [<options>]`. For
+        // replace / append / append-play the <index> slot is unused — pass "-1"
+        // as libmpv's accepted "no index" sentinel and put options in slot 4.
+        // Note: `replace` implicitly stops; callers must not invoke stop() before
+        // load_queue or they race with playlist setup.
         match options {
             Some(opts) => self.command(&["loadfile", url, mode.as_str(), "-1", opts]),
             None => self.command(&["loadfile", url, mode.as_str()]),
@@ -243,7 +238,7 @@ impl MpvPlayer for MpvController {
 impl Drop for MpvController {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Release);
-        // Unblock mpv_wait_event so the event loop thread exits
+        // Unblock mpv_wait_event so the event loop thread exits.
         self.command(&["quit"]);
         if let Some(t) = self._event_thread.take() {
             let _ = t.join();
@@ -253,8 +248,6 @@ impl Drop for MpvController {
         }
     }
 }
-
-// --- Event loop (runs on background thread) ---
 
 fn event_loop(
     lib: Arc<MpvLib>,

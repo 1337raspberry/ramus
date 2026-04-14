@@ -7,8 +7,6 @@ use crate::util::{escape_fts5, escape_like};
 
 use super::db::{AlbumSearchRow, CacheDatabase, CacheError, TrackSearchRow};
 
-// --- Row mapping helpers ---
-
 fn map_album_search_row(row: &rusqlite::Row) -> rusqlite::Result<AlbumSearchRow> {
     Ok(AlbumSearchRow {
         album_source_id: row.get(0)?,
@@ -40,8 +38,8 @@ fn map_track_search_row(row: &rusqlite::Row) -> rusqlite::Result<TrackSearchRow>
     })
 }
 
-/// Build an optional ` AND a.id IN (?, ?, ...)` clause + collect the IDs for binding.
-/// Returns (sql_fragment, id_vec). If album_ids is None, returns empty fragment and empty vec.
+/// Build an optional ` AND a.id IN (?, ?, ...)` clause and collect its IDs.
+/// Returns `(sql_fragment, id_vec)`. When `album_ids` is `None`, both are empty.
 fn build_id_filter(album_ids: Option<&HashSet<i64>>) -> (String, Vec<i64>) {
     match album_ids {
         Some(ids) if !ids.is_empty() => {
@@ -53,7 +51,7 @@ fn build_id_filter(album_ids: Option<&HashSet<i64>>) -> (String, Vec<i64>) {
     }
 }
 
-/// Same as build_id_filter but uses t.albumId instead of a.id (for track queries).
+/// Variant of `build_id_filter` that binds against `t.albumId` for track queries.
 fn build_track_id_filter(album_ids: Option<&HashSet<i64>>) -> (String, Vec<i64>) {
     match album_ids {
         Some(ids) if !ids.is_empty() => {
@@ -96,7 +94,7 @@ impl CacheDatabase {
         Ok(tracks)
     }
 
-    /// Search albums by title (LIKE contains).
+    /// Search albums by title using LIKE contains.
     pub fn search_albums_by_title(
         &self,
         query: &str,
@@ -155,7 +153,7 @@ impl CacheDatabase {
         Ok(set)
     }
 
-    /// Search albums by title (LIKE), with optional album ID filter.
+    /// Search albums by title (LIKE) with optional album-ID filter.
     pub fn search_albums_by_title_filtered(
         &self,
         query: &str,
@@ -191,7 +189,7 @@ impl CacheDatabase {
         Ok(rows)
     }
 
-    /// Search albums by artist name (LIKE), with optional album ID filter.
+    /// Search albums by artist name (LIKE) with optional album-ID filter.
     pub fn search_albums_by_artist(
         &self,
         query: &str,
@@ -227,14 +225,12 @@ impl CacheDatabase {
         Ok(rows)
     }
 
-    /// Search albums by artist OR title (LIKE), with optional album ID filter.
+    /// Search albums by artist OR title (LIKE) with optional album-ID filter.
     ///
-    /// The query is tokenised on whitespace; each token is required to match
-    /// *either* the artist name or the album title (OR), and tokens are
-    /// ANDed together. Single-token queries reduce to the previous behaviour
-    /// ("radiohead" finds Radiohead albums). Multi-token queries like
-    /// "radiohead ok computer" find albums where the tokens span fields —
-    /// "radiohead" hits the artist, "ok"/"computer" hit the title.
+    /// Tokenises on whitespace; each token must match either the artist name
+    /// or the album title, and tokens are ANDed. Multi-token queries like
+    /// `"radiohead ok computer"` match across fields — `"radiohead"` against
+    /// the artist, `"ok"`/`"computer"` against the title.
     pub fn search_albums_by_artist_or_title(
         &self,
         query: &str,
@@ -254,8 +250,8 @@ impl CacheDatabase {
         }
         let conn = self.conn.lock();
         let (id_filter, id_vec) = build_id_filter(album_ids);
-        // Each token takes two positional placeholders — one per column it
-        // could match (artist or album title). Bind each pattern twice below.
+        // Each token binds twice — once per column it could match (artist
+        // name or album title).
         let token_clauses: Vec<&str> = tokens
             .iter()
             .map(|_| "(ar.name LIKE ? ESCAPE '\\' OR a.title LIKE ? ESCAPE '\\')")
@@ -287,12 +283,12 @@ impl CacheDatabase {
         Ok(rows)
     }
 
-    /// Cross-field tokenised track search: each whitespace-separated token
-    /// must match at least one of (track title, album title, artist name),
-    /// and tokens are ANDed. Fills the gap FTS5 can't cover — `tracks_fts`
-    /// only indexes the track title, so a query like "radiohead karma"
-    /// (artist + title) returns zero FTS5 hits. This method joins on
-    /// albums/artists so the tokens can span fields.
+    /// Cross-field tokenised track search. Each whitespace-separated token
+    /// must match at least one of (track title, album title, artist name)
+    /// and tokens are ANDed. Fills the gap FTS5 cannot cover: `tracks_fts`
+    /// indexes only the track title, so a query like `"radiohead karma"`
+    /// returns no FTS5 hits. This joins on albums and artists so tokens may
+    /// span fields.
     pub fn search_tracks_by_tokens_cross_field(
         &self,
         query: &str,
@@ -312,8 +308,8 @@ impl CacheDatabase {
         }
         let conn = self.conn.lock();
         let (id_filter, id_vec) = build_track_id_filter(album_ids);
-        // Each token takes three positional placeholders (track title OR
-        // album title OR artist name). Bind each pattern thrice below.
+        // Each token binds three times — one per column (track title,
+        // album title, artist name).
         let token_clauses: Vec<&str> = tokens
             .iter()
             .map(|_| "(t.title LIKE ? ESCAPE '\\' OR al.title LIKE ? ESCAPE '\\' OR ar.name LIKE ? ESCAPE '\\')")
@@ -347,7 +343,7 @@ impl CacheDatabase {
         Ok(rows)
     }
 
-    /// Search albums by ID filter only (for genre/year/fav filter-only queries), random order.
+    /// Search albums by ID filter only (for genre/year/fav filter-only queries) in random order.
     pub fn search_albums_filtered(
         &self,
         album_ids: Option<&HashSet<i64>>,
@@ -418,7 +414,7 @@ impl CacheDatabase {
         Ok(rows)
     }
 
-    /// Get tracks as fuzzy search candidates.
+    /// Tracks as fuzzy search candidates.
     pub fn search_candidates(
         &self,
         album_ids: Option<&HashSet<i64>>,
@@ -429,11 +425,11 @@ impl CacheDatabase {
         }
         let conn = self.conn.lock();
         let (id_filter, id_vec) = build_track_id_filter(album_ids);
-        // Strip leading " AND " for WHERE clause when there's no preceding condition
+        // Strip the leading " AND" so the fragment becomes a standalone WHERE.
         let where_clause = if id_filter.is_empty() {
             String::new()
         } else {
-            format!(" WHERE{}", &id_filter[4..]) // strip " AND" prefix, keep the rest
+            format!(" WHERE{}", &id_filter[4..])
         };
         let sql = format!(
             "SELECT t.id, t.sourceId, t.title, ar.name, al.title, al.sourceId, al.artUrl, t.trackArtist, t.userRating
@@ -456,10 +452,7 @@ impl CacheDatabase {
         Ok(rows)
     }
 
-    // --- ID-returning search variants (for grid loading) ---
-
-    /// Returns internal album IDs matching album title (LIKE contains).
-    /// No limit applied — returns all matches.
+    /// Internal album IDs matching album title (LIKE contains). Unlimited.
     pub fn album_ids_by_title(
         &self,
         query: &str,
@@ -492,8 +485,7 @@ impl CacheDatabase {
         Ok(set)
     }
 
-    /// Returns internal album IDs matching artist name (LIKE contains).
-    /// No limit applied — returns all matches.
+    /// Internal album IDs matching artist name (LIKE contains). Unlimited.
     pub fn album_ids_by_artist(
         &self,
         query: &str,
@@ -526,8 +518,7 @@ impl CacheDatabase {
         Ok(set)
     }
 
-    /// Returns internal album IDs matching artist name OR album title (LIKE contains).
-    /// No limit applied — returns all matches.
+    /// Internal album IDs matching artist name OR album title (LIKE contains). Unlimited.
     pub fn album_ids_by_artist_or_title(
         &self,
         query: &str,

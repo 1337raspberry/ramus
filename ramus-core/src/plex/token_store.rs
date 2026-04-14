@@ -8,8 +8,6 @@ use parking_lot::Mutex;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
-// --- Token Keys ---
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKey {
     AuthToken,
@@ -24,8 +22,6 @@ impl TokenKey {
         }
     }
 }
-
-// --- Errors ---
 
 #[derive(Debug, thiserror::Error)]
 pub enum TokenStoreError {
@@ -43,16 +39,14 @@ pub enum TokenStoreError {
     Json(#[from] serde_json::Error),
 }
 
-// --- TokenStore ---
-
 /// Encrypted file-based token storage.
 ///
 /// Tokens are AES-256-GCM encrypted with a key derived from the machine's
-/// hardware UUID, so the file is inert if copied to another machine.
+/// hardware UUID, rendering the file inert if copied elsewhere.
 pub struct TokenStore {
     dir: PathBuf,
     lock: Mutex<()>,
-    /// Optional override for the encryption key (used in tests).
+    /// Test-only encryption key override.
     key_override: Option<[u8; 32]>,
 }
 
@@ -60,7 +54,7 @@ const NONCE_SIZE: usize = 12;
 const TOKEN_FILE: &str = "tokens.enc";
 
 impl TokenStore {
-    /// Create a new TokenStore using the platform config directory.
+    /// Create a `TokenStore` using the platform config directory.
     pub fn new() -> Result<Self, TokenStoreError> {
         let dir = default_config_dir()?;
         Ok(Self {
@@ -70,7 +64,7 @@ impl TokenStore {
         })
     }
 
-    /// Create a TokenStore with a custom directory (for testing).
+    /// Create a `TokenStore` with a custom directory. For tests.
     pub fn with_dir(dir: PathBuf) -> Self {
         Self {
             dir,
@@ -79,7 +73,7 @@ impl TokenStore {
         }
     }
 
-    /// Create a TokenStore with a custom directory and key (for testing).
+    /// Create a `TokenStore` with a custom directory and key. For tests.
     #[cfg(test)]
     pub(crate) fn with_dir_and_key(dir: PathBuf, key: [u8; 32]) -> Self {
         Self {
@@ -102,14 +96,14 @@ impl TokenStore {
         Ok(hash.into())
     }
 
-    /// Read a token by key.
+    /// Read a token.
     pub fn read(&self, key: TokenKey) -> Option<String> {
         let _guard = self.lock.lock();
         let tokens = self.load_all().ok()?;
         tokens.get(key.as_str()).cloned()
     }
 
-    /// Write a token. Returns true on success.
+    /// Write a token. Returns `true` on success.
     pub fn write(&self, key: TokenKey, value: &str) -> bool {
         let _guard = self.lock.lock();
         let mut tokens = self.load_all().unwrap_or_default();
@@ -117,18 +111,16 @@ impl TokenStore {
         self.save_all(&tokens).is_ok()
     }
 
-    /// Delete a token. Returns true on success.
+    /// Delete a token. Returns `true` on success.
     pub fn delete(&self, key: TokenKey) -> bool {
         let _guard = self.lock.lock();
         let mut tokens = match self.load_all() {
             Ok(t) => t,
-            Err(_) => return true, // nothing to delete
+            Err(_) => return true,
         };
         tokens.remove(key.as_str());
         self.save_all(&tokens).is_ok()
     }
-
-    // -- Internal --
 
     fn load_all(&self) -> Result<HashMap<String, String>, TokenStoreError> {
         let path = self.token_file();
@@ -138,7 +130,6 @@ impl TokenStore {
 
         let data = fs::read(&path)?;
         if data.len() < NONCE_SIZE + 16 {
-            // Too short to contain nonce + tag
             return Err(TokenStoreError::Decryption("data too short".into()));
         }
 
@@ -160,7 +151,6 @@ impl TokenStore {
     fn save_all(&self, tokens: &HashMap<String, String>) -> Result<(), TokenStoreError> {
         let path = self.token_file();
 
-        // Ensure directory exists with restrictive permissions
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
             #[cfg(unix)]
@@ -184,14 +174,13 @@ impl TokenStore {
             .encrypt(nonce, plaintext.as_ref())
             .map_err(|e| TokenStoreError::Encryption(e.to_string()))?;
 
-        // nonce || ciphertext || tag (tag is appended by aes-gcm)
+        // Layout: nonce || ciphertext || tag (tag appended by aes-gcm).
         let mut blob = Vec::with_capacity(NONCE_SIZE + ciphertext.len());
         blob.extend_from_slice(&nonce_bytes);
         blob.extend_from_slice(&ciphertext);
 
         fs::write(&path, &blob)?;
 
-        // Set permissions to 0o600 on Unix
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -202,20 +191,16 @@ impl TokenStore {
     }
 }
 
-// --- Platform config directory ---
-
 fn default_config_dir() -> Result<PathBuf, TokenStoreError> {
     directories::ProjectDirs::from("com", "raspsoft", "ramus")
         .map(|d| d.data_dir().to_path_buf())
         .ok_or(TokenStoreError::NoConfigDir)
 }
 
-/// Returns the platform config directory path (for use by auth module).
+/// Platform config directory path, shared with the auth module.
 pub fn config_dir() -> Result<PathBuf, TokenStoreError> {
     default_config_dir()
 }
-
-// --- Hardware UUID (platform-specific) ---
 
 #[cfg(target_os = "macos")]
 fn hardware_uuid() -> Result<String, TokenStoreError> {
@@ -295,14 +280,11 @@ fn hardware_uuid() -> Result<String, TokenStoreError> {
     Err(TokenStoreError::NoHardwareUUID)
 }
 
-// --- Tests ---
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn test_store(dir: &std::path::Path) -> TokenStore {
-        // Use a fixed test key instead of hardware UUID
         let key = Sha256::digest(b"test-machine-id");
         TokenStore::with_dir_and_key(dir.to_path_buf(), key.into())
     }
@@ -394,7 +376,6 @@ mod tests {
         let file1 = fs::read(dir1.path().join(TOKEN_FILE)).unwrap();
         let file2 = fs::read(dir2.path().join(TOKEN_FILE)).unwrap();
 
-        // Files should differ (different keys + different random nonces)
         assert_ne!(file1, file2);
     }
 

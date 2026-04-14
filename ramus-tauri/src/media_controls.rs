@@ -18,20 +18,19 @@ use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
 use ramus_core::playback::player::AudioPlayer;
 use ramus_core::plex::client::PlexClient;
 
-/// Deferred-population slot for media controls, matching the pattern used
-/// by `ReporterRef` and `PrefetchHandleRef`.
+/// Deferred-population slot for media controls; matches `ReporterRef` and
+/// `PrefetchHandleRef`.
 pub type MediaControlsRef = Arc<parking_lot::Mutex<Option<MediaControlsHandle>>>;
 
 /// Sizes the frontend caches art at (from ui/src/lib/commands.ts ART_SIZE).
-/// Try in this order: MEDIUM (album grid, most common), LARGE (Now Playing),
-/// SMALL (search/queue).
+/// Priority order: 300 (album grid, most common), 1200 (Now Playing), 72 (search/queue).
 const ART_SIZES_TO_TRY: &[u32] = &[300, 1200, 72];
 
-/// Size we download at when nothing is cached yet.
+/// Size to download at when nothing is cached yet.
 const ART_DOWNLOAD_SIZE: u32 = 300;
 
-/// Cached art resolution state — kept in a single mutex so the thumb and
-/// its resolved URL are always consistent (no torn reads).
+/// Cached art resolution state, kept under a single mutex so the thumb and its
+/// resolved URL stay consistent (no torn reads).
 #[derive(Default)]
 struct CachedArt {
     thumb: Option<String>,
@@ -47,8 +46,8 @@ pub struct MediaControlsHandle {
     cached_art: Arc<parking_lot::Mutex<CachedArt>>,
 }
 
-// souvlaki::MediaControls is Send + Sync (dispatches internally on macOS),
-// so MediaControlsHandle auto-derives Send + Sync from its fields.
+// souvlaki::MediaControls is Send + Sync (dispatches internally on macOS), so
+// MediaControlsHandle auto-derives Send + Sync from its fields.
 
 impl MediaControlsHandle {
     /// Resolve album art from the image cache, returning a `file:///` URL.
@@ -56,17 +55,16 @@ impl MediaControlsHandle {
     fn resolve_cover_art(&self, thumb: Option<&str>) -> Option<String> {
         let thumb = thumb?;
 
-        // Fast path: already resolved this thumb successfully
+        // Fast path: already resolved this thumb successfully.
         {
             let cached = self.cached_art.lock();
             if cached.thumb.as_deref() == Some(thumb) && cached.cover_url.is_some() {
                 return cached.cover_url.clone();
             }
-            // Either different thumb or previous lookup was a miss — retry,
-            // the background download may have populated the cache since then.
+            // Different thumb or prior miss: retry — the background download may
+            // have populated the cache since.
         }
 
-        // Try each size the frontend may have cached
         let path = {
             let mut cache = self.image_cache.lock();
             ART_SIZES_TO_TRY
@@ -89,8 +87,8 @@ impl MediaKeyHandler for MediaControlsHandle {
         let cover_url = self.resolve_cover_art(metadata.cover_url.as_deref());
         push_to_souvlaki(&self.controls, metadata, cover_url.as_deref());
 
-        // If art wasn't in the cache, download it from Plex in the background
-        // and re-push metadata once it arrives (same as Swift NowPlayingBridge).
+        // Art missed the cache: download from Plex in the background and
+        // re-push metadata once it arrives.
         if cover_url.is_none() {
             if let Some(ref thumb) = metadata.cover_url {
                 spawn_art_download(
@@ -134,8 +132,8 @@ impl MediaKeyHandler for MediaControlsHandle {
     }
 }
 
-/// Push metadata + playback state to souvlaki. Shared between the sync
-/// path (update_metadata) and the async art-download completion.
+/// Push metadata + playback state to souvlaki. Shared between the sync path
+/// (update_metadata) and the async art-download completion.
 fn push_to_souvlaki(
     controls: &parking_lot::Mutex<MediaControls>,
     metadata: &MediaMetadata,
@@ -165,11 +163,11 @@ fn push_to_souvlaki(
     });
 }
 
-/// Download album art from Plex in the background, insert into the image
-/// cache, then re-push metadata to souvlaki with the cover URL.
+/// Download album art from Plex in the background, insert into the image cache,
+/// then re-push metadata to souvlaki with the cover URL.
 ///
-/// Guards against stale downloads: if the track changes while the download
-/// is in flight (detected via `cached_art.thumb`), the result is discarded.
+/// Guards against stale downloads: if the track changes mid-flight (detected
+/// via `cached_art.thumb`), the result is discarded.
 fn spawn_art_download(
     thumb: String,
     metadata: MediaMetadata,
@@ -212,7 +210,6 @@ fn spawn_art_download(
             Err(_) => return,
         };
 
-        // Insert into cache and get the file path
         let cover_url = {
             let mut cache = image_cache.lock();
             cache
@@ -221,8 +218,8 @@ fn spawn_art_download(
                 .map(|p| format!("file://{}", p.display()))
         };
 
-        // Only re-push if this thumb is still current (guard against rapid skipping
-        // overwriting the new track's metadata with the old track's art).
+        // Re-push only if this thumb is still current; rapid skipping would
+        // otherwise overwrite the new track's metadata with the old track's art.
         if let Some(ref url) = cover_url {
             let mut art = cached_art.lock();
             if art.thumb.as_deref() == Some(&thumb) {
@@ -236,8 +233,9 @@ fn spawn_art_download(
 
 /// Create and configure OS media controls.
 ///
-/// Returns `Err` if the platform doesn't support media controls (e.g., no
-/// D-Bus on Linux, no HWND on Windows). Callers should treat this as non-fatal.
+/// Returns `Err` if the platform refuses init (e.g. no D-Bus on Linux, no
+/// HWND on Windows). Callers must treat this as non-fatal — the app runs fine
+/// without OS media controls.
 pub fn create_media_controls(
     #[cfg(target_os = "windows")] window: &tauri::WebviewWindow,
     player: Arc<AudioPlayer>,
@@ -247,8 +245,8 @@ pub fn create_media_controls(
 ) -> Result<MediaControlsHandle, String> {
     #[cfg(target_os = "windows")]
     let hwnd = {
-        // Tauri exposes .hwnd() directly on Windows — same pattern as
-        // .ns_window() on macOS in main.rs. No need for raw_window_handle crate.
+        // Tauri exposes .hwnd() directly on Windows, mirroring .ns_window() on
+        // macOS — no need for raw_window_handle.
         let h = window
             .hwnd()
             .map_err(|e| format!("failed to get HWND: {e}"))?;
@@ -267,7 +265,7 @@ pub fn create_media_controls(
     let mut controls =
         MediaControls::new(config).map_err(|e| format!("failed to create media controls: {e}"))?;
 
-    // Attach event handler that routes OS media key events to the player
+    // Route OS media key events to the player.
     let p = player.clone();
     controls
         .attach(move |event: MediaControlEvent| {
@@ -282,10 +280,10 @@ pub fn create_media_controls(
                     p.seek(dur.as_secs_f64());
                 }
                 MediaControlEvent::SetVolume(vol) => {
-                    // souvlaki volume is 0.0–1.0, player expects 0–100
+                    // souvlaki volume is 0.0–1.0; player expects 0–100.
                     p.set_volume(vol * 100.0);
                 }
-                // SeekBy, Seek, OpenUri, Raise, Quit — not applicable
+                // SeekBy, Seek, OpenUri, Raise, Quit: not applicable.
                 _ => {}
             }
         })

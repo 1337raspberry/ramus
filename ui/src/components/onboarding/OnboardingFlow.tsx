@@ -25,7 +25,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
   const handleServerSelect = useCallback(async (srv: PlexServer, url: string) => {
     setServer(srv);
     setServerUrl(url);
-    // Pre-connect so findMusicLibraries works; finalize also connects as a fallback
+    // Pre-connect so findMusicLibraries works; finalize also connects as a fallback.
     try {
       await connectManualUrl(url);
     } catch {}

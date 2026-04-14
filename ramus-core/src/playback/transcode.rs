@@ -3,12 +3,9 @@ use url::Url;
 use crate::models::PlaybackMode;
 use crate::util::{is_lossless_codec, percent_decode, percent_encode};
 
-// --- Transcode decision ---
-
-/// Determine whether a track should be transcoded based on playback mode,
-/// codec, and connection type.
-///
-/// With mpv, transcoding is ONLY for bandwidth savings — never for codec compatibility.
+/// Whether a track should be transcoded based on playback mode, codec,
+/// and connection type. With mpv, transcoding is only a bandwidth measure
+/// — never for codec compatibility.
 pub fn should_transcode(codec: Option<&str>, mode: PlaybackMode, is_remote: bool) -> bool {
     let codec = match codec {
         Some(c) => c,
@@ -23,14 +20,12 @@ pub fn should_transcode(codec: Option<&str>, mode: PlaybackMode, is_remote: bool
     }
 }
 
-// --- URL builders ---
-
 /// Build a direct-play URL: server base + part key + token as query param.
 ///
 /// Validates that `part_key` starts with `/library/` and contains no path
-/// traversal sequences. Returns `None` on invalid input.
+/// traversal sequences (checked after percent-decoding). Returns `None`
+/// on invalid input.
 pub fn build_direct_play_url(server_url: &Url, part_key: &str, token: &str) -> Option<Url> {
-    // Percent-decode before checking for traversal sequences
     let decoded = percent_decode(part_key);
     if !decoded.starts_with("/library/") || decoded.contains("..") {
         return None;
@@ -41,10 +36,10 @@ pub fn build_direct_play_url(server_url: &Url, part_key: &str, token: &str) -> O
     Url::parse(&url_str).ok()
 }
 
-/// Build a Plex HLS transcode URL.
+/// Build a Plex HLS transcode URL against `/music/:/transcode/universal/start.m3u8`.
 ///
-/// Uses `/music/:/transcode/universal/start.m3u8` — the audio HLS endpoint.
-/// The profile parameter contains pre-encoded values that must NOT be re-encoded.
+/// The `X-Plex-Client-Profile-Extra` parameter contains pre-encoded values
+/// that must not be re-encoded.
 pub fn build_hls_url(
     server_url: &Url,
     token: &str,
@@ -77,14 +72,9 @@ pub fn build_hls_url(
     Url::parse(&format!("{}{}?{}", base, endpoint, query)).ok()
 }
 
-
-// --- Tests ---
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // --- should_transcode ---
 
     #[test]
     fn test_direct_play_never_transcodes() {
@@ -147,8 +137,6 @@ mod tests {
         assert!(should_transcode(Some("Alac"), PlaybackMode::TranscodeLossless, false));
     }
 
-    // --- build_direct_play_url ---
-
     #[test]
     fn test_direct_play_url_includes_token() {
         let server = Url::parse("http://192.168.1.100:32400").unwrap();
@@ -180,8 +168,6 @@ mod tests {
             build_direct_play_url(&server, "/library/%2e%2e/etc/passwd", "token").is_none()
         );
     }
-
-    // --- build_hls_url ---
 
     #[test]
     fn test_hls_url_has_required_parameters() {
@@ -227,5 +213,4 @@ mod tests {
         assert!(url_str.contains("/music/:/transcode/universal/start.m3u8"));
         assert!(!url_str.contains("/audio/:/"));
     }
-
 }

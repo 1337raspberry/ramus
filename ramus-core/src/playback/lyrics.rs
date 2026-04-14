@@ -1,6 +1,4 @@
-//! Lyrics fetching and LRC format parsing.
-//!
-//! Supports synced (LRC) and unsynced (plain text) lyrics from Plex and LRCLIB.
+//! Lyrics fetching and LRC format parsing for Plex and LRCLIB sources.
 
 /// A single line of lyrics.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -30,10 +28,10 @@ pub struct LyricsResult {
 }
 
 impl LyricsResult {
-    /// Find the index of the active lyric line at the given playback position.
+    /// Index of the active lyric line at the given playback position.
     ///
-    /// Returns the last line whose timestamp <= position (binary search).
-    /// Returns `None` if no synced lines exist or position is before the first line.
+    /// Returns the last line whose timestamp <= position. Returns `None` if
+    /// no synced lines exist or position precedes the first line.
     pub fn active_line_index(&self, position: f64) -> Option<usize> {
         if !self.is_synced {
             return None;
@@ -50,7 +48,6 @@ impl LyricsResult {
             return None;
         }
 
-        // Binary search: find last line with timestamp <= position
         let mut result: Option<usize> = None;
         let mut lo = 0usize;
         let mut hi = synced.len();
@@ -68,8 +65,6 @@ impl LyricsResult {
         result
     }
 }
-
-// --- LRC parser ---
 
 /// Parse LRC format lyrics text.
 ///
@@ -148,15 +143,13 @@ pub fn parse_plain_lyrics(text: &str) -> Vec<LyricLine> {
         .collect()
 }
 
-/// LRCLIB API response (for deserialization).
+/// LRCLIB API response.
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LrclibResponse {
     pub synced_lyrics: Option<String>,
     pub plain_lyrics: Option<String>,
 }
-
-// --- Plex JSON lyrics parsing ---
 
 /// Plex lyrics response: `MediaContainer > Lyrics > Line > Span`.
 #[derive(Debug, serde::Deserialize)]
@@ -187,13 +180,14 @@ struct PlexLyricLine {
 #[serde(rename_all = "camelCase")]
 struct PlexLyricSpan {
     text: Option<String>,
-    start_offset: Option<i64>, // milliseconds
+    /// Milliseconds.
+    start_offset: Option<i64>,
 }
 
 /// Parse Plex JSON lyrics format (`MediaContainer > Lyrics > Line > Span`).
 ///
-/// Each line's text is the concatenation of all Span texts.
-/// Timestamp is the first span's `startOffset` in milliseconds, converted to seconds.
+/// Each line's text is the concatenation of its span texts. Timestamp comes
+/// from the first span's `startOffset` in milliseconds, converted to seconds.
 pub fn parse_plex_json_lyrics(data: &[u8]) -> Option<Vec<LyricLine>> {
     let response: PlexLyricsResponse = serde_json::from_slice(data).ok()?;
     let lyrics = response.media_container.lyrics?;
@@ -233,25 +227,17 @@ pub fn parse_plex_json_lyrics(data: &[u8]) -> Option<Vec<LyricLine>> {
     }
 }
 
-// --- Lyrics path validation ---
-
-/// Validate a Plex lyrics stream path for safety.
-///
-/// Must start with `/library/` or `/file/`, and must not contain path traversal.
+/// Validate a Plex lyrics stream path: must start with `/library/` or
+/// `/file/`, and must not contain path traversal.
 pub fn validate_lyrics_path(path: &str) -> bool {
     let decoded = crate::util::percent_decode(path);
     (decoded.starts_with("/library/") || decoded.starts_with("/file/")) && !decoded.contains("..")
 }
 
-
-// --- LRCLIB fetch ---
-
 /// Maximum LRCLIB response size (512 KB).
 const LRCLIB_MAX_RESPONSE: usize = 512 * 1024;
 
-/// Fetch lyrics from LRCLIB (public API).
-///
-/// Tries synced lyrics first (LRC format), falls back to plain text.
+/// Fetch lyrics from LRCLIB. Tries synced (LRC) first, falls back to plain text.
 pub async fn fetch_from_lrclib(
     http: &reqwest::Client,
     track_name: &str,
@@ -288,7 +274,6 @@ pub async fn fetch_from_lrclib(
 
     let parsed: LrclibResponse = serde_json::from_slice(&body).ok()?;
 
-    // Prefer synced lyrics
     if let Some(synced) = parsed.synced_lyrics {
         let lines = parse_lrc(&synced);
         if !lines.is_empty() {
@@ -300,7 +285,6 @@ pub async fn fetch_from_lrclib(
         }
     }
 
-    // Fall back to plain
     if let Some(plain) = parsed.plain_lyrics {
         let lines = parse_plain_lyrics(&plain);
         if !lines.is_empty() {
@@ -314,8 +298,6 @@ pub async fn fetch_from_lrclib(
 
     None
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -345,7 +327,6 @@ mod tests {
         let lrc = "[01:23.45] Precise timing";
         let lines = parse_lrc(lrc);
         assert_eq!(lines.len(), 1);
-        // 1*60 + 23.45 = 83.45
         assert!((lines[0].timestamp.unwrap() - 83.45).abs() < 0.01);
     }
 
@@ -471,8 +452,6 @@ mod tests {
         assert!(resp2.plain_lyrics.is_none());
     }
 
-    // --- Plex JSON lyrics parsing ---
-
     #[test]
     fn test_parse_plex_json_synced() {
         let json = r#"{
@@ -560,8 +539,6 @@ mod tests {
         assert_eq!(lines[0].text, "Real line");
     }
 
-    // --- Path validation ---
-
     #[test]
     fn test_validate_lyrics_path_valid() {
         assert!(validate_lyrics_path("/library/streams/123/lyrics"));
@@ -581,8 +558,6 @@ mod tests {
         assert!(!validate_lyrics_path("library/no-leading-slash"));
     }
 
-    // --- LRCLIB fetch ---
-
     #[tokio::test]
     async fn test_fetch_from_lrclib_synced() {
         let mock_server = wiremock::MockServer::start().await;
@@ -598,7 +573,6 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        // Override the URL to point to mock server
         let http = reqwest::Client::new();
         let resp = http
             .get(format!("{}/api/get", mock_server.uri()))
@@ -620,7 +594,6 @@ mod tests {
         let body = resp.bytes().await.unwrap();
         let parsed: LrclibResponse = serde_json::from_slice(&body).unwrap();
 
-        // Verify synced lyrics are preferred
         let lines = parse_lrc(parsed.synced_lyrics.as_deref().unwrap());
         assert_eq!(lines.len(), 2);
         assert!(lines[0].timestamp.is_some());

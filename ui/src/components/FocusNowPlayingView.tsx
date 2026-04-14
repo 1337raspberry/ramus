@@ -34,20 +34,19 @@ interface Props {
 }
 
 /**
- * Full-screen "focus" Now Playing view. Mounted as an overlay from App.tsx
- * when `playbackStore.isFocusMode === true`.
+ * Full-screen Now Playing overlay. Mounted from App.tsx when
+ * `playbackStore.isFocusMode === true`.
  *
- * Layout: FocusVisualizer renders as a full-window background layer behind
- * everything (its curve drapes down from the very top edge). On top of that
- * sits a two-column grid, offset from the top by 32 px to clear the window
- * drag region — left panel holds the large album art with artist/album/year
- * anchored below, right panel holds track title + waveform + transport +
- * volume + genres + codec, plus an expandable queue that follows the same
- * wheel-down-to-reveal pattern as the compact DetailColumn.
+ * Layout: FocusVisualizer paints a full-window background layer (drapes
+ * from the top edge). A two-column grid sits on top, offset 32px from
+ * the top to clear the window drag region. Left: album art with
+ * artist/album/year anchored below. Right: track title, waveform,
+ * transport, volume, genres, codec, plus an expandable queue that reuses
+ * the wheel-down-to-reveal pattern from DetailColumn.
  *
- * Reuses existing components and store actions wherever possible. Metadata
- * clicks (artist, album, year, genre) exit focus mode and navigate in the
- * main layout. Favourite toggles route through libraryStore per CLAUDE.md.
+ * Metadata clicks (artist/album/year/genre) exit focus mode and
+ * navigate in the main layout. Favourite toggles route through
+ * libraryStore (see CLAUDE.md).
  */
 export default function FocusNowPlayingView({ onOpenEQ }: Props) {
   const status = usePlaybackStore((s) => s.status);
@@ -59,14 +58,12 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
   const visualizerMode = usePlaybackStore((s) => s.visualizerMode);
   const cycleVisualizerMode = usePlaybackStore((s) => s.cycleVisualizerMode);
 
-  // Suggestion state for when the queue ends
   const suggestion = useLibraryStore((s) => s.suggestion);
   const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
   const clearSuggestion = useLibraryStore((s) => s.clearSuggestion);
   const playAlbum = useLibraryStore((s) => s.playAlbum);
 
-  // Navigation handlers exit focus mode when triggered (artist/album/year/
-  // genre clicks), so pass toggleFocusMode as the onNavigate callback.
+  // Pass toggleFocusMode so artist/album/year/genre clicks exit focus mode.
   const {
     track,
     nowPlayingAlbum,
@@ -87,18 +84,17 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
   const queue = useQueuePanel();
 
   const thumb = track?.thumb ?? nowPlayingAlbum?.thumb ?? null;
-  // LARGE tier — shares cache with the compact panel + SuggestionView.
-  // Palette / accent colour is already being set by the compact
-  // NowPlayingView (still mounted underneath, just visually hidden), so we
-  // don't re-extract here.
+  // LARGE tier shares cache with the compact panel and SuggestionView.
+  // The compact NowPlayingView (still mounted, visually hidden) already
+  // sets palette and accent; do not re-extract here.
   const { artSrc, artErr, setArtErr } = useArtUrl(thumb, ART_SIZE.LARGE);
 
-  // Track whether THIS focus session loaded a suggestion (vs one that
-  // already existed from the sidebar "Feelin Lucky" button).
+  // True when this focus session loaded the suggestion, as opposed to
+  // one already present from the sidebar "Feelin Lucky" button.
   const ownsSuggestionRef = useRef(false);
 
-  // Clear only focus-originated suggestions on unmount so a sidebar
-  // suggestion isn't wiped when the user exits focus mode.
+  // Only clear focus-originated suggestions on unmount so sidebar-loaded
+  // suggestions survive exiting focus mode.
   useEffect(() => {
     return () => {
       if (ownsSuggestionRef.current) {
@@ -107,17 +103,14 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
     };
   }, []);
 
-  // Auto-load a suggestion when playback stops (queue exhausted).
-  // The `played` ref prevents re-loading after the user accepts a
-  // suggestion — playAlbum is async, so there's a brief window where
-  // track is still null and suggestion was just cleared, which would
-  // otherwise trigger another loadSuggestion before the first track
-  // event arrives.
+  // Auto-load a suggestion on playback stop (queue exhausted). The
+  // `playedRef` guard prevents a second loadSuggestion in the async
+  // window between clearing the previous suggestion and the first track
+  // event for the user-accepted one.
   const playedRef = useRef(false);
   useEffect(() => {
     if (track) {
-      // Track arrived (user played a suggestion or new queue loaded).
-      // Reset the guard so the next queue-end triggers a fresh suggestion.
+      // Reset guard so the next queue-end triggers a fresh suggestion.
       playedRef.current = false;
       return;
     }
@@ -127,7 +120,6 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
     }
   }, [track, status, suggestion, loadSuggestion]);
 
-  // Art + palette + genres for the suggestion card when stopped
   const suggestionThumb = suggestion?.thumb ?? null;
   const {
     artSrc: suggestionArtSrc,
@@ -186,9 +178,9 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
   const handleSuggestionShuffle = useCallback(() => {
     if (playedRef.current) return;
     usePlaybackStore.setState({ vibrantPalette: null, ultraBlurColors: null });
-    // Don't clearSuggestion() first — that would leave a !suggestion
-    // window the auto-load effect reacts to. loadSuggestion overwrites
-    // the old suggestion atomically when the fetch resolves.
+    // Do not clearSuggestion() first: a null window would re-trigger
+    // the auto-load effect. loadSuggestion overwrites atomically when
+    // the fetch resolves.
     loadSuggestion();
   }, [loadSuggestion]);
 
@@ -206,7 +198,7 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
     [clearSuggestion, toggleFocusMode],
   );
 
-  // Stopped state — show a suggestion card instead of a blank screen
+  // Stopped state: show a suggestion card instead of a blank screen.
   if (!track) {
     return (
       <div className="focus-overlay">
@@ -273,17 +265,15 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
 
   return (
     <div className="focus-overlay">
-      {/* Visualiser renders as a full-window background layer behind the
-       * art and controls, draping from the very top of the frame. Gated
-       * on `visualizerMode !== "off"` so the wave button in the track
-       * row can cycle bars → line → off. Unmount (not CSS-hide) when
-       * off so the RAF loop stops. The viz reads its own mode via
-       * `usePlaybackStore.getState()` inside the RAF loop so switching
-       * between bars and line doesn't remount the canvas. */}
+      {/* Visualiser is a full-window background layer behind art and
+       * controls, draping from the top edge. Gated on
+       * `visualizerMode !== "off"` and unmounted (not CSS-hidden) so
+       * the RAF loop stops in "off" mode. The viz reads its own mode
+       * via `usePlaybackStore.getState()` inside the RAF loop, so
+       * cycling bars ↔ line does not remount the canvas. */}
       {visualizerMode !== "off" && <FocusVisualizer />}
 
       <div className="focus-body">
-        {/* Left 50%: large album art with artist/album/year anchored below */}
         <div className="focus-art-panel">
           <div className="focus-art-wrapper">
             <div className="focus-art-container" onClick={toggleLyrics}>
@@ -327,7 +317,6 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
           </div>
         </div>
 
-        {/* Right 50%: track, waveform, transport, volume, genres, queue */}
         <div
           className={`focus-controls-panel${queue.open ? " queue-open" : ""}`}
           onWheel={queue.onWheel}

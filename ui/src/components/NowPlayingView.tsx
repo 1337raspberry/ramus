@@ -61,9 +61,9 @@ export default function NowPlayingView({
   } = useNowPlayingActions();
 
   const thumb = track?.thumb ?? nowPlayingAlbum?.thumb ?? null;
-  // LARGE tier — shared with the focus view and SuggestionView so entering
-  // focus mode is an instant cache hit and the compact panel stays crisp
-  // on HiDPI displays.
+  // LARGE tier is shared with focus view and SuggestionView so entering
+  // focus mode is an instant cache hit; also keeps the compact panel
+  // crisp on HiDPI displays.
   const { artSrc, artErr, setArtErr } = useArtUrl(thumb, ART_SIZE.LARGE);
   const lastAccentThumb = useRef<string | null>(null);
 
@@ -73,7 +73,7 @@ export default function NowPlayingView({
       if (lastAccentThumb.current === thumb) return;
       lastAccentThumb.current = thumb;
       const capturedThumb = thumb;
-      // Skip palette extraction if already cached from getAlbumColors
+      // Skip extraction when a palette is already cached via getAlbumColors.
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);
@@ -109,9 +109,7 @@ export default function NowPlayingView({
 
   return (
     <div className="now-playing">
-      {/* Visible area — exactly fills the panel */}
       <div className="np-visible" style={panelHeight ? { height: panelHeight } : undefined}>
-        {/* === TOP: Artist, Album, Year === */}
         <div className="np-top">
           <div className="np-header">
             <MarqueeText className="np-artist np-clickable" onClick={handleArtistClick}>
@@ -143,7 +141,6 @@ export default function NowPlayingView({
           </div>
         </div>
 
-        {/* === MIDDLE: Art, track, waveform, transport === */}
         <div className="np-middle">
           <div className="np-art-wrapper">
             <div className="np-art-container" onClick={toggleLyrics}>
@@ -200,7 +197,6 @@ export default function NowPlayingView({
           </div>
         </div>
 
-        {/* === BOTTOM: Genres, studio/codec, queue chevron === */}
         <div className="np-bottom">
           <div className="np-footer">
             <FlowLayout genres={currentGenres} onGenreClick={handleGenreClick} />
@@ -220,7 +216,6 @@ export default function NowPlayingView({
         </div>
       </div>
 
-      {/* === Queue: toggled by chevron === */}
       {showQueue && <QueueView />}
     </div>
   );

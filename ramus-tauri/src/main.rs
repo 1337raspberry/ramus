@@ -22,8 +22,9 @@ use ramus_core::search::engine::{GenreExpander, SearchEngine};
 use ramus_tauri::commands;
 use ramus_tauri::state::AppState;
 
-/// Adapter that lets SearchEngine read the genre mapper through the shared RwLock.
-/// Reads lazily — returns None before the mapper is loaded, same as passing None.
+/// Adapter letting SearchEngine read the genre mapper through the shared RwLock.
+/// Reads lazily — returns `None` before the mapper loads, equivalent to passing
+/// no expander at all.
 struct SharedGenreExpander {
     mapper: Arc<RwLock<Option<GenreMapper>>>,
 }
@@ -45,9 +46,9 @@ fn main() {
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(
-                    // POSITION is excluded: upstream bug tauri-apps/tauri#14822
-                    // causes hangs with decorations:false on macOS, and
-                    // borderless position restore is unreliable on Windows.
+                    // POSITION excluded: upstream bug tauri-apps/tauri#14822 hangs
+                    // with decorations:false on macOS, and borderless position
+                    // restore is unreliable on Windows.
                     tauri_plugin_window_state::StateFlags::SIZE
                         | tauri_plugin_window_state::StateFlags::MAXIMIZED,
                 )
@@ -56,7 +57,7 @@ fn main() {
         .setup(|app| {
             let app_handle = app.handle().clone();
 
-            // Restore persistent client_identifier, or generate a new one
+            // Restore persistent client_identifier, or generate a new one.
             let id_path = ramus_core::plex::token_store::config_dir()
                 .ok()
                 .map(|d| d.join("client_id.txt"));
@@ -77,18 +78,16 @@ fn main() {
             let connection_monitor = Arc::new(ConnectionMonitor::new(client.clone()));
             let http_client = reqwest::Client::new();
 
-            // Dedicated prefetch HTTP client with a 300s per-request timeout
-            // (matches iOS's timeoutIntervalForResource) so large FLAC files
-            // on slower LAN segments don't time out mid-download. Keeping
-            // this separate from the app-wide client means prefetch's retry
-            // profile doesn't leak into metadata fetches.
+            // Dedicated prefetch HTTP client with a 300s per-request timeout so
+            // large FLAC files on slower LAN segments don't time out mid-download.
+            // Separate from the app-wide client so prefetch's retry profile
+            // doesn't leak into metadata fetches.
             let prefetch_http_client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(300))
                 .tcp_nodelay(true)
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new());
 
-            // Create mpv player with event callbacks
             let prefetch_handle_ref: Arc<
                 parking_lot::Mutex<Option<ramus_tauri::prefetch::PrefetchHandle>>,
             > = Arc::new(parking_lot::Mutex::new(None));
@@ -97,8 +96,8 @@ fn main() {
                 prefetch_handle_ref.clone(),
             );
 
-            // Spawn the single long-lived prefetch worker and wire its
-            // control handle back into the callbacks.
+            // Spawn the long-lived prefetch worker and wire its control handle
+            // back into the callbacks.
             let prefetch_handle = ramus_tauri::prefetch::spawn_worker(
                 player.clone(),
                 prefetch_http_client,
@@ -106,17 +105,15 @@ fn main() {
             );
             *prefetch_handle_ref.lock() = Some(prefetch_handle.clone());
 
-            // Create session reporter and populate the deferred callback slot
             let session_reporter =
                 ramus_tauri::session_reporter::SessionReporter::new(client.clone(), player.clone());
             *reporter_ref.lock() = Some(session_reporter.clone());
 
-            // Load saved settings and apply playback config (defaults to DirectPlay)
+            // Load saved settings and apply playback config (defaults to DirectPlay).
             let saved_settings = ramus_core::settings::load();
             player.update_config(saved_settings.to_playback_config());
             player.apply_equalizer(saved_settings.eq_enabled, &saved_settings.eq_bands);
 
-            // Initialize image cache
             let image_cache_dir = ramus_core::plex::token_store::config_dir()
                 .map(|d| d.join("image_cache"))
                 .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/ramus_image_cache"));
@@ -146,8 +143,8 @@ fn main() {
             };
 
             // Restore previous session. State is set synchronously (no blocking
-            // network call) so the window appears immediately. A background task
-            // verifies connectivity and tests alternative connections.
+            // network call) so the window appears immediately; a background
+            // task verifies connectivity and tests alternative connections.
             if let Ok(token_store) = TokenStore::new() {
                 if let Some(config) = auth::stored_server_config(&token_store) {
                     if let Some(url_str) = config.active_uri.clone() {
@@ -163,13 +160,11 @@ fn main() {
                                 let token = config.access_token.clone();
                                 let client_id = client.client_identifier.clone();
 
-                                // Set client state synchronously
                                 client.set_server_url(Some(url.clone()));
                                 client.set_token(Some(token.clone()));
 
                                 player.configure(url.clone(), token, client_id);
 
-                                // Open or create cache database
                                 if let Ok(cache_dir) = ramus_core::plex::token_store::config_dir() {
                                     let db_path = cache_dir.join("library_cache.db");
                                     if let Ok(db) = CacheDatabase::open(&db_path) {
@@ -191,7 +186,7 @@ fn main() {
                                     }
                                 }
 
-                                // Load genre mapper; prefer custom genres if configured
+                                // Load genre mapper; prefer custom genres if configured.
                                 let custom_mapper = (settings.genre_source == ramus_core::models::GenreSource::Custom)
                                     .then(ramus_core::settings::load_custom_genres)
                                     .flatten()
@@ -205,18 +200,17 @@ fn main() {
                                     *state.genre_mapper.write() = Some(m);
                                 }
 
-                                // Retrieve plex.tv auth token for monitor re-discovery
+                                // plex.tv auth token for monitor re-discovery.
                                 let auth_token = token_store
                                     .read(TokenKey::AuthToken)
                                     .unwrap_or_default();
 
-                                // Start connection monitor
                                 let allow_http = !settings.refuse_http;
                                 let plex_server = PlexServer::from(&config);
                                 connection_monitor.set_allow_http(allow_http);
                                 let bg_auth_token = auth_token.clone();
 
-                                // Update player when monitor switches connections
+                                // Update player when monitor switches connections.
                                 let monitor_player = state.player.clone();
                                 connection_monitor.set_on_connection_changed(
                                     std::sync::Arc::new(move |url, token, is_local, _is_http| {
@@ -232,7 +226,7 @@ fn main() {
                                     auth_token,
                                 );
 
-                                // Background: try local first, then stored URI, then full test
+                                // Background: try local first, then stored URI, then full test.
                                 let bg_client = client.clone();
                                 let bg_url = url.clone();
                                 let bg_token = config.access_token.clone();
@@ -242,7 +236,6 @@ fn main() {
                                 tauri::async_runtime::spawn(async move {
                                     let allow_http = !bg_settings.read().refuse_http;
 
-                                    // Helper: apply a successful connection
                                     let apply_connection =
                                         |conn: &ramus_core::models::PlexServerConnection| -> bool {
                                             if let Ok(new_url) = url::Url::parse(&conn.uri) {
@@ -266,10 +259,10 @@ fn main() {
                                         };
 
                                     let mut failed: std::collections::HashSet<String> = std::collections::HashSet::new();
-                                    // Normalize URIs for comparison (url::Url adds trailing slash)
+                                    // Normalize for comparison — url::Url adds a trailing slash.
                                     let normalize = |s: &str| s.trim_end_matches('/').to_string();
 
-                                    // 1. Try local connections first (fast, ~2s timeout)
+                                    // 1. Try local connections first (~2s timeout).
                                     let local_conns: Vec<_> = plex_server
                                         .sorted_connections()
                                         .into_iter()
@@ -301,7 +294,7 @@ fn main() {
                                         }
                                     }
 
-                                    // 2. Try stored activeUri (skip if already tested as local)
+                                    // 2. Try stored activeUri (skip if already tested as local).
                                     let stored_normalized = normalize(bg_url.as_str());
                                     if !failed.contains(&stored_normalized) {
                                         log::debug!("testing stored connection: {}", bg_url);
@@ -329,12 +322,12 @@ fn main() {
                                         log::debug!("skipping stored connection (already failed): {}", bg_url);
                                     }
 
-                                    // Abort if logged out during probes
+                                    // Abort if logged out during probes.
                                     if bg_client.token().is_none() {
                                         return;
                                     }
 
-                                    // 3. Test remaining cached connections (skip already-failed)
+                                    // 3. Test remaining cached connections (skip already-failed).
                                     let remaining: Vec<_> = plex_server
                                         .connections
                                         .iter()
@@ -363,7 +356,7 @@ fn main() {
                                         }
                                     }
 
-                                    // 4. Re-discover from plex.tv
+                                    // 4. Re-discover from plex.tv.
                                     if bg_auth_token.is_empty() {
                                         log::warn!("cannot re-discover from plex.tv — no auth token stored");
                                         return;
@@ -386,7 +379,7 @@ fn main() {
                                                     bg_monitor.update_server(found.clone());
                                                     ramus_core::plex::auth::patch_stored_config(
                                                         Some(&found.connections),
-                                                        None, // apply_connection already set activeUri
+                                                        None,
                                                     );
                                                 }
                                             } else {
@@ -412,22 +405,20 @@ fn main() {
                 }
             }
 
-            // Spawn auto-sync background task and start periodic session reporting
             let auto_sync_settings = state.settings.clone();
             let auto_sync_engine = state.sync_engine.clone();
             let auto_sync_flag = state.sync_in_progress.clone();
 
-            // macOS: opt the (borderless) main NSWindow into native fullscreen.
+            // macOS: opt the borderless main NSWindow into native fullscreen.
             // With `decorations: false` the window is created with a borderless
             // style mask and `collectionBehavior = default`, which does NOT
-            // include `.fullScreenPrimary` — so macOS refuses fullscreen
-            // entirely (green button no-op, View > Enter Full Screen disabled,
-            // moving between Spaces ignored). Add the flag ourselves once the
-            // window exists so `setFullscreen(true)` from JS just works.
+            // include `.fullScreenPrimary` — so macOS refuses fullscreen entirely
+            // (green button no-op, View > Enter Full Screen disabled, moving
+            // between Spaces ignored). Setting the flag once the window exists
+            // makes `setFullscreen(true)` from JS work.
             //
-            // Using raw objc2 `msg_send!` instead of a higher-level wrapper
-            // (e.g. objc2-app-kit's NSWindow type) to avoid wrestling with
-            // feature-flag gating — we only need two calls and the value of
+            // Raw objc2 `msg_send!` avoids objc2-app-kit's feature-flag gating.
+            // Only two calls are needed and the value of
             // NSWindowCollectionBehaviorFullScreenPrimary (1 << 7 = 128) is
             // stable Apple API.
             #[cfg(target_os = "macos")]
@@ -454,8 +445,8 @@ fn main() {
                 }
             }
 
-            // Initialize OS media controls (Now Playing overlay + media keys).
-            // Must be after window creation for Windows HWND requirement.
+            // OS media controls (Now Playing overlay + media keys). Must run
+            // after window creation to satisfy the Windows HWND requirement.
             {
                 let mc_result = ramus_tauri::media_controls::create_media_controls(
                     #[cfg(target_os = "windows")]
@@ -560,7 +551,7 @@ fn main() {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 if let Some(state) = app_handle.try_state::<AppState>() {
                     state.session_reporter.stop_sync();
-                    // Clear Now Playing so the OS widget disappears on quit
+                    // Clear Now Playing so the OS widget disappears on quit.
                     if let Some(ref mc) = *state.media_controls.lock() {
                         mc.clear();
                     }

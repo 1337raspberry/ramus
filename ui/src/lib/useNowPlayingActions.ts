@@ -5,9 +5,9 @@ import { formatCodec } from "./format";
 
 interface Options {
   /**
-   * Optional callback fired AFTER a navigation action (artist/album/year/genre click).
-   * FocusNowPlayingView uses this to exit focus mode so the user sees the
-   * updated main layout. The compact NowPlayingView omits it.
+   * Fired after a navigation action (artist/album/year/genre click).
+   * FocusNowPlayingView passes this to exit focus mode; the compact
+   * NowPlayingView omits it.
    */
   onNavigate?: () => void;
 }
@@ -15,14 +15,9 @@ interface Options {
 /**
  * Shared derived values and click handlers for Now Playing views.
  *
- * Both `NowPlayingView` (compact right-column panel) and
- * `FocusNowPlayingView` (full-screen overlay) render the same click
- * affordances for artist/album/year/genre navigation plus the two
- * favourite toggles. This hook centralises the wiring so the two views
- * don't drift: all favourite toggles route through `libraryStore` so the
- * optimistic update propagates to every relevant slice (see CLAUDE.md),
- * and navigation actions go through `libraryStore` store methods rather
- * than raw IPC commands.
+ * Favourite toggles route through `libraryStore` so optimistic updates
+ * propagate to every slice (see CLAUDE.md). Navigation actions go through
+ * `libraryStore` store methods rather than raw IPC.
  */
 export function useNowPlayingActions(options?: Options) {
   const track = usePlaybackStore((s) => s.currentTrack);

@@ -6,10 +6,7 @@ use rusqlite::{params, Connection};
 
 use crate::models::{Album, Track};
 
-// Re-export upsert types for external consumers
 pub use super::upsert::{AlbumUpsertRow, ArtistRow, ArtistUpsertRow, TrackUpsertRow};
-
-// --- Errors ---
 
 #[derive(Debug, thiserror::Error)]
 pub enum CacheError {
@@ -18,8 +15,6 @@ pub enum CacheError {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 }
-
-// --- Helper types ---
 
 #[derive(Debug, Clone)]
 pub struct CachedItemInfo {
@@ -42,8 +37,6 @@ pub struct CacheStats {
     pub track_count: i64,
     pub genre_count: i64,
 }
-
-// --- Search result row types ---
 
 /// Album row returned by search queries.
 #[derive(Debug, Clone)]
@@ -70,20 +63,18 @@ pub struct TrackSearchRow {
     pub is_favourite: bool,
 }
 
-// --- CacheDatabase ---
-
 pub struct CacheDatabase {
     pub(super) conn: Mutex<Connection>,
 }
 
 impl CacheDatabase {
-    /// Open (or create) a database at the given path with WAL mode and migrations.
+    /// Open or create a database at the given path with WAL mode and migrations applied.
     pub fn open(path: &Path) -> Result<Self, CacheError> {
         let conn = Connection::open(path)?;
         Self::configure_and_migrate(conn)
     }
 
-    /// Open an in-memory database (for testing).
+    /// Open an in-memory database. For tests only.
     pub fn open_in_memory() -> Result<Self, CacheError> {
         let conn = Connection::open_in_memory()?;
         Self::configure_and_migrate(conn)
@@ -176,10 +167,10 @@ impl CacheDatabase {
             CREATE INDEX IF NOT EXISTS idx_album_genres_genreId ON album_genres(genreId);",
         )?;
 
-        // Back-compat: add firstGenre to an albums table that predates this
-        // column. Pre-existing rows end up with NULL, which sync_albums
-        // treats as "unknown — trust updatedAt only", so no blanket
-        // re-fetch is triggered at migration time.
+        // Back-compat: add firstGenre to an albums table that predates the
+        // column. Pre-existing rows end up NULL, which sync_albums treats as
+        // "unknown — trust updatedAt only", so no blanket re-fetch is
+        // triggered at migration time.
         let has_first_genre: i64 = conn.query_row(
             "SELECT COUNT(*) FROM pragma_table_info('albums') WHERE name = 'firstGenre'",
             [],
@@ -192,9 +183,7 @@ impl CacheDatabase {
         Ok(())
     }
 
-    // --- Library query methods ---
-
-    /// Get albums matching any of the given genre names (deduplicated).
+    /// Albums matching any of the given genre names, deduplicated.
     /// Chunks the input to stay within SQLite's bind-parameter limit.
     pub fn albums_for_genres(&self, genre_names: &[&str]) -> Result<Vec<Album>, CacheError> {
         if genre_names.is_empty() {
@@ -202,16 +191,15 @@ impl CacheDatabase {
         }
         let conn = self.conn.lock();
 
-        // SQLite's default SQLITE_MAX_VARIABLE_NUMBER is 999. Chunk to
-        // stay well under the limit for any build of SQLite.
+        // SQLite's default SQLITE_MAX_VARIABLE_NUMBER is 999.
         const CHUNK_SIZE: usize = 500;
 
         if genre_names.len() <= CHUNK_SIZE {
             return Self::albums_for_genres_query(&conn, genre_names);
         }
 
-        // Multiple chunks: collect into a map keyed by sourceId to dedup,
-        // then sort to match the single-query ordering.
+        // Collect into a map keyed by sourceId to dedup across chunks, then
+        // sort to match the single-query ordering.
         let mut seen = std::collections::HashSet::new();
         let mut all = Vec::new();
         for chunk in genre_names.chunks(CHUNK_SIZE) {
@@ -254,7 +242,7 @@ impl CacheDatabase {
         Self::map_album_rows(&mut stmt, params.as_slice(), conn)
     }
 
-    /// Get a single album by its source_id.
+    /// Single album by source_id.
     pub fn album_by_source_id(&self, source_id: &str) -> Result<Option<Album>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -268,7 +256,7 @@ impl CacheDatabase {
         Ok(albums.pop())
     }
 
-    /// Get all albums for a given year.
+    /// All albums for a given year.
     pub fn albums_for_year(&self, year: i32) -> Result<Vec<Album>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -283,7 +271,7 @@ impl CacheDatabase {
         Ok(albums)
     }
 
-    /// Get albums for an artist by artist name.
+    /// Albums for an artist by artist name.
     pub fn albums_for_artist_name(&self, artist_name: &str) -> Result<Vec<Album>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -298,7 +286,7 @@ impl CacheDatabase {
         Ok(albums)
     }
 
-    /// Get albums for an artist by artist source_id.
+    /// Albums for an artist by artist source_id.
     pub fn albums_for_artist(&self, artist_source_id: &str) -> Result<Vec<Album>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -313,7 +301,7 @@ impl CacheDatabase {
         Ok(albums)
     }
 
-    /// Get a single track by its source_id.
+    /// Single track by source_id.
     pub fn track_by_source_id(&self, source_id: &str) -> Result<Option<Track>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -331,7 +319,7 @@ impl CacheDatabase {
         Ok(tracks.pop())
     }
 
-    /// Get tracks for an album by album source_id.
+    /// Tracks for an album by album source_id.
     pub fn tracks_for_album(&self, album_source_id: &str) -> Result<Vec<Track>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -350,7 +338,7 @@ impl CacheDatabase {
         Ok(tracks)
     }
 
-    /// Get all favourite tracks (userRating >= 10).
+    /// All favourite tracks (userRating >= 10).
     pub fn favourite_tracks(&self) -> Result<Vec<Track>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -369,7 +357,7 @@ impl CacheDatabase {
         Ok(tracks)
     }
 
-    /// Get all favourite albums (rating >= 10).
+    /// All favourite albums (rating >= 10).
     pub fn favourite_albums(&self) -> Result<Vec<Album>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -384,7 +372,7 @@ impl CacheDatabase {
         Ok(albums)
     }
 
-    /// Get all albums.
+    /// All albums.
     pub fn all_albums(&self) -> Result<Vec<Album>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -398,7 +386,7 @@ impl CacheDatabase {
         Ok(albums)
     }
 
-    /// Get all artists: (id, name, sourceId, artUrl).
+    /// All artists as `(id, name, sourceId, artUrl)` tuples.
     pub fn all_artists(&self) -> Result<Vec<ArtistRow>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -431,7 +419,7 @@ impl CacheDatabase {
         Ok(albums.pop())
     }
 
-    /// Get albums by a set of internal (rowid) IDs. Returns full Album objects.
+    /// Albums by internal rowid, returning full Album objects.
     pub fn albums_by_internal_ids(&self, ids: &HashSet<i64>) -> Result<Vec<Album>, CacheError> {
         if ids.is_empty() {
             return Ok(Vec::new());
@@ -463,7 +451,6 @@ impl CacheDatabase {
         }
 
         if id_vec.len() > CHUNK_SIZE {
-            // Multi-chunk: re-sort to get consistent ordering
             all.sort_by(|a, b| {
                 a.artist_name
                     .to_lowercase()
@@ -489,7 +476,7 @@ impl CacheDatabase {
         })
     }
 
-    /// Update album rating (for favourite toggle).
+    /// Update album rating. Used by the favourite toggle.
     pub fn update_album_rating(
         &self,
         source_id: &str,
@@ -503,7 +490,7 @@ impl CacheDatabase {
         Ok(())
     }
 
-    /// Update track rating (for favourite toggle).
+    /// Update track rating. Used by the favourite toggle.
     pub fn update_track_rating(
         &self,
         source_id: &str,
@@ -517,14 +504,12 @@ impl CacheDatabase {
         Ok(())
     }
 
-    // --- Row mapping helpers ---
-
     pub(super) fn map_album_rows(
         stmt: &mut rusqlite::Statement,
         params: impl rusqlite::Params,
         conn: &Connection,
     ) -> Result<Vec<Album>, CacheError> {
-        let _ = conn; // stmt borrows conn implicitly
+        let _ = conn;
         let albums = stmt
             .query_map(params, |row| {
                 let rating: Option<f64> = row.get(5)?;
@@ -534,7 +519,7 @@ impl CacheDatabase {
                     artist_name: row.get(2)?,
                     year: row.get(3)?,
                     thumb: row.get(4)?,
-                    genres: Vec::new(), // populated separately if needed
+                    genres: Vec::new(),
                     is_favourite: rating.map(|r| r >= 10.0).unwrap_or(false),
                     studio: row.get(6)?,
                     added_at: row.get(7)?,
@@ -545,7 +530,7 @@ impl CacheDatabase {
         Ok(albums)
     }
 
-    /// Map a standard 14-column track row to a Track struct.
+    /// Map a 14-column track row into a [`Track`].
     pub(super) fn map_track_row(row: &rusqlite::Row) -> rusqlite::Result<Track> {
         let rating: Option<f64> = row.get(11)?;
         Ok(Track {
@@ -569,8 +554,6 @@ impl CacheDatabase {
         })
     }
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -645,8 +628,6 @@ mod tests {
         .unwrap();
     }
 
-    // --- CRUD tests ---
-
     #[test]
     fn test_artist_crud() {
         let db = setup();
@@ -681,7 +662,6 @@ mod tests {
 
         assert_eq!(db.album_id("al1").unwrap(), Some(album_id));
 
-        // Upsert preserves rating via COALESCE
         db.update_album_rating("al1", Some(10.0)).unwrap();
         let _ = db
             .batch_upsert_albums(&[AlbumUpsertRow {
@@ -932,7 +912,6 @@ mod tests {
         let artist_id = seed_artist(&db, "ar1", "Radiohead");
         let album_id = seed_album(&db, "al1", "OK Computer", artist_id, Some(1997));
 
-        // First: set studio
         db.update_album_deep_metadata(
             album_id,
             &["Rock".into()],
@@ -942,7 +921,7 @@ mod tests {
         )
         .unwrap();
 
-        // Second: update with None studio — should preserve "Parlophone"
+        // Updating with None studio must preserve "Parlophone" via COALESCE.
         db.update_album_deep_metadata(
             album_id,
             &["Rock".into()],

@@ -4,9 +4,7 @@ use rusqlite::params;
 
 use super::db::{CacheDatabase, CacheError};
 
-// --- Upsert row types ---
-
-/// (name, sortName, sourceId, artUrl, summary, updatedAt)
+/// `(name, sortName, sourceId, artUrl, summary, updatedAt)`
 pub type ArtistUpsertRow = (
     String,
     Option<String>,
@@ -16,7 +14,7 @@ pub type ArtistUpsertRow = (
     Option<i64>,
 );
 
-/// (id, name, sourceId, artUrl)
+/// `(id, name, sourceId, artUrl)`
 pub type ArtistRow = (i64, String, String, Option<String>);
 
 #[derive(Debug, Clone)]
@@ -31,10 +29,10 @@ pub struct AlbumUpsertRow {
     pub last_viewed_at: Option<i64>,
     /// First genre in Plex API response order, lowercased. Compared against
     /// the API-order first genre on every incremental sync to detect
-    /// genre-only edits (Plex doesn't always bump updatedAt for those).
-    /// Must come from the same list call that sets updatedAt — storing a
-    /// sorted/alphabetical value here causes every multi-genre album to
-    /// look "changed" on every sync.
+    /// genre-only edits (Plex does not always bump `updatedAt` for those).
+    /// Must come from the same list call that sets `updatedAt` — storing a
+    /// sorted or alphabetical value here causes every multi-genre album to
+    /// look changed on every sync.
     pub first_genre: Option<String>,
 }
 
@@ -57,7 +55,7 @@ pub struct TrackUpsertRow {
 }
 
 impl CacheDatabase {
-    /// Batch upsert artists. Returns sourceId -> local id map for the upserted rows.
+    /// Batch upsert artists. Returns a `sourceId -> local id` map for the upserted rows.
     pub fn batch_upsert_artists(
         &self,
         items: &[ArtistUpsertRow],
@@ -92,8 +90,8 @@ impl CacheDatabase {
         Ok(map)
     }
 
-    /// Batch upsert albums. Returns sourceId -> local id map for the upserted rows.
-    /// COALESCE preserves existing rating/studio/colors.
+    /// Batch upsert albums. Returns a `sourceId -> local id` map for the upserted rows.
+    /// `COALESCE` preserves existing rating/studio/colors.
     pub fn batch_upsert_albums(
         &self,
         items: &[AlbumUpsertRow],
@@ -143,7 +141,7 @@ impl CacheDatabase {
         Ok(map)
     }
 
-    /// Batch upsert tracks. Uses RETURNING to get rowids for FTS5 without extra SELECTs.
+    /// Batch upsert tracks. Uses `RETURNING` to reuse rowids for FTS5 without a second SELECT.
     pub fn batch_upsert_tracks(&self, items: &[TrackUpsertRow]) -> Result<(), CacheError> {
         let conn = self.conn.lock();
         let tx = conn.unchecked_transaction()?;

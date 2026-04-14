@@ -22,11 +22,9 @@ import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackgr
 import ColorDebugPanel from "./components/ColorDebugPanel";
 import BreadcrumbDebugPanel from "./components/BreadcrumbDebugPanel";
 
-// Generate once at module level so it persists across re-renders
 const initialPalette = randomPalette();
 const initialColors = initialPalette.colors;
 
-// Apply initial accent color immediately
 document.documentElement.style.setProperty("--accent-r", String(initialPalette.accent[0]));
 document.documentElement.style.setProperty("--accent-g", String(initialPalette.accent[1]));
 document.documentElement.style.setProperty("--accent-b", String(initialPalette.accent[2]));
@@ -46,7 +44,6 @@ export default function App() {
   const toggleFocusMode = usePlaybackStore((s) => s.toggleFocusMode);
   const blurColors = useMemo(() => albumColors ?? initialColors, [albumColors]);
 
-  // Check auth on mount
   useEffect(() => {
     isAuthenticated()
       .then((ok) => {
@@ -56,15 +53,11 @@ export default function App() {
       .catch(() => setAuthed(false));
   }, []);
 
-  // Tauri event subscriptions (accent-color, playback state/position, spectrum)
   usePlaybackEvents();
 
-  // When focus mode is active, visually hide the three-column layout so the
-  // focus overlay sits cleanly over the global UltraBlur background. We
-  // toggle a body class (rather than conditionally rendering) so the compact
-  // NowPlayingView stays mounted — its image `onLoad` handler is responsible
-  // for extracting the Vibrant palette on track change, and unmounting would
-  // break that flow for brand-new albums.
+  // Toggle a body class rather than conditionally rendering: the compact
+  // NowPlayingView must stay mounted because its image onLoad handler extracts
+  // the Vibrant palette on track change.
   useEffect(() => {
     document.body.classList.toggle("focus-mode-active", isFocusMode);
     return () => {
@@ -72,10 +65,8 @@ export default function App() {
     };
   }, [isFocusMode]);
 
-  // Track native fullscreen ↔ body class
   useFullscreenSync();
 
-  // Global keyboard shortcuts
   useAppKeyboard({
     setShowSearch,
     setSearchInitial,
@@ -86,7 +77,6 @@ export default function App() {
     toggleFocusMode,
   });
 
-  // Loading state
   if (authed === null) {
     return (
       <>
@@ -97,7 +87,6 @@ export default function App() {
     );
   }
 
-  // Not authenticated — onboarding flow
   if (!authed) {
     return (
       <>
@@ -108,7 +97,6 @@ export default function App() {
     );
   }
 
-  // Authenticated — main layout
   return (
     <>
       <UltraBlurBackground colors={blurColors} />
@@ -136,10 +124,8 @@ export default function App() {
           onDismiss={() => setShowSettings(false)}
           onSignOut={() => {
             setShowSettings(false);
-            // Clear focus mode so the store flag doesn't outlive the
-            // authenticated session — otherwise re-auth would immediately
-            // drop the user back into a dangling focus overlay with no
-            // track playing.
+            // Clear focus mode so re-auth doesn't drop into a dangling focus
+            // overlay with no track playing.
             usePlaybackStore.setState({ isFocusMode: false });
             setAuthed(false);
           }}

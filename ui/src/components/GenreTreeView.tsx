@@ -24,7 +24,7 @@ function flattenTree(nodes: GenreNode[], expanded: Set<string>, depth = 0): Flat
   return rows;
 }
 
-/** Flatten the full tree into an A-Z list of every genre that has albums. */
+/** Flatten the tree into an A–Z list of every genre with albums. */
 function flattenToAZ(nodes: GenreNode[]): FlatRow[] {
   const byName = new Map<string, GenreNode>();
   const collect = (list: GenreNode[]) => {
@@ -97,13 +97,13 @@ export default function GenreTreeView() {
     virtualizer.measure();
   }, [effectiveRowHeight, virtualizer]);
 
-  // Reset scroll when switching between flat and hierarchical mode
+  // Reset scroll when switching between flat and hierarchical mode.
   useEffect(() => {
     if (parentRef.current) parentRef.current.scrollTop = 0;
   }, [flatGenres]);
 
-  // Scroll the selected genre into view when it changes. The "All" row is
-  // at virtual index 0, so the row's virtual index is rowIdx + 1.
+  // Scroll the selected genre into view when it changes. The "All" row
+  // is virtual index 0, so the data row's virtual index is `rowIdx + 1`.
   useEffect(() => {
     if (!selectedGenreId || selectedGenreId === "__all__") return;
     const rowIdx = rows.findIndex((r) => r.node.id === selectedGenreId);

@@ -1,22 +1,19 @@
 //! File-to-spectrogram analyser for the focus-mode visualiser.
 //!
-//! This is the I/O shell around `ramus_core::playback::spectrum`: open a
-//! cached audio file with symphonia, decode it into mono f32 samples,
-//! feed them to the DSP module, and serialise the result to a sibling
-//! `<audio>.spec` file. The DSP itself is pure math and lives in
-//! ramus-core so it can be tested without touching real files.
+//! I/O shell around `ramus_core::playback::spectrum`: opens a cached audio file
+//! with symphonia, decodes it into mono f32 samples, feeds them to the DSP
+//! module, and serialises the result to a sibling `<audio>.spec` file. The DSP
+//! is pure math in ramus-core so it stays testable without real files.
 //!
-//! Why blocking: symphonia is a sync API. Call `analyse_file` and the
-//! on-disk read/write helpers from a `tokio::task::spawn_blocking` block.
-//! A 5-minute FLAC takes ~1-2 seconds on a modern CPU, which would
-//! otherwise stall a tokio worker thread.
+//! symphonia is a sync API — call `analyse_file` and the on-disk helpers from a
+//! `tokio::task::spawn_blocking` block. A 5-minute FLAC takes ~1–2s on a modern
+//! CPU, which would otherwise stall a tokio worker thread.
 //!
-//! The on-disk format is a 4-byte `RSPF` magic followed by a
-//! postcard-encoded `SpectrumState`. Only `Ready(frames)` and
-//! `Unavailable { reason }` get written — `Analysing` is a runtime
-//! state only and never hits disk. A missing/corrupt/magic-mismatch
-//! file is treated as "not analysed yet" so `read_spec_file` returns
-//! `None` and the prefetch path regenerates it.
+//! On-disk format: a 4-byte `RSPF` magic followed by a postcard-encoded
+//! `SpectrumState`. Only `Ready(frames)` and `Unavailable { reason }` are
+//! written — `Analysing` is a runtime state only. A missing / corrupt /
+//! magic-mismatch file is treated as "not analysed yet" so `read_spec_file`
+//! returns `None` and the prefetch path regenerates it.
 
 use std::fs::File;
 use std::path::Path;
@@ -33,28 +30,26 @@ use ramus_core::playback::spectrum::{
     analyse_samples, write_spec_file, SpectrumConfig, SpectrumFrames, SpectrumState,
 };
 
-/// Errors the analyser surfaces to its caller. The variant names map
-/// directly to the `reason` string the frontend displays.
+/// Errors the analyser surfaces to its caller. Variant names map directly to
+/// the `reason` string the frontend displays.
 #[derive(Debug)]
 pub enum AnalyseError {
-    /// We couldn't open the file at all (missing, permission, etc.).
+    /// File couldn't be opened (missing, permission, etc.).
     OpenFailed(std::io::Error),
-    /// symphonia couldn't identify the format. Usually means the bytes
-    /// are HLS manifest text, a partial download, or a codec we don't
-    /// support.
+    /// symphonia couldn't identify the format. Usually HLS manifest text, a
+    /// partial download, or an unsupported codec.
     UnsupportedFormat(String),
-    /// The file parsed but the codec isn't in our feature flags (e.g.
-    /// DSD, WMA). Surfaces as `unavailable: "unsupported_codec"`.
+    /// File parsed but the codec isn't in our feature flags (e.g. DSD, WMA).
+    /// Surfaces as `unavailable: "unsupported_codec"`.
     UnsupportedCodec(String),
     /// Decoder ran but something went wrong mid-stream.
     DecodeFailed(String),
-    /// The file has no audio tracks at all.
+    /// File has no audio tracks.
     NoAudioTrack,
 }
 
 impl AnalyseError {
-    /// Turn an error into the human-readable reason the frontend shows.
-    /// Kept short so it fits in a centred placeholder.
+    /// Human-readable reason for the frontend placeholder. Kept short.
     pub fn reason(&self) -> String {
         match self {
             Self::OpenFailed(_) => "file_missing".to_string(),
@@ -82,15 +77,15 @@ impl std::error::Error for AnalyseError {}
 
 /// Decode a cached audio file and run the DSP analyser over it.
 ///
-/// This is the hot path called from `prefetch.rs` after a successful
-/// download. Returns `Err` if the file can't be decoded for any reason;
-/// the caller should wrap the error in `SpectrumState::Unavailable`
-/// using `AnalyseError::reason()` and persist it with `write_spec_file`.
+/// Called from `prefetch.rs` after a successful download. Returns `Err` if the
+/// file can't be decoded for any reason; callers wrap the error in
+/// `SpectrumState::Unavailable` via `AnalyseError::reason()` and persist it
+/// with `write_spec_file`.
 pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
     let file = File::open(audio_path).map_err(AnalyseError::OpenFailed)?;
 
-    // Use the filename extension as a hint so symphonia picks the right
-    // demuxer first. It's allowed to probe and fall back if wrong.
+    // Extension hint lets symphonia pick the right demuxer first; it probes
+    // and falls back if wrong.
     let mut hint = Hint::new();
     if let Some(ext) = audio_path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
@@ -123,10 +118,10 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
         .make(&track.codec_params, &DecoderOptions::default())
         .map_err(|_| AnalyseError::UnsupportedCodec(codec_name.clone()))?;
 
-    // Accumulate decoded samples as mono f32. For a 5-min 48 kHz track
-    // that's 14.4M samples × 4 bytes = 57 MB of RAM peak — acceptable
-    // for a one-shot analysis. If this ever becomes a problem, stream
-    // the STFT window-by-window instead of buffering the full signal.
+    // Accumulate decoded samples as mono f32. A 5-min 48 kHz track is
+    // 14.4M samples × 4 bytes = 57 MB peak RAM, acceptable for one-shot
+    // analysis. If this ever becomes a problem, stream the STFT window
+    // by window instead of buffering the full signal.
     let mut mono: Vec<f32> = Vec::new();
     let mut sample_rate: u32 = 0;
 
@@ -136,11 +131,11 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
             Err(SymphoniaError::IoError(ref e))
                 if e.kind() == std::io::ErrorKind::UnexpectedEof =>
             {
-                // Clean EOF — stop looping, what we have is what we have.
+                // Clean EOF.
                 break;
             }
             Err(SymphoniaError::ResetRequired) => {
-                // A new chained stream (e.g. Ogg chapter). Re-make decoder.
+                // New chained stream (e.g. Ogg chapter) — remake the decoder.
                 let track = format.default_track().ok_or(AnalyseError::NoAudioTrack)?;
                 decoder = symphonia::default::get_codecs()
                     .make(&track.codec_params, &DecoderOptions::default())
@@ -156,14 +151,14 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
 
         match decoder.decode(&packet) {
             Ok(audio_buf) => {
-                // Remember the sample rate from the first real packet.
+                // Capture sample rate from the first real packet.
                 if sample_rate == 0 {
                     sample_rate = audio_buf.spec().rate;
                 }
                 mix_to_mono(&audio_buf, &mut mono);
             }
             Err(SymphoniaError::DecodeError(_)) => {
-                // Recoverable — skip the bad packet and keep going.
+                // Recoverable: skip the bad packet.
                 continue;
             }
             Err(e) => return Err(AnalyseError::DecodeFailed(e.to_string())),
@@ -178,9 +173,9 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
 }
 
 /// Average all channels of an `AudioBufferRef` into mono f32 samples in
-/// [-1, 1] and append them to `out`. symphonia hands us whichever integer
-/// or float type the codec decodes into — FLAC is typically S16/S24/S32,
-/// MP3/AAC are F32, PCM WAV can be U8/S16/S24/S32, Ogg Opus is F32.
+/// [-1, 1] and append them to `out`. symphonia yields whichever integer or
+/// float type the codec decodes into (FLAC: S16/S24/S32, MP3/AAC: F32, PCM
+/// WAV: U8/S16/S24/S32, Ogg Opus: F32).
 ///
 /// Conversion convention:
 /// - signed `iN::MAX` maps to +1.0 (and `iN::MIN` to slightly below -1.0,
@@ -188,10 +183,9 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
 /// - unsigned PCM is centre-shifted by its midpoint then divided by the
 ///   same midpoint so both extremes land at ±1.0
 fn mix_to_mono(audio_buf: &AudioBufferRef<'_>, out: &mut Vec<f32>) {
-    // One macro per sample type — expands to a typed loop over the
-    // concrete `AudioBuffer<T>` where `T` satisfies `Sample`. Trying to
-    // factor this behind a generic helper hits `Signal` trait bound
-    // issues; the macro is ugly but rust-checkable.
+    // One macro per sample type: expands to a typed loop over the concrete
+    // `AudioBuffer<T>` where `T: Sample`. Factoring this behind a generic
+    // helper hits `Signal` trait bound issues.
     macro_rules! mix_typed {
         ($buf:ident, $to_f32:expr) => {{
             let channels = $buf.spec().channels.count();
@@ -217,10 +211,9 @@ fn mix_to_mono(audio_buf: &AudioBufferRef<'_>, out: &mut Vec<f32>) {
     const U16_MID: f32 = 32_768.0;
     const U24_MID: f32 = 8_388_608.0;
     const U32_MID: f32 = 2_147_483_648.0;
-    // Signed 24-bit full-scale (only used for the i24 normaliser below).
-    // Numerically equal to U24_MID today, but kept distinct so that
-    // refactoring one normaliser convention doesn't silently break the
-    // other path.
+    // Signed 24-bit full-scale used by the i24 normaliser. Numerically equal
+    // to U24_MID today, but kept distinct so refactoring one normaliser
+    // convention doesn't silently break the other path.
     const S24_MID: f32 = 8_388_608.0;
 
     // Signed full-scale normalisers.
@@ -242,9 +235,8 @@ fn mix_to_mono(audio_buf: &AudioBufferRef<'_>, out: &mut Vec<f32>) {
     }
 }
 
-/// Convenience: run `analyse_file`, wrap the result as a `SpectrumState`,
-/// and persist it to disk. This is what `prefetch.rs` calls from its
-/// spawn_blocking task.
+/// Run `analyse_file`, wrap the result as a `SpectrumState`, and persist it
+/// to disk. Called by `prefetch.rs` from a spawn_blocking task.
 pub fn analyse_and_persist(audio_path: &Path) -> SpectrumState {
     match analyse_file(audio_path) {
         Ok(frames) => {
@@ -259,15 +251,13 @@ pub fn analyse_and_persist(audio_path: &Path) -> SpectrumState {
                 reason: err.reason(),
             };
             log::debug!("spectrum: analysis unavailable for {audio_path:?}: {err}");
-            // Persist the unavailable marker too, so repeat plays don't
-            // retry a decode that will always fail.
+            // Persist the unavailable marker so repeat plays don't retry a
+            // decode that will always fail.
             let _ = write_spec_file(audio_path, &state);
             state
         }
     }
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -276,10 +266,9 @@ mod tests {
     use std::io::Write;
     use tempfile::tempdir;
 
-    /// Build a tiny in-memory WAV file (PCM 16-bit stereo, 48 kHz) of the
-    /// given duration filled with a sine wave. Enough for symphonia to
-    /// probe and decode cleanly — we ship the generator rather than a
-    /// fixture binary so the test is self-contained.
+    /// Build a PCM 16-bit stereo 48 kHz WAV of the given duration filled
+    /// with a sine wave. Enough for symphonia to probe and decode cleanly;
+    /// shipping the generator keeps the test self-contained.
     fn write_sine_wav(path: &Path, freq_hz: f32, secs: f32, sample_rate: u32) {
         use std::f32::consts::PI;
         let channels: u16 = 2;
@@ -291,26 +280,22 @@ mod tests {
         let file_size = 36 + data_size;
 
         let mut f = File::create(path).unwrap();
-        // RIFF header
         f.write_all(b"RIFF").unwrap();
         f.write_all(&file_size.to_le_bytes()).unwrap();
         f.write_all(b"WAVE").unwrap();
-        // fmt chunk
         f.write_all(b"fmt ").unwrap();
-        f.write_all(&16u32.to_le_bytes()).unwrap(); // subchunk size
-        f.write_all(&1u16.to_le_bytes()).unwrap(); // PCM
+        f.write_all(&16u32.to_le_bytes()).unwrap();
+        f.write_all(&1u16.to_le_bytes()).unwrap();
         f.write_all(&channels.to_le_bytes()).unwrap();
         f.write_all(&sample_rate.to_le_bytes()).unwrap();
         f.write_all(&byte_rate.to_le_bytes()).unwrap();
         f.write_all(&block_align.to_le_bytes()).unwrap();
         f.write_all(&bits_per_sample.to_le_bytes()).unwrap();
-        // data chunk
         f.write_all(b"data").unwrap();
         f.write_all(&data_size.to_le_bytes()).unwrap();
         for i in 0..num_samples {
             let t = i as f32 / sample_rate as f32;
             let sample = ((2.0 * PI * freq_hz * t).sin() * 0.5 * i16::MAX as f32) as i16;
-            // Same value on both channels
             f.write_all(&sample.to_le_bytes()).unwrap();
             f.write_all(&sample.to_le_bytes()).unwrap();
         }
@@ -350,9 +335,9 @@ mod tests {
 
     #[test]
     fn analyse_file_fails_on_hls_manifest() {
-        // Simulate what Plex would return for a transcoded stream: an
-        // HLS playlist. symphonia can't decode this; it should surface
-        // as UnsupportedFormat → "transcoding".
+        // Simulates what Plex returns for a transcoded stream (HLS playlist).
+        // symphonia can't decode this and should surface UnsupportedFormat →
+        // "transcoding".
         let dir = tempdir().unwrap();
         let m3u8 = dir.path().join("stream.m3u8");
         std::fs::write(
@@ -391,8 +376,8 @@ mod tests {
         let fake = dir.path().join("fake.flac");
         std::fs::write(&fake, b"not a real flac").unwrap();
 
-        // analyse_and_persist should write an Unavailable marker even
-        // though analysis failed, so subsequent plays don't retry.
+        // analyse_and_persist must write an Unavailable marker even when
+        // analysis fails, so subsequent plays don't retry.
         let state = analyse_and_persist(&fake);
         match state {
             SpectrumState::Unavailable { reason } => assert_eq!(reason, "transcoding"),
@@ -424,8 +409,7 @@ mod tests {
     fn write_spec_file_drops_analysing_state() {
         let dir = tempdir().unwrap();
         let fake = dir.path().join("track.flac");
-        // Writing Analysing should succeed as a no-op — it must not
-        // create a file on disk.
+        // Writing Analysing succeeds as a no-op; it must not create a file.
         write_spec_file(&fake, &SpectrumState::Analysing).unwrap();
         assert!(!spec_file_path(&fake).exists());
     }

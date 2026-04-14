@@ -10,11 +10,9 @@ import { usePlaybackStore } from "../stores/playbackStore";
 
 /**
  * Subscribe to Tauri playback events (accent-color, playback-state,
- * playback-position, spectrum-ready) and load the saved volume on
- * mount. Side-effect only — returns nothing.
+ * playback-position, spectrum-ready) and load the saved volume on mount.
  */
 export function usePlaybackEvents(): void {
-  // Listen for accent color events
   useEffect(() => {
     const unlisten = listen<AccentColorPayload>("accent-color", (event) => {
       const { r, g, b } = event.payload;
@@ -27,7 +25,6 @@ export function usePlaybackEvents(): void {
     };
   }, []);
 
-  // Listen for playback events
   useEffect(() => {
     const store = usePlaybackStore.getState();
 
@@ -39,9 +36,9 @@ export function usePlaybackEvents(): void {
       const { position, duration } = event.payload;
       store.onPlaybackPosition(position, duration);
     });
-    // Focus-mode spectrum: Rust emits this when a prefetched track or
-    // the current track finishes analysis. Re-pull the spectrum for the
-    // currently playing track if it matches; otherwise ignore.
+    // Emitted when a prefetched or current track finishes analysis.
+    // Re-pull the spectrum only when the ratingKey matches the playing
+    // track.
     const u3 = listen<SpectrumReadyPayload>("spectrum-ready", (event) => {
       store.refreshSpectrum(event.payload.ratingKey);
     });

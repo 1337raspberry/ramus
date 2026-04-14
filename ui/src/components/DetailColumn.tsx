@@ -21,17 +21,17 @@ export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
       setPanelHeight(el.clientHeight);
       const obs = new ResizeObserver(() => {
         setPanelHeight(el.clientHeight);
-        // Don't call setOpen(false) here — the queue collapses via
-        // onScroll (scroll-to-top gesture) only. Closing on resize
-        // would snap the queue shut whenever the window is resized.
+        // Do not setOpen(false) here. The queue collapses via the
+        // scroll-to-top gesture only; closing on resize would snap it
+        // shut whenever the window is resized.
       });
       obs.observe(el);
       obsRef.current = obs;
     }
   }, []);
 
-  // Scroll down to reveal the track listing when the queue opens.
-  // Kept in a useEffect so handleToggleQueue stays stable (no queue.open dep).
+  // Reveal the track listing on queue open. Kept in an effect so
+  // handleToggleQueue stays stable (no queue.open dependency).
   useEffect(() => {
     if (queue.open && elRef.current) {
       requestAnimationFrame(() => {

@@ -1,18 +1,19 @@
 # macOS linker wrapper: rustc/ld auto-adds the `linker-signed` flag to
 # ad-hoc signatures. On macOS 26 that flag causes binaries running from
 # untrusted locations (anything outside /Applications/) to crash with
-# `CODESIGNING / Invalid Page` when they dlopen ad-hoc-signed dylibs from
-# brew paths. The wrapper invokes the real linker and then re-signs with
+# `CODESIGNING / Invalid Page` when they dlopen ad-hoc-signed dylibs
+# from brew paths. The wrapper invokes the real linker and re-signs with
 # `codesign --force --sign -`, producing a plain ad-hoc signature (flags
-# 0x2 instead of 0x20002) that the kernel accepts from any location.
+# 0x2 instead of 0x20002) the kernel accepts from any location.
 #
 # See CLAUDE.md "macOS code signing gotcha" for the full diagnosis and
-# .cargo/macos-linker-wrapper.sh for the script itself. The linker path is
-# resolved by rustc relative to cargo's cwd (the workspace root in normal
-# use), so we spell it as `.cargo/macos-linker-wrapper.sh` — cargo's own
-# "paths are relative to the config file's parent dir" rule does NOT apply
-# to the linker field specifically. Applied to both Apple Silicon and Intel
-# so Intel contributors and CI universal builds get the fix transparently.
+# .cargo/macos-linker-wrapper.sh for the script. The linker path is
+# resolved by rustc relative to cargo's cwd (the workspace root in
+# normal use), so it is spelled `.cargo/macos-linker-wrapper.sh` —
+# cargo's "paths are relative to the config file's parent dir" rule
+# does NOT apply to the linker field. Applied to both Apple Silicon and
+# Intel so Intel contributors and CI universal builds get the fix
+# transparently.
 
 [target.aarch64-apple-darwin]
 linker = ".cargo/macos-linker-wrapper.sh"

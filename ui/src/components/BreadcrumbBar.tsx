@@ -37,7 +37,7 @@ export default function BreadcrumbBar() {
   const { fontSize, crumbPadH, crumbPadV, crumbGap, barPadH, barPadV, sepSpacing } =
     useBreadcrumbDebugStore();
 
-  // Read sidebarMode at call-time from the store to avoid stale closures
+  // Read sidebarMode at call-time to avoid stale closures.
   const selectAll = useCallback(() => {
     const { sidebarMode: mode } = useLibraryStore.getState();
     useLibraryStore.setState({ selectedGenreId: "__all__" });
@@ -49,39 +49,33 @@ export default function BreadcrumbBar() {
   }, []);
 
   const crumbs: Crumb[] = useMemo(() => {
-    // 1. Search results — single crumb with query text
     if (searchQuery) {
       return [{ label: searchQuery }];
     }
 
-    // 2. Artist name browse (from album detail click)
     if (browseArtistName) {
       return [{ label: browseArtistName }];
     }
 
-    // 3. Year browse (from album detail click)
     if (browseYear) {
       return [{ label: String(browseYear) }];
     }
 
-    // 4. Artist sidebar mode
     if (sidebarMode === "artists" && selectedArtistId) {
       const artist = artists.find((a) => a.sourceId === selectedArtistId);
       return [{ label: artist?.name ?? "Artist" }];
     }
 
-    // 5-7. Genre modes (genres / favourites)
     if (!selectedGenreId || selectedGenreId === "__all__") {
       return [{ label: "All" }];
     }
 
-    // Flat genres: just "All > Genre Name"
     if (flatGenres) {
       const node = findNodeById(genreTree, selectedGenreId);
       return [{ label: "All", onClick: selectAll }, { label: node?.name ?? selectedGenreId }];
     }
 
-    // Hierarchical: split the path-based id to build the trail
+    // Hierarchical: split the path-based id to build the trail.
     const segments = selectedGenreId.split("/");
     const trail: Crumb[] = [{ label: "All", onClick: selectAll }];
 

@@ -9,14 +9,12 @@ use url::Url;
 
 use crate::models::{LibrarySection, PlexServer, PlexServerConnection};
 
-// Re-export public model types so existing `use crate::plex::client::X` paths work.
+// Re-export public model types so `use crate::plex::client::X` paths keep resolving.
 pub use super::models::{
     LevelSample, MediaContainerBody, MediaContainerResponse, MediaInfo, MediaItem, PartInfo,
     PlexTag, StreamInfo,
 };
 use super::models::*;
-
-// --- Errors ---
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlexClientError {
@@ -35,8 +33,6 @@ pub enum PlexClientError {
     #[error("no secure connection available")]
     NoSecureConnection,
 }
-
-// --- PlexClient ---
 
 type ReconnectCallback =
     Arc<dyn Fn() -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>;
@@ -69,8 +65,6 @@ impl PlexClient {
         }
     }
 
-    // -- State accessors --
-
     pub fn server_url(&self) -> Option<Url> {
         self.state.read().server_url.clone()
     }
@@ -90,8 +84,6 @@ impl PlexClient {
     pub fn set_on_request_failed(&self, callback: Option<ReconnectCallback>) {
         self.state.write().on_request_failed = callback;
     }
-
-    // -- Platform headers --
 
     fn platform() -> &'static str {
         if cfg!(target_os = "macos") {
@@ -129,8 +121,6 @@ impl PlexClient {
         }
         b
     }
-
-    // -- Internal HTTP helpers --
 
     fn read_state(&self) -> Result<(Url, String), PlexClientError> {
         let state = self.state.read();
@@ -230,8 +220,6 @@ impl PlexClient {
         }
     }
 
-    // -- Public API --
-
     /// Discover servers available to the authenticated user via plex.tv.
     pub async fn discover_servers(
         &self,
@@ -290,7 +278,7 @@ impl PlexClient {
             .collect())
     }
 
-    /// Test a single connection URI with GET /identity.
+    /// Test a single connection URI with `GET /identity`.
     pub async fn test_connection(
         &self,
         uri: &str,
@@ -324,13 +312,13 @@ impl PlexClient {
         }
     }
 
-    /// Find best working connection for a server. Tests all concurrently,
-    /// returns highest-priority one that succeeds.
+    /// Find the best working connection for a server. Tests all candidates
+    /// concurrently and returns the highest-priority one that succeeds.
     ///
-    /// When `send_token` is false the probe skips `X-Plex-Token`, avoiding
-    /// device-registration side-effects on servers the user hasn't selected
-    /// (Plex notifies server owners when an authenticated but unknown client
-    /// identifier hits `/identity`).
+    /// When `send_token` is false the probe skips `X-Plex-Token` to avoid
+    /// device-registration side-effects on servers the user has not yet
+    /// selected: Plex notifies server owners whenever an authenticated but
+    /// unknown client identifier hits `/identity`.
     pub async fn find_best_connection(
         &self,
         server: &PlexServer,
@@ -418,7 +406,7 @@ impl PlexClient {
             });
         }
 
-        // Process results as they arrive; return early once no better candidate is possible
+        // Process results as they arrive; return early once no better candidate is possible.
         let mut best_index: Option<usize> = None;
         let mut resolved = vec![false; candidate_count];
         while let Some(result) = join_set.join_next().await {
@@ -430,8 +418,8 @@ impl PlexClient {
                         None => index,
                     });
                 }
-                // If we have a winner and all higher-priority candidates have
-                // already resolved (failed), no point waiting for slower ones
+                // If every higher-priority candidate has already resolved
+                // (failed), there is no reason to wait for slower ones.
                 if let Some(best) = best_index {
                     if (0..best).all(|i| resolved[i]) {
                         join_set.abort_all();
@@ -458,10 +446,9 @@ impl PlexClient {
 
     /// Connect to a Plex server and verify connectivity.
     ///
-    /// The server URL and token are only written into live state after
+    /// The server URL and token are written into live state only after
     /// `/identity` returns a successful response. A failed connect leaves
-    /// any previously-stored credentials untouched rather than poisoning
-    /// the client with unverified values.
+    /// previously-stored credentials untouched.
     pub async fn connect(&self, server_url: Url, token: String) -> Result<(), PlexClientError> {
         let url = server_url
             .join("identity")
@@ -484,7 +471,7 @@ impl PlexClient {
         Ok(())
     }
 
-    /// Find all music-type library sections (type == "artist").
+    /// All music-type library sections (`type == "artist"`).
     pub async fn find_music_libraries(&self) -> Result<Vec<LibrarySection>, PlexClientError> {
         let body = self.get("library/sections", &[]).await?;
         let container: LibrarySectionsResponse =
@@ -510,7 +497,7 @@ impl PlexClient {
     }
 
     /// Fetch all items of a given type from a library section, paginated.
-    /// Type codes: 8=artist, 9=album, 10=track. Page size default 200.
+    /// Type codes: 8 = artist, 9 = album, 10 = track. Page size defaults to 200.
     pub async fn fetch_all_items(
         &self,
         library_key: &str,
@@ -565,7 +552,7 @@ impl PlexClient {
             .ok_or(PlexClientError::InvalidResponse)
     }
 
-    /// Find a lyrics stream (stream_type == 4) from full track metadata.
+    /// Lyrics stream (`stream_type == 4`) from full track metadata.
     pub async fn fetch_lyrics_stream(
         &self,
         rating_key: &str,
@@ -580,7 +567,7 @@ impl PlexClient {
             .and_then(|s| s.into_iter().find(|s| s.stream_type == Some(4))))
     }
 
-    /// Find the audio stream (stream_type == 2) from full track metadata.
+    /// Audio stream (`stream_type == 2`) from full track metadata.
     pub async fn fetch_audio_stream(
         &self,
         rating_key: &str,
@@ -629,7 +616,7 @@ impl PlexClient {
         Ok(body.to_vec())
     }
 
-    /// Fetch loudness level samples for an audio stream (waveform visualization).
+    /// Loudness level samples for an audio stream, used for waveform rendering.
     pub async fn fetch_levels(
         &self,
         stream_id: i32,
@@ -724,7 +711,7 @@ impl PlexClient {
             .await;
     }
 
-    /// Set user rating on an item. 10.0 = favourite, 0.0 = unfavourite.
+    /// Set user rating on an item. `10.0` favourites; `0.0` unfavourites.
     pub async fn rate_item(
         &self,
         rating_key: &str,
@@ -743,8 +730,6 @@ impl PlexClient {
     }
 }
 
-// --- Tests ---
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -760,8 +745,6 @@ mod tests {
         }
         client
     }
-
-    // -- Header tests --
 
     #[tokio::test]
     async fn test_standard_headers_applied() {
@@ -787,8 +770,6 @@ mod tests {
         let result = client.find_music_libraries().await;
         assert!(result.is_ok());
     }
-
-    // -- Error mapping tests --
 
     #[tokio::test]
     async fn test_401_maps_to_unauthorized() {
@@ -824,8 +805,6 @@ mod tests {
         let result = client.find_music_libraries().await;
         assert!(matches!(result, Err(PlexClientError::NotConnected)));
     }
-
-    // -- find_music_libraries --
 
     #[tokio::test]
     async fn test_find_music_libraries_filters_by_type() {
@@ -875,13 +854,10 @@ mod tests {
         assert!(matches!(result, Err(PlexClientError::NoMusicLibrary)));
     }
 
-    // -- Pagination --
-
     #[tokio::test]
     async fn test_fetch_all_items_pagination() {
         let server = MockServer::start().await;
 
-        // Page 1: full page of 2 items
         Mock::given(method("GET"))
             .and(path("/library/sections/1/all"))
             .and(query_param("X-Plex-Container-Start", "0"))
@@ -899,7 +875,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        // Page 2: partial page (1 item) — signals end
+        // Partial page signals the end of pagination.
         Mock::given(method("GET"))
             .and(path("/library/sections/1/all"))
             .and(query_param("X-Plex-Container-Start", "2"))
@@ -942,8 +918,6 @@ mod tests {
         let items = client.fetch_all_items("1", 9, 200).await.unwrap();
         assert!(items.is_empty());
     }
-
-    // -- fetch_item_metadata --
 
     #[tokio::test]
     async fn test_fetch_item_metadata() {
@@ -991,8 +965,6 @@ mod tests {
         assert_eq!(media[0].audio_codec.as_deref(), Some("flac"));
     }
 
-    // -- StreamInfo timed field --
-
     #[tokio::test]
     async fn test_stream_info_timed_bool() {
         let json = r#"{"id": 1, "streamType": 4, "timed": true}"#;
@@ -1021,14 +993,10 @@ mod tests {
         assert_eq!(stream.timed, None);
     }
 
-    // -- Retry on connection failure --
-
     #[tokio::test]
     async fn test_retry_on_connection_failure() {
         let server = MockServer::start().await;
 
-        // First call fails (404 simulating a transient issue),
-        // but we test retry logic with callback returning true
         let client = PlexClient::new("test-id".into());
         let server_uri = server.uri();
         {
@@ -1037,7 +1005,6 @@ mod tests {
             state.token = Some("tok".into());
         }
 
-        // Mount the mock for the metadata endpoint
         Mock::given(method("GET"))
             .and(path("/library/metadata/1"))
             .respond_with(
@@ -1054,8 +1021,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // -- rate_item --
-
     #[tokio::test]
     async fn test_rate_item() {
         let server = MockServer::start().await;
@@ -1071,8 +1036,6 @@ mod tests {
         let result = client.rate_item("123", 10.0).await;
         assert!(result.is_ok());
     }
-
-    // -- test_connection --
 
     #[tokio::test]
     async fn test_test_connection_success() {
@@ -1106,8 +1069,6 @@ mod tests {
         assert!(!result);
     }
 
-    // -- connect --
-
     #[tokio::test]
     async fn test_connect_success() {
         let server = MockServer::start().await;
@@ -1139,8 +1100,6 @@ mod tests {
         let result = client.connect(url, "token".into()).await;
         assert!(matches!(result, Err(PlexClientError::ConnectionFailed)));
     }
-
-    // -- fetch_levels --
 
     #[tokio::test]
     async fn test_fetch_levels() {

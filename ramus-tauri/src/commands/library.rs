@@ -30,7 +30,7 @@ where
 pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeResponse> {
     let genre_album_sets = with_cache(&state, |db| db.genre_album_sets())?;
 
-    // Deduplicated total: union of all album IDs across genres
+    // Deduplicated total: union of all album IDs across genres.
     let total_album_count = {
         let mut all: std::collections::HashSet<i64> = std::collections::HashSet::new();
         for ids in genre_album_sets.values() {
@@ -43,7 +43,7 @@ pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeRe
     let tree = if let Some(mapper) = mapper.as_ref() {
         mapper.build_display_tree(&genre_album_sets)
     } else {
-        // Fallback: flat genre list when mapper is not loaded
+        // Fallback: flat genre list when the mapper isn't loaded.
         let mut nodes: Vec<GenreNode> = genre_album_sets
             .iter()
             .map(|(name, ids)| GenreNode {
@@ -67,11 +67,10 @@ pub async fn get_albums_for_genre(
     state: State<'_, AppState>,
     genre: String,
 ) -> CmdResult<Vec<Album>> {
-    // Expand parent genre to include all descendant genres.
-    // Guard against bad fuzzy matches: if the expanded set doesn't
-    // contain the original genre name (case-insensitive), the mapper
-    // fuzzy-matched to a different genre family — fall back to the
-    // raw DB name so "Other" genres return correct results.
+    // Expand parent genre to include all descendants. Guard against bad fuzzy
+    // matches: if the expanded set doesn't contain the original name
+    // (case-insensitive), the mapper fuzzy-matched to a different family —
+    // fall back to the raw DB name so "Other" genres return correct results.
     let mapper = state.genre_mapper.read();
     let names: Vec<String> = if let Some(mapper) = mapper.as_ref() {
         if let Some(expanded) = mapper.expand_genre(&genre) {
@@ -93,9 +92,9 @@ pub async fn get_albums_for_genre(
     with_cache(&state, |db| db.albums_for_genres(&name_refs))
 }
 
-/// Fetch albums for an explicit list of genre names (no expansion).
-/// Used by the frontend when clicking parent nodes like "Other" where
-/// the children's names are already known.
+/// Fetch albums for an explicit list of genre names (no expansion). Used by
+/// the frontend when clicking parent nodes like "Other" where child names
+/// are already known.
 #[tauri::command]
 pub async fn get_albums_for_genre_names(
     state: State<'_, AppState>,
@@ -176,11 +175,10 @@ pub async fn get_all_artists(state: State<'_, AppState>) -> CmdResult<Vec<Artist
 
 #[tauri::command]
 pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeResponse> {
-    // Build genre sets restricted to favourite albums
     let fav_ids = with_cache(&state, |db| db.album_ids_for_favourites())?;
     let all_sets = with_cache(&state, |db| db.genre_album_sets())?;
 
-    // Intersect genre album sets with favourite IDs
+    // Intersect genre album sets with favourite IDs.
     let filtered: std::collections::HashMap<String, std::collections::HashSet<i64>> = all_sets
         .into_iter()
         .filter_map(|(genre, ids)| {
@@ -194,7 +192,7 @@ pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<G
         })
         .collect();
 
-    // Deduplicated total: union of favourite album IDs across genres
+    // Deduplicated total: union of favourite album IDs across genres.
     let total_album_count = {
         let mut all: std::collections::HashSet<i64> = std::collections::HashSet::new();
         for ids in filtered.values() {
@@ -288,7 +286,6 @@ pub async fn get_art_url(
 ) -> CmdResult<String> {
     let size = size.unwrap_or(300);
 
-    // Check disk cache first
     {
         let mut cache = state.image_cache.lock();
         if let Some(path) = cache.get(&thumb, size) {
@@ -296,7 +293,7 @@ pub async fn get_art_url(
         }
     }
 
-    // Cache miss; download from Plex
+    // Cache miss: download from Plex.
     let server_url = state.client.server_url().ok_or("Not connected")?;
     let token = state.client.token().ok_or("Not authenticated")?;
     let url = format!(
@@ -321,7 +318,7 @@ pub async fn get_art_url(
 
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
 
-    // Store in cache (handles concurrent download race internally)
+    // Insert handles concurrent download races internally.
     let path = {
         let mut cache = state.image_cache.lock();
         cache.insert(&thumb, size, &bytes).map_err(|e| e.to_string())?

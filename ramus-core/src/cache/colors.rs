@@ -5,7 +5,7 @@ use crate::models::{AlbumColorInfo, UltraBlurColors, VibrantPalette};
 use super::db::{CacheDatabase, CacheError};
 
 impl CacheDatabase {
-    /// UltraBlur colors + cached vibrant palette for an album.
+    /// UltraBlur colors and cached vibrant palette for an album.
     pub fn album_colors(&self, source_id: &str) -> Result<AlbumColorInfo, CacheError> {
         let conn = self.conn.lock();
         let r: Result<(Option<String>, Option<String>), _> = conn.query_row(
