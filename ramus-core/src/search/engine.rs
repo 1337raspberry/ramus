@@ -5,15 +5,11 @@ use crate::cache::db::CacheDatabase;
 use crate::models::{RangeField, SearchResult, SearchResultKind};
 use crate::search::parser::ParsedQuery;
 
-// --- Genre expansion trait (decouples from GenreMapper) ---
-
-/// Trait for expanding a genre name into all descendant genre names.
-/// Implemented by GenreMapper in the genre module.
+/// Expand a genre name into all descendant genre names. Implemented by
+/// `GenreMapper` in the genre module.
 pub trait GenreExpander: Send + Sync {
     fn expand_genre(&self, name: &str) -> Option<HashSet<String>>;
 }
-
-// --- SearchEngine ---
 
 pub struct SearchEngine {
     db: Arc<CacheDatabase>,
@@ -56,13 +52,13 @@ impl SearchEngine {
             results.extend(album_results);
         }
 
-        // Explicit ! operator track search
+        // Explicit `!` operator track search.
         if query.has_track_search() {
             let track_results = self.search_tracks(query, album_ids.as_ref(), limit)?;
             results.extend(track_results);
         }
 
-        // Supplementary track search for free text (no ! operator)
+        // Supplementary track search for free text (no `!` operator).
         if let Some(text) = query.free_text() {
             if !query.has_track_search() {
                 let track_results = self.search_tracks_by_text(text, album_ids.as_ref(), 10)?;
@@ -73,8 +69,6 @@ impl SearchEngine {
         Ok(results)
     }
 
-    // --- Album Search ---
-
     fn search_albums(
         &self,
         query: &ParsedQuery,
@@ -84,7 +78,7 @@ impl SearchEngine {
         let mut seen = HashSet::new();
         let mut results = Vec::new();
 
-        // % operator: search by album title
+        // `%` operator: search by album title.
         for title_query in query.album_title_filters() {
             let rows = self.db.search_albums_by_title_filtered(title_query, album_ids, limit)?;
             for row in rows {
@@ -108,7 +102,7 @@ impl SearchEngine {
             }
         }
 
-        // @ operator: search by artist name
+        // `@` operator: search by artist name.
         for artist_query in query.artist_filters() {
             let rows = self.db.search_albums_by_artist(artist_query, album_ids, limit)?;
             for row in rows {
@@ -132,7 +126,7 @@ impl SearchEngine {
             }
         }
 
-        // Free text: search both artist name and album title
+        // Free text: search both artist name and album title.
         if let Some(text) = query.free_text() {
             let rows = self.db.search_albums_by_artist_or_title(text, album_ids, limit)?;
             for row in rows {
@@ -158,7 +152,7 @@ impl SearchEngine {
             }
         }
 
-        // Filters only (genre/year with no text) — list matching albums
+        // Filter-only query (genre/year/favourites): list matching albums.
         if query.free_text().is_none()
             && query.artist_filters().is_empty()
             && query.album_title_filters().is_empty()
@@ -189,8 +183,6 @@ impl SearchEngine {
         results.truncate(limit);
         Ok(results)
     }
-
-    // --- Track Search ---
 
     fn search_tracks(
         &self,
@@ -252,11 +244,10 @@ impl SearchEngine {
 
         // Cross-field tokenised search: each token must match one of
         // (track title, album title, artist name), ANDed. FTS5 only
-        // indexes the track title, so "radiohead karma" (tokens that span
-        // artist + title) returns nothing from FTS5 alone. Run for every
-        // multi-token query so we catch cross-field matches, and dedupe
-        // against the FTS5 hits via `seen`. Add a small score penalty so
-        // FTS5 title-only matches still sort first when both paths hit.
+        // indexes the track title, so multi-token queries spanning
+        // artist + title return nothing from FTS5 alone. Deduped against
+        // FTS5 hits via `seen`; a small score penalty keeps FTS5
+        // title-only matches sorting first when both paths hit.
         if text.split_whitespace().filter(|t| !t.is_empty()).count() > 1 {
             let cross_results =
                 self.db.search_tracks_by_tokens_cross_field(text, album_ids, limit)?;
@@ -281,7 +272,7 @@ impl SearchEngine {
             }
         }
 
-        // Fuzzy fallback if < 5 track results
+        // Fuzzy fallback if < 5 track results.
         if results.len() < 5 {
             let fuzzy_results = self.fuzzy_track_search(text, album_ids, &seen)?;
             results.extend(fuzzy_results);
@@ -291,8 +282,6 @@ impl SearchEngine {
         results.truncate(limit);
         Ok(results)
     }
-
-    // --- Private ---
 
     fn resolve_album_constraints(
         &self,
@@ -359,11 +348,10 @@ impl SearchEngine {
             if excluding.contains(&candidate.id) {
                 continue;
             }
-            // Only match against track title — consistent with FTS5 (which also
-            // only indexes titles). Album/artist name matching is already handled
-            // by the LIKE queries on the albums table. Matching short album names
-            // (e.g. "Woe") against longer queries inflates Jaro-Winkler scores and
-            // pulls in every track on that album as a false positive.
+            // Match only against track title — consistent with FTS5
+            // (which also only indexes titles). Matching short album
+            // names against longer queries inflates Jaro-Winkler scores
+            // and pulls in every track on that album as a false positive.
             let similarity =
                 strsim::jaro_winkler(&candidate.track_title.to_lowercase(), &query_lower);
             if similarity > 0.7 {
@@ -387,23 +375,22 @@ impl SearchEngine {
             }
         }
 
-        // Sort descending by similarity (higher = better match)
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
         Ok(scored
             .into_iter()
             .take(50)
             .map(|(mut result, similarity)| {
-                // Prefix fuzzy scores with 0.5 to rank below FTS5 results
+                // Offset by 0.5 so fuzzy scores rank below FTS5 results.
                 result.score = 0.5 + (1.0 - similarity);
                 result
             })
             .collect())
     }
 
-    /// Return all internal album IDs matching the given query, with no limit.
-    /// Used for "load into grid" — resolves constraints and text searches, then
-    /// returns the union/intersection of matching album IDs.
+    /// All internal album IDs matching the given query, with no limit.
+    /// Resolves constraints and text searches, then returns the union/
+    /// intersection of matching album IDs.
     pub fn search_album_ids(
         &self,
         query: &ParsedQuery,
@@ -424,11 +411,10 @@ impl SearchEngine {
             || !query.album_title_filters().is_empty();
 
         if !has_text_search {
-            // Constraint-only query (genre/year/rating/fav) — return the constraint set
+            // Constraint-only query (genre/year/rating/fav).
             return Ok(constraint_ids.unwrap_or_default());
         }
 
-        // Collect album IDs from text searches
         let mut text_ids = HashSet::new();
 
         for title_query in query.album_title_filters() {
@@ -456,7 +442,7 @@ impl SearchEngine {
     }
 }
 
-/// Score a match: exact = 0.0, starts-with = 0.02, contains = 0.05
+/// Score a match: exact = 0.0, starts-with = 0.02, contains = 0.05.
 fn match_score(value: &str, query: &str) -> f64 {
     let v = value.to_lowercase();
     let q = query.to_lowercase();
@@ -468,8 +454,6 @@ fn match_score(value: &str, query: &str) -> f64 {
         0.05
     }
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -628,19 +612,15 @@ mod tests {
         db.set_album_genres(kid_a_id, &[rock_id, electronic_id]).unwrap();
     }
 
-    // --- Album Search Tests ---
-
     #[test]
     fn test_free_text_search_returns_albums_and_tracks() {
         let (_db, engine) = setup();
-        // "radiohead" matches artist name via LIKE → album results
         let q = QueryParser::parse("radiohead");
         let results = engine.search(&q, 100).unwrap();
         let albums: Vec<_> = results.iter().filter(|r| r.kind == SearchResultKind::Album).collect();
         assert!(!albums.is_empty(), "Should have album results");
         assert!(albums.iter().all(|r| r.artist_name == "Radiohead"));
 
-        // "paranoid" matches track title via FTS5 → track results
         let q2 = QueryParser::parse("paranoid");
         let results2 = engine.search(&q2, 100).unwrap();
         let tracks: Vec<_> = results2.iter().filter(|r| r.kind == SearchResultKind::Track).collect();
@@ -686,7 +666,7 @@ mod tests {
         let db = Arc::new(CacheDatabase::open_in_memory().unwrap());
         seed_test_data(&db);
 
-        // Create a simple genre expander that makes "Electronic" a child of "Rock"
+        // Test expander: "Electronic" is a child of "Rock".
         struct TestExpander;
         impl GenreExpander for TestExpander {
             fn expand_genre(&self, name: &str) -> Option<HashSet<String>> {
@@ -727,8 +707,6 @@ mod tests {
         assert!(!results.is_empty());
         assert!(results.iter().all(|r| r.album_title == "Kid A"));
     }
-
-    // --- Track Search Tests ---
 
     #[test]
     fn test_track_search_returns_tracks_only() {
@@ -789,9 +767,9 @@ mod tests {
     #[test]
     fn test_free_text_cross_field_artist_plus_track_title() {
         // "radiohead AND karma" merges to FreeText("radiohead karma"). FTS5
-        // alone can't match this (tracks_fts only indexes title, and no
-        // title has both tokens). The cross-field search should catch it
-        // via artist=Radiohead + track title=Karma Police.
+        // alone can't match (tracks_fts indexes only title, and no title
+        // contains both tokens). The cross-field search resolves it via
+        // artist=Radiohead + track title=Karma Police.
         let (_db, engine) = setup();
         let q = QueryParser::parse("radiohead AND karma");
         let results = engine.search(&q, 100).unwrap();
@@ -809,8 +787,8 @@ mod tests {
 
     #[test]
     fn test_free_text_cross_field_artist_plus_album_title() {
-        // "radiohead ok" should find OK Computer by Radiohead via the
-        // tokenised album LIKE search (artist + album title across tokens).
+        // Tokenised album LIKE search resolves "radiohead ok" to
+        // OK Computer by Radiohead (artist + album title across tokens).
         let (_db, engine) = setup();
         let q = QueryParser::parse("radiohead ok");
         let results = engine.search(&q, 100).unwrap();

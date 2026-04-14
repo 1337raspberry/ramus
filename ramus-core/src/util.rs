@@ -1,5 +1,3 @@
-// --- Shared utility functions ---
-
 /// Lossless audio codecs (case-insensitive matching via `is_lossless_codec`).
 pub const LOSSLESS_CODECS: &[&str] = &["flac", "alac", "wav", "aiff", "aif", "pcm"];
 
@@ -8,10 +6,7 @@ pub fn is_lossless_codec(codec: &str) -> bool {
     LOSSLESS_CODECS.contains(&codec.to_lowercase().as_str())
 }
 
-// --- FTS5 / LIKE escaping ---
-
-/// Escape a string for FTS5 MATCH queries.
-/// Strip `"*():^{}`, replace `-` with space.
+/// Escape a string for FTS5 MATCH queries: strip `"*():^{}+`, replace `-` with space.
 pub fn escape_fts5(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
@@ -24,7 +19,7 @@ pub fn escape_fts5(input: &str) -> String {
     out
 }
 
-/// Escape a string for SQL LIKE patterns (escape `%`, `_`, `\`).
+/// Escape `%`, `_`, `\` for SQL LIKE patterns.
 pub fn escape_like(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
@@ -38,8 +33,6 @@ pub fn escape_like(input: &str) -> String {
     }
     out
 }
-
-// --- Percent encoding / decoding ---
 
 /// RFC 3986 percent-encode a string (unreserved chars pass through).
 pub fn percent_encode(s: &str) -> String {
@@ -76,13 +69,9 @@ pub fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&result).into_owned()
 }
 
-// --- Tests ---
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // -- is_lossless_codec --
 
     #[test]
     fn test_lossless_codec_detection() {
@@ -92,14 +81,12 @@ mod tests {
         assert!(is_lossless_codec("aiff"));
         assert!(is_lossless_codec("aif"));
         assert!(is_lossless_codec("pcm"));
-        assert!(is_lossless_codec("FLAC")); // case insensitive
+        assert!(is_lossless_codec("FLAC"));
         assert!(!is_lossless_codec("mp3"));
         assert!(!is_lossless_codec("aac"));
         assert!(!is_lossless_codec("opus"));
         assert!(!is_lossless_codec("vorbis"));
     }
-
-    // -- escape_fts5 --
 
     #[test]
     fn test_fts5_escaping() {
@@ -129,8 +116,6 @@ mod tests {
         assert_eq!(escaped, "rock OR metal");
     }
 
-    // -- escape_like --
-
     #[test]
     fn test_like_pattern_escaping() {
         assert_eq!(escape_like("100%"), "100\\%");
@@ -143,8 +128,6 @@ mod tests {
         assert_eq!(escape_like("%%"), "\\%\\%");
         assert_eq!(escape_like("björk"), "björk");
     }
-
-    // -- percent encoding --
 
     #[test]
     fn test_percent_encode() {

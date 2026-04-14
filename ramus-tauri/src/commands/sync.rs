@@ -15,10 +15,9 @@ use crate::state::AppState;
 use super::CmdResult;
 
 /// RAII guard for the `sync_in_progress` atomic flag. The flag is set to
-/// `true` on construction; on drop it's reset to `false`. The spawned
-/// background task takes ownership of the guard and forgets it after it
-/// finishes, so the guard's drop path only runs for the early-return
-/// error cases on the command thread.
+/// `true` on construction and reset to `false` on drop. The spawned background
+/// task takes ownership of the guard and forgets it on completion, so the
+/// drop path only runs for the early-return error cases on the command thread.
 struct SyncGuard(Arc<AtomicBool>);
 
 impl Drop for SyncGuard {
@@ -72,8 +71,8 @@ pub async fn start_full_sync(
     let app_handle = app.clone();
     let settings = state.settings.clone();
 
-    // Hand ownership of the flag to the background task — forget the
-    // guard so its drop doesn't race the task clearing the flag itself.
+    // Hand ownership of the flag to the background task; forgetting the guard
+    // prevents its drop from racing the task clearing the flag.
     std::mem::forget(guard);
     let flag = state.sync_in_progress.clone();
 

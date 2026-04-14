@@ -3,7 +3,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// Plex media identifier (ratingKey string).
 pub type PlexID = String;
 
-/// Duration in seconds (TimeInterval equivalent).
+/// Duration in seconds.
 pub type Duration = f64;
 
 // --- Range Operators (used by Search + Cache) ---
@@ -155,7 +155,7 @@ impl Track {
         &self.rating_key
     }
 
-    /// The artist to display: track-level override if present, otherwise album artist.
+    /// Track-level artist override if present, otherwise album artist.
     pub fn display_artist(&self) -> &str {
         match &self.track_artist {
             Some(ta) if !ta.is_empty() => ta,
@@ -221,7 +221,7 @@ impl PlexServerConnection {
 pub struct PlexServer {
     pub machine_identifier: String,
     pub name: String,
-    /// Excluded from serialization — tokens stay server-side, never sent to the frontend.
+    /// Tokens stay server-side, never sent to the frontend.
     #[serde(skip_serializing, default)]
     pub access_token: String,
     pub owned: bool,
@@ -241,7 +241,9 @@ impl PlexServer {
     }
 }
 
-// --- ServerConfig (custom serde: access_token excluded from serialization) ---
+// --- ServerConfig ---
+
+// `access_token` is excluded from serialization and stored in the encrypted token file.
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServerConfig {
@@ -275,7 +277,6 @@ impl Serialize for ServerConfig {
         let mut state = serializer.serialize_struct("ServerConfig", field_count)?;
         state.serialize_field("machineIdentifier", &self.machine_identifier)?;
         state.serialize_field("name", &self.name)?;
-        // access_token intentionally excluded — stored in encrypted token file
         state.serialize_field("owned", &self.owned)?;
         state.serialize_field("connections", &self.connections)?;
         if let Some(ref key) = self.selected_library_key {
@@ -439,7 +440,7 @@ impl Default for Settings {
             playback_mode: PlaybackMode::DirectPlay,
             lookahead_depth: 10,
             audio_cache_limit_bytes: PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES,
-            image_cache_limit_bytes: 1_073_741_824, // 1 GB
+            image_cache_limit_bytes: 1_073_741_824,
             sync_interval_hours: 0,
             genre_source: GenreSource::default(),
             library_padding: 0,
@@ -732,7 +733,6 @@ mod tests {
         };
         let json = serde_json::to_string(&original).unwrap();
         let restored: ServerConfig = serde_json::from_str(&json).unwrap();
-        // access_token should be empty after round-trip (excluded from serialization)
         assert_eq!(restored.machine_identifier, "m1");
         assert_eq!(restored.name, "Server");
         assert_eq!(restored.access_token, "");

@@ -19,7 +19,7 @@ const MIN_CARD_WIDTH = 125;
 const GAP = 16;
 const PAD_H = 16;
 const TEXT_HEIGHT = 40; // title + artist + margins
-const CARD_PAD = 8; // 4px top + 4px bottom
+const CARD_PAD = 8; // 4px top, 4px bottom
 
 const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
   const [artSrc, setArtSrc] = useState<string | null>(null);
@@ -85,14 +85,11 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
   );
 });
 
-// IMPORTANT: This uses a callback ref, NOT useRef + useEffect.
-// When albums are empty the grid renders an empty-state div and the scroll
-// container is not in the DOM at all. A useRef-based ResizeObserver would
-// attach during the empty state (parentRef.current === null), and because
-// useRef is a stable reference the useEffect dependency never changes, so
-// the observer is never re-attached when the scroll container finally mounts.
-// A callback ref fires every time the DOM element mounts/unmounts, ensuring
-// the ResizeObserver is always set up correctly regardless of render timing.
+// Uses a callback ref, NOT useRef + useEffect. The empty-state branch
+// omits the scroll container, so a useRef-based ResizeObserver would
+// attach while `current` is null and — because useRef is stable — the
+// effect would never re-run when the container eventually mounts. A
+// callback ref fires on every DOM mount/unmount.
 function useGridLayout() {
   const [layout, setLayout] = useState({ cols: 4, cardWidth: MIN_CARD_WIDTH });
   const obsRef = useRef<ResizeObserver | null>(null);
@@ -171,7 +168,7 @@ export default function AlbumGridView() {
     getFavouriteTracks()
       .then((tracks) => {
         if (!tracks.length) return;
-        // Fisher-Yates shuffle
+        // Fisher–Yates shuffle.
         const shuffled = [...tracks];
         for (let i = shuffled.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));

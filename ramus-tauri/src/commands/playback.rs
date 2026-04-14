@@ -17,17 +17,16 @@ pub async fn play_tracks(
     tracks: Vec<Track>,
     start_at: usize,
 ) -> CmdResult<()> {
-    // Report previous session stopped before loading a new queue
+    // Report previous session stopped before loading a new queue.
     state.session_reporter.playback_stopped();
 
-    // Abort any in-flight prefetch from the previous album — the new
-    // queue has a totally different lookahead window. The worker will
-    // start a fresh cycle once mpv's first playlist-pos-change fires.
+    // Abort in-flight prefetch from the previous album — the new queue has a
+    // different lookahead window. The worker starts a fresh cycle on the next
+    // playlist-pos-change from mpv.
     state.prefetch_handle.notify_cancel();
 
     state.player.load_queue(tracks, start_at);
 
-    // Emit playback state for UI update
     let player_state = state.player.state();
     emit_playback_state(
         &app,
@@ -38,25 +37,25 @@ pub async fn play_tracks(
         },
     );
 
-    // Authoritative track_started call. The mpv on_playlist_pos_change
-    // callback may not fire when the new queue also starts at index 0
-    // (playlist-pos doesn't change).
+    // Authoritative track_started call. The mpv on_playlist_pos_change callback
+    // may not fire when the new queue also starts at index 0 (playlist-pos
+    // doesn't change).
     if let Some(ref track) = player_state.current_track {
         state
             .session_reporter
             .track_started(track, &state.player.play_session_id());
 
-        // Push metadata to OS media controls (duration will be 0 until
-        // on_duration_change fires, which re-pushes with the real value)
+        // Push metadata to OS media controls. Duration is 0 until
+        // on_duration_change fires and re-pushes with the real value.
         if let Some(ref mc) = *state.media_controls.lock() {
             let meta = MediaMetadata::from_track(track, 0.0, track.duration, true);
             mc.update_metadata(&meta);
         }
     }
 
-    // Kick off an initial prefetch cycle for the freshly-loaded queue.
-    // If the mpv playlist-pos callback also fires natural-advance we
-    // just coalesce (the worker only starts a new cycle when idle).
+    // Kick off an initial prefetch cycle for the freshly-loaded queue. If the
+    // mpv playlist-pos callback also fires natural-advance, the worker
+    // coalesces (only starts a new cycle when idle).
     state.prefetch_handle.notify_natural_advance();
 
     Ok(())
@@ -86,7 +85,7 @@ pub async fn previous_track(state: State<'_, AppState>) -> CmdResult<()> {
 pub async fn seek(state: State<'_, AppState>, position: f64) -> CmdResult<()> {
     state.player.seek(position);
     state.session_reporter.playback_seeked(position);
-    // Report new position to OS media controls so the scrubber jumps
+    // Report new position to OS media controls so the scrubber jumps.
     if let Some(ref mc) = *state.media_controls.lock() {
         let is_playing =
             state.player.state().status == ramus_core::models::PlaybackStatus::Playing;
@@ -163,13 +162,12 @@ pub async fn fetch_lyrics(
     state: State<'_, AppState>,
     rating_key: String,
 ) -> CmdResult<Option<LyricsResult>> {
-    // Try Plex lyrics first, fall back to LRCLIB
+    // Try Plex lyrics first; fall back to LRCLIB.
     match state.client.fetch_lyrics_stream(&rating_key).await {
         Ok(Some(stream)) => {
             if let Some(ref key) = stream.key {
                 if lyrics::validate_lyrics_path(key) {
                     if let Ok(data) = state.client.download_lyrics_data(key).await {
-                        // Parse based on key extension
                         if key.ends_with(".lrc") {
                             let text = String::from_utf8_lossy(&data);
                             let lines = lyrics::parse_lrc(&text);
@@ -200,11 +198,11 @@ pub async fn fetch_lyrics(
         Err(_) => {}
     }
 
-    // LRCLIB fallback — look up the requested track from the queue by
-    // rating_key. Falling back to `current_track` would return lyrics
-    // for whatever's playing right now, which is wrong if the user
-    // opened the lyrics view for a queued track or if mpv advanced
-    // between the Plex attempt and this call.
+    // LRCLIB fallback: look up the requested track from the queue by
+    // rating_key. Falling back to `current_track` would return lyrics for
+    // whatever is playing right now, which is wrong if the user opened the
+    // lyrics view for a queued track or mpv advanced between the Plex
+    // attempt and this call.
     let player_state = state.player.state();
     let track = player_state
         .queue
@@ -233,7 +231,7 @@ pub async fn get_waveform(
     state: State<'_, AppState>,
     rating_key: String,
 ) -> CmdResult<Option<Vec<f32>>> {
-    // Fetch audio stream to get stream ID for the levels endpoint
+    // Fetch audio stream to get the stream ID for the levels endpoint.
     let stream = match state.client.fetch_audio_stream(&rating_key).await {
         Ok(Some(s)) => s,
         _ => return Ok(None),

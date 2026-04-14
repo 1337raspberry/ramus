@@ -44,7 +44,7 @@ async fn auto_sync_loop(
             continue;
         }
 
-        // Acquire sync engine lock. Scoped so the guard drops before the await point.
+        // Scoped so the guard drops before the await point.
         let (cache, client) = {
             let engine_lock = sync_engine.lock();
             let Some(engine) = engine_lock.as_ref() else {
@@ -53,7 +53,6 @@ async fn auto_sync_loop(
             (engine.cache.clone(), engine.client.clone())
         };
 
-        // Retrieve library key from stored config
         let Ok(token_store) = ramus_core::plex::token_store::TokenStore::new() else {
             continue;
         };
@@ -64,7 +63,7 @@ async fn auto_sync_loop(
             continue;
         };
 
-        // Skip if a manual sync is already running
+        // Skip if a manual sync is already running.
         if sync_in_progress.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
             log::info!("auto-sync: skipping, sync already in progress");
             continue;
@@ -88,7 +87,6 @@ async fn auto_sync_loop(
             }
         }
 
-        // Update last sync time
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()

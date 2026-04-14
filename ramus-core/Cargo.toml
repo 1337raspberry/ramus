@@ -20,12 +20,12 @@ rand = "0.8"
 fuzzy-matcher = "0.3"
 strsim = "0.11"
 rusqlite = { version = "0.31", features = ["bundled", "column_decltype"] }
-# Pure-Rust real FFT — powers the focus-mode spectrum visualiser. No system
-# deps, no libav linkage, compiles on every platform without extra setup.
+# Pure-Rust real FFT powering the focus-mode spectrum visualiser. No
+# system deps, no libav linkage, compiles on every platform.
 realfft = "3.5"
-# Pure-Rust serde-native binary format for the on-disk .spec cache files.
-# We use postcard instead of bincode because bincode is unmaintained
-# (see https://docs.rs/bincode) — postcard is the spiritual successor.
+# Pure-Rust serde-native binary format for the on-disk .spec cache
+# files. postcard is used instead of bincode because bincode is
+# unmaintained (see https://docs.rs/bincode).
 postcard = { version = "1.1", features = ["use-std"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -33,7 +33,7 @@ core-foundation = "0.10"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # Used by token_store::hardware_uuid() to read MachineGuid from
-# HKLM\SOFTWARE\Microsoft\Cryptography on Windows.
+# HKLM\SOFTWARE\Microsoft\Cryptography.
 winreg = "0.55"
 
 [dev-dependencies]

@@ -1,35 +1,33 @@
 #!/usr/bin/env python3
-"""
-Bundle libmpv + every transitive non-glibc dependency for the Linux AppImage
-so the release artifact is fully self-contained — users no longer need to
-`apt install libmpv2` after grabbing the .AppImage.
+"""Bundle libmpv and every transitive non-glibc dependency into the Linux
+AppImage so the release artifact is self-contained.
 
-Run this from CI BEFORE invoking tauri-action on the Linux runner. The script:
+Run from CI before invoking tauri-action on the Linux runner. The script:
 
-1. Walks `libmpv.so.2`'s transitive deps via `ldd`, following resolved paths.
-2. Filters out glibc-family libs (libc, libm, libpthread, libdl, libstdc++,
-   libgcc_s, libresolv, librt, libutil, ld-linux*). Bundling these in an
-   AppImage causes incompatibility across distros — they're tightly coupled
-   to the target system's dynamic loader and must always come from the host.
+1. Walks `libmpv.so.2`'s transitive deps via `ldd`, following resolved
+   paths.
+2. Filters out glibc-family libs (libc, libm, libpthread, libdl,
+   libstdc++, libgcc_s, libresolv, librt, libutil, ld-linux*). Bundling
+   these in an AppImage breaks across distros — they are tightly coupled
+   to the target system's dynamic loader and must come from the host.
 3. Copies each remaining lib into `ramus-tauri/linux-libs/`.
 4. Runs `patchelf --set-rpath '$ORIGIN'` on each copy so the bundled libs
-   resolve their own NEEDED deps relative to wherever they end up at runtime
-   (the AppImage's mounted /usr/lib dir).
-5. Writes `ramus-tauri/tauri.linux.conf.json` with `bundle.linux.appimage.files`
-   mapping each lib to `/usr/lib/<basename>` in the AppImage. Tauri auto-merges
-   this platform-conf at build time.
+   resolve their own NEEDED deps relative to their runtime location (the
+   AppImage's mounted /usr/lib dir).
+5. Writes `ramus-tauri/tauri.linux.conf.json` with
+   `bundle.linux.appimage.files` mapping each lib to `/usr/lib/<basename>`
+   in the AppImage. Tauri auto-merges this platform-conf at build time.
 
-At runtime, AppImage extracts to /tmp/.mount_xxx/, and the binary lives at
-/tmp/.mount_xxx/usr/bin/ramus. `MpvLib::load()` searches for libmpv at
-`<exe_dir>/../lib/libmpv.so.2` (added in the same commit as this script),
-which resolves to /tmp/.mount_xxx/usr/lib/libmpv.so.2 — exactly where we
-placed it. Once libmpv is loaded, its NEEDED deps resolve via $ORIGIN to
-the same dir.
+At runtime, AppImage extracts to /tmp/.mount_xxx/, and the binary lives
+at /tmp/.mount_xxx/usr/bin/ramus. `MpvLib::load()` searches for libmpv at
+`<exe_dir>/../lib/libmpv.so.2`, which resolves to
+/tmp/.mount_xxx/usr/lib/libmpv.so.2. Once libmpv is loaded, its NEEDED
+deps resolve via $ORIGIN to the same dir.
 
-The .deb and .rpm packages are NOT affected by this script — those use the
-system libmpv via the package manager dependencies declared in
+The .deb and .rpm packages are not affected by this script — those use
+the system libmpv via the package manager dependencies declared in
 `tauri.conf.json > bundle.linux.{deb,rpm}.depends`. Only the AppImage,
-which is supposed to be portable across distros, gets the bundled libs.
+which is portable across distros, gets the bundled libs.
 """
 from __future__ import annotations
 
@@ -46,9 +44,9 @@ TAURI_DIR = PROJECT_ROOT / "ramus-tauri"
 WORKDIR = TAURI_DIR / "linux-libs"
 CONFIG_OUT = TAURI_DIR / "tauri.linux.conf.json"
 
-# glibc-family + loader libs — never bundle these in an AppImage. They're
-# tied to the target system's loader/glibc version and bundling them causes
-# crashes across distros. AppImage convention: always defer to the host.
+# glibc-family + loader libs — never bundled in an AppImage. They are
+# tied to the target system's loader/glibc version and bundling them
+# crashes across distros. AppImage convention: defer to the host.
 GLIBC_FAMILY = {
     "libc.so.6",
     "libm.so.6",
@@ -72,14 +70,14 @@ def is_skippable(soname: str) -> bool:
 def ldd_deps(path: Path) -> list[Path]:
     """Return the resolved paths of every shared lib `path` links against.
 
-    `ldd` output looks roughly like:
+    `ldd` output:
         libfoo.so.2 => /lib/x86_64-linux-gnu/libfoo.so.2 (0x00007f...)
         linux-vdso.so.1 (0x00007ff...)
         /lib64/ld-linux-x86-64.so.2 (0x00007f...)
 
-    We grab `<soname> => <path>` lines, filter out glibc-family sonames,
-    and skip lines without a resolved path (vdso, ld-linux loader entries
-    that lack a `=>`, or `not found` markers).
+    Grabs `<soname> => <path>` lines, filters out glibc-family sonames,
+    and skips lines without a resolved path (vdso, ld-linux loader
+    entries that lack a `=>`, or `not found` markers).
     """
     out = subprocess.check_output(["ldd", str(path)], text=True)
     deps: list[Path] = []
@@ -119,16 +117,16 @@ def walk_transitive(root: Path) -> list[Path]:
 def find_libmpv() -> Path | None:
     """Find the libmpv soname symlink on the build runner.
 
-    Prefers `libmpv.so.2` (Ubuntu 24.04+, Fedora 38+, Arch) and falls back
-    to `libmpv.so.1` (Ubuntu 22.04 LTS, older distros). The .so.0 / soname
-    symlink is what we want — its target is the actual versioned file.
+    Prefers `libmpv.so.2` (Ubuntu 24.04+, Fedora 38+, Arch) and falls
+    back to `libmpv.so.1` (Ubuntu 22.04 LTS, older distros). The soname
+    symlink points at the actual versioned file.
     """
     search_dirs = [
         Path("/usr/lib/x86_64-linux-gnu"),  # Debian / Ubuntu multiarch
         Path("/usr/lib64"),  # Fedora / RHEL
         Path("/usr/lib"),  # Arch and others
     ]
-    # Newer first — if both happen to be installed we pick libmpv2.
+    # Newer first — libmpv2 wins when both are installed.
     for major in (2, 1):
         soname = f"libmpv.so.{major}"
         for d in search_dirs:
@@ -157,12 +155,12 @@ def main() -> int:
     WORKDIR.mkdir(parents=True)
 
     files_config: dict[str, str] = {}
-    # Track basenames we've already copied. walk_transitive dedupes by
-    # resolved real path, so symlinked sonames collapse to one file — but
-    # two *different* real files can still share a basename (e.g. a
-    # multi-arch install with `/usr/lib/x86_64-linux-gnu/libfoo.so.2` and
-    # `/usr/lib/libfoo.so.2`), and we'd rather fail loudly than silently
-    # overwrite and ship whichever one happened to be last in BFS order.
+    # Track already-copied basenames. walk_transitive dedupes by resolved
+    # real path, so symlinked sonames collapse to one file — but two
+    # different real files can still share a basename (e.g. a multi-arch
+    # install with `/usr/lib/x86_64-linux-gnu/libfoo.so.2` and
+    # `/usr/lib/libfoo.so.2`). Fail loudly rather than silently overwrite
+    # and ship whichever one happened to be last in BFS order.
     used_basenames: dict[str, Path] = {}
     for src in libs:
         dst = WORKDIR / src.name
@@ -180,14 +178,14 @@ def main() -> int:
         dst.chmod(0o644)
         # Set RPATH to $ORIGIN so the dynamic linker resolves this lib's
         # own NEEDED deps relative to its own location, not via the host's
-        # ld.so.cache. This is what makes the bundle portable across
-        # distros.
+        # ld.so.cache. Required for cross-distro portability.
         subprocess.run(
             ["patchelf", "--set-rpath", "$ORIGIN", str(dst)], check=True
         )
         # AppImage destination: each lib lands at /usr/lib/<basename>.
-        # Tauri's `bundle.linux.appimage.files` map keys are absolute paths
-        # inside the AppImage; values are paths relative to tauri.conf.json.
+        # Tauri's `bundle.linux.appimage.files` map keys are absolute
+        # paths inside the AppImage; values are paths relative to
+        # tauri.conf.json.
         files_config[f"/usr/lib/{src.name}"] = f"linux-libs/{src.name}"
 
     config = {

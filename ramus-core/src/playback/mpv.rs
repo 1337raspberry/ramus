@@ -1,14 +1,10 @@
-//! Thin wrapper around libmpv's C API for audio-only playback.
-//!
-//! The actual FFI calls require libmpv to be installed at runtime.
-//! This module defines the wrapper types, configuration, and event model.
-//! The real mpv handle is behind a cfg gate — tests and builds without
-//! libmpv use the types and logic without linking.
+//! Wrapper types, configuration, and event model around libmpv's C API
+//! for audio-only playback. FFI calls require libmpv at runtime; the real
+//! mpv handle lives behind a cfg gate so tests and builds without libmpv
+//! exercise the types and logic without linking.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
-// --- Types ---
 
 /// Reason a file ended playback.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,7 +17,7 @@ pub enum FileEndReason {
     Unknown,
 }
 
-/// Property observer IDs — match Swift's ObserverID enum.
+/// Property observer IDs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u64)]
 pub enum ObserverID {
@@ -50,10 +46,8 @@ impl LoadMode {
     }
 }
 
-// --- Callbacks ---
-
-/// Callbacks fired by the mpv event loop.
-/// All callbacks are `Send + Sync` so they can be dispatched from the event thread.
+/// Callbacks fired by the mpv event loop. All are `Send + Sync` so they
+/// can be dispatched from the event thread.
 #[derive(Default)]
 pub struct MpvCallbacks {
     pub on_position_change: Option<Box<dyn Fn(f64) + Send + Sync>>,
@@ -65,16 +59,12 @@ pub struct MpvCallbacks {
     pub on_file_ended: Option<Box<dyn Fn(FileEndReason) + Send + Sync>>,
 }
 
-// --- Configuration ---
-
 /// Default mpv initialization options for audio-only playback.
 ///
-/// Note: the `af` chain is deliberately empty by default. The old
-/// `astats` metering filter was removed when the focus visualiser was
-/// rewritten to use precomputed per-track spectrograms — that pipeline
-/// doesn't need any live filter metadata. Runtime EQ changes call
-/// `set_audio_filters()` with the EQ chain directly (or an empty
-/// string to clear it); nothing else touches the `af` property.
+/// The `af` chain is deliberately empty by default — the focus visualiser
+/// runs from precomputed spectrograms, so nothing needs to survive in the
+/// filter chain. Runtime EQ changes call `set_audio_filters()` with the
+/// EQ chain directly (or an empty string to clear it).
 pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
     vec![
         ("vo", "null"),
@@ -88,8 +78,8 @@ pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
         ("gapless-audio", "yes"),
         ("prefetch-playlist", "yes"),
         ("audio-buffer", "0.5"),
-        // Let mpv eagerly pull the whole file into its demuxer cache for
-        // reliable gapless playback of large files.
+        // Eagerly pull whole files into the demuxer cache for reliable
+        // gapless playback of large files.
         ("demuxer-max-bytes", "2GiB"),
         ("demuxer-readahead-secs", "1200"),
         ("keep-open", "no"),
@@ -113,14 +103,11 @@ pub fn observed_properties() -> Vec<(&'static str, ObserverID)> {
     ]
 }
 
-// --- MpvHandle (trait for testability) ---
-
-/// Abstraction over mpv operations for testability.
-/// The real implementation wraps libmpv FFI calls.
+/// Abstraction over mpv operations for testability. The real implementation
+/// wraps libmpv FFI calls.
 pub trait MpvPlayer: Send + Sync {
     /// Load a file into the playlist. `options` is an optional mpv-style
-    /// comma-separated `key=value` list applied to just this entry
-    /// (currently always `None`; reserved for future per-entry mpv options).
+    /// comma-separated `key=value` list applied to just this entry.
     fn load_file(&self, url: &str, mode: LoadMode, options: Option<&str>);
     fn load_file_at(&self, url: &str, index: i64, options: Option<&str>);
     fn playlist_play_index(&self, index: i64);
@@ -135,10 +122,9 @@ pub trait MpvPlayer: Send + Sync {
     fn is_shutdown(&self) -> bool;
 }
 
-// --- Shutdown flag (shared between controller and event loop) ---
-
-/// Thread-safe shutdown flag. Prevents use-after-free when the mpv handle
-/// is destroyed while event loop callbacks are still in-flight.
+/// Thread-safe shutdown flag shared between controller and event loop.
+/// Prevents use-after-free when the mpv handle is destroyed while event
+/// loop callbacks are still in-flight.
 #[derive(Clone)]
 pub struct ShutdownFlag {
     flag: Arc<AtomicBool>,
@@ -165,8 +151,6 @@ impl Default for ShutdownFlag {
         Self::new()
     }
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -200,14 +184,12 @@ mod tests {
     fn test_default_mpv_options_not_empty() {
         let opts = default_mpv_options();
         assert!(!opts.is_empty());
-        // Must include audio-only options
         assert!(opts.iter().any(|(k, v)| *k == "vo" && *v == "null"));
         assert!(opts.iter().any(|(k, v)| *k == "vid" && *v == "no"));
         assert!(opts.iter().any(|(k, v)| *k == "gapless-audio" && *v == "yes"));
         assert!(opts.iter().any(|(k, v)| *k == "idle" && *v == "yes"));
         assert!(opts.iter().any(|(k, v)| *k == "keep-open" && *v == "no"));
-        // The focus visualiser now uses precomputed spectrograms, so no
-        // `af` option should be seeded at init — the chain must start empty.
+        // The `af` chain must start empty — EQ populates it on demand.
         assert!(!opts.iter().any(|(k, _)| *k == "af"));
     }
 

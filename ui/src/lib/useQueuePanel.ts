@@ -1,14 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 
 /**
- * Shared state machine for the "wheel down to reveal the upcoming queue,
- * scroll back to the top to collapse it" pattern used by both DetailColumn
- * (compact Now Playing panel) and FocusNowPlayingView.
+ * State machine for the "wheel down to reveal the upcoming queue, scroll
+ * back to top to collapse" pattern used by DetailColumn and
+ * FocusNowPlayingView.
  *
- * Returns an `open`/`setOpen` pair plus event handlers that can be spread
- * onto a scrollable container. Uses a ref alongside state so the wheel
- * callback doesn't need to be re-bound (and close over stale props) on
- * every re-render.
+ * Returns `{ open, setOpen, toggle, onWheel, onScroll }`. Uses a ref
+ * alongside state so the wheel callback can be stable without closing over
+ * stale props.
  */
 export function useQueuePanel() {
   const [open, setOpenState] = useState(false);

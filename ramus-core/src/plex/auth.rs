@@ -7,8 +7,6 @@ use serde::Deserialize;
 use crate::models::{PlexServerConnection, ServerConfig};
 use crate::plex::token_store::{config_dir, TokenKey, TokenStore};
 
-// --- Errors ---
-
 #[derive(Debug, thiserror::Error)]
 pub enum PlexAuthError {
     #[error("PIN creation failed")]
@@ -25,8 +23,6 @@ pub enum PlexAuthError {
     Json(#[from] serde_json::Error),
 }
 
-// --- PIN Response ---
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct PinResponse {
     pub id: i64,
@@ -34,8 +30,6 @@ pub struct PinResponse {
     #[serde(rename = "authToken")]
     pub auth_token: Option<String>,
 }
-
-// --- PlexAuth ---
 
 pub struct PlexAuth {
     http: Client,
@@ -54,7 +48,7 @@ impl PlexAuth {
         Self::default()
     }
 
-    /// Create a new Plex PIN for the OAuth flow.
+    /// Create a Plex PIN for the OAuth flow.
     pub async fn create_pin(
         &self,
         client_identifier: &str,
@@ -79,7 +73,7 @@ impl PlexAuth {
         Ok(pin)
     }
 
-    /// Build the Plex OAuth URL the user should visit to authorize.
+    /// Build the Plex OAuth URL the user visits to authorize.
     pub fn auth_url(code: &str, client_identifier: &str) -> String {
         format!(
             "https://app.plex.tv/auth#?clientID={}&code={}&context%5Bdevice%5D%5Bproduct%5D=ramus",
@@ -87,8 +81,8 @@ impl PlexAuth {
         )
     }
 
-    /// Poll Plex for the auth token after the user has visited the auth URL.
-    /// Returns the token once the user authorizes, or errors on timeout/expiry.
+    /// Poll Plex for the auth token after the user visits the auth URL.
+    /// Returns the token on authorization, or errors on timeout/expiry.
     pub async fn poll_for_token(
         &self,
         pin_id: i64,
@@ -129,8 +123,6 @@ impl PlexAuth {
     }
 }
 
-// --- Server Config Persistence ---
-
 const SERVER_CONFIG_FILE: &str = "server_config.json";
 
 fn server_config_path() -> Result<PathBuf, PlexAuthError> {
@@ -142,8 +134,8 @@ fn server_config_path() -> Result<PathBuf, PlexAuthError> {
         .join(SERVER_CONFIG_FILE))
 }
 
-/// Store server config. The access token goes to the encrypted token store;
-/// non-secret fields go to a JSON file in the config directory.
+/// Persist server config. The access token goes to the encrypted token store;
+/// non-secret fields are written as JSON in the config directory.
 pub fn store_server_config(config: &ServerConfig, token_store: &TokenStore) -> bool {
     if !token_store.write(TokenKey::ServerToken, &config.access_token) {
         return false;
@@ -160,7 +152,7 @@ pub fn store_server_config(config: &ServerConfig, token_store: &TokenStore) -> b
         }
     }
 
-    // ServerConfig's Serialize impl already excludes access_token
+    // `ServerConfig`'s `Serialize` impl already excludes `access_token`.
     match serde_json::to_string(config) {
         Ok(json) => std::fs::write(&path, json).is_ok(),
         Err(_) => false,
@@ -168,7 +160,7 @@ pub fn store_server_config(config: &ServerConfig, token_store: &TokenStore) -> b
 }
 
 /// Patch fields in the stored server config JSON without touching the token.
-/// Only provided (Some) values are updated; None fields are left unchanged.
+/// Only `Some` values are applied; `None` fields are left unchanged.
 pub fn patch_stored_config(
     connections: Option<&[PlexServerConnection]>,
     active_uri: Option<&str>,
@@ -203,7 +195,7 @@ pub fn patch_stored_config(
     }
 }
 
-/// Retrieve stored server config, reconstituting the access token from the token store.
+/// Retrieve stored server config, re-attaching the access token from the token store.
 pub fn stored_server_config(token_store: &TokenStore) -> Option<ServerConfig> {
     let path = server_config_path().ok()?;
     let data = std::fs::read_to_string(&path).ok()?;
@@ -228,8 +220,6 @@ pub fn delete_server_config(token_store: &TokenStore) {
     }
 }
 
-// --- Tests ---
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,8 +230,6 @@ mod tests {
         TokenStore::with_dir_and_key(dir.to_path_buf(), key.into())
     }
 
-    // -- auth URL --
-
     #[test]
     fn test_auth_url_construction() {
         let url = PlexAuth::auth_url("ABCD1234", "my-client-id");
@@ -250,8 +238,6 @@ mod tests {
         assert!(url.contains("code=ABCD1234"));
         assert!(url.contains("context%5Bdevice%5D%5Bproduct%5D=ramus"));
     }
-
-    // -- PIN response parsing --
 
     #[test]
     fn test_pin_response_parsing() {
@@ -269,8 +255,6 @@ mod tests {
         assert_eq!(pin.auth_token, Some("my-token-123".into()));
     }
 
-    // -- Server config persistence --
-
     #[test]
     fn test_store_and_load_server_config() {
         let dir = tempfile::tempdir().unwrap();
@@ -286,18 +270,16 @@ mod tests {
             active_uri: Some("https://example.plex.direct:32400".into()),
         };
 
-        // Write config file to same temp dir (override path for test)
         let config_path = dir.path().join(SERVER_CONFIG_FILE);
         token_store.write(TokenKey::ServerToken, &config.access_token);
         let json = serde_json::to_string(&config).unwrap();
         std::fs::write(&config_path, &json).unwrap();
 
-        // Verify the JSON file does NOT contain the access token
+        // JSON file must not contain the access token.
         let raw = std::fs::read_to_string(&config_path).unwrap();
         assert!(!raw.contains("secret-token"));
         assert!(raw.contains("server-1"));
 
-        // Read it back — reconstitute token from store
         let mut restored: ServerConfig = serde_json::from_str(&raw).unwrap();
         if let Some(token) = token_store.read(TokenKey::ServerToken) {
             restored.access_token = token;
@@ -317,7 +299,6 @@ mod tests {
         let config_path = dir.path().join(SERVER_CONFIG_FILE);
         std::fs::write(&config_path, r#"{"machineIdentifier":"s","name":"n"}"#).unwrap();
 
-        // Delete
         token_store.delete(TokenKey::ServerToken);
         let _ = std::fs::remove_file(&config_path);
 

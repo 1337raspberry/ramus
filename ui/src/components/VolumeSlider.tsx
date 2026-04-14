@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from "react";
 
 interface Props {
-  value: number; // 0–100
+  /** Volume on a 0–100 scale. */
+  value: number;
   onChange: (value: number) => void;
 }
 

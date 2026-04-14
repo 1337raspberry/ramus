@@ -110,32 +110,32 @@ textarea {
 
 /* --- UltraBlur Background ---
  *
- * Four overlapping radial gradients, one anchored at each corner,
- * composited by default (no blend mode). The colours are passed in
- * from `UltraBlurBackground.tsx` as CSS custom properties
- * (`--ultrablur-tl` etc), declared via `@property` below with
- * `syntax: '<color>'` so they interpolate smoothly in the
- * `transition` — a plain CSS custom property transitions as "string
- * replace" (instant), not as a colour blend. That's what gives us
- * the 0.8s soft crossfade between albums.
+ * Four overlapping radial gradients, one per corner, with default
+ * compositing (no blend mode). Colours come from
+ * `UltraBlurBackground.tsx` as CSS custom properties
+ * (`--ultrablur-tl` etc). The `@property` declarations below with
+ * `syntax: '<color>'` enable smooth interpolation on the
+ * transition — plain CSS custom properties transition as string
+ * replacement (instant), not as a colour blend. This produces the
+ * 0.8s album crossfade.
  *
- * This replaces an earlier `filter: blur(220px)` approach that
- * looked fine on macOS but banded catastrophically on Windows
- * because Chromium's CSS filter pipeline uses 8-bit intermediate
- * surfaces. Radial gradients go through a different render path
- * with higher precision and built-in dithering — same visual goal,
- * cleaner output on both platforms.
+ * Do NOT reintroduce `filter: blur()` here. A prior implementation
+ * used 4 circle divs inside a `filter: blur(220px)` wrapper and
+ * banded catastrophically on Windows because Chromium's CSS filter
+ * pipeline uses 8-bit intermediate surfaces. WKWebView on macOS
+ * uses higher-precision Metal-backed intermediates plus window-
+ * server dithering, which hid the issue — do not trust Mac-only
+ * testing. Radial gradients go through a different render path
+ * with higher precision and built-in dithering.
  *
- * LAYER ORDER MATTERS: `background-image` paints the first-listed
- * layer ON TOP (front-to-back in declaration order). We list
- * TL → TR → BR → BL, so the top-left colour sits on top and
- * visually dominates wherever it's opaque; the other three only
- * show through where TL has faded toward transparent. This is
- * intentional — the baked brightness (0.9) and saturation (1.2)
- * in `UltraBlurBackground.tsx` were tuned against this specific
- * ordering. Reordering the layers or swapping to a symmetric
- * blend mode will change the character of every preset and should
- * only be done alongside a full re-tuning pass.
+ * LAYER ORDER IS LOAD-BEARING. `background-image` paints the
+ * first-listed layer on top (front-to-back in declaration order).
+ * Order: TL → TR → BR → BL. Top-left dominates wherever opaque;
+ * the other three show through where TL has faded. The baked
+ * brightness (0.9) and saturation (1.2) in
+ * `UltraBlurBackground.tsx` were tuned against this ordering.
+ * Reordering or switching to a symmetric blend mode will change
+ * every preset and requires a full re-tuning pass.
  */
 
 @property --ultrablur-tl {
@@ -170,9 +170,9 @@ textarea {
     radial-gradient(ellipse farthest-corner at 100% 0%, var(--ultrablur-tr), transparent 100%),
     radial-gradient(ellipse farthest-corner at 100% 100%, var(--ultrablur-br), transparent 100%),
     radial-gradient(ellipse farthest-corner at 0% 100%, var(--ultrablur-bl), transparent 100%);
-  /* Overall dim baked in from the tuning session. Safe on the gradient
-   * render path — unlike CSS `filter:`, `opacity` doesn't go through
-   * Chromium's filter graph so it won't reintroduce banding. */
+  /* Baked overall dim. Unlike CSS `filter:`, `opacity` does not go
+   * through Chromium's filter graph, so it will not reintroduce
+   * banding. */
   opacity: 0.8;
   transition:
     --ultrablur-tl 0.8s ease-in-out,
@@ -966,12 +966,12 @@ textarea {
   overflow: hidden;
 }
 
-/* Top: artist/album/year — fixed at top */
+/* Top: artist, album, year. */
 .np-top {
   flex-shrink: 0;
 }
 
-/* Middle: art, track, waveform, transport — fills remaining space, centered */
+/* Middle: art, track, waveform, transport. Fills remaining space. */
 .np-middle {
   flex: 1;
   display: flex;
@@ -982,7 +982,7 @@ textarea {
   padding: 8px 0;
 }
 
-/* Bottom: genres, studio/codec, queue chevron — fixed at bottom */
+/* Bottom: genres, studio, codec, queue chevron. */
 .np-bottom {
   flex-shrink: 0;
   display: flex;
@@ -1076,7 +1076,7 @@ textarea {
   color: #f0c040;
 }
 
-/* Album art — always square, fits the smaller of width/height */
+/* Album art: always square, fits the smaller of width/height. */
 .np-art-wrapper {
   flex: 1 1 0;
   min-height: 0;
@@ -1676,8 +1676,8 @@ textarea {
   color: var(--accent);
 }
 
-/* Active = visualiser currently showing. Stays in accent so the user can
- * tell at a glance that toggling it will turn the visualiser off. */
+/* Active when the visualiser is showing; stays in accent so the toggle
+ * state is visually obvious. */
 .np-viz-btn.active {
   color: var(--accent);
 }
@@ -2606,27 +2606,23 @@ textarea {
   padding: 20px;
 }
 
-/* --- Focus Now Playing mode --- */
-/*
- * Full-screen immersive Now Playing view. Sits above the three-column
- * layout (z 500) but below global overlays like EQ/search/settings (z 1000)
- * and the window drag region (z 9999), so keyboard shortcuts for those
- * still work and the window remains draggable.
+/* --- Focus Now Playing mode ---
  *
- * When focus mode is active, the three-column layout is hidden (but kept
- * mounted so the compact NowPlayingView's palette-extraction side effects
- * continue firing on track change). The focus overlay has no background of
- * its own — the existing global UltraBlurBackground (z 0) shows through,
- * giving a single, unified blur backdrop.
+ * Full-screen Now Playing view. Sits above the three-column layout
+ * (z 500), below global overlays (EQ/search/settings at z 1000) and the
+ * window drag region (z 9999), so keyboard shortcuts still work and the
+ * window stays draggable.
+ *
+ * When focus mode is active, the three-column layout is hidden but
+ * kept mounted so the compact NowPlayingView's palette extraction keeps
+ * firing on track change. The overlay has no background of its own —
+ * the global UltraBlurBackground (z 0) shows through.
  */
 
 /* --- Marquee text (back-and-forth scroll on overflow) ---
  *
- * Used by `MarqueeText.tsx` for long Now Playing track / album / artist
- * titles. The component owns the JS measurement and toggles
- * `.marquee--active` on the outer wrapper when the inner span overflows.
- * `--marquee-dist` and `--marquee-duration` are set inline by the
- * component so a single keyframe block serves every instance.
+ * Used by `MarqueeText.tsx`. The component toggles `.marquee--active`
+ * on overflow and sets `--marquee-dist` / `--marquee-duration` inline.
  */
 .marquee-inner {
   display: inline-block;
@@ -2634,7 +2630,7 @@ textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* Required for vertical alignment with sibling text — do not change. */
+  /* Load-bearing: required for vertical alignment with sibling text. */
   vertical-align: top;
   will-change: transform;
 }
@@ -2666,13 +2662,11 @@ body.focus-mode-active .three-column-layout {
   pointer-events: none;
 }
 
-/* --- Native fullscreen: hide custom chrome & reclaim its 32px ---
+/* --- Native fullscreen: hide custom chrome and reclaim its 32px ---
  *
- * In macOS fullscreen the system menu bar still auto-reveals at the top
- * edge, which is the user's escape hatch (View > Exit Full Screen / ⌃⌘F).
- * Our custom drag region would otherwise sit underneath, doubling up —
- * so drop it entirely and zero out the 32px padding-top / top offsets
- * that exist to clear it.
+ * In macOS fullscreen the system menu bar auto-reveals at the top edge
+ * (View > Exit Full Screen / ⌃⌘F). Hide the custom drag region and zero
+ * the 32px top padding / offsets otherwise required to clear it.
  */
 body.is-fullscreen .drag-region {
   display: none;
@@ -2689,7 +2683,7 @@ body.is-fullscreen .focus-body {
 
 .focus-overlay {
   position: fixed;
-  inset: 0; /* full window; visualiser can paint behind the drag region */
+  inset: 0; /* full window so the visualiser can paint behind the drag region */
   z-index: 500;
   overflow: hidden;
   animation: focus-scale-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -2708,11 +2702,10 @@ body.is-fullscreen .focus-body {
 }
 
 /* Full-window visualiser background layer. Sits behind the art and
- * controls and paints all the way up to the top edge of the window (the
- * transparent drag region at z 9999 sits on top and still intercepts
- * drags). The bars occupy the top ~40% of the window per
- * BAR_MAX_HEIGHT_PCT in FocusVisualizer.tsx — the canvas spans the
- * whole window but anything below that threshold is left transparent. */
+ * controls and paints up to the top edge; the transparent drag region
+ * at z 9999 sits on top and still intercepts drags. Canvas spans the
+ * whole window; below BAR_MAX_HEIGHT_PCT (see FocusVisualizer.tsx) is
+ * left transparent. */
 .focus-visualizer {
   position: absolute;
   inset: 0;
@@ -2726,19 +2719,17 @@ body.is-fullscreen .focus-body {
   height: 100%;
 }
 
-/* Placeholder state — shown while the per-track spectrogram is being
- * analysed, or when the track can't be analysed at all (transcoded,
- * unsupported codec, etc.). Centred horizontally in the same top strip
- * the bars would occupy, so the focus layout stays stable on state
- * transitions. The `.is-muted` modifier drops opacity for terminal
- * states like "transcoding" to make them feel informational rather
- * than in-progress. */
+/* Placeholder shown while the spectrogram is Analysing or Unavailable
+ * (transcoded, unsupported codec, etc.). Centred in the same top strip
+ * the bars will occupy, so the focus layout stays stable across state
+ * transitions. `.is-muted` drops opacity for terminal states so they
+ * feel informational rather than in-progress. */
 .focus-visualizer-placeholder {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  /* Sits at the very top of the focus area so it occupies roughly the
-   * same vertical strip the bars do once analysis completes. */
+  /* Top of the focus area, matching the vertical strip the bars occupy
+   * once analysis completes. */
   padding-top: 1.5vh;
 }
 
@@ -2766,10 +2757,9 @@ body.is-fullscreen .focus-body {
   }
 }
 
-/* Main body: 50/50 art | controls split */
-/* Art + controls layer. Sits on top of the visualiser background, offset
- * from the top by the drag-region height so album art / text never
- * collides with the traffic-light buttons. */
+/* Main body: 50/50 art | controls split. Sits above the visualiser,
+ * offset from the top by the drag-region height so art/text never
+ * collides with traffic-light buttons. */
 .focus-body {
   position: absolute;
   top: 32px;
@@ -2854,12 +2844,11 @@ body.is-fullscreen .focus-body {
 
 .focus-album-row {
   display: flex;
-  /* `center` instead of `baseline` because the album title is wrapped in
-   * a MarqueeText `div` whose inner `inline-block` span has
-   * `overflow: hidden` — per CSS spec that collapses the span's baseline
-   * to the bottom margin edge, which drags sibling text (the year) out
-   * of line. Compact `.np-album-row` already uses center for the same
-   * reason. */
+  /* `center` rather than `baseline`: the album title is wrapped in a
+   * MarqueeText whose inner inline-block span has `overflow: hidden`.
+   * Per CSS spec that collapses the span's baseline to its bottom
+   * margin edge, which drags the sibling year out of line. Compact
+   * `.np-album-row` uses `center` for the same reason. */
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -2958,7 +2947,7 @@ body.is-fullscreen .focus-body {
   padding-top: 8px;
 }
 
-/* Focus stopped state — suggestion card when queue is exhausted */
+/* Focus stopped state: suggestion card when the queue is exhausted. */
 
 .focus-stopped-view {
   position: absolute;
@@ -3073,7 +3062,7 @@ body.is-fullscreen .focus-body {
   height: 32px;
 }
 
-/* The compact panel's expand-to-focus-mode button */
+/* Compact panel's expand-to-focus-mode button. */
 
 .np-focus-btn {
   background: none;

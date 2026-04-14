@@ -1,10 +1,8 @@
-//! Plex API response models — pure data structs for JSON deserialization.
+//! Plex API response models. Pure data structs for JSON deserialization.
 
 use serde::Deserialize;
 
 use crate::models::UltraBlurColors;
-
-// --- Public item models ---
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,7 +19,7 @@ pub struct MediaItem {
     pub index: Option<i32>,
     pub parent_index: Option<i32>,
     pub year: Option<i32>,
-    /// Duration in milliseconds — convert to seconds at the boundary.
+    /// Duration in milliseconds. Convert to seconds at the boundary.
     pub duration: Option<i64>,
     pub updated_at: Option<i64>,
     pub added_at: Option<i64>,
@@ -68,7 +66,7 @@ pub struct StreamInfo {
     pub provider: Option<String>,
 }
 
-// `timed` can be a JSON bool or int; custom Deserialize handles both.
+// `timed` may be a JSON bool or int.
 impl<'de> Deserialize<'de> for StreamInfo {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
@@ -112,7 +110,7 @@ pub struct LevelSample {
     pub v: f32,
 }
 
-// --- Response wrappers (Plex wraps all responses in MediaContainer) ---
+// Plex wraps all responses in a `MediaContainer`.
 
 #[derive(Debug, Deserialize)]
 pub struct MediaContainerResponse {
@@ -138,7 +136,7 @@ pub(super) struct LibrarySectionsContainer {
     pub directory: Option<Vec<LibrarySectionRaw>>,
 }
 
-/// Raw representation — Plex uses `type` as the field name.
+/// Raw representation. Plex uses `type` as the JSON field name.
 #[derive(Debug, Deserialize)]
 pub(super) struct LibrarySectionRaw {
     pub key: String,
@@ -159,7 +157,7 @@ pub(super) struct LevelsContainer {
     pub level: Option<Vec<LevelSample>>,
 }
 
-// --- plex.tv server discovery responses ---
+// plex.tv server discovery responses.
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

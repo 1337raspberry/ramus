@@ -1,8 +1,7 @@
-//! LRU disk-based image cache for album art.
+//! Disk-backed LRU cache for album art.
 //!
-//! Stores downloaded images on disk with SHA-256 hashed filenames.
-//! Metadata (entries + LRU order) is persisted to a JSON sidecar file
-//! so cache state survives app restarts.
+//! Images are stored under SHA-256-hashed filenames. Entries and LRU order
+//! persist to a JSON sidecar so cache state survives restarts.
 
 use std::collections::HashMap;
 use std::fs;
@@ -28,12 +27,13 @@ struct CacheMeta {
 pub struct ImageCache {
     cache_dir: PathBuf,
     entries: HashMap<String, CacheEntry>,
-    access_order: Vec<String>, // oldest first
+    /// Oldest first.
+    access_order: Vec<String>,
     limit_bytes: u64,
 }
 
 impl ImageCache {
-    /// Load an existing cache from disk, or create an empty one.
+    /// Load an existing cache from disk, or return an empty one.
     pub fn load(cache_dir: PathBuf, limit_bytes: u64) -> Self {
         let meta_path = cache_dir.join(META_FILENAME);
         let meta = fs::read(&meta_path)
@@ -41,7 +41,6 @@ impl ImageCache {
             .and_then(|data| serde_json::from_slice::<CacheMeta>(&data).ok())
             .unwrap_or_default();
 
-        // Prune stale entries whose files no longer exist
         let mut entries = HashMap::new();
         let mut access_order = Vec::new();
         for key in &meta.access_order {
@@ -63,27 +62,24 @@ impl ImageCache {
         cache
     }
 
-    /// Build a deterministic cache key from thumb path + size.
+    /// Deterministic cache key from thumb path and size.
     fn cache_key(thumb: &str, size: u32) -> String {
         let input = format!("{}_{}", thumb, size);
         let hash = Sha256::digest(input.as_bytes());
         hex::encode(hash)
     }
 
-    /// Look up a cached image. Returns the file path on hit, touching
-    /// the entry to mark it as recently used.
+    /// Look up a cached image. Marks the entry as most-recently-used on hit.
     pub fn get(&mut self, thumb: &str, size: u32) -> Option<PathBuf> {
         let key = Self::cache_key(thumb, size);
         let entry = self.entries.get(&key)?;
 
         if !entry.path.exists() {
-            // File was deleted externally — clean up
             self.entries.remove(&key);
             self.access_order.retain(|k| k != &key);
             return None;
         }
 
-        // Move to most-recently-used position
         self.access_order.retain(|k| k != &key);
         self.access_order.push(key);
 
@@ -94,7 +90,7 @@ impl ImageCache {
     pub fn insert(&mut self, thumb: &str, size: u32, data: &[u8]) -> Result<PathBuf, String> {
         let key = Self::cache_key(thumb, size);
 
-        // Already cached (race with concurrent download)
+        // Concurrent download may already have populated this entry.
         if let Some(entry) = self.entries.get(&key) {
             if entry.path.exists() {
                 return Ok(entry.path.clone());
@@ -108,7 +104,6 @@ impl ImageCache {
 
         let file_size = data.len() as u64;
 
-        // Remove old entry if updating
         self.access_order.retain(|k| k != &key);
         self.entries.insert(
             key.clone(),
@@ -150,8 +145,6 @@ impl ImageCache {
         self.entries.len()
     }
 
-    // --- Internals ---
-
     fn evict_if_needed(&mut self) {
         while self.total_size() > self.limit_bytes && !self.access_order.is_empty() {
             let key = self.access_order.remove(0);
@@ -172,8 +165,6 @@ impl ImageCache {
     }
 }
 
-// --- Hex encoding (avoids adding a dependency) ---
-
 fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
@@ -182,14 +173,12 @@ fn hex_encode(bytes: &[u8]) -> String {
     s
 }
 
-// Shim module to use local hex_encode in cache_key
+/// Shim module so `cache_key` can use the local `hex_encode` without adding a dep.
 mod hex {
     pub fn encode(bytes: impl AsRef<[u8]>) -> String {
         super::hex_encode(bytes.as_ref())
     }
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -221,15 +210,14 @@ mod tests {
 
     #[test]
     fn test_lru_eviction() {
-        let (mut cache, _dir) = temp_cache(30); // tiny limit
-        cache.insert("/a", 100, b"aaaaaaaaaa").unwrap(); // 10 bytes
-        cache.insert("/b", 100, b"bbbbbbbbbb").unwrap(); // 10 bytes
-        cache.insert("/c", 100, b"cccccccccc").unwrap(); // 10 bytes
-        // 30 bytes total = at limit
+        let (mut cache, _dir) = temp_cache(30);
+        cache.insert("/a", 100, b"aaaaaaaaaa").unwrap();
+        cache.insert("/b", 100, b"bbbbbbbbbb").unwrap();
+        cache.insert("/c", 100, b"cccccccccc").unwrap();
         assert_eq!(cache.entry_count(), 3);
 
-        cache.insert("/d", 100, b"dddddddddd").unwrap(); // 40 > 30 → evict oldest
-        assert!(cache.get("/a", 100).is_none()); // evicted
+        cache.insert("/d", 100, b"dddddddddd").unwrap();
+        assert!(cache.get("/a", 100).is_none());
         assert!(cache.get("/d", 100).is_some());
     }
 
@@ -240,12 +228,12 @@ mod tests {
         cache.insert("/b", 100, b"bbbbbbbbbb").unwrap();
         cache.insert("/c", 100, b"cccccccccc").unwrap();
 
-        // Touch /a so it's MRU
+        // Touch /a so it becomes MRU.
         cache.get("/a", 100);
 
         cache.insert("/d", 100, b"dddddddddd").unwrap();
-        assert!(cache.get("/a", 100).is_some()); // kept (was MRU)
-        assert!(cache.get("/b", 100).is_none()); // evicted (was oldest)
+        assert!(cache.get("/a", 100).is_some());
+        assert!(cache.get("/b", 100).is_none());
     }
 
     #[test]
@@ -271,7 +259,6 @@ mod tests {
             assert_eq!(cache.entry_count(), 1);
         }
 
-        // Reload from disk
         let mut cache = ImageCache::load(path, 1_000_000);
         assert_eq!(cache.entry_count(), 1);
         assert!(cache.get("/thumb/1", 300).is_some());
@@ -288,7 +275,6 @@ mod tests {
             file_path = cache.insert("/thumb/1", 300, b"data").unwrap();
         }
 
-        // Delete the file externally
         fs::remove_file(&file_path).unwrap();
 
         let mut cache = ImageCache::load(path, 1_000_000);
@@ -299,11 +285,11 @@ mod tests {
     #[test]
     fn test_set_limit_triggers_eviction() {
         let (mut cache, _dir) = temp_cache(1_000_000);
-        cache.insert("/a", 100, b"aaaaaaaaaa").unwrap(); // 10 bytes
-        cache.insert("/b", 100, b"bbbbbbbbbb").unwrap(); // 10 bytes
+        cache.insert("/a", 100, b"aaaaaaaaaa").unwrap();
+        cache.insert("/b", 100, b"bbbbbbbbbb").unwrap();
         assert_eq!(cache.entry_count(), 2);
 
-        cache.set_limit(15); // only room for ~1 entry
+        cache.set_limit(15);
         assert_eq!(cache.entry_count(), 1);
     }
 }

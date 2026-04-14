@@ -7,8 +7,6 @@ use crate::cache::db::{CacheDatabase, CacheError};
 use crate::cache::upsert::{AlbumUpsertRow, TrackUpsertRow};
 use crate::plex::client::{MediaItem, PlexClient, PlexClientError};
 
-// --- Progress ---
-
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SyncPhase {
@@ -38,8 +36,6 @@ impl SyncProgress {
     }
 }
 
-// --- Errors ---
-
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
     #[error("plex error: {0}")]
@@ -47,8 +43,6 @@ pub enum SyncError {
     #[error("cache error: {0}")]
     Cache(#[from] CacheError),
 }
-
-// --- SyncEngine ---
 
 const BATCH_SIZE: usize = 500;
 const DEEP_GENRE_CONCURRENCY: usize = 8;
@@ -76,7 +70,6 @@ impl SyncEngine {
         let (album_map, _) =
             self.core_sync(library_key, false, on_progress.clone()).await?;
 
-        // Phase 4: deep genre sync for ALL albums
         self.deep_genre_sync(&album_map, None, on_progress.clone())
             .await?;
 
@@ -120,7 +113,7 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Genre sync only: re-fetches full metadata for ALL albums to get complete genre lists.
+    /// Genre sync only: re-fetches full metadata for all albums to populate complete genre lists.
     pub async fn genre_sync<F>(
         &self,
         on_progress: F,
@@ -145,15 +138,12 @@ impl SyncEngine {
         Ok(())
     }
 
-    // --- Core sync (Phases 1-3) ---
-
     async fn core_sync(
         &self,
         library_key: &str,
         incremental: bool,
         on_progress: Arc<dyn Fn(SyncProgress) + Send + Sync>,
     ) -> Result<(HashMap<String, i64>, HashSet<String>), SyncError> {
-        // Pre-load cached timestamps for incremental mode
         let cached_artists;
         let cached_albums;
         let cached_tracks;
@@ -168,7 +158,6 @@ impl SyncEngine {
             cached_tracks = HashMap::new();
         }
 
-        // Phase 1: Artists
         on_progress(SyncProgress {
             phase: SyncPhase::Artists,
             current: 0,
@@ -182,7 +171,6 @@ impl SyncEngine {
         let artist_map =
             self.sync_artists(&artist_items, &cached_artists, incremental, on_progress.as_ref())?;
 
-        // Phase 2: Albums
         on_progress(SyncProgress {
             phase: SyncPhase::Albums,
             current: 0,
@@ -201,7 +189,6 @@ impl SyncEngine {
             on_progress.as_ref(),
         )?;
 
-        // Phase 3: Tracks
         on_progress(SyncProgress {
             phase: SyncPhase::Tracks,
             current: 0,
@@ -221,9 +208,8 @@ impl SyncEngine {
             on_progress.as_ref(),
         )?;
 
-        // Prune: remove local items that no longer exist on Plex.
-        // Both full and incremental fetched ALL items, so we have the
-        // complete "live" set of sourceIds for each type.
+        // Prune local items no longer on Plex. Both sync modes fetch the full
+        // set of sourceIds for each type, so this is the authoritative live set.
         let plex_artist_ids: HashSet<String> =
             artist_items.iter().map(|i| i.rating_key.clone()).collect();
         let plex_album_ids: HashSet<String> =
@@ -253,8 +239,6 @@ impl SyncEngine {
         Ok((album_map, changed_source_ids))
     }
 
-    // --- Phase 1: Artists ---
-
     fn sync_artists(
         &self,
         items: &[MediaItem],
@@ -264,14 +248,12 @@ impl SyncEngine {
     ) -> Result<HashMap<String, i64>, SyncError> {
         let mut map: HashMap<String, i64> = HashMap::new();
 
-        // Pre-seed from cache for incremental
         if incremental {
             for (source_id, info) in cached {
                 map.insert(source_id.clone(), info.id);
             }
         }
 
-        // Collect changed items
         type ArtistTuple = (String, Option<String>, String, Option<String>, Option<String>, Option<i64>);
         let mut changed: Vec<ArtistTuple> = Vec::new();
 
@@ -293,7 +275,6 @@ impl SyncEngine {
             ));
         }
 
-        // Batch upsert
         let total = changed.len();
         for start in (0..total).step_by(BATCH_SIZE) {
             let end = (start + BATCH_SIZE).min(total);
@@ -311,8 +292,6 @@ impl SyncEngine {
         Ok(map)
     }
 
-    // --- Phase 2: Albums ---
-
     fn sync_albums(
         &self,
         items: &[MediaItem],
@@ -324,7 +303,6 @@ impl SyncEngine {
         let mut map: HashMap<String, i64> = HashMap::new();
         let mut changed_ids: HashSet<String> = HashSet::new();
 
-        // Pre-seed from cache
         if incremental {
             for (source_id, info) in cached {
                 map.insert(source_id.clone(), info.id);
@@ -332,7 +310,7 @@ impl SyncEngine {
         }
 
         let mut changed: Vec<AlbumUpsertRow> = Vec::new();
-        let mut genre_links: Vec<(String, String)> = Vec::new(); // (album_source_id, genre_name)
+        let mut genre_links: Vec<(String, String)> = Vec::new();
 
         for item in items {
             let artist_key = item.parent_rating_key.as_deref().unwrap_or("");
@@ -344,10 +322,10 @@ impl SyncEngine {
                 },
             };
 
-            // API-order first genre, lowercased — stored as firstGenre and
-            // compared against the next sync's first-in-API-order genre to
-            // detect genre-only edits. MUST be API order, not alphabetical,
-            // or every multi-genre album looks "changed" on every sync.
+            // API-order first genre, lowercased. Stored as firstGenre and
+            // compared against the next sync's API-order first genre to detect
+            // genre-only edits. Must be API order, not alphabetical, or every
+            // multi-genre album looks changed on every sync.
             let api_genre = item
                 .genre
                 .as_ref()
@@ -357,15 +335,13 @@ impl SyncEngine {
             let is_changed = if incremental {
                 if let Some(info) = cached.get(&item.rating_key) {
                     let timestamp_changed = info.updated_at != item.updated_at;
-                    // Only compare when we have a cached value. NULL
-                    // firstGenre means the row predates this column — trust
-                    // updatedAt for this sync; the row will get a real
-                    // value written below.
+                    // NULL firstGenre means the row predates the column —
+                    // trust updatedAt for this sync; the value gets written below.
                     let cached_genre = info.first_genre.as_ref().map(|g| g.to_lowercase());
                     let genre_changed = cached_genre.is_some() && api_genre != cached_genre;
                     timestamp_changed || genre_changed
                 } else {
-                    true // new album
+                    true
                 }
             } else {
                 true
@@ -385,14 +361,13 @@ impl SyncEngine {
                 });
                 changed_ids.insert(item.rating_key.clone());
 
-                // Collect shallow genre link (list views return only 1 genre)
+                // List views return only the first genre; deep fetch fills in the rest.
                 if let Some(genre) = item.genre.as_ref().and_then(|g| g.first()) {
                     genre_links.push((item.rating_key.clone(), genre.tag.clone()));
                 }
             }
         }
 
-        // Batch upsert changed albums
         let total = changed.len();
         for start in (0..total).step_by(BATCH_SIZE) {
             let end = (start + BATCH_SIZE).min(total);
@@ -407,7 +382,6 @@ impl SyncEngine {
             });
         }
 
-        // Batch upsert genre links
         if !genre_links.is_empty() {
             let link_rows: Vec<(i64, Vec<String>)> = genre_links
                 .into_iter()
@@ -420,8 +394,6 @@ impl SyncEngine {
 
         Ok((map, changed_ids))
     }
-
-    // --- Phase 3: Tracks ---
 
     fn sync_tracks(
         &self,
@@ -461,7 +433,6 @@ impl SyncEngine {
                 },
             };
 
-            // Audio stream extraction
             let audio_stream = item
                 .media
                 .as_ref()
@@ -514,7 +485,6 @@ impl SyncEngine {
             });
         }
 
-        // Batch upsert
         let total = changed.len();
         for start in (0..total).step_by(BATCH_SIZE) {
             let end = (start + BATCH_SIZE).min(total);
@@ -530,8 +500,6 @@ impl SyncEngine {
 
         Ok(())
     }
-
-    // --- Phase 4: Deep Genre Sync ---
 
     async fn deep_genre_sync(
         &self,
@@ -580,9 +548,7 @@ impl SyncEngine {
                     Err(SyncError::Plex(PlexClientError::NotConnected)) => {
                         return Err(SyncError::Plex(PlexClientError::NotConnected));
                     }
-                    Err(_) => {
-                        // Skip individual album failures
-                    }
+                    Err(_) => {}
                 }
 
                 let count = completed
@@ -605,7 +571,7 @@ impl SyncEngine {
             match handle.await {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => return Err(e),
-                Err(_join_err) => {} // task panicked, skip
+                Err(_join_err) => {}
             }
         }
 
@@ -613,7 +579,7 @@ impl SyncEngine {
     }
 }
 
-/// Process a single album's deep metadata fetch + DB write.
+/// Fetch deep metadata for a single album and write it to the cache.
 async fn process_album_deep_sync(
     source_id: &str,
     album_id: i64,
@@ -640,8 +606,6 @@ async fn process_album_deep_sync(
 
     Ok(())
 }
-
-// --- Tests ---
 
 #[cfg(test)]
 mod tests {
@@ -715,9 +679,7 @@ mod tests {
         obj
     }
 
-    // Mount mocks for a simple library: 1 artist, 1 album, 1 track
     async fn mount_simple_library(server: &MockServer) {
-        // Artists (type=8)
         Mock::given(method("GET"))
             .and(path("/library/sections/1/all"))
             .and(query_param("type", "8"))
@@ -731,7 +693,6 @@ mod tests {
             .mount(server)
             .await;
 
-        // Albums (type=9)
         Mock::given(method("GET"))
             .and(path("/library/sections/1/all"))
             .and(query_param("type", "9"))
@@ -745,7 +706,6 @@ mod tests {
             .mount(server)
             .await;
 
-        // Tracks (type=10)
         Mock::given(method("GET"))
             .and(path("/library/sections/1/all"))
             .and(query_param("type", "10"))
@@ -759,7 +719,6 @@ mod tests {
             .mount(server)
             .await;
 
-        // Deep metadata for album
         Mock::given(method("GET"))
             .and(path("/library/metadata/al1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -796,19 +755,16 @@ mod tests {
             .await
             .unwrap();
 
-        // Verify data was synced
         let stats = cache.cache_stats().unwrap();
         assert_eq!(stats.artist_count, 1);
         assert_eq!(stats.album_count, 1);
         assert_eq!(stats.track_count, 1);
-        assert!(stats.genre_count >= 1); // at least Rock from shallow + deep
+        assert!(stats.genre_count >= 1);
 
-        // Verify deep genres were fetched
         let genres = cache.album_genres("al1").unwrap();
         assert!(genres.contains(&"Rock".into()));
         assert!(genres.contains(&"Alternative Rock".into()));
 
-        // Verify progress was called
         assert!(progress_count.load(Ordering::Relaxed) > 0);
     }
 
@@ -821,11 +777,8 @@ mod tests {
         let client = setup_client(&server.uri());
         let engine = SyncEngine::new(cache.clone(), client.clone());
 
-        // First: full sync
         engine.full_sync("1", |_| {}).await.unwrap();
 
-        // Now run incremental — nothing changed, so no deep fetches should happen
-        // We verify by checking that genre data is still the same
         let engine2 = SyncEngine::new(cache.clone(), client);
         engine2.incremental_sync("1", |_| {}).await.unwrap();
 
@@ -844,13 +797,11 @@ mod tests {
         let client = setup_client(&server.uri());
         let engine = SyncEngine::new(cache.clone(), client);
 
-        // Full sync first
         engine.full_sync("1", |_| {}).await.unwrap();
 
-        // Now set up a new server where the album's genre changed but updatedAt didn't
+        // Server2: same updatedAt, different genre.
         let server2 = MockServer::start().await;
 
-        // Artists unchanged
         Mock::given(method("GET"))
             .and(path("/library/sections/1/all"))
             .and(query_param("type", "8"))
@@ -864,7 +815,6 @@ mod tests {
             .mount(&server2)
             .await;
 
-        // Album: same updatedAt but different genre
         Mock::given(method("GET"))
             .and(path("/library/sections/1/all"))
             .and(query_param("type", "9"))
@@ -878,7 +828,6 @@ mod tests {
             .mount(&server2)
             .await;
 
-        // Tracks unchanged
         Mock::given(method("GET"))
             .and(path("/library/sections/1/all"))
             .and(query_param("type", "10"))
@@ -892,7 +841,6 @@ mod tests {
             .mount(&server2)
             .await;
 
-        // Deep metadata with new genre
         Mock::given(method("GET"))
             .and(path("/library/metadata/al1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -912,7 +860,6 @@ mod tests {
 
         engine2.incremental_sync("1", |_| {}).await.unwrap();
 
-        // Verify genres were updated
         let genres = cache.album_genres("al1").unwrap();
         assert!(genres.contains(&"Electronic".into()));
         assert!(genres.contains(&"Experimental".into()));
@@ -941,7 +888,6 @@ mod tests {
     async fn test_deep_genre_concurrent_fetch() {
         let server = MockServer::start().await;
 
-        // Set up 10 albums for concurrent deep fetch
         let mut album_metadata = Vec::new();
         for i in 0..10 {
             album_metadata.push(serde_json::json!({
@@ -953,7 +899,6 @@ mod tests {
             }));
         }
 
-        // Artists
         Mock::given(method("GET"))
             .and(path("/library/sections/1/all"))
             .and(query_param("type", "8"))
@@ -965,7 +910,6 @@ mod tests {
             .mount(&server)
             .await;
 
-        // Albums
         Mock::given(method("GET"))
             .and(path("/library/sections/1/all"))
             .and(query_param("type", "9"))
@@ -975,7 +919,6 @@ mod tests {
             .mount(&server)
             .await;
 
-        // Tracks (empty)
         Mock::given(method("GET"))
             .and(path("/library/sections/1/all"))
             .and(query_param("type", "10"))
@@ -985,7 +928,6 @@ mod tests {
             .mount(&server)
             .await;
 
-        // Deep metadata for each album
         for i in 0..10 {
             Mock::given(method("GET"))
                 .and(path(format!("/library/metadata/al{}", i)))
@@ -1010,8 +952,7 @@ mod tests {
 
         let stats = cache.cache_stats().unwrap();
         assert_eq!(stats.album_count, 10);
-        // Each album has 2 genres: "Rock" + "GenreN"
-        // Rock is shared, so total unique genres = 1 + 10 = 11
+        // 2 genres per album ("Rock" + "GenreN"); "Rock" is shared → 11 unique.
         assert_eq!(stats.genre_count, 11);
     }
 }

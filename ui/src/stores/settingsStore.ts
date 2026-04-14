@@ -7,7 +7,6 @@ interface SettingsState extends Settings {
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
-  // Defaults (overwritten once loadSettings completes)
   playbackMode: "directPlay",
   lookaheadDepth: 3,
   audioCacheLimitBytes: 2_147_483_648,
@@ -27,7 +26,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       const s = await getSettings();
       set(s);
     } catch {
-      // keep defaults
+      // retain defaults
     }
   },
 }));

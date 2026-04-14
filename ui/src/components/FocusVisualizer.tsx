@@ -5,47 +5,39 @@ import { spectrumKind, type SpectrumFrames, type SpectrumState } from "../lib/ty
 import { accentFromPalette } from "../lib/vibrantColor";
 
 /**
- * Focus-mode FFT visualiser — 128-band mirrored spectrogram.
+ * Focus-mode 128-band mirrored FFT visualiser.
  *
  * Data source: `spectrumState` in `playbackStore`, populated from the
- * `get_spectrum` Tauri command (per-track precomputed spectrograms from
- * symphonia + realfft in Rust). No live audio metering — the old astats
- * pulse path is gone. Sync is automatic because we look up frames by
- * `floor(positionMs / hopMs)` using mpv's own `time-pos`, so bars align
- * sample-accurately with whatever the speakers are playing.
+ * `get_spectrum` Tauri command (per-track precomputed spectrograms via
+ * symphonia + realfft). No live metering. Sync is automatic: frames are
+ * indexed by `floor(positionMs / hopMs)` against mpv's `time-pos`, so
+ * bars align sample-accurately with the speakers.
  *
- * Placeholder states (shown before the spectrogram is ready):
+ * Placeholder states:
  *   - "analysing"   → "Analysing audio…" label
- *   - "unavailable" → "Visualiser not available while transcoding" (or
- *                     whatever `reason` the backend supplies)
+ *   - "unavailable" → reason-specific label supplied by the backend
  *
- * Ready-state rendering modes, cycled by the wave-icon button in
- * FocusNowPlayingView's track row (`playbackStore.cycleVisualizerMode`):
+ * Ready-state rendering modes (cycled by `cycleVisualizerMode`):
  *
- *   - "bars" → 256 mirrored bars across the top. 128 FFT bands are
- *     rendered **twice** (once per half of the canvas, mirrored about
- *     the vertical centreline), so bass sits in the middle and treble
- *     at both outer edges, producing a symmetric mountain silhouette.
+ *   - "bars" → 256 mirrored bars. 128 bands render twice, mirrored
+ *     about the centreline, so bass sits in the middle and treble at
+ *     both edges.
  *
- *       bar index 0  → band 127 (highest treble, far left)
- *       bar index 127→ band 0   (lowest bass, just left of centre)
- *       bar index 128→ band 0   (lowest bass, just right of centre)
- *       bar index 255→ band 127 (highest treble, far right)
+ *       bar 0   → band 127 (highest treble, far left)
+ *       bar 127 → band 0   (lowest bass, just left of centre)
+ *       bar 128 → band 0   (lowest bass, just right of centre)
+ *       bar 255 → band 127 (highest treble, far right)
  *
- *   - "line" → a single smoothed curve across the full width, filled
- *     from the top edge down. Uses the same underlying eased bar
- *     heights but passes them through a moving-average window and
- *     draws a filled path with quadratic curves between points for a
- *     glassy organic look. Smoothing window size is controlled by
- *     `LINE_SMOOTHING_WINDOW`.
+ *   - "line" → single smoothed curve across the full width, filled
+ *     from the top edge down. Same eased bar heights passed through a
+ *     moving-average window, drawn as a quadratic path.
  *
- * Mode switches don't remount the canvas — the draw loop reads
- * `playbackStore.visualizerMode` via `getState()` each frame and
- * branches. This keeps the eased-height buffer continuous across
- * bars↔line transitions so there's no flicker.
+ * Mode switches do not remount the canvas; the draw loop reads
+ * `visualizerMode` via `getState()` each frame so the eased-height
+ * buffer stays continuous across bars ↔ line transitions.
  */
 
-const BAR_COUNT = 256; // 128 bands × 2 mirrored halves
+const BAR_COUNT = 256; // 128 bands * 2 mirrored halves
 const HALF_BAR_COUNT = BAR_COUNT / 2;
 
 const BAR_MAX_HEIGHT_PCT = 20;
@@ -66,18 +58,17 @@ const LINE_SMOOTHING_WINDOW = 12;
 /** Map a canvas bar index (0..255) to its source band index (0..127). */
 function barToBand(barIndex: number): number {
   if (barIndex < HALF_BAR_COUNT) {
-    // Left half: 0 = highest band, HALF_BAR_COUNT-1 = lowest band.
+    // Left half: 0 = highest band, HALF_BAR_COUNT - 1 = lowest band.
     return HALF_BAR_COUNT - 1 - barIndex;
   }
-  // Right half: HALF_BAR_COUNT = lowest band, BAR_COUNT-1 = highest band.
+  // Right half: HALF_BAR_COUNT = lowest band, BAR_COUNT - 1 = highest.
   return barIndex - HALF_BAR_COUNT;
 }
 
 /**
  * Read bar heights for the current frame into `out` (a Uint8Array of
  * length BAR_COUNT). Returns true if a frame was available, false if
- * we're past the end of the spectrogram (in which case the caller
- * decays bars toward zero).
+ * past the end of the spectrogram (caller should decay toward zero).
  */
 function readFrameInto(frames: SpectrumFrames, positionMs: number, out: Uint8Array): boolean {
   const bands = frames.bandCount;
@@ -95,7 +86,6 @@ function readFrameInto(frames: SpectrumFrames, positionMs: number, out: Uint8Arr
   }
 
   const start = frameIdx * bands;
-  // Read through the BAR_COUNT canvas bars via the mirror map.
   for (let i = 0; i < BAR_COUNT; i++) {
     const band = barToBand(i);
     // Guard against a spectrogram with < 128 bands (custom config).
@@ -105,10 +95,8 @@ function readFrameInto(frames: SpectrumFrames, positionMs: number, out: Uint8Arr
 }
 
 /**
- * Convert a serde-serialised `SpectrumFrames` (which arrives as either
- * a plain number[] or a Uint8Array over Tauri IPC) into a view that
- * guarantees constant-time indexed reads. We normalise to Uint8Array
- * once per track change so the RAF hot path never has to type-check.
+ * Normalise `SpectrumFrames.frames` to a Uint8Array so the RAF hot path
+ * gets constant-time indexed reads without type-checking every frame.
  */
 function normaliseFrames(frames: SpectrumFrames): SpectrumFrames {
   if (frames.frames instanceof Uint8Array) return frames;
@@ -118,16 +106,14 @@ function normaliseFrames(frames: SpectrumFrames): SpectrumFrames {
 export default function FocusVisualizer() {
   const disabled = useSettingsStore((s) => s.disableSpectrum);
 
-  // Subscribe to the TOP-LEVEL spectrum state so we can pick between
-  // the canvas and placeholder render. The canvas itself reads position
-  // via getState() inside the RAF loop — that's still the hot path.
+  // Subscribe to the top-level spectrum state so the canvas vs
+  // placeholder choice re-renders. The RAF loop still reads position via
+  // getState() on the hot path.
   const spectrumState = usePlaybackStore((s) => s.spectrumState);
 
-  // Cache the normalised frames for the currently-ready state so the
-  // RAF loop can index into Uint8Array directly without re-normalising
-  // every frame. `useMemo` is keyed on the identity of the underlying
-  // frames — set() creates a new object on every track change, so this
-  // recomputes exactly when it should.
+  // Cache normalised frames so the RAF loop indexes into Uint8Array
+  // directly. Keyed on frames identity — `set` creates a new object per
+  // track change, which is exactly when this should recompute.
   const normalisedFrames = useMemo<SpectrumFrames | null>(() => {
     if (typeof spectrumState === "object" && spectrumState !== null && "ready" in spectrumState) {
       return normaliseFrames(spectrumState.ready);
@@ -139,17 +125,15 @@ export default function FocusVisualizer() {
 
   const kind = spectrumKind(spectrumState ?? "analysing");
 
-  // When we're showing a placeholder there's no need to drive an RAF
-  // loop at all — render plain React. The ready branch below owns its
-  // own canvas + RAF that we tear down on unmount / state change.
+  // Placeholders don't drive an RAF loop. The ready branch owns its own
+  // canvas + RAF, torn down on unmount or state change.
   if (kind !== "ready") {
     return <PlaceholderLayer state={spectrumState} />;
   }
 
-  // Ready path: render the canvas layer. Pull `normalisedFrames!` — the
-  // memo resolved it to non-null for the "ready" kind. The layer reads
-  // `visualizerMode` via getState() each frame so mode cycling doesn't
-  // remount the canvas.
+  // `normalisedFrames!` is non-null for the "ready" kind. The layer
+  // reads `visualizerMode` via getState() each frame so mode cycling
+  // does not remount the canvas.
   return <CanvasLayer frames={normalisedFrames!} />;
 }
 
@@ -186,11 +170,10 @@ function PlaceholderLayer({ state }: { state: SpectrumState | null }) {
 // --- Canvas layer (bars + line modes share one canvas + RAF) ---
 
 /**
- * In-place moving-average smoothing over `src[]` with a symmetric
- * window of `windowSize` samples. Writes into `out[]`, which must have
- * the same length as `src`. O(n·windowSize) per call — fine for
- * n=256, window<=40 at 60 fps. Used by the line-mode draw path to
- * turn the jagged per-band eased heights into a continuous curve.
+ * Symmetric moving-average smoothing over `src`, writing into `out`
+ * (same length). O(n*windowSize) per call; fine for n=256, window<=40 at
+ * 60 fps. Used by line mode to turn per-band eased heights into a
+ * continuous curve.
  */
 function smoothLineInto(src: Float32Array, windowSize: number, out: Float32Array): void {
   const n = src.length;
@@ -212,32 +195,26 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
   // Persistent per-bar eased height so bars decay smoothly between
   // frames rather than snapping. Float32 for cheap lerping.
   const currentRef = useRef<Float32Array>(new Float32Array(BAR_COUNT));
-  // Reusable scratch buffer so the RAF loop doesn't allocate every frame.
+  // Reusable scratch buffer; avoids allocation on the RAF hot path.
   const scratchRef = useRef<Uint8Array>(new Uint8Array(BAR_COUNT));
-  // Line-mode smoothing output buffer, reused across frames so the
-  // moving-average pass doesn't allocate every frame.
+  // Reused line-mode smoothing output buffer.
   const smoothedLineRef = useRef<Float32Array>(new Float32Array(BAR_COUNT));
 
-  // Bass-decorrelation noise tables — one value per *band* (not per
-  // bar) so left/right mirror bars using the same band stay in sync
-  // and the overall mirror symmetry is preserved. Random phase +
-  // slow-ish frequency per band means adjacent bands wobble out of
-  // phase with each other, which breaks the lockstep on sub-bin
-  // bands that all read the same FFT bin. See the draw loop below
-  // for the gating logic — BASS_NOISE_AMOUNT controls the peak
-  // wobble magnitude as a fraction of bar height.
-  // Only used by the "bars" draw branch — the "line" branch's
-  // horizontal smoothing averages the lockstep out on its own.
+  // Bass-decorrelation noise tables, one value per *band* (not per
+  // bar) so left/right mirror bars stay in sync and mirror symmetry is
+  // preserved. Random phase and slow per-band frequency mean adjacent
+  // bands wobble out of phase, breaking lockstep on sub-bin bands that
+  // read the same FFT bin. BASS_NOISE_AMOUNT sets peak wobble as a
+  // fraction of bar height. Bars mode only; line mode's horizontal
+  // smoothing averages the lockstep out.
   const noisePhasesRef = useRef<Float32Array | null>(null);
   const noiseFreqsRef = useRef<Float32Array | null>(null);
 
-  // Cached accent RGB (as pre-stringified channel values ready for
-  // rgba() template literals). Refreshed via the effect below whenever
-  // the vibrantPalette in playbackStore changes, which is at most once
-  // per track change. The RAF loop reads from this ref every frame
-  // instead of calling `getComputedStyle(document.documentElement)`,
-  // which would otherwise trigger a browser style-recalc query 60× a
-  // second to probe a value that barely ever changes.
+  // Cached accent RGB as pre-stringified channel values for rgba()
+  // template literals. Refreshed by the effect below on vibrantPalette
+  // change (at most once per track). Avoids calling
+  // `getComputedStyle(document.documentElement)` on every frame, which
+  // would trigger a style-recalc 60 times a second.
   const accentRef = useRef<{ r: string; g: string; b: string }>({
     r: "120",
     g: "90",
@@ -246,8 +223,8 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
   const vibrantPalette = usePlaybackStore((s) => s.vibrantPalette);
   useEffect(() => {
     if (!vibrantPalette) {
-      // No palette yet (fresh session, or a track with no art).
-      // Fall back to the same defaults the CSS `:root` rule ships.
+      // Fresh session or a track with no art. Match the CSS `:root`
+      // defaults.
       accentRef.current = { r: "120", g: "90", b: "220" };
       return;
     }
@@ -264,7 +241,7 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
     if (!ctx) return;
 
     // Track DPR and dimensions so the backing store resizes cleanly
-    // across displays (e.g. window drag from 1x to 2x Retina).
+    // when moving between displays (e.g. 1x to 2x Retina).
     let lastW = 0;
     let lastH = 0;
     let lastDpr = 0;
@@ -290,83 +267,74 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
     const resizeObs = new ResizeObserver(() => resize());
     resizeObs.observe(container);
 
-    // Reset eased-height buffer on track change so the old song's tail
-    // doesn't bleed into the new song's intro.
+    // Reset eased-height buffer on track change so the previous
+    // track's tail doesn't bleed into the intro.
     currentRef.current.fill(0);
 
-    // Initialise per-band noise tables on first mount. Re-using across
-    // track changes is fine (and desirable — we don't want the wobble
-    // pattern to jump every time the track changes).
+    // Per-band noise tables initialised once per mount. Reusing across
+    // track changes is intentional so the wobble pattern stays stable.
     if (!noisePhasesRef.current || !noiseFreqsRef.current) {
       const phases = new Float32Array(HALF_BAR_COUNT); // one per band
       const freqs = new Float32Array(HALF_BAR_COUNT);
       for (let i = 0; i < HALF_BAR_COUNT; i++) {
         phases[i] = Math.random() * Math.PI * 2;
-        // 0.6 – 2.4 Hz slow drift — fast enough to visibly decorrelate
-        // adjacent bands, slow enough to look like natural resonance
-        // rather than jitter.
+        // 0.6 – 2.4 Hz: fast enough to decorrelate adjacent bands,
+        // slow enough to look like natural resonance rather than
+        // jitter.
         freqs[i] = 0.6 + Math.random() * 1.8;
       }
       noisePhasesRef.current = phases;
       noiseFreqsRef.current = freqs;
     }
 
-    // Timestamp of the previous RAF callback — used to compute `rawDelta`
-    // for the time-normalised easing below.
+    // Timestamp of the previous RAF callback; feeds `rawDelta` for
+    // time-normalised easing.
     let lastTs = 0;
 
-    // Reference frame interval that EASE_ATTACK / EASE_DECAY were
-    // originally tuned against (≈ 60Hz). We treat the stored values
-    // as "fraction of the remaining gap closed in ONE 16.67ms tick"
-    // and rescale per actual frame dt so the wall-clock behaviour
-    // stays identical on 60Hz, 120Hz, 360Hz, or anything else the
-    // display happens to be. Without this the per-frame lerp
-    // converges 6× faster on a 360Hz display, which visually
-    // collapses the rise/fall animation into a snap+plateau pattern
+    // EASE_ATTACK / EASE_DECAY are tuned against a 60Hz reference.
+    // Rescale per actual frame dt via
+    //   alpha = 1 - (1 - ease) ^ (dt / referenceDt)
+    // so wall-clock behaviour matches across 60/120/360 Hz displays.
+    // Without this the lerp converges 6x faster on a 360Hz display,
+    // collapsing the rise/fall into a snap+plateau pattern
     // synchronised to the 30Hz spectrogram hop rate.
     const EASE_REFERENCE_DT_MS = 1000 / 60;
-    // Clamp the dt we feed into the alpha math so a long hitch (tab
-    // backgrounded, GC pause, debugger stop) doesn't push Math.pow()
-    // into silly extremes. ~100ms covers about 6 reference frames,
-    // which already produces alpha ≈ 1 (effectively a snap) — any
-    // larger and we're just throwing arithmetic at the same result.
+    // Clamp the dt fed into alpha math so long hitches (tab
+    // backgrounded, GC pause, debugger stop) don't push Math.pow into
+    // extreme values. ~100ms (about 6 reference frames) already yields
+    // alpha ≈ 1.
     const EASE_DT_CLAMP_MS = 100;
 
     const render = () => {
       const { w, h } = resize();
       ctx.clearRect(0, 0, w, h);
 
-      // Compute frame delta for time-normalised easing.
+      // Frame delta for time-normalised easing.
       const now = performance.now();
       const rawDelta = lastTs !== 0 ? now - lastTs : 0;
       lastTs = now;
 
-      // Hot-path reads — position is the ground truth for where in the
-      // spectrogram we are. Never subscribe to this via a selector.
+      // Hot-path reads. Position is the ground truth for spectrogram
+      // index — never subscribe via a React selector.
       const playback = usePlaybackStore.getState();
       const isPlaying = playback.status === "playing";
       const positionMs = playback.position * 1000;
-      // Mode is read every frame (not captured in closure) so cycling
-      // bars ↔ line via the wave button takes effect on the next paint
-      // without remounting the canvas / resetting the eased buffer.
+      // Read mode every frame so cycling bars ↔ line takes effect on
+      // the next paint without remounting.
       const mode = playback.visualizerMode;
 
       const scratch = scratchRef.current;
       if (isPlaying) {
         readFrameInto(frames, positionMs, scratch);
       } else {
-        // Paused/stopped: decay toward zero so the bars don't freeze
-        // at whatever the last value was.
+        // Paused/stopped: decay toward zero so bars don't freeze at
+        // the last value.
         scratch.fill(0);
       }
 
-      // Spring-ease each bar toward its target height. EASE_ATTACK /
-      // EASE_DECAY are per-*reference-frame* (60Hz) fractions, so we
-      // rescale them to the actual frame dt via
-      //   alpha = 1 - (1 - ease) ^ (dt / referenceDt)
-      // which is the exponential-decay form of "apply the per-frame
-      // ease `dt/referenceDt` times in a row". Computed once per
-      // frame, not per bar — Math.pow is not cheap enough to run 256×.
+      // Spring-ease each bar toward its target height. Alpha is
+      // computed once per frame, not per bar — Math.pow is not cheap
+      // enough to run 256 times.
       const easeDt = Math.min(rawDelta, EASE_DT_CLAMP_MS);
       const dtRatio = easeDt / EASE_REFERENCE_DT_MS;
       const alphaAttack = easeDt > 0 ? 1 - Math.pow(1 - EASE_ATTACK, dtRatio) : 0;
@@ -379,15 +347,13 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
         current[i] = prev + (target - prev) * alpha;
       }
 
-      // Accent colour from the cached ref — updated by the
-      // vibrantPalette effect above, no per-frame style-recalc cost.
+      // Accent colour from the cached ref; no per-frame style-recalc.
       const { r, g, b } = accentRef.current;
 
       ctx.globalAlpha = GLOBAL_ALPHA;
 
-      // Gradient fill: opaque near the top edge (where the bars
-      // originate), fading to transparent at their bottom tips. Creates
-      // a cohesive glow that doesn't compete with the track title below.
+      // Gradient: opaque at the top edge where bars originate, fading
+      // to transparent at their tips.
       const maxH = (h * BAR_MAX_HEIGHT_PCT) / 100;
       const grad = ctx.createLinearGradient(0, 0, 0, maxH);
       grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${GRADIENT_TOP_OPACITY})`);
@@ -397,44 +363,31 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
       if (mode === "line") {
         // --- Line mode ---
         //
-        // Average the eased bar heights with a symmetric moving-average
-        // window, then draw a filled curve from the top edge down to
-        // the smoothed profile. Using quadratic segments between
-        // consecutive points — each actual point becomes a control
-        // point, with segment midpoints as on-curve anchors — gives a
-        // continuous, glassy curve without needing bezier tension
-        // math. The mirror symmetry of the underlying band data is
-        // preserved automatically because `current[]` is already mirrored
-        // (bars 127 and 128 both read band 0, etc).
+        // Moving-average the eased bar heights, then draw a filled
+        // curve from the top edge down to the smoothed profile.
+        // Quadratic midpoint segments (each point is a control, segment
+        // midpoints are anchors) give a continuous curve without bezier
+        // tension math. Mirror symmetry is preserved because `current`
+        // is already mirrored.
         //
-        // Noise decorrelation is deliberately skipped in this mode —
-        // the horizontal smoothing averages the bass lockstep out on
-        // its own, and adding per-band wobble on top would just add
-        // high-frequency ripple to an otherwise smooth curve.
-        //
+        // Noise decorrelation is skipped here: horizontal smoothing
+        // averages the bass lockstep out on its own.
         const smoothed = smoothedLineRef.current;
         smoothLineInto(current, LINE_SMOOTHING_WINDOW, smoothed);
 
         const n = BAR_COUNT;
         const xStep = n > 1 ? w / (n - 1) : w;
 
-        // Path construction: start from the top-left corner, thread a
-        // quadratic chain through the smoothed heights, close via a
-        // mirror quad to the top-right corner, then `closePath` back
-        // across the top edge. The two closing quads are shaped so
-        // their tangents at (0,0) and (w,0) are VERTICAL, which
-        // matches the implicit top-edge closure perfectly — no kinks
-        // at either edge.
-        //
-        // The midpoint-quadratic technique in the loop (each data
-        // point becomes a control, segment midpoints are the on-curve
-        // anchors) keeps the interior continuous for free.
+        // Path: start top-left, thread a quadratic chain through the
+        // smoothed heights, close via a mirror quad to the top-right,
+        // then closePath across the top edge. The closing quads have
+        // vertical tangents at (0,0) and (w,0) to match the implicit
+        // top-edge closure without kinks.
         ctx.beginPath();
         ctx.moveTo(0, 0);
-        // Left entry quad: tangent at (0,0) points toward the control
-        // (0, bar[0]*maxH) = straight down, matching the top edge's
-        // implicit vertical closure. The anchor at the first segment
-        // midpoint hands off cleanly to the loop below.
+        // Left entry quad: tangent at (0,0) points straight down
+        // toward control (0, bar[0]*maxH), matching the top edge's
+        // implicit vertical closure.
         for (let i = 0; i < n - 1; i++) {
           const x1 = i * xStep;
           const y1 = smoothed[i] * maxH;
@@ -443,8 +396,8 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
           ctx.quadraticCurveTo(x1, y1, (x1 + x2) / 2, (y1 + y2) / 2);
         }
         // Right exit quad: mirror of the entry. Control at
-        // (w, bar[n-1]*maxH), anchor at (w, 0). Tangent at (w, 0) is
-        // vertical, matching the top edge on the other side.
+        // (w, bar[n-1]*maxH), anchor at (w, 0); vertical tangent at
+        // (w, 0) matches the top edge.
         ctx.quadraticCurveTo(w, smoothed[n - 1] * maxH, w, 0);
         ctx.closePath();
         ctx.fill();
@@ -458,19 +411,17 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
           ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${BORDER_OPACITY})`;
         }
 
-        // Bar layout: evenly spaced across the full width. Width is
-        // computed once per frame (resize-aware) from the canvas size.
+        // Even spacing across full width; recomputed per frame for
+        // resize.
         const totalGap = BAR_GAP_PX * (BAR_COUNT - 1);
         const barWidth = Math.max(0.5, (w - totalGap) / BAR_COUNT);
 
-        // Bass decorrelation: for low-frequency bands below the cutoff,
-        // apply a tiny per-band sinusoidal wobble so adjacent bars that
-        // share the same FFT bin don't move in identical lockstep.
-        // Gated on the current amplitude so silent bars stay perfectly
-        // still — noise on near-zero bars would look like flickery
-        // bottom pixels. Applied per BAND (not per bar) so the left
-        // and right mirror halves stay in sync. See the useEffect
-        // init block above for the phase/frequency table.
+        // Bass decorrelation: sub-cutoff bands get a per-band
+        // sinusoidal wobble so adjacent bars sharing an FFT bin don't
+        // lockstep. Gated on amplitude so silent bars stay still
+        // (near-zero bars would otherwise flicker at the bottom).
+        // Applied per band (not per bar) so mirror halves stay in
+        // sync.
         const noisePhases = noisePhasesRef.current;
         const noiseFreqs = noiseFreqsRef.current;
         const noiseActive = BASS_NOISE_AMOUNT > 0 && BASS_NOISE_BAND_CUTOFF > 0;
@@ -499,8 +450,7 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
         }
       }
 
-      // Reset globalAlpha so anything else sharing the canvas (none
-      // today, but defensive) starts fresh.
+      // Reset globalAlpha for any future shared-canvas code paths.
       ctx.globalAlpha = 1.0;
 
       rafRef.current = requestAnimationFrame(render);

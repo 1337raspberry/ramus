@@ -63,7 +63,7 @@ export default function ThreeColumnLayout({ sidebar, content, detail }: Props) {
         const next = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startWidth.current + delta));
         setWidths((prev) => ({ ...prev, sidebar: next }));
       } else {
-        // Right divider: dragging right = narrower detail
+        // Right divider: dragging right narrows the detail column.
         const next = Math.max(DETAIL_MIN, Math.min(DETAIL_MAX, startWidth.current - delta));
         setWidths((prev) => ({ ...prev, detail: next }));
       }

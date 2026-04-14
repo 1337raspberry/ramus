@@ -1,6 +1,7 @@
 //! Plex session reporter. Orchestrates SessionTracker and PlexClient for
-//! periodic timeline updates, scrobble detection, and graceful shutdown
-//! reporting. All public methods are synchronous for use from mpv callbacks.
+//! periodic timeline updates, scrobble detection (at >= 90% progress, once per
+//! track), and graceful shutdown reporting. All public methods are synchronous
+//! for use from mpv callbacks.
 
 use std::sync::{Arc, Weak};
 use std::time::Duration;
@@ -25,7 +26,7 @@ pub struct SessionReporter {
     periodic_active: Arc<Mutex<bool>>,
     /// Whether the periodic loop task has been spawned yet.
     loop_spawned: Mutex<bool>,
-    /// Last rating_key reported via track_started, used to deduplicate the
+    /// Last rating_key reported via track_started; deduplicates the
     /// overlapping calls from play_tracks and on_playlist_pos_change.
     last_started_key: Mutex<Option<String>>,
 }
@@ -48,7 +49,7 @@ impl SessionReporter {
     pub fn track_started(&self, track: &Track, session_id: &str) {
         let mut last = self.last_started_key.lock();
         if last.as_deref() == Some(&track.rating_key) {
-            return; // already reported this track
+            return;
         }
         *last = Some(track.rating_key.clone());
         drop(last);
@@ -58,8 +59,8 @@ impl SessionReporter {
         self.start_periodic();
     }
 
-    /// Scrobble a track if it passed the 90% threshold.
-    /// Called on natural auto-advance and skip transitions.
+    /// Scrobble a track if it passed the 90% threshold. Called on natural
+    /// auto-advance and skip transitions.
     pub fn track_ended(&self, track: &Track) {
         self.update_tracker_position();
         let mut tracker = self.tracker.lock();
@@ -136,8 +137,6 @@ impl SessionReporter {
         }
     }
 
-    // --- Internals ---
-
     fn update_tracker_position(&self) {
         let pos = self.player.position();
         let dur = self.player.duration();
@@ -165,8 +164,8 @@ impl SessionReporter {
         *self.periodic_active.lock() = false;
     }
 
-    /// Lazily spawn the periodic reporting loop. Must be called after
-    /// Tauri's async runtime is available (i.e. after setup).
+    /// Lazily spawn the periodic reporting loop. Must be called after Tauri's
+    /// async runtime is available (i.e. after setup).
     pub fn ensure_loop_spawned(self: &Arc<Self>) {
         let mut spawned = self.loop_spawned.lock();
         if !*spawned {

@@ -1,4 +1,4 @@
-// Typed wrappers around Tauri invoke() for all commands.
+// Typed wrappers around Tauri invoke() for every IPC command.
 
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type {
@@ -91,11 +91,9 @@ export const getAlbum = (sourceId: string) => invoke<Album | null>("get_album", 
 export const getRandomAlbum = () => invoke<Album | null>("get_random_album");
 
 /**
- * Canonical album-art size tiers. Every surface that loads album art should
- * pick one of these — it keeps the per-size on-disk cache bounded to three
- * entries per album and lets different surfaces share cache hits. Adding a
- * fourth tier means every album gets a fourth cached copy, so resist the
- * temptation unless there's a genuine new size class.
+ * Canonical album-art size tiers. Every surface that loads album art must
+ * pick one of these; adding a fourth tier adds a fourth cached copy per
+ * album on disk.
  *
  * - SMALL  (72):   search result rows, queue track thumbnails
  * - MEDIUM (300):  album grid tiles, album detail header
@@ -158,10 +156,9 @@ export const fetchLyrics = (ratingKey: string) =>
 export const getWaveform = (ratingKey: string) =>
   invoke<number[] | null>("get_waveform", { ratingKey });
 
-// Focus-mode spectrogram. Returns one of: "analysing", { ready: … },
-// or { unavailable: { reason } }. The backend never blocks on analysis —
-// if the track isn't ready yet we get "analysing" and should listen for
-// the `spectrum-ready` event before re-invoking.
+// Focus-mode spectrogram. Returns "analysing", { ready: … }, or
+// { unavailable: { reason } }. The backend never blocks on analysis;
+// callers should listen for `spectrum-ready` before re-invoking.
 export const getSpectrum = (ratingKey: string) =>
   invoke<SpectrumState>("get_spectrum", { ratingKey });
 

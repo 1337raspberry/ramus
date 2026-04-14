@@ -38,7 +38,6 @@ impl CustomGenreParser {
     /// Parse indented text and return JSON bytes in GenreMapper format.
     /// Returns the JSON data and any non-fatal warnings.
     pub fn parse(text: &str) -> Result<(Vec<u8>, Vec<String>), CustomGenreParseError> {
-        // Size check (UTF-8 byte count)
         let byte_count = text.len();
         if byte_count == 0 {
             return Err(CustomGenreParseError::EmptyFile);
@@ -47,14 +46,13 @@ impl CustomGenreParser {
             return Err(CustomGenreParseError::FileTooLarge(byte_count));
         }
 
-        // Split into lines, strip control characters
         let raw_lines: Vec<&str> = text.lines().collect();
         let lines: Vec<String> = raw_lines.iter().map(|l| strip_control_characters(l)).collect();
         if lines.len() > MAX_LINE_COUNT {
             return Err(CustomGenreParseError::TooManyLines(lines.len()));
         }
 
-        // Filter to non-empty lines (keep original indices for error reporting)
+        // 1-based line numbers for error reporting.
         let indexed_lines: Vec<(usize, &str)> = lines
             .iter()
             .enumerate()
@@ -63,7 +61,7 @@ impl CustomGenreParser {
                 if trimmed.is_empty() {
                     None
                 } else {
-                    Some((i + 1, line.as_str())) // 1-based line numbers
+                    Some((i + 1, line.as_str()))
                 }
             })
             .collect();
@@ -72,28 +70,24 @@ impl CustomGenreParser {
             return Err(CustomGenreParseError::EmptyFile);
         }
 
-        // Detect JSON input and give a clear error
         if let Some(first_char) = indexed_lines[0].1.trim().chars().next() {
             if first_char == '{' || first_char == '[' {
                 return Err(CustomGenreParseError::NotPlainText);
             }
         }
 
-        // Detect indent unit from first indented line
         let indent_unit = detect_indent_unit(&indexed_lines);
 
-        // Parse lines into a flat list
-        let mut entries: Vec<(usize, String, Option<String>, usize)> = Vec::new(); // (depth, name, desc, line_number)
+        // (depth, name, desc, line_number)
+        let mut entries: Vec<(usize, String, Option<String>, usize)> = Vec::new();
         let mut warnings: Vec<String> = Vec::new();
         let mut previous_depth: usize = 0;
 
         for &(line_number, line_text) in &indexed_lines {
             let (depth, content) = measure_indent(line_text, &indent_unit);
 
-            // Parse name and optional [description]
             let (name, desc) = parse_line(content, line_number)?;
 
-            // Skip lines with no genre name
             if name.is_empty() {
                 warnings.push(format!(
                     "Line {}: skipped — no genre name found.",
@@ -102,7 +96,6 @@ impl CustomGenreParser {
                 continue;
             }
 
-            // Validate indentation doesn't jump
             if depth > previous_depth + 1 {
                 return Err(CustomGenreParseError::IndentationJump(
                     line_number,
@@ -111,7 +104,6 @@ impl CustomGenreParser {
                 ));
             }
 
-            // Validate name length
             if name.chars().count() > MAX_NAME_LENGTH {
                 return Err(CustomGenreParseError::NameTooLong(
                     line_number,
@@ -123,16 +115,13 @@ impl CustomGenreParser {
             entries.push((depth, name, desc, line_number));
         }
 
-        // Must have at least one root-level genre
         if !entries.iter().any(|(depth, _, _, _)| *depth == 0) {
             return Err(CustomGenreParseError::NoRootGenresFound);
         }
 
-        // Build tree using a stack
         let (roots, dupe_warnings) = build_tree(&entries);
         warnings.extend(dupe_warnings);
 
-        // Serialize to JSON
         let file = GenreFileJson {
             genres: roots.iter().map(node_to_json).collect(),
         };
@@ -169,7 +158,7 @@ fn detect_indent_unit(lines: &[(usize, &str)]) -> IndentUnit {
             }
         }
     }
-    IndentUnit::Spaces(2) // default
+    IndentUnit::Spaces(2)
 }
 
 fn measure_indent<'a>(line: &'a str, unit: &IndentUnit) -> (usize, &'a str) {
@@ -232,7 +221,7 @@ fn build_tree(
     entries: &[(usize, String, Option<String>, usize)],
 ) -> (Vec<ParseNode>, Vec<String>) {
     let mut warnings: Vec<String> = Vec::new();
-    let mut dupe_sets: Vec<HashSet<String>> = vec![HashSet::new()]; // level 0
+    let mut dupe_sets: Vec<HashSet<String>> = vec![HashSet::new()];
 
     let mut stack: Vec<(usize, ParseNode)> = Vec::new();
     let mut roots: Vec<ParseNode> = Vec::new();
@@ -244,7 +233,6 @@ fn build_tree(
             children: Vec::new(),
         };
 
-        // Pop stack entries deeper than current depth
         let mut did_pop = false;
         while let Some(last) = stack.last() {
             if last.0 >= *depth {
@@ -261,7 +249,6 @@ fn build_tree(
             }
         }
 
-        // Duplicate check
         if did_pop && *depth + 1 < dupe_sets.len() {
             dupe_sets.truncate(*depth + 1);
         }
@@ -282,7 +269,6 @@ fn build_tree(
         stack.push((*depth, new_node));
     }
 
-    // Drain remaining stack
     while let Some(last) = stack.pop() {
         if stack.is_empty() {
             roots.push(last.1);
@@ -308,16 +294,16 @@ fn strip_control_characters(input: &str) -> String {
             let v = c as u32;
             if v == 0x09 {
                 return true;
-            } // keep tab
+            }
             if v <= 0x1F {
                 return false;
-            } // strip C0
+            }
             if v == 0x7F {
                 return false;
-            } // strip DEL
+            }
             if (0x80..=0x9F).contains(&v) {
                 return false;
-            } // strip C1
+            }
             true
         })
         .collect()

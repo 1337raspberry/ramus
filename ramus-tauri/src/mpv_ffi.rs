@@ -1,17 +1,15 @@
 //! Raw libmpv C FFI bindings — minimal set needed for audio-only playback.
 //!
-//! libmpv is loaded at runtime via `libloading` rather than statically linked.
-//! This means the app compiles on any platform without libmpv headers or
-//! import libs, and the actual `.dylib` / `.so` / `.dll` is looked up when
-//! the first `MpvController` is constructed. See `MpvLib::load()` for the
-//! path search strategy.
+//! libmpv is loaded at runtime via `libloading` rather than statically linked,
+//! so the app compiles on any platform without libmpv headers or import libs.
+//! The actual `.dylib` / `.so` / `.dll` is resolved when the first
+//! `MpvController` is constructed. See `MpvLib::load()` for the path search
+//! strategy.
 
 #![allow(non_camel_case_types, dead_code)]
 
 use libloading::{Library, Symbol};
 use std::os::raw::{c_char, c_int, c_void};
-
-// --- Opaque handle + POD types (unchanged from the static-linking version) ---
 
 pub enum mpv_handle {}
 
@@ -61,13 +59,12 @@ pub struct mpv_event_end_file {
     pub error: c_int,
 }
 
-// --- Node format (for complex properties like af-metadata/<label>) ---
+// Node format (for complex properties like af-metadata/<label>).
 //
 // mpv returns `af-metadata/astats` as an MPV_FORMAT_NODE whose inner node is
-// MPV_FORMAT_NODE_MAP: a list of (key string, value node) pairs where every
-// value node is itself an MPV_FORMAT_STRING. We only read string values out
-// of this tree, so other union variants (flag, int64, double, byte_array)
-// are declared for correct struct layout but unused.
+// MPV_FORMAT_NODE_MAP: a list of (key string, value node) pairs where each
+// value is an MPV_FORMAT_STRING. Only string values are read from this tree;
+// other union variants exist for correct struct layout but are unused.
 
 #[repr(C)]
 pub union mpv_node_u {
@@ -76,7 +73,7 @@ pub union mpv_node_u {
     pub int64: i64,
     pub double_: f64,
     pub list: *mut mpv_node_list,
-    pub ba: *mut c_void, // byte_array — unused
+    pub ba: *mut c_void,
 }
 
 #[repr(C)]
@@ -92,11 +89,8 @@ pub struct mpv_node_list {
     pub keys: *mut *mut c_char,
 }
 
-// --- Function pointer types ---
-//
-// One type alias per symbol, matching the signatures libmpv exposes in
-// `client.h`. These stay unsafe because we're still passing raw pointers
-// into C code; `libloading` only takes care of resolving the symbol.
+// Function pointer types, one per symbol. Signatures mirror libmpv's
+// `client.h`. Calls remain unsafe: `libloading` only resolves the symbol.
 
 type FnCreate = unsafe extern "C" fn() -> *mut mpv_handle;
 type FnInitialize = unsafe extern "C" fn(*mut mpv_handle) -> c_int;
@@ -117,11 +111,11 @@ type FnErrorString = unsafe extern "C" fn(c_int) -> *const c_char;
 
 /// Runtime-loaded libmpv.
 ///
-/// Holds the owning `Library` plus a cached function pointer for each symbol
-/// we call. **Field declaration order matters**: Rust drops struct fields in
-/// declaration order, so `_lib` is declared LAST to guarantee it is dropped
-/// last — if the library were unloaded before the function pointers, any
-/// in-flight call would jump into freed memory.
+/// Holds the owning `Library` plus a cached function pointer for each symbol.
+/// **Field declaration order is load-bearing**: Rust drops struct fields in
+/// declaration order, so `_lib` is declared LAST to guarantee it drops last —
+/// unloading the library before the function pointers would leave any
+/// in-flight call jumping into freed memory.
 pub struct MpvLib {
     create: FnCreate,
     initialize: FnInitialize,
@@ -137,25 +131,23 @@ pub struct MpvLib {
     _lib: Library,
 }
 
-// SAFETY: libmpv is explicitly thread-safe (that's the whole point of the
-// `mpv_wait_event` / property observer design). The raw function pointers
-// stored in `MpvLib` are plain integers with no interior mutability, and
-// the `Library` handle itself is `Send + Sync` on all supported platforms.
+// SAFETY: libmpv is explicitly thread-safe (the design of `mpv_wait_event` /
+// property observers relies on it). The raw function pointers in `MpvLib` are
+// plain integers with no interior mutability, and the `Library` handle is
+// `Send + Sync` on all supported platforms.
 unsafe impl Send for MpvLib {}
 unsafe impl Sync for MpvLib {}
 
-// Each wrapper below is a one-line trampoline into libmpv, so documenting
-// the safety contract per-method would just be 11 copies of "caller must
-// pass a valid ctx pointer, valid C strings, and a buffer matching the
-// format tag". The real contract is whatever libmpv documents in
-// `client.h` — the wrappers add nothing on top.
+// Each wrapper below is a one-line trampoline into libmpv; the real safety
+// contract is whatever `client.h` documents, so per-method safety docs would
+// just be 11 copies of "pass a valid ctx, valid C strings, and a buffer
+// matching the format tag".
 #[allow(clippy::missing_safety_doc)]
 impl MpvLib {
-    /// Attempt to locate and load libmpv.
+    /// Locate and load libmpv.
     ///
-    /// Returns a detailed error listing every path tried if loading fails,
-    /// so users get a clear "here's where I looked, install mpv there"
-    /// message instead of a cryptic dlopen error.
+    /// Returns a detailed error listing every path tried on failure, so users
+    /// see where to install mpv instead of a cryptic dlopen error.
     pub fn load() -> Result<Self, String> {
         let lib = open_library()?;
         unsafe {
@@ -175,8 +167,8 @@ impl MpvLib {
             let error_string: Symbol<FnErrorString> = resolve(&lib, b"mpv_error_string\0")?;
 
             // Copy each fn pointer out of its Symbol<'_>. The pointers remain
-            // valid as long as `_lib` is alive, which is guaranteed by the
-            // struct field drop order (see the struct doc comment above).
+            // valid as long as `_lib` is alive, guaranteed by struct field
+            // drop order (see the struct doc above).
             Ok(Self {
                 create: *create,
                 initialize: *initialize,
@@ -194,8 +186,8 @@ impl MpvLib {
         }
     }
 
-    // --- Thin wrappers around each symbol. Still `unsafe` because the
-    // caller is still responsible for valid pointers / lifetimes. ---
+    // Thin wrappers around each symbol. Still `unsafe` because the caller is
+    // responsible for valid pointers and lifetimes.
 
     #[inline]
     pub unsafe fn create(&self) -> *mut mpv_handle {
@@ -288,18 +280,16 @@ unsafe fn resolve<'a, T>(lib: &'a Library, name: &[u8]) -> Result<Symbol<'a, T>,
     })
 }
 
-// --- Library search strategy ---
-//
-// Order of preference:
-//   1. MPV_LIB_PATH env var — explicit dev override
+// Library search strategy. Order of preference:
+//   1. MPV_LIB_PATH env var (explicit dev override)
 //   2. Next to the current executable (bundled distribution)
 //   3. macOS .app bundle Frameworks/ dir (relative to executable)
 //   4. Platform-specific system paths where Homebrew / apt usually install it
 //   5. Bare filename — lets the OS dynamic linker search DYLD/LD/PATH
 //
-// Each candidate is attempted with `Library::new`. The first one that
-// succeeds wins; all failures are collected into the returned error so
-// the user can see exactly where we looked.
+// Each candidate is attempted with `Library::new`. The first success wins;
+// all failures are collected into the returned error so the user sees every
+// path that was tried.
 
 fn open_library() -> Result<Library, String> {
     let candidates = candidate_paths();
@@ -336,16 +326,16 @@ fn candidate_paths() -> Vec<String> {
 
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            // Bundled next to the .exe (Windows installer, Linux AppImage root)
+            // Bundled next to the binary (Windows installer, Linux AppImage root).
             paths.push(dir.join(lib_name).to_string_lossy().into_owned());
-            // Tauri places bundle.resources here at runtime
+            // Tauri places bundle.resources here at runtime.
             paths.push(
                 dir.join("resources")
                     .join(lib_name)
                     .to_string_lossy()
                     .into_owned(),
             );
-            // macOS .app bundle: dir is Contents/MacOS, we want Contents/Frameworks
+            // macOS .app bundle: dir is Contents/MacOS, libmpv is in Contents/Frameworks.
             #[cfg(target_os = "macos")]
             if let Some(contents) = dir.parent() {
                 paths.push(
@@ -357,12 +347,12 @@ fn candidate_paths() -> Vec<String> {
                 );
             }
             // Linux AppImage / FHS layout: binary at /usr/bin/<app>, libs at
-            // /usr/lib/<lib>. AppImage extracts the bundle to /tmp/.mount_xxx
+            // /usr/lib/<lib>. AppImage extracts the bundle to /tmp/.mount_xxx,
             // so these lookups catch the bundled libmpv regardless of whether
-            // AppImage's AppRun set LD_LIBRARY_PATH for us. We try both
-            // soversions because the bundled file is whichever soversion the
-            // build runner had — Ubuntu 22.04 ships libmpv.so.1, Ubuntu 24.04
-            // and Fedora ship libmpv.so.2.
+            // AppImage's AppRun set LD_LIBRARY_PATH. Both soversions are tried
+            // because the bundled file matches whichever the build runner had:
+            // Ubuntu 22.04 ships libmpv.so.1, Ubuntu 24.04 and Fedora ship
+            // libmpv.so.2.
             #[cfg(target_os = "linux")]
             if let Some(parent) = dir.parent() {
                 for so_name in ["libmpv.so.2", "libmpv.so.1"] {
@@ -380,9 +370,9 @@ fn candidate_paths() -> Vec<String> {
 
     #[cfg(target_os = "macos")]
     {
-        paths.push("/opt/homebrew/lib/libmpv.2.dylib".into()); // Apple Silicon brew
+        paths.push("/opt/homebrew/lib/libmpv.2.dylib".into()); // Apple Silicon brew.
         paths.push("/opt/homebrew/lib/libmpv.dylib".into());
-        paths.push("/usr/local/lib/libmpv.2.dylib".into()); // Intel brew
+        paths.push("/usr/local/lib/libmpv.2.dylib".into()); // Intel brew.
         paths.push("/usr/local/lib/libmpv.dylib".into());
         paths.push("libmpv.2.dylib".into());
         paths.push("libmpv.dylib".into());
@@ -417,11 +407,10 @@ const fn default_lib_name() -> &'static str {
     {
         "libmpv.so.2"
     }
-    // Fallback so the function stays compilable on unsupported targets
-    // (FreeBSD, NetBSD, any future target). Without this arm, all three
-    // cfg blocks compile away and the function has no return value →
-    // hard compile error. The bare soname lets the dynamic linker search
-    // LD_LIBRARY_PATH / equivalent.
+    // Fallback for unsupported targets (FreeBSD, NetBSD, future targets).
+    // Without this arm the three cfg blocks all compile away and the
+    // function has no return value. The bare soname lets the dynamic
+    // linker search LD_LIBRARY_PATH or equivalent.
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
         "libmpv.so"

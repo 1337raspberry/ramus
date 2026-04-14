@@ -33,7 +33,7 @@ function VerticalEQSlider({
       const rect = el.getBoundingClientRect();
       const frac = 1 - Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
       const raw = -MAX_GAIN + frac * MAX_GAIN * 2;
-      // Snap to 0 when close, 0.5 dB quantization
+      // Snap to 0 when within 0.8 dB; quantise to 0.5 dB otherwise.
       const snapped = Math.abs(raw) < 0.8 ? 0 : Math.round(raw * 2) / 2;
       onChange(snapped);
     },
@@ -63,13 +63,9 @@ function VerticalEQSlider({
       className={`eq-slider${disabled ? " disabled" : ""}`}
       onMouseDown={onMouseDown}
     >
-      {/* Center line (0 dB) */}
       <div className="eq-center-line" />
-      {/* Track */}
       <div className="eq-track" />
-      {/* Fill from center to thumb */}
       <div className="eq-fill" style={{ top: `${fillTop}%`, height: `${fillHeight}%` }} />
-      {/* Thumb */}
       <div className="eq-thumb" style={{ top: `${thumbPercent}%` }} />
     </div>
   );
@@ -151,7 +147,6 @@ export default function EqualizerPanel({ onDismiss }: Props) {
       onClick={handleBackdropClick}
     >
       <div className="eq-panel glass">
-        {/* Header */}
         <div className="eq-header">
           <span className="eq-title">Equalizer</span>
           <label className="eq-toggle">
@@ -163,9 +158,7 @@ export default function EqualizerPanel({ onDismiss }: Props) {
           </button>
         </div>
 
-        {/* Band sliders */}
         <div className={`eq-bands${!enabled ? " disabled" : ""}`}>
-          {/* dB scale */}
           <div className="eq-db-scale">
             <span>+12</span>
             <span>0</span>
@@ -183,7 +176,6 @@ export default function EqualizerPanel({ onDismiss }: Props) {
           ))}
         </div>
 
-        {/* Footer */}
         <div className="eq-footer">
           <button className="eq-reset" onClick={handleReset}>
             Reset

@@ -1,4 +1,4 @@
-// TypeScript types matching ramus-core Rust models (camelCase serialized)
+// TypeScript mirrors of ramus-core Rust models (camelCase-serialized).
 
 export interface GenreNode {
   id: string;
@@ -147,36 +147,34 @@ export interface AccentColorPayload {
 
 // --- Focus-mode FFT spectrogram ---
 //
-// Shape matches ramus-core's `SpectrumFrames` struct, serde-serialised
-// with externally-tagged enums (the default). `SpectrumState` is
-// returned from the `get_spectrum` Tauri command and is the only thing
-// that drives FocusVisualizer's bar heights — there is no live audio
-// meter any more.
+// Shape mirrors ramus-core's `SpectrumFrames` (serde externally-tagged).
+// `SpectrumState` is returned from the `get_spectrum` command and drives
+// FocusVisualizer's bar heights.
 
 export interface SpectrumFrames {
-  /// Milliseconds between adjacent frames. Index the spectrogram as
-  /// `floor(positionMs / hopMs)` using mpv's reported `time-pos`.
+  /// Milliseconds between adjacent frames. Index as
+  /// `floor(positionMs / hopMs)` against mpv's `time-pos`.
   hopMs: number;
   /// Number of bands per frame (128 with current defaults).
   bandCount: number;
-  /// FFT window size in samples — diagnostics only.
+  /// FFT window size in samples; diagnostics only.
   fftSize: number;
-  /// Source sample rate — diagnostics only.
+  /// Source sample rate; diagnostics only.
   sampleRate: number;
   /// `bandCount * totalFrames` bytes, row-major, u8 quantised 0..255.
-  /// Over Tauri's JSON IPC, postcard-ish `Vec<u8>` lands as a plain
-  /// number array. We convert to `Uint8Array` on receive.
+  /// JSON IPC delivers `Vec<u8>` as a plain number array; convert to
+  /// `Uint8Array` on receive.
   frames: number[] | Uint8Array;
 }
 
-/// Matches ramus-core's `SpectrumState` enum (externally tagged).
-/// See `ramus-core/src/playback/spectrum.rs` — keep these in sync.
+/// Mirrors ramus-core's `SpectrumState` enum (externally tagged).
+/// Keep in sync with `ramus-core/src/playback/spectrum.rs`.
 export type SpectrumState =
   | "analysing"
   | { ready: SpectrumFrames }
   | { unavailable: { reason: string } };
 
-/// Helper for exhaustive-match narrowing on `SpectrumState`.
+/// Exhaustive-match narrowing helper for `SpectrumState`.
 export function spectrumKind(state: SpectrumState): "analysing" | "ready" | "unavailable" {
   if (state === "analysing") return "analysing";
   if ("ready" in state) return "ready";

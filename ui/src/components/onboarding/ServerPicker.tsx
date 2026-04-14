@@ -80,7 +80,7 @@ export default function ServerPicker({ onSelect }: Props) {
     try {
       const ok = await connectManualUrl(manualUrl);
       if (ok) {
-        // Create a synthetic server entry for manual connection
+        // Synthetic server entry for manual connection.
         onSelect(
           {
             machineIdentifier: "manual",

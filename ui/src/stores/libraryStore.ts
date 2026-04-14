@@ -114,9 +114,11 @@ function sortAlbums(albums: Album[], order: AlbumSortOrder): Album[] {
   return sorted;
 }
 
-/** Find a genre node by display name. If the name appears at multiple
- *  depths (e.g. "Dream Pop" under both Pop and Rock), prefer the deeper
- *  entry so the breadcrumb trail is as specific as possible. */
+/**
+ * Find a genre node by display name, preferring the deepest match when a
+ * name appears at multiple depths (e.g. "Dream Pop" under both Pop and
+ * Rock) so breadcrumbs are as specific as possible.
+ */
 function findDeepestNodeByName(nodes: GenreNode[], name: string): GenreNode | null {
   const nameLower = name.toLowerCase();
   let best: GenreNode | null = null;
@@ -180,7 +182,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const resp = await getGenreTree();
       set({ genreTree: resp.tree, totalAlbumCount: resp.totalAlbumCount });
     } catch {
-      // Cache may not be initialized yet
+      // Cache not yet initialised
     }
   },
 
@@ -189,7 +191,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const resp = await getFavouriteGenreTree();
       set({ genreTree: resp.tree, totalAlbumCount: resp.totalAlbumCount });
     } catch {
-      // Cache may not be initialized yet
+      // Cache not yet initialised
     }
   },
 
@@ -206,10 +208,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   collapseAll: () => set({ expandedGenreIds: new Set() }),
 
   selectGenre: (node) => {
-    // Expand all ancestor nodes so the selected node is visible in the
-    // sidebar tree. For id "metal/black metal/blackgaze" this adds
-    // "metal" and "metal/black metal" to the expanded set. When clicking
-    // from within the tree, ancestors are already expanded — no-op.
+    // Expand ancestors so the selected node is visible. For id
+    // "metal/black metal/blackgaze" this adds "metal" and
+    // "metal/black metal". No-op when ancestors are already expanded.
     const segments = node.id.split("/");
     const ancestorIds = segments.slice(0, -1).map((_, i) => segments.slice(0, i + 1).join("/"));
     set((state) => {
@@ -225,9 +226,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         searchQuery: null,
       };
     });
-    // For parent nodes with children (e.g. "Other"), collect all
-    // descendant leaf names and query them directly — expand_genre
-    // doesn't know about synthetic parents like "Other".
+    // Synthetic parents like "Other" aren't known to expand_genre, so
+    // collect descendant leaf names and query them directly.
     const collectLeafNames = (n: GenreNode): string[] => {
       if (!n.children?.length) return [n.name];
       return n.children.flatMap(collectLeafNames);
@@ -261,9 +261,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   selectGenreByName: async (name) => {
-    // Switch to genres mode without triggering loadAllAlbums() — we're
-    // about to load genre-specific albums and don't want a race.
-    // Await the tree load so findDeepestNodeByName has data to search.
+    // Skip loadAllAlbums() on mode switch: genre-specific albums load
+    // below and we must not race. Await the tree so
+    // findDeepestNodeByName has data to search.
     if (get().sidebarMode !== "genres") {
       set({ sidebarMode: "genres" });
       await get().loadGenreTree();
@@ -273,7 +273,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (node) {
       get().selectGenre(node);
     } else {
-      // Fallback: no tree match (custom/flat genres or unmapped name)
+      // No tree match (custom/flat genres or unmapped name).
       set({
         selectedGenreId: name.toLowerCase(),
         browseArtistName: null,
@@ -410,11 +410,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   clearSearchResults: () => {
-    // Read browse context before clearing so we know what to fall back to
+    // Capture browse context before clearing to pick a fallback view.
     const { sidebarMode, selectedGenreId, selectedArtistId, browseArtistName, browseYear } = get();
     set({ searchQuery: null, browseArtistName: null, browseYear: null });
 
-    // Was in a name/year browse — fall back to all albums for current mode
     if (browseArtistName || browseYear) {
       if (sidebarMode === "favourites") get().loadFavouriteAlbums();
       else get().loadAllAlbums();
@@ -428,7 +427,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     } else if (selectedGenreId === "__all__") {
       get().loadAllAlbums();
     } else if (selectedGenreId) {
-      // Re-derive the genre name from the tree and reload
+      // Re-derive the genre name from the tree and reload.
       const findNode = (nodes: GenreNode[], id: string): GenreNode | null => {
         for (const n of nodes) {
           if (n.id === id) return n;
@@ -506,7 +505,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             ? { ...state.detailAlbum, isFavourite: next }
             : state.detailAlbum,
       }));
-      // Keep the Now Playing card in sync if it's showing this album
+      // Source-of-truth sync: patch nowPlayingAlbum when its ratingKey
+      // matches. Components must call this action rather than the
+      // toggle_album_favourite IPC directly.
       usePlaybackStore.setState((state) => ({
         nowPlayingAlbum:
           state.nowPlayingAlbum?.ratingKey === album.ratingKey
@@ -528,7 +529,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t,
         ),
       }));
-      // Keep the Now Playing card + queue in sync if this track is playing/queued
+      // Source-of-truth sync: patch currentTrack + queue when ratingKey
+      // matches. Components must call this action rather than the
+      // toggle_track_favourite IPC directly.
       usePlaybackStore.setState((state) => ({
         currentTrack:
           state.currentTrack?.ratingKey === track.ratingKey

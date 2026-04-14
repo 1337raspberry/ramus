@@ -1,8 +1,7 @@
-//! AudioPlayer — queue management, mpv integration, equalizer, download cache.
-//!
-//! The AudioPlayer owns the mpv handle (via `MpvPlayer` trait) and manages
-//! the playback queue, track URL resolution, audio download cache (LRU),
-//! and 10-band parametric equalizer filter strings.
+//! AudioPlayer: queue management, mpv integration, equalizer, download
+//! cache. Owns the mpv handle (via `MpvPlayer` trait) and manages the
+//! playback queue, track URL resolution, LRU download cache, and 10-band
+//! parametric equalizer filter strings.
 
 use std::sync::Arc;
 
@@ -13,8 +12,6 @@ use crate::models::{PlaybackConfig, PlaybackStatus, PlayerState, Track};
 use crate::playback::download_cache::DownloadCache;
 use crate::playback::mpv::{FileEndReason, LoadMode, MpvPlayer};
 use crate::playback::transcode;
-
-// --- Constants ---
 
 /// 10-band EQ center frequencies in Hz.
 pub const EQ_FREQUENCIES: [u32; 10] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -27,12 +24,10 @@ const ALLOWED_EXTENSIONS: &[&str] = &[
 /// Threshold in seconds: if position > this, `previous()` restarts instead of going back.
 const PREVIOUS_RESTART_THRESHOLD: f64 = 3.0;
 
-// --- EQ filter string ---
-
 /// Build an mpv `af` lavfi equalizer filter string from 10 gain values.
 ///
-/// Rust's `format!` always uses '.' for decimals (no locale issues).
-/// NaN and Inf values are sanitized to 0.0.
+/// Rust's `format!` always uses `.` for decimals. NaN and Inf values are
+/// sanitized to 0.0.
 pub fn build_eq_filter_string(bands: &[f32; 10]) -> String {
     let filters: Vec<String> = EQ_FREQUENCIES
         .iter()
@@ -48,12 +43,9 @@ pub fn build_eq_filter_string(bands: &[f32; 10]) -> String {
 
 /// Build the mpv `af` chain string for the current EQ state.
 ///
-/// When EQ is enabled, this is the 10-band lavfi equalizer chain.
-/// When disabled, it's an empty string — which `set_audio_filters("")`
-/// interprets as "no filters", clearing anything previously set. We no
-/// longer prepend an `astats` metering filter: the focus-mode visualiser
-/// now drives itself from per-track precomputed spectrograms, so live
-/// metadata from the filter chain is unused.
+/// When EQ is enabled, returns the 10-band lavfi equalizer chain. When
+/// disabled, returns an empty string — `set_audio_filters("")` interprets
+/// this as "no filters", clearing anything previously set.
 pub fn build_af_string(eq_enabled: bool, bands: &[f32; 10]) -> String {
     if eq_enabled {
         build_eq_filter_string(bands)
@@ -62,8 +54,6 @@ pub fn build_af_string(eq_enabled: bool, bands: &[f32; 10]) -> String {
     }
 }
 
-// --- Filename sanitization ---
-
 /// Sanitize a string for use as a filename. Only `[a-zA-Z0-9_-]` are kept.
 pub fn sanitize_filename(s: &str) -> String {
     s.chars()
@@ -71,12 +61,10 @@ pub fn sanitize_filename(s: &str) -> String {
         .collect()
 }
 
-/// Check if a file extension is in the allowed set for audio caching.
+/// Whether a file extension is in the allowed set for audio caching.
 pub fn is_allowed_extension(ext: &str) -> bool {
     ALLOWED_EXTENSIONS.contains(&ext.to_lowercase().as_str())
 }
-
-// --- AudioPlayer ---
 
 /// Observable state snapshot for the frontend.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -105,7 +93,7 @@ struct PlayerInner {
     cache: DownloadCache,
 }
 
-/// The core audio player managing queue state, mpv commands, and track resolution.
+/// Core audio player managing queue state, mpv commands, and track resolution.
 pub struct AudioPlayer {
     mpv: Arc<dyn MpvPlayer>,
     inner: Mutex<PlayerInner>,
@@ -113,9 +101,6 @@ pub struct AudioPlayer {
 
 impl AudioPlayer {
     pub fn new(mpv: Arc<dyn MpvPlayer>) -> Self {
-        // The `af` chain starts empty — EQ will populate it when enabled.
-        // (The old astats metering filter was removed when the focus
-        // visualiser moved to precomputed spectrograms.)
         Self {
             mpv,
             inner: Mutex::new(PlayerInner {
@@ -135,14 +120,11 @@ impl AudioPlayer {
         }
     }
 
-    // --- Configuration ---
-
     /// Set server connection details.
     pub fn configure(&self, server_url: Url, token: String, client_identifier: String) {
-        // DEBUG-ONLY — leaks the user's plex.direct subdomain hash (which
-        // is derived from their server's IP and a plex.tv-issued UUID).
-        // Not as bad as a token, but still personally-identifying. Do NOT
-        // promote to info/warn without scrubbing the host.
+        // DEBUG-ONLY: leaks the user's plex.direct subdomain hash (derived
+        // from server IP + a plex.tv-issued UUID). Do NOT promote to
+        // info/warn without scrubbing the host.
         log::debug!("player.configure: server_url={server_url}");
         let mut inner = self.inner.lock();
         inner.server_url = Some(server_url);
@@ -152,7 +134,7 @@ impl AudioPlayer {
 
     /// Update server connection (e.g., after failover or reconnection).
     pub fn update_server_connection(&self, server_url: Url, token: String, is_remote: bool) {
-        // DEBUG-ONLY — see note on configure() above.
+        // DEBUG-ONLY: see note on configure() above.
         log::debug!(
             "player.update_server_connection: server_url={server_url} is_remote={is_remote}"
         );
@@ -162,14 +144,13 @@ impl AudioPlayer {
         inner.is_remote = is_remote;
     }
 
-    /// Update only the remote flag (e.g., after connection type is determined).
+    /// Update only the remote flag.
     pub fn set_remote(&self, is_remote: bool) {
         self.inner.lock().is_remote = is_remote;
     }
 
-    /// Whether the current connection is remote. Used by
-    /// `should_transcode()` to decide whether `TranscodeLosslessRemote`
-    /// mode should transcode a given track.
+    /// Whether the current connection is remote. Feeds into
+    /// `should_transcode()` under `TranscodeLosslessRemote`.
     pub fn is_remote(&self) -> bool {
         self.inner.lock().is_remote
     }
@@ -181,19 +162,18 @@ impl AudioPlayer {
         inner.config = config;
     }
 
-    // --- Queue operations ---
-
     /// Replace the queue and start playback at the given index.
     ///
-    /// Uses `loadfile "replace"` for the first track and `"append"` for the rest.
-    /// Does NOT call `mpv.stop()` first — `replace` handles that implicitly.
+    /// Uses `loadfile "replace"` for the first track and `"append"` for
+    /// the rest. Does NOT call `mpv.stop()` first — `replace` handles
+    /// that implicitly.
     pub fn load_queue(&self, tracks: Vec<Track>, start_at: usize) {
         if tracks.is_empty() || start_at >= tracks.len() {
             return;
         }
 
-        // Snapshot per-track URLs under the lock, then release it before
-        // touching mpv (mpv calls may block briefly on FFI).
+        // Snapshot per-track URLs under the lock, then release before
+        // touching mpv (FFI calls may block briefly).
         let loads: Vec<Option<String>> = {
             let mut inner = self.inner.lock();
             inner.state.queue = tracks;
@@ -308,13 +288,13 @@ impl AudioPlayer {
         }
     }
 
-    /// Remove a track from the queue by index.
-    /// Cannot remove the currently playing track. Adjusts queue index if needed.
+    /// Remove a track from the queue by index. Cannot remove the currently
+    /// playing track. Adjusts queue index if needed.
     pub fn remove_from_queue(&self, index: usize) {
         let mut inner = self.inner.lock();
 
         if index == inner.state.queue_index {
-            return; // Don't remove currently playing
+            return;
         }
         if index >= inner.state.queue.len() {
             return;
@@ -462,16 +442,12 @@ impl AudioPlayer {
         self.mpv.stop();
     }
 
-    /// Apply or clear the 10-band equalizer.
-    ///
-    /// When `enabled` is false the `af` chain is cleared entirely — there
-    /// are no other filters that need to survive.
+    /// Apply or clear the 10-band equalizer. When `enabled` is false the
+    /// `af` chain is cleared entirely.
     pub fn apply_equalizer(&self, enabled: bool, bands: &[f32; 10]) {
         let filter = build_af_string(enabled, bands);
         self.mpv.set_audio_filters(&filter);
     }
-
-    // --- State queries ---
 
     /// Snapshot the full player state for the frontend.
     pub fn snapshot(&self) -> AudioPlayerState {
@@ -506,8 +482,6 @@ impl AudioPlayer {
         self.inner.lock().play_session_id.clone()
     }
 
-    // --- mpv event handlers ---
-
     /// Handle mpv position change (called by event loop, ~30fps).
     pub fn handle_position_change(&self, pos: f64) {
         self.inner.lock().position = pos;
@@ -520,16 +494,14 @@ impl AudioPlayer {
 
     /// Handle mpv playlist-pos change (track advance).
     ///
-    /// Resets position but NOT duration. For manual skips
-    /// (`next()`/`previous()`), the caller already resets duration
-    /// before calling `playlist_play_index`. For gapless auto-advance,
-    /// the duration must NOT be reset: mpv's `prefetch-playlist` pre-
-    /// demuxes the next file and may have already delivered the correct
-    /// duration via `on_duration_change`. Resetting it to 0 here would
-    /// cause every subsequent `on_position_change` tick to emit
-    /// `duration=0` to the frontend (since `observe_property` won't
-    /// re-fire for a value that hasn't changed from mpv's perspective),
-    /// permanently breaking the waveform seek bar.
+    /// Resets position but NOT duration. For manual skips, the caller
+    /// already resets duration before calling `playlist_play_index`. For
+    /// gapless auto-advance, mpv's `prefetch-playlist` pre-demuxes the
+    /// next file and may have already delivered the correct duration via
+    /// `on_duration_change`. Resetting it to 0 here would cause every
+    /// subsequent `on_position_change` tick to emit `duration=0` to the
+    /// frontend (since `observe_property` won't re-fire for a value that
+    /// hasn't changed from mpv's perspective), breaking the seek bar.
     pub fn handle_playlist_pos_change(&self, pos: i64) {
         if pos < 0 {
             return;
@@ -564,14 +536,13 @@ impl AudioPlayer {
     pub fn handle_file_ended(&self, reason: FileEndReason) {
         match reason {
             FileEndReason::Eof => {
-                // Natural end — mpv auto-advances via gapless playback.
-                // If last track, idle-active will fire.
+                // Natural end — mpv auto-advances via gapless playback;
+                // if last track, idle-active will fire.
             }
             FileEndReason::Error(_) => {
-                // Skip to next or stop
                 self.next();
             }
-            _ => {} // Stop, Quit, Redirect — no action
+            _ => {}
         }
     }
 
@@ -583,8 +554,6 @@ impl AudioPlayer {
         inner.position = 0.0;
     }
 
-    // --- Cache access (for external download manager) ---
-
     /// Access the download cache under the player lock.
     pub fn with_cache<F, R>(&self, f: F) -> R
     where
@@ -594,18 +563,14 @@ impl AudioPlayer {
         f(&mut inner.cache)
     }
 
-
-    // --- Prefetch ---
-
     /// Returns `(rating_key, direct_play_url)` for the first uncached,
     /// non-transcode track within `lookahead_depth` of the current queue
     /// position. Walks forward past already-cached entries. Returns
-    /// `None` when every slot in the window is either cached, transcoded,
-    /// or out of bounds.
+    /// `None` when every slot in the window is cached, transcoded, or
+    /// out of bounds.
     ///
     /// Called fresh on every iteration of the prefetch worker's serial
-    /// loop so it auto-reflects queue advancement — no explicit "window
-    /// shifted" plumbing needed.
+    /// loop, so it auto-reflects queue advancement.
     pub fn next_uncached_target_in_lookahead(&self, include_current: bool) -> Option<(String, String)> {
         let inner = self.inner.lock();
         let depth = inner.config.lookahead_depth as usize;
@@ -635,10 +600,9 @@ impl AudioPlayer {
             let Some(url) = transcode::build_direct_play_url(server_url, part_key, token) else {
                 continue;
             };
-            // DEBUG-ONLY — SENSITIVE. The built URL contains a live
-            // `X-Plex-Token` query parameter. Do NOT promote above
-            // `debug!` and scrub the token before copying this line into
-            // a bug report.
+            // DEBUG-ONLY, SENSITIVE: the URL contains a live `X-Plex-Token`
+            // query parameter. Do NOT promote above `debug!`, and scrub
+            // the token before copying into a bug report.
             log::debug!(
                 "next_uncached_target: idx={idx} rk={} server={} part_key={} -> {}",
                 track.rating_key,
@@ -651,7 +615,7 @@ impl AudioPlayer {
         None
     }
 
-    /// Get the rating_key of the currently playing track (for cache eviction protection).
+    /// Rating key of the currently playing track (for cache eviction protection).
     pub fn current_track_id(&self) -> Option<String> {
         self.inner
             .lock()
@@ -662,14 +626,11 @@ impl AudioPlayer {
     }
 
     /// Swap a cached track's mpv playlist entry to `file://<path>` so mpv
-    /// reads from the local cache file instead of re-downloading from
-    /// Plex when it reaches that entry.
+    /// reads from the local cache file instead of re-downloading.
     ///
     /// Called by the prefetch worker after every successful download.
-    /// A no-op if the track isn't in the current
-    /// queue or is the currently-playing entry (mpv refuses to
-    /// playlist-remove the active index — and we wouldn't want to anyway,
-    /// since it's already streaming).
+    /// No-op if the track isn't in the current queue or is the currently
+    /// playing entry (mpv refuses to playlist-remove the active index).
     pub fn swap_playlist_entry_to_cached(&self, track_id: &str) {
         let (idx, file_url) = {
             let inner = self.inner.lock();
@@ -693,18 +654,16 @@ impl AudioPlayer {
         self.mpv.load_file_at(&file_url, idx as i64, None);
     }
 
-    /// Would the given track get transcoded under the current settings?
+    /// Whether the given track would get transcoded under the current settings.
     ///
     /// Used by the focus-mode visualiser's placeholder logic: transcoded
     /// tracks can't be analysed (symphonia can't decode HLS manifests),
     /// so `get_spectrum` surfaces `Unavailable { reason: "transcoding" }`
-    /// immediately instead of stranding the user on an "Analysing…"
-    /// placeholder that will never resolve.
+    /// immediately instead of stranding the UI on "Analysing…".
     ///
-    /// Returns `false` for unknown rating keys (not in the current queue)
-    /// — in that case the caller falls through to the normal "analysis
-    /// pending" path, which self-corrects once the track is actually
-    /// played and joins the queue.
+    /// Returns `false` for rating keys not in the current queue; the
+    /// caller falls through to the normal "analysis pending" path, which
+    /// self-corrects once the track joins the queue.
     pub fn would_transcode(&self, rating_key: &str) -> bool {
         let inner = self.inner.lock();
         let Some(track) = inner.state.queue.iter().find(|t| t.rating_key == rating_key) else {
@@ -718,10 +677,7 @@ impl AudioPlayer {
     }
 }
 
-// --- URL resolution (free function to avoid lock concerns) ---
-
 fn resolve_url(track: &Track, inner: &PlayerInner) -> Option<String> {
-    // Check download cache
     if let Some(path) = inner.cache.get(&track.rating_key) {
         return Some(format!("file://{}", path.display()));
     }
@@ -748,16 +704,12 @@ fn resolve_url(track: &Track, inner: &PlayerInner) -> Option<String> {
     }
 }
 
-// --- Tests ---
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::playback::mpv::MpvPlayer;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
-
-    // --- Mock MpvPlayer ---
 
     #[derive(Debug, Clone)]
     #[allow(dead_code)] // Fields read via Debug/pattern matching in assertions
@@ -856,8 +808,6 @@ mod tests {
         }
     }
 
-    // --- Test helpers ---
-
     fn make_test_track(key: &str) -> Track {
         Track {
             rating_key: key.into(),
@@ -888,8 +838,6 @@ mod tests {
         (player, mpv)
     }
 
-    // --- EQ filter string tests ---
-
     #[test]
     fn test_eq_filter_string_all_zeros() {
         let bands = [0.0f32; 10];
@@ -898,7 +846,6 @@ mod tests {
         assert!(filter.ends_with(']'));
         assert!(filter.contains("equalizer=f=31:width_type=o:w=1:g=0.0"));
         assert!(filter.contains("equalizer=f=16000:width_type=o:w=1:g=0.0"));
-        // Should have 10 equalizer sections
         assert_eq!(filter.matches("equalizer=").count(), 10);
     }
 
@@ -917,7 +864,6 @@ mod tests {
     fn test_eq_filter_string_decimal_point_not_comma() {
         let bands = [3.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         let filter = build_eq_filter_string(&bands);
-        // Rust format! always uses '.' — but verify explicitly
         assert!(filter.contains("3.5"));
         assert!(!filter.contains("3,5"));
     }
@@ -927,7 +873,6 @@ mod tests {
         let mut bands = [0.0f32; 10];
         bands[0] = f32::NAN;
         let filter = build_eq_filter_string(&bands);
-        // NaN should be sanitized to 0.0
         assert!(filter.contains("equalizer=f=31:width_type=o:w=1:g=0.0"));
     }
 
@@ -947,8 +892,6 @@ mod tests {
         assert_eq!(EQ_FREQUENCIES[0], 31);
         assert_eq!(EQ_FREQUENCIES[9], 16000);
     }
-
-    // --- Filename sanitization tests ---
 
     #[test]
     fn test_sanitize_filename_keeps_safe_chars() {
@@ -984,8 +927,6 @@ mod tests {
         assert!(!is_allowed_extension(""));
     }
 
-    // --- Queue operation tests ---
-
     #[test]
     fn test_load_queue() {
         let (player, mpv) = make_player();
@@ -999,7 +940,6 @@ mod tests {
         assert_eq!(state.queue_index, 0);
         assert_eq!(state.current_track.as_ref().unwrap().rating_key, "1");
 
-        // Verify mpv calls: 3 load_file + set_pause(false)
         let calls = mpv.calls();
         let load_files: Vec<_> = calls
             .iter()
@@ -1007,7 +947,6 @@ mod tests {
             .collect();
         assert_eq!(load_files.len(), 3);
 
-        // First should be Replace, rest Append
         assert!(matches!(load_files[0], MockCall::LoadFile { mode: LoadMode::Replace, .. }));
         assert!(matches!(load_files[1], MockCall::LoadFile { mode: LoadMode::Append, .. }));
         assert!(matches!(load_files[2], MockCall::LoadFile { mode: LoadMode::Append, .. }));
@@ -1024,7 +963,6 @@ mod tests {
         assert_eq!(state.queue_index, 2);
         assert_eq!(state.current_track.as_ref().unwrap().rating_key, "3");
 
-        // Should call playlist_play_index(2)
         let calls = mpv.calls();
         assert!(calls
             .iter()
@@ -1059,9 +997,8 @@ mod tests {
 
         let state = player.state();
         assert_eq!(state.queue.len(), 3);
-        assert_eq!(state.queue_index, 0); // Still on first track
+        assert_eq!(state.queue_index, 0);
 
-        // Should have 2 Append load_file calls
         let new_calls = &mpv.calls()[initial_calls..];
         let appends: Vec<_> = new_calls
             .iter()
@@ -1073,7 +1010,6 @@ mod tests {
     #[test]
     fn test_append_to_queue_auto_start() {
         let (player, _mpv) = make_player();
-        // Player starts stopped with empty queue
         player.append_to_queue(vec![make_test_track("1"), make_test_track("2")]);
 
         let state = player.state();
@@ -1095,11 +1031,9 @@ mod tests {
 
         let state = player.state();
         assert_eq!(state.queue.len(), 3);
-        // Inserted after current (index 0), so at index 1
         assert_eq!(state.queue[1].rating_key, "2");
         assert_eq!(state.queue[2].rating_key, "3");
 
-        // Should use load_file_at with index 1
         let new_calls = &mpv.calls()[initial_calls..];
         assert!(new_calls
             .iter()
@@ -1125,11 +1059,11 @@ mod tests {
         );
         let initial_calls = mpv.call_count();
 
-        player.remove_from_queue(2); // Remove last track
+        player.remove_from_queue(2);
 
         let state = player.state();
         assert_eq!(state.queue.len(), 2);
-        assert_eq!(state.queue_index, 0); // Unchanged
+        assert_eq!(state.queue_index, 0);
 
         let new_calls = &mpv.calls()[initial_calls..];
         assert!(new_calls
@@ -1146,10 +1080,10 @@ mod tests {
         );
         let initial_calls = mpv.call_count();
 
-        player.remove_from_queue(0); // Current track
+        player.remove_from_queue(0);
 
-        assert_eq!(player.state().queue.len(), 2); // Unchanged
-        assert_eq!(mpv.call_count(), initial_calls); // No mpv calls
+        assert_eq!(player.state().queue.len(), 2);
+        assert_eq!(mpv.call_count(), initial_calls);
     }
 
     #[test]
@@ -1157,13 +1091,13 @@ mod tests {
         let (player, _mpv) = make_player();
         player.load_queue(
             vec![make_test_track("1"), make_test_track("2"), make_test_track("3")],
-            1, // Playing track "2"
+            1,
         );
 
-        player.remove_from_queue(0); // Remove track before current
+        player.remove_from_queue(0);
 
         let state = player.state();
-        assert_eq!(state.queue_index, 0); // Adjusted from 1 to 0
+        assert_eq!(state.queue_index, 0);
         assert_eq!(state.queue.len(), 2);
     }
 
@@ -1232,13 +1166,13 @@ mod tests {
             vec![make_test_track("1"), make_test_track("2")],
             1,
         );
-        player.handle_position_change(5.0); // > 3s
+        player.handle_position_change(5.0);
         let initial_calls = mpv.call_count();
 
         player.previous();
 
         let state = player.state();
-        assert_eq!(state.queue_index, 1); // Didn't change track
+        assert_eq!(state.queue_index, 1);
         assert_eq!(player.position(), 0.0);
 
         let new_calls = &mpv.calls()[initial_calls..];
@@ -1254,7 +1188,7 @@ mod tests {
             vec![make_test_track("1"), make_test_track("2")],
             1,
         );
-        player.handle_position_change(1.0); // < 3s
+        player.handle_position_change(1.0);
         let initial_calls = mpv.call_count();
 
         player.previous();
@@ -1273,7 +1207,7 @@ mod tests {
     fn test_previous_at_start_seeks_to_zero() {
         let (player, mpv) = make_player();
         player.load_queue(vec![make_test_track("1")], 0);
-        player.handle_position_change(1.0); // < 3s, but at index 0
+        player.handle_position_change(1.0);
         let initial_calls = mpv.call_count();
 
         player.previous();
@@ -1339,7 +1273,6 @@ mod tests {
         assert!(player.position() >= 0.0);
 
         player.seek(999.0);
-        // Should clamp to duration - 0.5
         assert!(player.position() <= 179.5);
     }
 
@@ -1386,15 +1319,12 @@ mod tests {
         assert!(new_calls.iter().any(|c| matches!(c, MockCall::Stop)));
     }
 
-    // --- Equalizer integration tests ---
-
     #[test]
     fn test_apply_equalizer_enabled() {
         let (player, mpv) = make_player();
         let bands = [3.0, -1.0, 0.0, 2.0, -2.0, 1.0, 0.5, -0.5, 4.0, -4.0];
         player.apply_equalizer(true, &bands);
 
-        // The most recent filter set should be the labelled EQ chain.
         let calls = mpv.calls();
         let last_filter = calls
             .iter()
@@ -1413,9 +1343,6 @@ mod tests {
         let bands = [0.0; 10];
         player.apply_equalizer(false, &bands);
 
-        // With EQ disabled the chain is empty — no astats, no anything.
-        // The focus visualiser now runs from precomputed spectrograms so
-        // nothing needs to survive in the filter chain.
         let calls = mpv.calls();
         let last_filter = calls
             .iter()
@@ -1430,8 +1357,6 @@ mod tests {
 
     #[test]
     fn test_audio_player_new_does_not_touch_filters() {
-        // The constructor no longer pushes any filter up front — nothing
-        // depends on the af chain being pre-seeded.
         let (_player, mpv) = make_player();
         let calls = mpv.calls();
         assert!(!calls
@@ -1454,8 +1379,6 @@ mod tests {
         assert!(s.contains("g=2.0"));
         assert!(s.contains("g=3.0"));
     }
-
-    // --- Callback handler tests ---
 
     #[test]
     fn test_handle_position_change() {
@@ -1550,12 +1473,9 @@ mod tests {
 
         player.handle_file_ended(FileEndReason::Error("test".into()));
 
-        // Should have advanced to next track
         let state = player.state();
         assert_eq!(state.queue_index, 1);
     }
-
-    // --- URL resolution tests ---
 
     #[test]
     fn test_load_queue_resolves_direct_play_urls() {
@@ -1578,7 +1498,6 @@ mod tests {
     fn test_cached_track_uses_file_url() {
         let (player, mpv) = make_player();
 
-        // Pre-populate cache
         player.with_cache(|cache| {
             cache.insert(
                 "123".into(),

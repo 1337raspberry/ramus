@@ -41,7 +41,7 @@ export function accentFromPalette(p: VibrantPalette): [number, number, number] {
     const min = Math.min(rgb[0], rgb[1], rgb[2]) / 255;
     const l = (max + min) / 2;
     if (l >= MIN_ACCENT_LIGHTNESS) return rgb;
-    // Boost lightness while preserving hue
+    // Boost lightness while preserving hue.
     const factor = MIN_ACCENT_LIGHTNESS / Math.max(l, 0.01);
     const boosted: [number, number, number] = [
       Math.min(255, Math.round(rgb[0] * factor)),

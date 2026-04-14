@@ -17,13 +17,13 @@ export default function OAuthSignIn({ onSuccess }: Props) {
     setError(null);
     try {
       const raw = await startOauth();
-      // start_oauth returns JSON: { authUrl, pinId, code }
+      // start_oauth returns JSON: { authUrl, pinId, code }.
       const data = JSON.parse(raw);
       setPinId(data.pinId);
       setAuthUrl(data.authUrl);
       setPolling(true);
 
-      // Browser is opened from Rust side via open::that()
+      // Browser opens from Rust via open::that().
     } catch (e) {
       setError(String(e));
     }
@@ -48,9 +48,9 @@ export default function OAuthSignIn({ onSuccess }: Props) {
           onSuccess();
         }
       } catch (e) {
-        // Terminal error from the backend (PIN expired, polling timeout).
-        // Stop polling, surface the message, and re-enable the button so
-        // the user can start a fresh flow.
+        // Terminal backend error (PIN expired, polling timeout). Stop
+        // polling, surface the message, and re-enable the button for a
+        // fresh flow.
         setPolling(false);
         setPinId(null);
         if (intervalRef.current) clearInterval(intervalRef.current);

@@ -25,7 +25,6 @@ pub async fn start_oauth(state: State<'_, AppState>) -> CmdResult<String> {
 
     let url = PlexAuth::auth_url(&pin.code, &state.client.client_identifier);
 
-    // Open auth URL in the default browser
     let _ = open::that(&url);
 
     Ok(serde_json::json!({
@@ -58,16 +57,16 @@ pub async fn poll_oauth(
             state.client.set_token(Some(token));
             Ok(true)
         }
-        // Terminal states — the frontend should surface these and let the
-        // user restart the flow. PollingTimeout with max_attempts=1 shouldn't
-        // happen in practice, but treat it as terminal to be safe.
+        // Terminal states: the frontend surfaces these and restarts the flow.
+        // PollingTimeout with max_attempts=1 shouldn't happen in practice; treat
+        // as terminal defensively.
         Err(PlexAuthError::PinExpired) => {
             Err("Sign-in code expired — please try again".into())
         }
         Err(PlexAuthError::PollingTimeout) => {
             Err("Sign-in timed out — please try again".into())
         }
-        // Transient — keep polling.
+        // Transient: keep polling.
         Err(_) => Ok(false),
     }
 }
@@ -81,8 +80,8 @@ pub async fn discover_servers(state: State<'_, AppState>) -> CmdResult<Vec<PlexS
         .await
         .map_err(|e| e.to_string())?;
 
-    // Cache full server data (with tokens) server-side.
-    // access_token is stripped from the response by serde skip_serializing.
+    // Cache full server data (with tokens) server-side; access_token is
+    // stripped from the frontend response via serde skip_serializing.
     *state.discovered_servers.lock() = servers.clone();
 
     Ok(servers)
@@ -158,8 +157,8 @@ pub async fn finalize_onboarding(
 ) -> CmdResult<()> {
     let token_store = TokenStore::new().map_err(|e| e.to_string())?;
 
-    // Look up server from discovery cache. For manual connections, construct
-    // a minimal server using the plex.tv auth token.
+    // Look up server from discovery cache; manual connections get a minimal
+    // server using the plex.tv auth token.
     let server = state
         .discovered_servers
         .lock()
@@ -180,13 +179,11 @@ pub async fn finalize_onboarding(
         server.access_token.clone()
     };
 
-    // Retrieve plex.tv auth token for connection monitor re-discovery
+    // plex.tv auth token for connection monitor re-discovery.
     let auth_token = token_store
         .read(TokenKey::AuthToken)
         .unwrap_or_default();
 
-    // Persist server config (includes connections for session restoration)
-    // Validate URL scheme
     let url = Url::parse(&server_url).map_err(|e| e.to_string())?;
     match url.scheme() {
         "https" => {}
@@ -216,7 +213,6 @@ pub async fn finalize_onboarding(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Initialize cache database and dependent subsystems
     let cache_dir = ramus_core::plex::token_store::config_dir()
         .map_err(|e| e.to_string())?;
     let db_path = cache_dir.join("library_cache.db");
@@ -229,12 +225,11 @@ pub async fn finalize_onboarding(
     let search = SearchEngine::new(db_arc.clone(), None);
     *state.search_engine.write() = Some(search);
 
-    // Separate cache handle for direct queries
+    // Separate cache handle for direct queries.
     let db2 = CacheDatabase::open(&db_path).map_err(|e| e.to_string())?;
     *state.cache.lock() = Some(db2);
 
-    // Configure audio player with server connection details.
-    // Normalize trailing slashes: url::Url::parse adds one but Plex connection URIs don't.
+    // url::Url::parse adds a trailing slash that Plex connection URIs don't have.
     let server_url_norm = server_url.trim_end_matches('/');
     let is_local = server.connections.iter().any(|c| {
         c.uri.trim_end_matches('/') == server_url_norm && c.local
@@ -246,13 +241,12 @@ pub async fn finalize_onboarding(
     );
     state.player.set_remote(!is_local);
 
-    // Load genre mapper from bundled data
     let open_json_bytes = include_bytes!("../../data/open.json");
     if let Ok(mapper) = GenreMapper::from_json_bytes(open_json_bytes) {
         *state.genre_mapper.write() = Some(mapper);
     }
 
-    // Initialize connection monitor with player failover callback
+    // Connection monitor with player failover callback.
     let allow_http = !state.settings.read().refuse_http;
     state.connection_monitor.set_allow_http(allow_http);
     let monitor_player = state.player.clone();
@@ -267,7 +261,6 @@ pub async fn finalize_onboarding(
         .connection_monitor
         .start(PlexServer::from(&config), server_url, auth_token);
 
-    // Clear discovery cache
     state.discovered_servers.lock().clear();
 
     Ok(())
@@ -285,14 +278,12 @@ pub async fn logout(state: State<'_, AppState>) -> CmdResult<()> {
     state.client.set_token(None);
     state.client.set_server_url(None);
 
-    // Clear stored credentials
     if let Ok(token_store) = TokenStore::new() {
         token_store.delete(TokenKey::AuthToken);
         token_store.delete(TokenKey::ServerToken);
         auth::delete_server_config(&token_store);
     }
 
-    // Clear cache and discovery data
     *state.cache.lock() = None;
     *state.sync_engine.lock() = None;
     *state.search_engine.write() = None;

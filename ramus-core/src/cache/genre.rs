@@ -5,10 +5,10 @@ use rusqlite::params;
 use super::db::{CacheDatabase, CacheError};
 
 impl CacheDatabase {
-    /// Batch upsert genres and album<->genre links.
+    /// Batch upsert genres and album ↔ genre links. `items` is `(album_id, genre_names)`.
     pub fn batch_upsert_genres_and_links(
         &self,
-        items: &[(i64, Vec<String>)], // (album_id, genre_names)
+        items: &[(i64, Vec<String>)],
     ) -> Result<(), CacheError> {
         let conn = self.conn.lock();
         let tx = conn.unchecked_transaction()?;
@@ -36,7 +36,7 @@ impl CacheDatabase {
         Ok(())
     }
 
-    /// Upsert a genre name (case-insensitive). Returns the genre id.
+    /// Upsert a genre name case-insensitively and return its id.
     pub fn upsert_genre(&self, name: &str) -> Result<i64, CacheError> {
         let conn = self.conn.lock();
         conn.execute(
@@ -51,7 +51,7 @@ impl CacheDatabase {
         Ok(id)
     }
 
-    /// Link an album to a genre. INSERT OR IGNORE.
+    /// Link an album to a genre. Duplicate links are ignored.
     pub fn link_album_genre(&self, album_id: i64, genre_id: i64) -> Result<(), CacheError> {
         let conn = self.conn.lock();
         conn.execute(
@@ -82,7 +82,7 @@ impl CacheDatabase {
     }
 
     /// Atomically update album deep metadata (genres by name, rating, studio, colors).
-    /// Uses COALESCE to preserve existing values when new values are NULL.
+    /// `COALESCE` preserves existing values when new values are `NULL`.
     pub fn update_album_deep_metadata(
         &self,
         album_id: i64,
@@ -103,7 +103,6 @@ impl CacheDatabase {
             params![rating, studio, colors_json, album_id],
         )?;
 
-        // Replace genre links
         tx.execute(
             "DELETE FROM album_genres WHERE albumId = ?1",
             params![album_id],
@@ -129,7 +128,7 @@ impl CacheDatabase {
         Ok(())
     }
 
-    /// Genre name -> set of album IDs.
+    /// Genre name → set of album IDs.
     pub fn genre_album_sets(&self) -> Result<HashMap<String, HashSet<i64>>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -164,7 +163,7 @@ impl CacheDatabase {
         Ok(names)
     }
 
-    /// Get album IDs that are tagged with any of the given genre names.
+    /// Album IDs tagged with any of the given genre names.
     pub fn album_ids_for_genre_names(
         &self,
         genre_names: &[String],
@@ -193,7 +192,7 @@ impl CacheDatabase {
         Ok(set)
     }
 
-    /// Get album IDs for favourited albums (rating >= 10).
+    /// Album IDs for favourited albums (rating >= 10).
     pub fn album_ids_for_favourites(&self) -> Result<HashSet<i64>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(

@@ -2,8 +2,7 @@ import type { CSSProperties } from "react";
 import type { UltraBlurColors } from "../lib/types";
 import { hexToRgb } from "../lib/vibrantColor";
 
-// Curated color presets sampled from real album art.
-// Each entry has ultrablur corner colors and a matching accent.
+// Curated presets sampled from real album art: corner colours + matching accent.
 const PRESETS: { accent: [number, number, number]; blur: UltraBlurColors }[] = [
   {
     accent: [199, 81, 147],
@@ -63,7 +62,7 @@ const PRESETS: { accent: [number, number, number]; blur: UltraBlurColors }[] = [
   },
 ];
 
-/** Pick a random preset and apply its accent + return its blur colors. */
+/** Return a random preset's blur colours and matching accent. */
 export function randomPalette(): { colors: UltraBlurColors; accent: [number, number, number] } {
   const preset = PRESETS[Math.floor(Math.random() * PRESETS.length)];
   return { colors: preset.blur, accent: preset.accent };
@@ -72,18 +71,15 @@ export function randomPalette(): { colors: UltraBlurColors; accent: [number, num
 // --- Color helpers ---
 
 /**
- * Baked tone adjustments from the tuning session. Brightness and
- * saturation are applied in JS (not CSS `filter:`) because CSS filters
- * go through Chromium's filter pipeline — the same pipeline whose
- * 8-bit intermediate surfaces banded on Windows when we were using
- * `filter: blur()`. Doing the tone math in JS guarantees the values
- * feeding the gradient are already "final", so the only path the
- * colours take to the screen is the high-precision gradient path.
+ * Baked tone adjustments. Brightness and saturation are applied in JS,
+ * NOT via CSS `filter:`: Chromium's filter pipeline uses 8-bit
+ * intermediate surfaces that banded on Windows with the prior
+ * `filter: blur()` approach. Doing the math here keeps the colours on
+ * the high-precision gradient path all the way to the screen.
  *
- * Saturation is a per-channel blend toward the RGB mean — simple
- * grey in sRGB, not perceptually uniform, but deterministic and
- * cheap. Brightness is a scalar multiply clamped to [0, 255].
- * Applied in saturation-then-brightness order.
+ * Saturation is a per-channel blend toward the RGB mean (sRGB grey, not
+ * perceptually uniform, but deterministic). Brightness is a scalar
+ * multiply clamped to [0, 255]. Order: saturation then brightness.
  */
 const BRIGHTNESS = 0.9;
 const SATURATION = 1.2;
@@ -101,26 +97,26 @@ interface Props {
 }
 
 /**
- * Full-window gradient background built from 4 overlapping CSS
- * `radial-gradient()` layers, one anchored at each corner.
+ * Full-window gradient background from 4 overlapping CSS
+ * `radial-gradient()` layers, one per corner.
  *
- * This replaces an earlier approach that used 4 solid-colour circle
- * divs inside a `filter: blur(220px)` wrapper. That approach looked
- * fine on macOS but banded catastrophically on Windows because
- * Chromium's CSS filter pipeline uses 8-bit intermediate surfaces,
- * baking quantisation into the blur output before any downstream
- * dither could help. CSS radial gradients go through a different
- * render path with higher internal precision and built-in dithering,
- * so the same visual works cleanly on both platforms.
+ * Do NOT use `filter: blur/brightness/saturate` here. A prior
+ * implementation used 4 solid-colour divs inside `filter: blur(220px)`
+ * and banded on Windows because Chromium's CSS filter pipeline uses
+ * 8-bit intermediate surfaces. WKWebView on macOS uses
+ * higher-precision Metal-backed intermediates plus window-server
+ * dithering, which hid the issue — do not be fooled by Mac-only
+ * testing. CSS radial gradients go through a different render path
+ * with higher internal precision and built-in dithering.
  *
- * The 4 corner colours are passed as CSS custom properties on the
- * element's inline style. The matching `@property` declarations in
- * `styles.css` with `syntax: '<color>'` enable smooth colour-space
- * interpolation on the `transition`, giving us a 0.8s soft crossfade
- * whenever the album changes. Brightness + saturation (baked as
- * constants above) are applied to each colour in JS before it
- * becomes CSS — deliberately NOT via CSS `filter:`, which would
- * put us back in the banding-prone filter pipeline.
+ * Corner colours are passed as CSS custom properties. The matching
+ * `@property` declarations in `styles.css` with `syntax: '<color>'`
+ * enable smooth colour-space interpolation for the 0.8s album
+ * crossfade; without them the custom properties transition as string
+ * swaps (instant).
+ *
+ * Brightness + saturation are applied in JS (see `adjustedCSS`)
+ * specifically to avoid the CSS filter pipeline.
  */
 export default function UltraBlurBackground({ colors }: Props) {
   const bgStyle = {

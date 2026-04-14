@@ -1,22 +1,20 @@
-//! Prefetch worker — serial track downloads with resumable requests.
+//! Prefetch worker: serial track downloads with resumable requests.
 //!
-//! Downloads upcoming tracks in the queue to the local audio cache so
-//! gapless playback stays gapless even if the user skips around. A
-//! secondary job is to generate per-track FFT spectrograms (`.spec`
-//! files) for the focus-mode visualiser.
+//! Downloads upcoming queue tracks to the local audio cache so gapless
+//! playback stays gapless across skips. Also generates per-track FFT
+//! spectrograms (`.spec` files) for the focus-mode visualiser.
 //!
 //! ## Strategy
 //!
-//! Downloads start ~1-2s after a track change. One track at a time,
-//! serially, including the currently-playing track (for spectrum
-//! analysis — skipped when the visualiser is disabled). Each download
-//! uses resumable Range requests with automatic retry on chunk errors.
+//! Downloads start ~1–2s after a track change, one at a time, including the
+//! currently-playing track (for spectrum analysis — skipped when the
+//! visualiser is disabled). Each download uses resumable Range requests with
+//! automatic retry on chunk errors.
 //!
 //! ## Local-first playback
 //!
-//! As soon as a track lands in `DownloadCache`, its mpv playlist entry
-//! gets swapped to `file://<path>`. When mpv naturally advances to
-//! that track, it reads from disk with zero network traffic.
+//! Once a track lands in `DownloadCache`, its mpv playlist entry is swapped
+//! to `file://<path>`, so natural advance reads from disk with no network.
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -33,61 +31,52 @@ use tokio::task::JoinHandle;
 use crate::events::emit_spectrum_ready;
 use crate::spectrum_analyzer;
 
-// ---------------------------------------------------------------------------
-// Tunables
-// ---------------------------------------------------------------------------
+// --- Tunables ---
 
-/// Per-track download time budget. Retries as many times as needed
-/// within this window. Fast LAN finishes in 1-2 retries; throttled
-/// connections (e.g. Windows Defender network inspection) get dozens of
-/// small-chunk resumes. 90s is enough for a 40MB FLAC at ~500KB/s
-/// effective throughput.
+/// Per-track download time budget. Retries as many times as needed within
+/// this window. Fast LAN finishes in 1–2 retries; throttled connections
+/// (e.g. Windows Defender network inspection) need dozens of small-chunk
+/// resumes. 90s covers a 40MB FLAC at ~500KB/s effective throughput.
 const DOWNLOAD_TIME_BUDGET: Duration = Duration::from_secs(90);
 
-/// Initial backoff between resume attempts. Doubles on consecutive
-/// retries that make no progress, resets when real progress is made.
+/// Initial backoff between resume attempts. Doubles on consecutive retries
+/// that make no progress, resets when real progress is made.
 const INITIAL_BACKOFF: Duration = Duration::from_millis(200);
 
 /// Maximum backoff between resume attempts.
 const MAX_BACKOFF: Duration = Duration::from_secs(5);
 
-/// A retry must gain at least this many bytes to count as "progress"
-/// for backoff-reset purposes.
+/// A retry must gain at least this many bytes to count as progress for
+/// backoff-reset purposes.
 const MIN_PROGRESS_BYTES: u64 = 4096;
 
-/// Delay before starting prefetch after a natural advance.
-/// Just enough for mpv to issue its initial request.
+/// Delay before starting prefetch after a natural advance; enough for mpv
+/// to issue its initial request.
 const NATURAL_GAP: Duration = Duration::from_secs(1);
 
-/// Delay after a user skip. Slightly longer so rapid skips
-/// don't fire pointless downloads, but still fast.
+/// Delay after a user skip. Slightly longer so rapid skips don't fire
+/// pointless downloads.
 const SKIP_GAP: Duration = Duration::from_secs(2);
 
-// ---------------------------------------------------------------------------
-// Commands
-// ---------------------------------------------------------------------------
+// --- Commands ---
 
 #[derive(Debug, Clone, Copy)]
 enum PrefetchCmd {
     /// mpv's playlist-pos advanced naturally (gapless auto-advance or
     /// play_tracks kicking off a fresh queue).
     NaturalAdvance { generation: u64 },
-    /// User-initiated skip (next/prev/jump). Aborts any in-flight
-    /// download and restarts with a skip gap.
+    /// User-initiated skip (next/prev/jump). Aborts any in-flight download
+    /// and restarts with a skip gap.
     Skipped { generation: u64 },
-    /// Album switch / stop. Abort in-flight, wait for the next command
-    /// before doing anything.
+    /// Album switch / stop. Aborts in-flight and waits for the next command.
     #[allow(dead_code)]
     Cancel { generation: u64 },
 }
 
-// ---------------------------------------------------------------------------
-// Handle
-// ---------------------------------------------------------------------------
+// --- Handle ---
 
-/// Control surface for the background prefetch worker. Cloneable so it
-/// can live in `AppState` and be called from any command handler or
-/// event callback.
+/// Control surface for the background prefetch worker. Cloneable so it can
+/// live in `AppState` and be called from any command handler or event callback.
 #[derive(Clone)]
 pub struct PrefetchHandle {
     tx: mpsc::UnboundedSender<PrefetchCmd>,
@@ -101,31 +90,29 @@ impl PrefetchHandle {
         let _ = self.tx.send(PrefetchCmd::NaturalAdvance { generation: gen });
     }
 
-    /// Signal that the user skipped to a different track. Aborts
-    /// in-flight work, then schedules a new cycle.
+    /// Signal that the user skipped to a different track. Aborts in-flight
+    /// work and schedules a new cycle.
     pub fn notify_skip(&self) {
         let gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let _ = self.tx.send(PrefetchCmd::Skipped { generation: gen });
     }
 
-    /// Signal that the queue was replaced or playback was stopped.
-    /// Aborts in-flight work; no new cycle is scheduled until the next
-    /// natural advance.
+    /// Signal that the queue was replaced or playback was stopped. Aborts
+    /// in-flight work; no new cycle is scheduled until the next natural advance.
     pub fn notify_cancel(&self) {
         let gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let _ = self.tx.send(PrefetchCmd::Cancel { generation: gen });
     }
 }
 
-/// Spawn the single long-lived prefetch worker task. Returns the handle
-/// that callers use to pump commands in. Call this once at app startup.
+/// Spawn the long-lived prefetch worker task. Call once at app startup.
 pub fn spawn_worker(
     player: Arc<AudioPlayer>,
     http_client: reqwest::Client,
     app: AppHandle,
 ) -> PrefetchHandle {
-    // Rehydrate the in-memory DownloadCache from any audio files already
-    // on disk from a previous session.
+    // Rehydrate the in-memory DownloadCache from audio files left on disk
+    // from a previous session.
     if let Ok(cfg_dir) = ramus_core::plex::token_store::config_dir() {
         rehydrate_cache_from_disk(&player, &cfg_dir.join("audio_cache"));
     }
@@ -141,9 +128,9 @@ pub fn spawn_worker(
     PrefetchHandle { tx, generation }
 }
 
-/// Scan the audio cache directory and register any files matching the
-/// `<rating_key>_<len>.<ext>` naming convention into the in-memory
-/// `DownloadCache`. Runs once at worker startup.
+/// Scan the audio cache directory and register files matching
+/// `<rating_key>_<len>.<ext>` into the in-memory `DownloadCache`. Runs once
+/// at worker startup.
 fn rehydrate_cache_from_disk(player: &AudioPlayer, cache_dir: &std::path::Path) {
     let Ok(entries) = std::fs::read_dir(cache_dir) else {
         return;
@@ -188,9 +175,7 @@ fn rehydrate_cache_from_disk(player: &AudioPlayer, cache_dir: &std::path::Path) 
     }
 }
 
-// ---------------------------------------------------------------------------
-// Worker loop
-// ---------------------------------------------------------------------------
+// --- Worker loop ---
 
 async fn worker_loop(
     player: Arc<AudioPlayer>,
@@ -210,9 +195,8 @@ async fn worker_loop(
                 log::debug!("prefetch: cancel");
             }
             PrefetchCmd::NaturalAdvance { generation } => {
-                // Natural advance: let in-flight finish naturally — its
-                // loop will pick up the shifted window automatically.
-                // Only spawn a fresh cycle if idle.
+                // Let in-flight finish naturally — its loop picks up the
+                // shifted window automatically. Only spawn a fresh cycle if idle.
                 let idle = cycle_task.as_ref().is_none_or(|h| h.is_finished());
                 if idle {
                     log::debug!(
@@ -260,9 +244,7 @@ fn spawn_cycle(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Cycle
-// ---------------------------------------------------------------------------
+// --- Cycle ---
 
 async fn run_cycle(
     player: Arc<AudioPlayer>,
@@ -274,7 +256,7 @@ async fn run_cycle(
 ) {
     let gap = if is_skip { SKIP_GAP } else { NATURAL_GAP };
 
-    // Brief safety gap so mpv can issue its initial request.
+    // Safety gap so mpv issues its initial request first.
     tokio::time::sleep(gap).await;
     if shared_gen.load(Ordering::SeqCst) != my_gen {
         return;
@@ -289,9 +271,9 @@ async fn run_cycle(
         return;
     }
 
-    // Include the currently-playing track when spectrum analysis is enabled
-    // — the download provides a clean file for FFT. When disabled, skip it
-    // (the swap-to-local is a no-op for the active mpv index anyway).
+    // Include the currently-playing track when spectrum analysis is enabled,
+    // since the download gives the FFT a clean file. When disabled, skip it
+    // (swap-to-local is a no-op for the active mpv index anyway).
     let spectrum_disabled = app
         .state::<crate::state::AppState>()
         .settings
@@ -305,9 +287,7 @@ async fn run_cycle(
     run_serial_downloads(&player, &http, &app, &shared_gen, my_gen, &cache_dir, include_current).await;
 }
 
-// ---------------------------------------------------------------------------
-// Serial downloads
-// ---------------------------------------------------------------------------
+// --- Serial downloads ---
 
 async fn run_serial_downloads(
     player: &Arc<AudioPlayer>,
@@ -351,9 +331,7 @@ async fn run_serial_downloads(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Spectrum analysis
-// ---------------------------------------------------------------------------
+// --- Spectrum analysis ---
 
 fn spawn_analyse_task(player: &AudioPlayer, track_id: String, app: AppHandle) {
     if app.state::<crate::state::AppState>().settings.read().disable_spectrum {
@@ -373,13 +351,11 @@ fn spawn_analyse_task(player: &AudioPlayer, track_id: String, app: AppHandle) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// Downloader
-// ---------------------------------------------------------------------------
+// --- Downloader ---
 
-/// Download a file using resumable Range requests. Cancellation is
-/// external: callers wrap this in a `tokio::spawn` and abort if needed.
-/// Partial files are kept on abort so a follow-up cycle can resume.
+/// Download a file using resumable Range requests. Cancellation is external:
+/// callers wrap this in `tokio::spawn` and abort if needed. Partial files
+/// are kept on abort so a follow-up cycle can resume.
 async fn download_with_resume(
     player: &AudioPlayer,
     client: &reqwest::Client,
@@ -481,7 +457,7 @@ async fn download_with_resume(
             return Err(format!("HTTP {status}"));
         }
 
-        // Server ignored our Range header — start over from scratch.
+        // Server ignored the Range header — start over from scratch.
         if written > 0 && status.as_u16() == 200 {
             written = 0;
             expected_size = None;
@@ -538,9 +514,8 @@ async fn download_with_resume(
             ));
         }
 
-        // Adaptive backoff: reset when making real progress, escalate
-        // when stalled. Keeps fast connections fast while backing off
-        // when the server is actively throttling.
+        // Adaptive backoff: reset on real progress, escalate when stalled.
+        // Keeps fast connections fast while backing off under active throttling.
         if bytes_this_attempt >= MIN_PROGRESS_BYTES {
             current_backoff = INITIAL_BACKOFF;
         } else {
