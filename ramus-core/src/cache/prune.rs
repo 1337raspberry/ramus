@@ -255,6 +255,7 @@ mod tests {
                 updated_at: Some(1000),
                 added_at: None,
                 last_viewed_at: None,
+                first_genre: None,
             }])
             .unwrap();
         *map.get(source_id).unwrap()

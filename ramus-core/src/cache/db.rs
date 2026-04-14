@@ -128,7 +128,8 @@ impl CacheDatabase {
                 ultraBlurColors TEXT,
                 vibrantPalette TEXT,
                 addedAt INTEGER,
-                lastViewedAt INTEGER
+                lastViewedAt INTEGER,
+                firstGenre TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_albums_title ON albums(title);
             CREATE INDEX IF NOT EXISTS idx_albums_artistId ON albums(artistId);
@@ -174,6 +175,20 @@ impl CacheDatabase {
             );
             CREATE INDEX IF NOT EXISTS idx_album_genres_genreId ON album_genres(genreId);",
         )?;
+
+        // Back-compat: add firstGenre to an albums table that predates this
+        // column. Pre-existing rows end up with NULL, which sync_albums
+        // treats as "unknown — trust updatedAt only", so no blanket
+        // re-fetch is triggered at migration time.
+        let has_first_genre: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('albums') WHERE name = 'firstGenre'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_first_genre == 0 {
+            conn.execute("ALTER TABLE albums ADD COLUMN firstGenre TEXT", [])?;
+        }
+
         Ok(())
     }
 
@@ -598,6 +613,7 @@ mod tests {
                 updated_at: Some(1000),
                 added_at: Some(900),
                 last_viewed_at: None,
+                first_genre: None,
             }])
             .unwrap();
         *map.get(source_id).unwrap()
@@ -677,6 +693,7 @@ mod tests {
                 updated_at: Some(2000),
                 added_at: Some(900),
                 last_viewed_at: None,
+                first_genre: None,
             }])
             .unwrap();
 
@@ -756,6 +773,7 @@ mod tests {
                 updated_at: Some(1000),
                 added_at: None,
                 last_viewed_at: None,
+                first_genre: None,
             });
         }
         let album_map = db.batch_upsert_albums(&album_items).unwrap();

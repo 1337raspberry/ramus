@@ -123,6 +123,22 @@ impl QueryParser {
                 continue;
             }
             if let Some(filter) = Self::parse_segment(s) {
+                // Fold consecutive free-text segments into one. Splitting on
+                // " AND " + parse_segment can produce multiple FreeText
+                // filters (e.g. "radiohead AND karma" or "year:abc AND
+                // jazz" where the year-prefixed segment falls back to free
+                // text). Without this merge, only the first FreeText is
+                // searched — see parser.free_text() which find_maps.
+                if let SearchFilter::FreeText(new_text) = &filter {
+                    if let Some(existing) = filters.iter_mut().find_map(|f| match f {
+                        SearchFilter::FreeText(t) => Some(t),
+                        _ => None,
+                    }) {
+                        existing.push(' ');
+                        existing.push_str(new_text);
+                        continue;
+                    }
+                }
                 filters.push(filter);
             }
         }
@@ -337,6 +353,27 @@ mod tests {
         let q = QueryParser::parse("radiohead");
         assert!(!q.has_track_search());
         assert_eq!(q.free_text(), Some("radiohead"));
+    }
+
+    #[test]
+    fn test_multiple_free_text_segments_merge() {
+        let q = QueryParser::parse("radiohead AND karma");
+        assert_eq!(q.free_text(), Some("radiohead karma"));
+        assert_eq!(q.filters.len(), 1);
+    }
+
+    #[test]
+    fn test_free_text_merges_around_other_filters() {
+        let q = QueryParser::parse("radiohead AND /rock AND karma");
+        assert_eq!(q.free_text(), Some("radiohead karma"));
+        assert_eq!(q.genre_filters(), vec!["rock"]);
+    }
+
+    #[test]
+    fn test_invalid_range_falls_back_and_merges_with_free_text() {
+        let q = QueryParser::parse("year:abc AND jazz");
+        assert_eq!(q.free_text(), Some("year:abc jazz"));
+        assert!(q.range_filters().is_empty());
     }
 
     #[test]

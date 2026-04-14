@@ -250,6 +250,37 @@ impl SearchEngine {
             }
         }
 
+        // Cross-field tokenised search: each token must match one of
+        // (track title, album title, artist name), ANDed. FTS5 only
+        // indexes the track title, so "radiohead karma" (tokens that span
+        // artist + title) returns nothing from FTS5 alone. Run for every
+        // multi-token query so we catch cross-field matches, and dedupe
+        // against the FTS5 hits via `seen`. Add a small score penalty so
+        // FTS5 title-only matches still sort first when both paths hit.
+        if text.split_whitespace().filter(|t| !t.is_empty()).count() > 1 {
+            let cross_results =
+                self.db.search_tracks_by_tokens_cross_field(text, album_ids, limit)?;
+            for row in cross_results {
+                if seen.insert(row.id) {
+                    let score = match_score(&row.track_title, text) + 0.05;
+                    results.push(SearchResult {
+                        id: format!("track-{}", row.id),
+                        kind: SearchResultKind::Track,
+                        album_source_id: row.album_source_id,
+                        album_title: row.album_title,
+                        artist_name: row.artist_name,
+                        year: None,
+                        album_art_path: row.art_url,
+                        track_source_id: Some(row.track_source_id),
+                        track_title: Some(row.track_title),
+                        track_artist: row.track_artist,
+                        is_favourite: row.is_favourite,
+                        score,
+                    });
+                }
+            }
+        }
+
         // Fuzzy fallback if < 5 track results
         if results.len() < 5 {
             let fuzzy_results = self.fuzzy_track_search(text, album_ids, &seen)?;
@@ -474,6 +505,7 @@ mod tests {
                     updated_at: None,
                     added_at: None,
                     last_viewed_at: None,
+                    first_genre: None,
                 },
                 AlbumUpsertRow {
                     title: "Reign in Blood".into(),
@@ -484,6 +516,7 @@ mod tests {
                     updated_at: None,
                     added_at: None,
                     last_viewed_at: None,
+                    first_genre: None,
                 },
                 AlbumUpsertRow {
                     title: "Kid A".into(),
@@ -494,6 +527,7 @@ mod tests {
                     updated_at: None,
                     added_at: None,
                     last_viewed_at: None,
+                    first_genre: None,
                 },
             ])
             .unwrap();
@@ -750,5 +784,43 @@ mod tests {
         let q = QueryParser::parse("");
         let results = engine.search(&q, 100).unwrap();
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_free_text_cross_field_artist_plus_track_title() {
+        // "radiohead AND karma" merges to FreeText("radiohead karma"). FTS5
+        // alone can't match this (tracks_fts only indexes title, and no
+        // title has both tokens). The cross-field search should catch it
+        // via artist=Radiohead + track title=Karma Police.
+        let (_db, engine) = setup();
+        let q = QueryParser::parse("radiohead AND karma");
+        let results = engine.search(&q, 100).unwrap();
+        let tracks: Vec<_> = results
+            .iter()
+            .filter(|r| r.kind == SearchResultKind::Track)
+            .collect();
+        assert!(
+            tracks
+                .iter()
+                .any(|r| r.track_title.as_deref() == Some("Karma Police")),
+            "cross-field search should find Karma Police by Radiohead"
+        );
+    }
+
+    #[test]
+    fn test_free_text_cross_field_artist_plus_album_title() {
+        // "radiohead ok" should find OK Computer by Radiohead via the
+        // tokenised album LIKE search (artist + album title across tokens).
+        let (_db, engine) = setup();
+        let q = QueryParser::parse("radiohead ok");
+        let results = engine.search(&q, 100).unwrap();
+        let albums: Vec<_> = results
+            .iter()
+            .filter(|r| r.kind == SearchResultKind::Album)
+            .collect();
+        assert!(
+            albums.iter().any(|r| r.album_title == "OK Computer"),
+            "token-AND album search should find OK Computer"
+        );
     }
 }

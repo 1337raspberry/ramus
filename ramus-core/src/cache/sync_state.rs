@@ -29,12 +29,14 @@ impl CacheDatabase {
 
     pub fn all_album_timestamps(&self) -> Result<HashMap<String, CachedAlbumInfo>, CacheError> {
         let conn = self.conn.lock();
+        // firstGenre is the API-order first genre captured at shallow-sync
+        // time. It's compared against the same API-order first genre on
+        // the next incremental sync to catch genre-only edits. See
+        // sync_albums for the comparison. Don't substitute MIN(g.name)
+        // here — that's alphabetical order, not API order, and mismatches
+        // trigger false-positive re-fetches.
         let mut stmt = conn.prepare(
-            "SELECT a.sourceId, a.id, a.updatedAt, MIN(g.name)
-             FROM albums a
-             LEFT JOIN album_genres ag ON ag.albumId = a.id
-             LEFT JOIN genres g ON g.id = ag.genreId
-             GROUP BY a.id",
+            "SELECT sourceId, id, updatedAt, firstGenre FROM albums",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((
