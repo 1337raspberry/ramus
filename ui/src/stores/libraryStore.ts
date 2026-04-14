@@ -206,13 +206,24 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   collapseAll: () => set({ expandedGenreIds: new Set() }),
 
   selectGenre: (node) => {
-    set({
-      selectedGenreId: node.id,
-      suggestion: null,
-      detailAlbum: null,
-      browseArtistName: null,
-      browseYear: null,
-      searchQuery: null,
+    // Expand all ancestor nodes so the selected node is visible in the
+    // sidebar tree. For id "metal/black metal/blackgaze" this adds
+    // "metal" and "metal/black metal" to the expanded set. When clicking
+    // from within the tree, ancestors are already expanded — no-op.
+    const segments = node.id.split("/");
+    const ancestorIds = segments.slice(0, -1).map((_, i) => segments.slice(0, i + 1).join("/"));
+    set((state) => {
+      const nextExpanded = new Set(state.expandedGenreIds);
+      ancestorIds.forEach((id) => nextExpanded.add(id));
+      return {
+        selectedGenreId: node.id,
+        expandedGenreIds: nextExpanded,
+        suggestion: null,
+        detailAlbum: null,
+        browseArtistName: null,
+        browseYear: null,
+        searchQuery: null,
+      };
     });
     // For parent nodes with children (e.g. "Other"), collect all
     // descendant leaf names and query them directly — expand_genre
