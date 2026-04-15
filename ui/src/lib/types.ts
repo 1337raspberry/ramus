@@ -191,3 +191,11 @@ export interface UltraBlurColors {
   bottomRight: string;
   bottomLeft: string;
 }
+
+export interface AcknowledgementsText {
+  mitLicense: string;
+  notice: string;
+  thirdParty: string;
+  lgpl: string;
+  mpl: string;
+}

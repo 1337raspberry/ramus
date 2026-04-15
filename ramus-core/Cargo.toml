@@ -2,6 +2,9 @@
 name = "ramus-core"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+authors = ["raspberry1337"]
+repository = "https://github.com/1337raspberry/ramus-xplat"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
