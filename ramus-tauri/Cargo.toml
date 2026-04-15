@@ -1,6 +1,6 @@
 [package]
 name = "ramus-tauri"
-version = "0.8.1"
+version = "0.9.1"
 edition = "2021"
 license = "MIT"
 authors = ["raspberry1337"]

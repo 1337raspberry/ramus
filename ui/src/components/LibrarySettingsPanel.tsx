@@ -165,16 +165,19 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
       .catch((e) => showError(`Sign out failed: ${e}`));
   }, [onSignOut, showError]);
 
+  // Skip when the Acknowledgements overlay is open so Escape only
+  // dismisses the topmost layer. Both panels attach to `window`; the
+  // nested listener alone can't stop this one from firing first.
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !showAcknowledgements) {
         e.preventDefault();
         onDismiss();
       }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onDismiss]);
+  }, [onDismiss, showAcknowledgements]);
 
   if (!settings) return null;
 

@@ -190,14 +190,27 @@ def read_license_file(license_file: str | None) -> str:
     file is missing or unreadable; license-checker always supplies the
     SPDX identifier, which is enough for legal attribution even without
     the full text.
+
+    A compromised npm package could point `licenseFile` at a path like
+    `../../ramus-tauri/src/...` to slip source-code content into the
+    embedded third-party list. The resolved path is confined to `ui/`
+    before any read so a hostile manifest can't escape the node_modules
+    subtree.
     """
     if not license_file:
         return "(license text not bundled with this package)"
     candidate = UI / license_file
     if not candidate.exists():
         return f"(license text not found at {license_file})"
+    ui_root = UI.resolve()
     try:
-        return candidate.read_text(encoding="utf-8", errors="replace").strip()
+        resolved = candidate.resolve()
+    except OSError as e:
+        return f"(could not resolve {license_file}: {e})"
+    if ui_root != resolved and ui_root not in resolved.parents:
+        return f"(license path {license_file} escapes ui/ — skipped)"
+    try:
+        return resolved.read_text(encoding="utf-8", errors="replace").strip()
     except OSError as e:
         return f"(could not read {license_file}: {e})"
 
