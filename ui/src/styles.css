@@ -3080,10 +3080,7 @@ body.is-fullscreen .focus-body {
   color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
 }
 
-/* Acknowledgements panel — wider + taller than the settings panel
- * because it's showing a single scrollable slab of ~500KB of license
- * text. User asked for "raw scrollable list, nothing fancy" — no
- * section tabs, no inline formatting, just a <pre> block. */
+/* Acknowledgements panel — wider and taller for long license text. */
 .acknowledgements-panel {
   width: 720px;
   max-width: 90vw;
@@ -3113,9 +3110,7 @@ body.is-fullscreen .focus-body {
   text-align: center;
 }
 
-/* The one scrollable region — fills remaining panel height and scrolls
- * internally. `white-space: pre-wrap` so long license lines wrap
- * instead of overflowing horizontally. */
+/* `pre-wrap` so long license lines wrap instead of overflowing. */
 .acknowledgements-text {
   flex: 1;
   overflow-y: auto;
