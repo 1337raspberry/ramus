@@ -1,0 +1,43 @@
+# cargo-about configuration for ramus-xplat.
+#
+# Runs via scripts/generate-third-party-licenses.py to emit the Rust
+# portion of THIRD_PARTY_LICENSES.md. Keep the `accepted` list in sync
+# with what's actually present in the tree — any crate with a license
+# not in this list makes `cargo about generate` fail, which is the
+# intended early-warning system for a surprise dep landing a
+# copyleft/proprietary license.
+#
+# Baseline: every license spelled SPDX-style that is permissive for
+# redistribution. MPL-2.0 is in because symphonia (+ a handful of
+# Servo-heritage crates) are MPL-licensed; we ship their texts in
+# licenses/LICENSE.MPL-2.0.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "Unlicense",
+    "OpenSSL",
+    "BSL-1.0",
+    "0BSD",
+    # Community Data License Agreement — Permissive. Used by webpki-roots
+    # (Mozilla's bundled root certificate snapshots). Permissive license
+    # intended for datasets; compatible with MIT redistribution.
+    "CDLA-Permissive-2.0",
+]
+
+# No private-registry crates in this project.
+private = { ignore = true }
+
+# Crates whose SPDX metadata is quirky and need a manual override.
+# `ring` is the classic case (SPDX expr isn't valid). Add entries here
+# only when cargo-about complains and manual inspection confirms the
+# crate is actually permissive.
+workarounds = ["ring"]

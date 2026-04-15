@@ -544,6 +544,8 @@ fn main() {
             commands::settings::get_image_cache_stats,
             commands::settings::clear_audio_cache,
             commands::settings::get_audio_cache_stats,
+            // acknowledgements / licenses
+            commands::acknowledgements::get_acknowledgements_text,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")

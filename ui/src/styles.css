@@ -3079,3 +3079,54 @@ body.is-fullscreen .focus-body {
 .np-focus-btn:hover {
   color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
 }
+
+/* Acknowledgements panel — wider + taller than the settings panel
+ * because it's showing a single scrollable slab of ~500KB of license
+ * text. User asked for "raw scrollable list, nothing fancy" — no
+ * section tabs, no inline formatting, just a <pre> block. */
+.acknowledgements-panel {
+  width: 720px;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.acknowledgements-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 20px 20px;
+  gap: 10px;
+}
+
+.acknowledgements-summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.acknowledgements-loading {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 24px 0;
+  text-align: center;
+}
+
+/* The one scrollable region — fills remaining panel height and scrolls
+ * internally. `white-space: pre-wrap` so long license lines wrap
+ * instead of overflowing horizontally. */
+.acknowledgements-text {
+  flex: 1;
+  overflow-y: auto;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

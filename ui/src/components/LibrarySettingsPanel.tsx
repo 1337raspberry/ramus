@@ -17,6 +17,7 @@ import type { SyncProgress } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { ImageCacheRow, AudioCacheRow } from "./CacheStatsRow";
+import AcknowledgementsPanel from "./AcknowledgementsPanel";
 
 interface Props {
   onDismiss: () => void;
@@ -31,6 +32,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [genreWarnings, setGenreWarnings] = useState<string[]>([]);
   const [hasCustomGenres, setHasCustomGenres] = useState(false);
+  const [showAcknowledgements, setShowAcknowledgements] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -423,6 +425,12 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
             />
           </label>
 
+          <div className="settings-section-header">LEGAL</div>
+
+          <button className="settings-btn" onClick={() => setShowAcknowledgements(true)}>
+            Acknowledgements &amp; licenses
+          </button>
+
           <div className="settings-section-header">ACCOUNT</div>
 
           <button className="settings-btn settings-signout" onClick={handleSignOut}>
@@ -430,6 +438,9 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
           </button>
         </div>
       </div>
+      {showAcknowledgements && (
+        <AcknowledgementsPanel onDismiss={() => setShowAcknowledgements(false)} />
+      )}
     </div>
   );
 }

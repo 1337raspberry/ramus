@@ -2,6 +2,7 @@
 
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type {
+  AcknowledgementsText,
   Album,
   ArtistInfo,
   CacheStats,
@@ -200,3 +201,8 @@ export const clearAudioCache = () => invoke<void>("clear_audio_cache");
 
 export const getAudioCacheStats = () =>
   invoke<{ entryCount: number; totalSizeBytes: number }>("get_audio_cache_stats");
+
+// --- Acknowledgements / licenses ---
+
+export const getAcknowledgementsText = () =>
+  invoke<AcknowledgementsText>("get_acknowledgements_text");
