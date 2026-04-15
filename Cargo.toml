@@ -2,6 +2,19 @@
 members = ["ramus-core", "ramus-tauri"]
 resolver = "2"
 
+# Single source of truth for crate + app metadata. Bumping `version`
+# here propagates through both member crates, tauri.conf.json (which
+# reads from ramus-tauri/Cargo.toml when its own `version` field is
+# omitted), and the User-Agent string in ramus-core via
+# env!("CARGO_PKG_VERSION"). ui/package.json is marked `"private": true`
+# and deliberately carries no version field.
+[workspace.package]
+version = "0.9.1"
+edition = "2021"
+license = "MIT"
+authors = ["raspberry1337"]
+repository = "https://github.com/1337raspberry/ramus-xplat"
+
 # Optimise the CPU-heavy spectrum-analyser deps even in debug builds.
 # Symphonia, rustfft and realfft are pure-Rust numerical code that runs
 # at roughly 25x real-time at `opt-level = 0` but 300x+ at

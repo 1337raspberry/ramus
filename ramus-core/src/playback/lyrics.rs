@@ -256,7 +256,11 @@ pub async fn fetch_from_lrclib(
         ])
         .header(
             "Lrclib-Client",
-            "ramus v0.9.1 (https://github.com/1337raspberry/ramus)",
+            concat!(
+                "ramus v",
+                env!("CARGO_PKG_VERSION"),
+                " (https://github.com/1337raspberry/ramus)",
+            ),
         )
         .timeout(std::time::Duration::from_secs(10))
         .send()
@@ -584,7 +588,11 @@ mod tests {
             ])
             .header(
                 "Lrclib-Client",
-                "ramus v0.9.1 (https://github.com/1337raspberry/ramus)",
+                concat!(
+                "ramus v",
+                env!("CARGO_PKG_VERSION"),
+                " (https://github.com/1337raspberry/ramus)",
+            ),
             )
             .timeout(std::time::Duration::from_secs(10))
             .send()

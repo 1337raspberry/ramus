@@ -42,7 +42,19 @@ BUNDLED_COPY = ROOT / "licenses" / "THIRD_PARTY_LICENSES.md"
 
 
 def run_cargo_about_json() -> dict:
-    """Invoke cargo-about and capture its JSON output."""
+    """Invoke cargo-about and capture its JSON output.
+
+    `--frozen` (= `--locked --offline`) is required for deterministic
+    output. Without it, cargo-about enriches license metadata via
+    ClearlyDefined (clearlydefined.io), which can return different
+    data across runs for crates that are still being "harvested" —
+    producing a byte-different markdown each run and making the CI
+    drift check useless. Offline mode falls back to local Cargo.toml
+    license fields and on-disk LICENSE files, which is sufficient for
+    attribution; the only thing we lose is copyright-line enrichment
+    pulled from upstream git repositories, which wasn't worth the
+    flake.
+    """
     try:
         result = subprocess.run(
             [
@@ -51,6 +63,7 @@ def run_cargo_about_json() -> dict:
                 "generate",
                 "--format",
                 "json",
+                "--frozen",
                 "--manifest-path",
                 "Cargo.toml",
             ],
