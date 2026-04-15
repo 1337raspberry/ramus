@@ -1,10 +1,10 @@
 [package]
 name = "ramus-tauri"
-version = "0.9.1"
-edition = "2021"
-license = "MIT"
-authors = ["raspberry1337"]
-repository = "https://github.com/1337raspberry/ramus-xplat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 
 [dependencies]
 ramus-core = { path = "../ramus-core" }
