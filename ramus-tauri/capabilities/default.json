@@ -15,6 +15,6 @@
     "core:window:allow-is-fullscreen",
     "core:window:allow-start-dragging",
     "core:window:allow-set-title",
-    "window-state:default"
+    "opener:default"
   ]
 }

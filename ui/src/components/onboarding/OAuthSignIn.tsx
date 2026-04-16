@@ -23,7 +23,8 @@ export default function OAuthSignIn({ onSuccess }: Props) {
       setAuthUrl(data.authUrl);
       setPolling(true);
 
-      // Browser opens from Rust via open::that().
+      // Browser opens from Rust via tauri-plugin-opener (routes through
+      // the OS: NSWorkspace / UIApplication / ShellExecuteW / xdg-open).
     } catch (e) {
       setError(String(e));
     }
