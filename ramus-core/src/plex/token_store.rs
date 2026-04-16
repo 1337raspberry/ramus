@@ -275,7 +275,29 @@ fn hardware_uuid() -> Result<String, TokenStoreError> {
         .map_err(|_| TokenStoreError::NoHardwareUUID)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+// iOS has no publicly-accessible hardware UUID (`identifierForVendor` is
+// app-scoped rather than device-wide, and IOKit's `IOPlatformUUID` is
+// unavailable on the sandboxed phone runtime). Phase 1 substitutes a
+// persisted random UUID written once to the app's config directory —
+// equivalent security-wise because both sources are keyed to the install.
+// Phase 3 replaces this with an iOS Keychain-backed key.
+#[cfg(target_os = "ios")]
+fn hardware_uuid() -> Result<String, TokenStoreError> {
+    let dir = default_config_dir()?;
+    let path = dir.join("device_uuid.txt");
+    if let Ok(existing) = fs::read_to_string(&path) {
+        let trimmed = existing.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+    fs::create_dir_all(&dir).map_err(|_| TokenStoreError::NoHardwareUUID)?;
+    let id = uuid::Uuid::new_v4().to_string();
+    fs::write(&path, &id).map_err(|_| TokenStoreError::NoHardwareUUID)?;
+    Ok(id)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux", target_os = "ios")))]
 fn hardware_uuid() -> Result<String, TokenStoreError> {
     Err(TokenStoreError::NoHardwareUUID)
 }

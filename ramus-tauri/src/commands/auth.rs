@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
 use ramus_core::cache::db::CacheDatabase;
@@ -16,7 +17,7 @@ use crate::state::AppState;
 use super::CmdResult;
 
 #[tauri::command]
-pub async fn start_oauth(state: State<'_, AppState>) -> CmdResult<String> {
+pub async fn start_oauth(app: AppHandle, state: State<'_, AppState>) -> CmdResult<String> {
     let auth = PlexAuth::default();
     let pin = auth
         .create_pin(&state.client.client_identifier)
@@ -25,7 +26,14 @@ pub async fn start_oauth(state: State<'_, AppState>) -> CmdResult<String> {
 
     let url = PlexAuth::auth_url(&pin.code, &state.client.client_identifier);
 
-    let _ = open::that(&url);
+    // `tauri-plugin-opener` dispatches to the right platform backend:
+    // `UIApplication.open` on iOS, `NSWorkspace.open` on macOS,
+    // `ShellExecuteW` on Windows, `xdg-open` on Linux. The old `open`
+    // crate no-opped on iOS, which broke the OAuth flow in the
+    // simulator.
+    if let Err(e) = app.opener().open_url(&url, None::<&str>) {
+        log::warn!("failed to open auth URL in external browser: {e}");
+    }
 
     Ok(serde_json::json!({
         "authUrl": url,

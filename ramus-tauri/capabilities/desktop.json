@@ -1,0 +1,8 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/nicegui/static/tauri-conf-schema.json",
+  "identifier": "desktop",
+  "description": "Desktop-only permissions. `window-state:default` comes from tauri-plugin-window-state, which is only linked on macOS/Windows/Linux (see ramus-tauri/Cargo.toml).",
+  "platforms": ["macOS", "windows", "linux"],
+  "windows": ["main"],
+  "permissions": ["window-state:default"]
+}
