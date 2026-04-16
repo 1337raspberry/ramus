@@ -1,3 +1,18 @@
 xcuserdata/
 build/
 Externals/
+
+# The Xcode project is regenerated from `project.yml` via xcodegen, so
+# treat it as build output and keep it out of git. Avoids committing a
+# contributor's DEVELOPMENT_TEAM / CODE_SIGN_IDENTITY into a public repo
+# and prevents merge pain on the 400-line pbxproj blob.
+#
+# `Package.resolved` under `project.xcworkspace/xcshareddata/swiftpm/`
+# is NOT ignored — it's the SPM lockfile and pins MPVKit for everyone.
+#
+# Contributor setup after clone:
+#   cd ramus-tauri/gen/apple && xcodegen generate --spec project.yml
+ramus-tauri.xcodeproj/project.pbxproj
+ramus-tauri.xcodeproj/xcshareddata/
+ramus-tauri.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+ramus-tauri.xcodeproj/project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
