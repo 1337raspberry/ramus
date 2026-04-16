@@ -218,6 +218,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         fetchLyrics(track.ratingKey)
           .then((result) => set({ lyrics: result, lyricsLoading: false }))
           .catch(() => set({ lyricsLoading: false }));
+      } else if (get().showLyrics) {
+        set({ showLyrics: false });
       }
 
       getQueue()
