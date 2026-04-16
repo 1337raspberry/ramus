@@ -1,0 +1,240 @@
+import AVFoundation
+import MediaPlayer
+import Tauri
+import UIKit
+import WebKit
+
+/// Main plugin class — registered with Tauri via the `@_cdecl` init at
+/// the bottom of the file. Each `@objc` method here matches a Rust-side
+/// call via `run_mobile_plugin("methodName", args)`.
+///
+/// The plugin owns three collaborators:
+///   - `MpvController` — wraps libmpv for audio-only playback.
+///   - `NowPlayingBridge` — `MPNowPlayingInfoCenter` +
+///     `MPRemoteCommandCenter` wiring.
+///   - implicit `AVAudioSession` — configured once on `initAudio`.
+///
+/// mpv events fire from the controller on a background queue; the plugin
+/// forwards them to Rust via `trigger(name, data:)`, which the Rust side
+/// listens to with `app.listen("plugin:ramus-ios-bridge://<name>", …)`.
+class MpvBridgePlugin: Plugin {
+    private var mpv: MpvController?
+    private var nowPlaying: NowPlayingBridge?
+
+    // MARK: - Initialization
+
+    @objc public func initAudio(_ invoke: Invoke) throws {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+        } catch {
+            invoke.reject("failed to activate audio session: \(error)")
+            return
+        }
+
+        UIApplication.shared.beginReceivingRemoteControlEvents()
+
+        if nowPlaying == nil {
+            nowPlaying = NowPlayingBridge { [weak self] name, data in
+                self?.trigger(name, data: data)
+            }
+        }
+
+        invoke.resolve([:])
+    }
+
+    @objc public func mpvInit(_ invoke: Invoke) throws {
+        if mpv == nil {
+            let controller = MpvController()
+            controller.onPositionChange = { [weak self] pos in
+                self?.trigger("mpvPositionChange", data: ["position": pos])
+            }
+            controller.onDurationChange = { [weak self] dur in
+                self?.trigger("mpvDurationChange", data: ["duration": dur])
+            }
+            controller.onPlaylistPosChange = { [weak self] pos in
+                self?.trigger("mpvPlaylistPosChange", data: ["index": pos])
+            }
+            controller.onPauseChange = { [weak self] paused in
+                self?.trigger("mpvPauseChange", data: ["paused": paused])
+            }
+            controller.onIdleActive = { [weak self] in
+                self?.trigger("mpvIdleActive", data: [:])
+            }
+            controller.onFileLoaded = { [weak self] in
+                self?.trigger("mpvFileLoaded", data: [:])
+            }
+            controller.onFileEnded = { [weak self] reason in
+                self?.trigger("mpvFileEnded", data: ["reason": reason])
+            }
+            mpv = controller
+        }
+        invoke.resolve([:])
+    }
+
+    // MARK: - MPV command proxies
+
+    @objc public func mpvLoadFile(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(LoadFileArgs.self)
+        mpv?.loadFile(args.url, mode: args.mode, options: args.options)
+        invoke.resolve([:])
+    }
+
+    @objc public func mpvLoadFileAt(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(LoadFileAtArgs.self)
+        mpv?.loadFileAt(args.url, index: args.index, options: args.options)
+        invoke.resolve([:])
+    }
+
+    @objc public func mpvPlaylistPlayIndex(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(PlaylistIndexArgs.self)
+        mpv?.playlistPlayIndex(args.index)
+        invoke.resolve([:])
+    }
+
+    @objc public func mpvPlaylistRemove(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(PlaylistIndexArgs.self)
+        mpv?.playlistRemove(args.index)
+        invoke.resolve([:])
+    }
+
+    @objc public func mpvPlaylistMove(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(PlaylistMoveArgs.self)
+        mpv?.playlistMove(from: args.from, to: args.to)
+        invoke.resolve([:])
+    }
+
+    @objc public func mpvSeek(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(SeekArgs.self)
+        mpv?.seek(to: args.position)
+        invoke.resolve([:])
+    }
+
+    @objc public func mpvSetPause(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(PauseArgs.self)
+        mpv?.setPause(args.paused)
+        invoke.resolve([:])
+    }
+
+    @objc public func mpvSetVolume(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(VolumeArgs.self)
+        mpv?.setVolume(args.volume)
+        invoke.resolve([:])
+    }
+
+    @objc public func mpvGetVolume(_ invoke: Invoke) throws {
+        let value = mpv?.getVolume() ?? 100.0
+        invoke.resolve(["volume": value])
+    }
+
+    @objc public func mpvSetAudioFilters(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(AudioFiltersArgs.self)
+        mpv?.setAudioFilters(args.value)
+        invoke.resolve([:])
+    }
+
+    @objc public func mpvStop(_ invoke: Invoke) throws {
+        mpv?.stop()
+        invoke.resolve([:])
+    }
+
+    // MARK: - Now Playing
+
+    @objc public func nowPlayingUpdate(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(NowPlayingMetadata.self)
+        nowPlaying?.update(args)
+        invoke.resolve([:])
+    }
+
+    @objc public func nowPlayingClear(_ invoke: Invoke) throws {
+        nowPlaying?.clear()
+        invoke.resolve([:])
+    }
+
+    // MARK: - Keychain
+
+    @objc public func keychainRead(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(KeychainAccountArgs.self)
+        // Resolve with empty string on miss and let the Rust side interpret
+        // empty-string as "not present". `JSObject` doesn't accept nil
+        // values, so we can't pass `NSNull` without an extra encoding hop.
+        let value = KeychainBridge.shared.read(account: args.account) ?? ""
+        invoke.resolve(["value": value])
+    }
+
+    @objc public func keychainWrite(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(KeychainWriteArgs.self)
+        let ok = KeychainBridge.shared.write(account: args.account, value: args.value)
+        invoke.resolve(["ok": ok])
+    }
+
+    @objc public func keychainDelete(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(KeychainAccountArgs.self)
+        let ok = KeychainBridge.shared.delete(account: args.account)
+        invoke.resolve(["ok": ok])
+    }
+}
+
+// MARK: - Argument payloads
+
+class LoadFileArgs: Decodable {
+    let url: String
+    let mode: String
+    let options: String?
+}
+
+class LoadFileAtArgs: Decodable {
+    let url: String
+    let index: Int
+    let options: String?
+}
+
+class PlaylistIndexArgs: Decodable {
+    let index: Int
+}
+
+class PlaylistMoveArgs: Decodable {
+    let from: Int
+    let to: Int
+}
+
+class SeekArgs: Decodable {
+    let position: Double
+}
+
+class PauseArgs: Decodable {
+    let paused: Bool
+}
+
+class VolumeArgs: Decodable {
+    let volume: Double
+}
+
+class AudioFiltersArgs: Decodable {
+    let value: String
+}
+
+class KeychainAccountArgs: Decodable {
+    let account: String
+}
+
+class KeychainWriteArgs: Decodable {
+    let account: String
+    let value: String
+}
+
+class NowPlayingMetadata: Decodable {
+    let title: String
+    let artist: String
+    let album: String
+    let duration: Double
+    let position: Double
+    let isPlaying: Bool
+    let coverUrl: String?
+}
+
+@_cdecl("init_plugin_ramus_ios_bridge")
+func initPlugin() -> Plugin {
+    return MpvBridgePlugin()
+}

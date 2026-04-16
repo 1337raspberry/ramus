@@ -1,12 +1,22 @@
+#[cfg(not(target_os = "ios"))]
 use std::collections::HashMap;
+#[cfg(not(target_os = "ios"))]
 use std::fs;
 use std::path::PathBuf;
 
+#[cfg(not(target_os = "ios"))]
 use aes_gcm::aead::{Aead, KeyInit};
+#[cfg(not(target_os = "ios"))]
 use aes_gcm::{Aes256Gcm, Nonce};
+#[cfg(not(target_os = "ios"))]
 use parking_lot::Mutex;
+#[cfg(not(target_os = "ios"))]
 use rand::RngCore;
+#[cfg(not(target_os = "ios"))]
 use sha2::{Digest, Sha256};
+
+#[cfg(target_os = "ios")]
+use std::sync::{Arc, OnceLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKey {
@@ -37,12 +47,40 @@ pub enum TokenStoreError {
     Io(#[from] std::io::Error),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("no keychain backend registered")]
+    NoKeychainBackend,
+}
+
+/// iOS-only callback surface implemented by `ramus-tauri` at startup so
+/// `ramus-core` can hit the Swift `KeychainBridge` without taking a reverse
+/// dependency on the plugin crate. Methods return `true` for write/delete
+/// success. `read` returns `None` on miss.
+#[cfg(target_os = "ios")]
+pub trait KeychainBackend: Send + Sync {
+    fn read(&self, account: &str) -> Option<String>;
+    fn write(&self, account: &str, value: &str) -> bool;
+    fn delete(&self, account: &str) -> bool;
+}
+
+#[cfg(target_os = "ios")]
+static KEYCHAIN_BACKEND: OnceLock<Arc<dyn KeychainBackend>> = OnceLock::new();
+
+/// Register the iOS keychain backend. Must be called exactly once at app
+/// startup, before any `TokenStore::new()` call. Subsequent calls are
+/// ignored — `OnceLock` semantics.
+#[cfg(target_os = "ios")]
+pub fn set_keychain_backend(backend: Arc<dyn KeychainBackend>) {
+    let _ = KEYCHAIN_BACKEND.set(backend);
 }
 
 /// Encrypted file-based token storage.
 ///
 /// Tokens are AES-256-GCM encrypted with a key derived from the machine's
 /// hardware UUID, rendering the file inert if copied elsewhere.
+///
+/// On iOS, tokens live in the system Keychain instead (see the iOS-specific
+/// impl below). The public API is identical on both platforms.
+#[cfg(not(target_os = "ios"))]
 pub struct TokenStore {
     dir: PathBuf,
     lock: Mutex<()>,
@@ -50,9 +88,12 @@ pub struct TokenStore {
     key_override: Option<[u8; 32]>,
 }
 
+#[cfg(not(target_os = "ios"))]
 const NONCE_SIZE: usize = 12;
+#[cfg(not(target_os = "ios"))]
 const TOKEN_FILE: &str = "tokens.enc";
 
+#[cfg(not(target_os = "ios"))]
 impl TokenStore {
     /// Create a `TokenStore` using the platform config directory.
     pub fn new() -> Result<Self, TokenStoreError> {
@@ -202,6 +243,38 @@ pub fn config_dir() -> Result<PathBuf, TokenStoreError> {
     default_config_dir()
 }
 
+/// iOS keychain-backed implementation. Tokens are stored directly as
+/// generic-password items keyed by `TokenKey::as_str()`; no on-disk file,
+/// no AES layer. The struct holds the registered backend via `Arc` so it
+/// can be freely `Clone`d if ever needed.
+#[cfg(target_os = "ios")]
+pub struct TokenStore {
+    backend: Arc<dyn KeychainBackend>,
+}
+
+#[cfg(target_os = "ios")]
+impl TokenStore {
+    pub fn new() -> Result<Self, TokenStoreError> {
+        let backend = KEYCHAIN_BACKEND
+            .get()
+            .cloned()
+            .ok_or(TokenStoreError::NoKeychainBackend)?;
+        Ok(Self { backend })
+    }
+
+    pub fn read(&self, key: TokenKey) -> Option<String> {
+        self.backend.read(key.as_str())
+    }
+
+    pub fn write(&self, key: TokenKey, value: &str) -> bool {
+        self.backend.write(key.as_str(), value)
+    }
+
+    pub fn delete(&self, key: TokenKey) -> bool {
+        self.backend.delete(key.as_str())
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn hardware_uuid() -> Result<String, TokenStoreError> {
     use core_foundation::base::TCFType;
@@ -275,34 +348,17 @@ fn hardware_uuid() -> Result<String, TokenStoreError> {
         .map_err(|_| TokenStoreError::NoHardwareUUID)
 }
 
-// iOS has no publicly-accessible hardware UUID (`identifierForVendor` is
-// app-scoped rather than device-wide, and IOKit's `IOPlatformUUID` is
-// unavailable on the sandboxed phone runtime). Phase 1 substitutes a
-// persisted random UUID written once to the app's config directory —
-// equivalent security-wise because both sources are keyed to the install.
-// Phase 3 replaces this with an iOS Keychain-backed key.
-#[cfg(target_os = "ios")]
-fn hardware_uuid() -> Result<String, TokenStoreError> {
-    let dir = default_config_dir()?;
-    let path = dir.join("device_uuid.txt");
-    if let Ok(existing) = fs::read_to_string(&path) {
-        let trimmed = existing.trim();
-        if !trimmed.is_empty() {
-            return Ok(trimmed.to_string());
-        }
-    }
-    fs::create_dir_all(&dir).map_err(|_| TokenStoreError::NoHardwareUUID)?;
-    let id = uuid::Uuid::new_v4().to_string();
-    fs::write(&path, &id).map_err(|_| TokenStoreError::NoHardwareUUID)?;
-    Ok(id)
-}
+// iOS doesn't get a `hardware_uuid` — the iOS TokenStore is keychain-backed
+// and bypasses the AES layer entirely.
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux", target_os = "ios")))]
 fn hardware_uuid() -> Result<String, TokenStoreError> {
     Err(TokenStoreError::NoHardwareUUID)
 }
 
-#[cfg(test)]
+// Tests exercise the file+AES backend; on iOS the backend is keychain-only
+// so the test helpers (`with_dir_and_key`, `Sha256`, etc.) aren't compiled.
+#[cfg(all(test, not(target_os = "ios")))]
 mod tests {
     use super::*;
 

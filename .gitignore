@@ -1,5 +1,4 @@
 .DS_Store
-ios/
 .build/
 swift-project/RamusMusicCore/.build/
 swift-project/RamusMusicCore/.swiftpm/
