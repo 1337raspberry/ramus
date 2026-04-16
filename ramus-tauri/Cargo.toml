@@ -8,14 +8,23 @@ repository.workspace = true
 
 # Cargo's default target is a binary on desktop (src/main.rs). Tauri mobile
 # builds link the crate as a static library into the generated Xcode project,
-# so the lib target needs to produce `libapp.a`. "rlib" is kept so local unit
-# tests and downstream crates can still depend on the library normally.
+# so the lib target needs to produce `libapp.a` — Xcode resolves transitive
+# xcframework deps (MPVKit → libmpv) at the final app-link step. "rlib" is
+# kept so local unit tests and downstream crates can still depend on the
+# library normally. `cdylib` is intentionally *not* included: it would
+# force cargo to link the dylib itself, which then fails with unresolved
+# mpv symbols because MPVKit's xcframeworks are only visible to Xcode.
 [lib]
 name = "ramus_tauri"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 ramus-core = { path = "../ramus-core" }
+# Tauri mobile plugin that owns the iOS mpv handle (via MPVKit), the
+# AVAudioSession, and MPNowPlayingInfoCenter / MPRemoteCommandCenter.
+# Desktop builds get a no-op stub (see plugins/.../src/desktop.rs) so
+# this dep is unconditional.
+tauri-plugin-ramus-ios-bridge = { path = "../plugins/tauri-plugin-ramus-ios-bridge" }
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-build = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { finalizeOnboarding, connectManualUrl } from "../../lib/commands";
 import type { LibrarySection, PlexServer } from "../../lib/types";
 import OAuthSignIn from "./OAuthSignIn";
@@ -8,15 +8,54 @@ import InitialSync from "./InitialSync";
 
 type Step = "signIn" | "discoverServers" | "selectLibrary" | "initialSync";
 
+// Onboarding progress survives a WKWebView reload via sessionStorage. On iOS
+// the webview is often purged while the user completes OAuth in Safari, and
+// without this the flow would restart from the sign-in screen even though
+// the pin has already been authorised.
+const STORAGE_KEY = "ramus.onboarding.v1";
+
+interface PersistedState {
+  step: Step;
+  server: PlexServer | null;
+  serverUrl: string;
+}
+
+function loadPersisted(): PersistedState | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PersistedState;
+  } catch {
+    return null;
+  }
+}
+
+function savePersisted(state: PersistedState) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {}
+}
+
+function clearPersisted() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch {}
+}
+
 interface Props {
   onComplete: () => void;
 }
 
 export default function OnboardingFlow({ onComplete }: Props) {
-  const [step, setStep] = useState<Step>("signIn");
-  const [server, setServer] = useState<PlexServer | null>(null);
-  const [serverUrl, setServerUrl] = useState<string>("");
+  const persisted = loadPersisted();
+  const [step, setStep] = useState<Step>(persisted?.step ?? "signIn");
+  const [server, setServer] = useState<PlexServer | null>(persisted?.server ?? null);
+  const [serverUrl, setServerUrl] = useState<string>(persisted?.serverUrl ?? "");
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    savePersisted({ step, server, serverUrl });
+  }, [step, server, serverUrl]);
 
   const handleSignInSuccess = useCallback(() => {
     setStep("discoverServers");
@@ -44,10 +83,12 @@ export default function OnboardingFlow({ onComplete }: Props) {
   );
 
   const handleSyncComplete = useCallback(() => {
+    clearPersisted();
     onComplete();
   }, [onComplete]);
 
   const handleSkip = useCallback(() => {
+    clearPersisted();
     onComplete();
   }, [onComplete]);
 

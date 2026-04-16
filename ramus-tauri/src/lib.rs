@@ -21,7 +21,7 @@ pub mod mpv_controller;
 #[cfg(not(target_os = "ios"))]
 pub mod mpv_ffi;
 #[cfg(target_os = "ios")]
-pub mod stub_player;
+pub mod mpv_ios;
 
 pub mod prefetch;
 pub mod session_reporter;
@@ -32,19 +32,9 @@ use std::sync::Arc;
 
 use tauri::AppHandle;
 
-#[cfg(not(target_os = "ios"))]
+use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
 use ramus_core::playback::mpv::MpvCallbacks;
 
-// `MediaKeyHandler` is the trait that exposes `update_metadata` /
-// `update_playback_state` / `clear` on `MediaControlsHandle`. The run
-// loop's ExitRequested handler calls `mc.clear()` on both platforms, so
-// the trait needs to be in scope everywhere. `MediaMetadata` is only
-// threaded through desktop-specific callbacks.
-use ramus_core::playback::media_keys::MediaKeyHandler;
-#[cfg(not(target_os = "ios"))]
-use ramus_core::playback::media_keys::MediaMetadata;
-
-#[cfg(not(target_os = "ios"))]
 use crate::events::{
     emit_playback_position, emit_playback_state, PlaybackPositionPayload, PlaybackStatePayload,
 };
@@ -66,7 +56,11 @@ pub type PrefetchHandleRef = Arc<parking_lot::Mutex<Option<PrefetchHandle>>>;
 ///
 /// `prefetch_handle_ref` is a deferred slot: `main.rs` passes an empty
 /// `Arc<Mutex<None>>` and populates it after `spawn_worker()` returns.
-#[cfg(not(target_os = "ios"))]
+///
+/// Desktop builds construct a real `MpvController` via `libloading` +
+/// the shared mpv handle. iOS builds construct an `IosMpvPlayer` that
+/// delegates to the Swift plugin (MPVKit). The callback wiring is
+/// identical on both platforms, so only the final construction diverges.
 pub fn create_mpv_player(
     app_handle: AppHandle,
     prefetch_handle_ref: PrefetchHandleRef,
@@ -268,35 +262,26 @@ pub fn create_mpv_player(
         })),
     });
 
-    // Load libmpv at runtime. `MpvLib::load()` returns a multi-line string
-    // listing every path it tried; surface that verbatim if it fails.
-    let mpv_lib = Arc::new(MpvLib::load().unwrap_or_else(|e| panic!("{e}")));
-    let mpv = MpvController::new(mpv_lib, callbacks).expect("Failed to initialize libmpv");
-    let player = Arc::new(ramus_core::playback::player::AudioPlayer::new(
-        Arc::new(mpv),
-    ));
+    // Platform split: desktop loads libmpv at runtime via `libloading`;
+    // iOS talks to the MPVKit-backed Swift plugin through Tauri IPC.
+    // The `AudioPlayer` surface is identical either way.
+    #[cfg(not(target_os = "ios"))]
+    let player = {
+        // `MpvLib::load()` returns a multi-line string listing every path
+        // it tried; surface that verbatim if it fails.
+        let mpv_lib = Arc::new(MpvLib::load().unwrap_or_else(|e| panic!("{e}")));
+        let mpv = MpvController::new(mpv_lib, callbacks).expect("Failed to initialize libmpv");
+        Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(mpv)))
+    };
+    #[cfg(target_os = "ios")]
+    let player = {
+        let ios_mpv = crate::mpv_ios::IosMpvPlayer::new(app_handle.clone(), callbacks)
+            .expect("failed to initialise iOS mpv bridge");
+        Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(ios_mpv)))
+    };
 
     *player_ref.lock() = Some(player.clone());
 
-    (player, reporter_ref, media_controls_ref)
-}
-
-/// iOS counterpart of `create_mpv_player`. Builds an `AudioPlayer` around
-/// a no-op `StubMpvPlayer` so command handlers that reach into
-/// `state.player` remain compilable without the libmpv FFI layer. No
-/// callbacks are wired up — iOS playback lands in Phase 2 via MPVKit.
-#[cfg(target_os = "ios")]
-pub fn create_mpv_player(
-    _app_handle: AppHandle,
-    _prefetch_handle_ref: PrefetchHandleRef,
-) -> (
-    Arc<ramus_core::playback::player::AudioPlayer>,
-    ReporterRef,
-    MediaControlsRef,
-) {
-    let player = crate::stub_player::create_stub_audio_player();
-    let reporter_ref: ReporterRef = Arc::new(parking_lot::Mutex::new(None));
-    let media_controls_ref: MediaControlsRef = Arc::new(parking_lot::Mutex::new(None));
     (player, reporter_ref, media_controls_ref)
 }
 
@@ -339,7 +324,9 @@ pub fn run() {
     .format_timestamp_millis()
     .init();
 
-    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_ramus_ios_bridge::init());
 
     // Window-state persistence is only meaningful on desktop — iOS has no
     // resizable window, and the plugin crate isn't linked on iOS.
@@ -746,36 +733,36 @@ pub fn run() {
                 }
             }
 
-            // OS media controls (Now Playing overlay + media keys). On desktop
-            // this registers MPRemoteCommandCenter / SMTC / MPRIS listeners via
-            // souvlaki. On iOS the stub `create_media_controls` is a no-op and
-            // Phase 2 replaces it with a Swift-plugin bridge.
+            // OS media controls (Now Playing overlay + media keys). Desktop
+            // registers MPRemoteCommandCenter / SMTC / MPRIS listeners via
+            // souvlaki; iOS subscribes to events emitted by the Swift plugin
+            // and pushes metadata through `MPNowPlayingInfoCenter` via the
+            // plugin's `nowPlayingUpdate` method.
             #[cfg(not(target_os = "ios"))]
-            {
-                let mc_result = crate::media_controls::create_media_controls(
-                    #[cfg(target_os = "windows")]
-                    &app.get_webview_window("main").expect("main window must exist"),
-                    player.clone(),
-                    image_cache_arc,
-                    client.clone(),
-                    http_client,
-                );
-                match mc_result {
-                    Ok(handle) => {
-                        *media_controls_ref.lock() = Some(handle);
-                        log::info!("media controls initialized");
-                    }
-                    Err(e) => {
-                        log::warn!("media controls unavailable: {e}");
-                    }
-                }
-            }
+            let mc_result = crate::media_controls::create_media_controls(
+                #[cfg(target_os = "windows")]
+                &app.get_webview_window("main").expect("main window must exist"),
+                player.clone(),
+                image_cache_arc,
+                client.clone(),
+                http_client,
+            );
             #[cfg(target_os = "ios")]
-            {
-                // image_cache_arc + http_client would be moved by the desktop
-                // branch; keep them alive for later commands by binding the
-                // moves explicitly. Currently unused on iOS — see Phase 2.
-                let _ = (&image_cache_arc, &http_client);
+            let mc_result = crate::media_controls::create_media_controls(
+                app_handle.clone(),
+                player.clone(),
+                image_cache_arc,
+                client.clone(),
+                http_client,
+            );
+            match mc_result {
+                Ok(handle) => {
+                    *media_controls_ref.lock() = Some(handle);
+                    log::info!("media controls initialized");
+                }
+                Err(e) => {
+                    log::warn!("media controls unavailable: {e}");
+                }
             }
 
             app.manage(state);

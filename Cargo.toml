@@ -1,5 +1,5 @@
 [workspace]
-members = ["ramus-core", "ramus-tauri"]
+members = ["ramus-core", "ramus-tauri", "plugins/tauri-plugin-ramus-ios-bridge"]
 resolver = "2"
 
 # Single source of truth for crate + app metadata. Bumping `version`

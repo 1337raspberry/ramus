@@ -2359,6 +2359,12 @@
           "type": "string",
           "const": "opener:deny-reveal-item-in-dir",
           "markdownDescription": "Denies the reveal_item_in_dir command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the ramus iOS bridge. No JS-callable commands — the plugin is invoked only from Rust.",
+          "type": "string",
+          "const": "ramus-ios-bridge:default",
+          "markdownDescription": "Default permissions for the ramus iOS bridge. No JS-callable commands — the plugin is invoked only from Rust."
         }
       ]
     },
