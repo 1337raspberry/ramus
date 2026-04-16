@@ -2,11 +2,28 @@ name: ramus-tauri
 options:
   bundleIdPrefix: com.ramus.app
   deploymentTarget:
-    iOS: 14.0
+    # iOS 14 triggers Xcode to back-deploy `libswift_Concurrency.dylib`
+    # into the app bundle without also bundling `libswiftCore.dylib`,
+    # which caused a dyld-resolution crash at launch on iOS 26 devices.
+    # iOS 15 has Swift concurrency baked into the OS, so Xcode stops
+    # bundling anything Swift. MPVKit also wants iOS 14+ — 15 is safe.
+    iOS: 15.0
 fileGroups: [../../src]
 configs:
   debug: debug
   release: release
+# MPVKit ships libmpv + FFmpeg + libass as pre-built xcframeworks via
+# SPM. The symbols are referenced from the `MpvController.swift` that
+# lives inside `tauri-plugin-ramus-ios-bridge` (which ends up inside
+# `libapp.a`), but Tauri doesn't forward transitive plugin SPM deps to
+# the app's Xcode project — so without this declaration, the final
+# app-link step fails with unresolved `_mpv_*` symbols. The plugin's
+# own `ios/Package.swift` keeps its identical dependency so the Swift
+# sources compile standalone too; SPM dedupes the actual resolution.
+packages:
+  MPVKit:
+    url: https://github.com/mpvkit/MPVKit.git
+    from: 0.41.0
 settingGroups:
   app:
     base:
@@ -53,6 +70,17 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 1.0.0
         CFBundleVersion: "1.0.0"
+        # audio: keeps the mpv decoder alive while the device is locked
+        # or the app is backgrounded, which is how iOS knows to hand
+        # control over to MPNowPlayingInfoCenter / MPRemoteCommandCenter.
+        UIBackgroundModes:
+          - audio
+        # Plex servers advertise themselves via Bonjour on the LAN; iOS
+        # requires explicit consent to talk to them even over HTTP. The
+        # purpose string surfaces in the iOS permission prompt.
+        NSLocalNetworkUsageDescription: ramus needs local network access to find Plex servers on your home network.
+        NSBonjourServices:
+          - _plex._tcp
     entitlements:
       path: ramus-tauri_iOS/ramus-tauri_iOS.entitlements
     scheme:
@@ -79,6 +107,13 @@ targets:
       - sdk: Security.framework
       - sdk: UIKit.framework
       - sdk: WebKit.framework
+      # AVFoundation / MediaPlayer are linked by the plugin's Swift
+      # package; listing them again here is a no-op but makes the
+      # surface explicit.
+      - sdk: AVFoundation.framework
+      - sdk: MediaPlayer.framework
+      # Resolves `_mpv_*` symbols from `libapp.a`.
+      - package: MPVKit
     preBuildScripts:
       - script: cargo tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}
         name: Build Rust Code

@@ -276,7 +276,14 @@ pub async fn finalize_onboarding(
 
 #[tauri::command]
 pub async fn is_authenticated(state: State<'_, AppState>) -> CmdResult<bool> {
-    Ok(state.client.token().is_some())
+    // A token alone is not enough — after OAuth but before the user picks
+    // a server + library, `poll_oauth` has set the token but no server
+    // config exists yet. On iOS this matters because the WKWebView
+    // reloads its JS state when the user returns from Safari after
+    // completing the PIN flow; App.tsx re-mounts, calls this command,
+    // and without the server-url check it would skip straight past the
+    // onboarding's server/library pickers into a broken main UI.
+    Ok(state.client.token().is_some() && state.client.server_url().is_some())
 }
 
 #[tauri::command]
