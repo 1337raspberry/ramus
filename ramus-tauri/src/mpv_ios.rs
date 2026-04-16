@@ -27,12 +27,17 @@ pub struct IosMpvPlayer<R: Runtime> {
 
 impl<R: Runtime> IosMpvPlayer<R> {
     pub fn new(app: AppHandle<R>, callbacks: Arc<MpvCallbacks>) -> Result<Self, String> {
-        app.ramus_ios_bridge()
-            .init_audio()
-            .map_err(|e| format!("failed to init audio session: {e}"))?;
+        // Matches the reference Swift app's init order: mpv_initialize first,
+        // THEN AVAudioSession.setActive. Reversing this makes `ao=audiounit`
+        // probe the hardware sample rate from a different session state and
+        // pick the wrong rate — audible as ~8.8% fast playback (48k hardware
+        // driving 44.1k content with no resampler in the chain).
         app.ramus_ios_bridge()
             .mpv_init()
             .map_err(|e| format!("failed to init mpv: {e}"))?;
+        app.ramus_ios_bridge()
+            .init_audio()
+            .map_err(|e| format!("failed to init audio session: {e}"))?;
 
         register_mpv_listeners(&app, callbacks)
             .map_err(|e| format!("failed to register mpv listeners: {e}"))?;

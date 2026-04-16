@@ -63,6 +63,15 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn now_playing_clear(&self) -> crate::Result<()> {
         Ok(())
     }
+    pub fn keychain_read(&self, _account: &str) -> crate::Result<Option<String>> {
+        Ok(None)
+    }
+    pub fn keychain_write(&self, _account: &str, _value: &str) -> crate::Result<bool> {
+        Ok(false)
+    }
+    pub fn keychain_delete(&self, _account: &str) -> crate::Result<bool> {
+        Ok(false)
+    }
     pub fn register_listener(
         &self,
         _event: &str,

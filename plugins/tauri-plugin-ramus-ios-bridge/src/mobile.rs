@@ -134,6 +134,44 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
 
+    /// Read a keychain item. Returns `None` on miss (Swift side resolves
+    /// missing items as an empty string, which we translate here so callers
+    /// don't have to carry that convention).
+    pub fn keychain_read(&self, account: &str) -> crate::Result<Option<String>> {
+        let response: KeychainReadResponse = self.0.run_mobile_plugin(
+            "keychainRead",
+            KeychainAccountArgs {
+                account: account.to_string(),
+            },
+        )?;
+        if response.value.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(response.value))
+        }
+    }
+
+    pub fn keychain_write(&self, account: &str, value: &str) -> crate::Result<bool> {
+        let response: KeychainBoolResponse = self.0.run_mobile_plugin(
+            "keychainWrite",
+            KeychainWriteArgs {
+                account: account.to_string(),
+                value: value.to_string(),
+            },
+        )?;
+        Ok(response.ok)
+    }
+
+    pub fn keychain_delete(&self, account: &str) -> crate::Result<bool> {
+        let response: KeychainBoolResponse = self.0.run_mobile_plugin(
+            "keychainDelete",
+            KeychainAccountArgs {
+                account: account.to_string(),
+            },
+        )?;
+        Ok(response.ok)
+    }
+
     /// Attach a `Channel` to an event name that the Swift plugin emits
     /// via `trigger(_:data:)`. The channel's callback is invoked on
     /// every matching event with the JSON-serialised data. Used by the

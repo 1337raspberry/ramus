@@ -22,6 +22,8 @@ pub mod mpv_controller;
 pub mod mpv_ffi;
 #[cfg(target_os = "ios")]
 pub mod mpv_ios;
+#[cfg(target_os = "ios")]
+pub mod keychain_ios;
 
 pub mod prefetch;
 pub mod session_reporter;
@@ -346,6 +348,12 @@ pub fn run() {
     builder
         .setup(|app| {
             let app_handle = app.handle().clone();
+
+            // Register the iOS keychain backend before any `TokenStore::new()`
+            // call. On desktop this is a no-op — `TokenStore` uses the
+            // file+AES backend and never touches the global slot.
+            #[cfg(target_os = "ios")]
+            crate::keychain_ios::register(&app_handle);
 
             // Restore persistent client_identifier, or generate a new one.
             let id_path = ramus_core::plex::token_store::config_dir()
