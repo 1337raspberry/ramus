@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-04-09T09:48:29.183189+00:00",
+  "updated_at": "2026-04-16T10:22:52.126918+00:00",
   "genres": [
     {
       "name": "African",
@@ -178,7 +178,13 @@
         {
           "name": "Sega",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Seggae",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Seggae",
@@ -208,7 +214,13 @@
         {
           "name": "Zouglou",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Coupé-Décalé",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         }
       ]
     },
@@ -228,7 +240,18 @@
             {
               "name": "C-Pop",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Cantopop",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Mandopop",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Cantopop",
@@ -432,6 +455,11 @@
           "children": []
         },
         {
+          "name": "Boogie-Woogie",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "British Blues",
           "short_summary": null,
           "children": []
@@ -454,12 +482,39 @@
         {
           "name": "Contemporary R&B",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Hip Hop Soul",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "New Jack Swing",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Country Blues",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Delta Blues",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Hill Country Blues",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Piedmont Blues",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Delta Blues",
@@ -474,7 +529,23 @@
         {
           "name": "Electric Blues",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "British Blues",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Chicago Blues",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Swamp Blues",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Gospel Blues",
@@ -599,7 +670,13 @@
             {
               "name": "Brega",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Tecnobrega",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Choro",
@@ -649,7 +726,23 @@
             {
               "name": "Samba",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Bossa Nova",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Pagode",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Samba Rock",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Samba Rock",
@@ -681,7 +774,13 @@
         {
           "name": "Chutney",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Chutney Soca",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Chutney Soca",
@@ -777,12 +876,24 @@
         {
           "name": "Salsa",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Timba",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Soca",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Chutney Soca",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Son",
@@ -864,6 +975,17 @@
           "children": []
         },
         {
+          "name": "Mass",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Requiem",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
           "name": "Modern Classical",
           "short_summary": null,
           "children": []
@@ -903,17 +1025,6 @@
           "name": "Organum",
           "short_summary": null,
           "children": []
-        },
-        {
-          "name": "Mass",
-          "short_summary": null,
-          "children": [
-            {
-              "name": "Requiem",
-              "short_summary": null,
-              "children": []
-            }
-          ]
         },
         {
           "name": "Sacred Music",
@@ -958,17 +1069,17 @@
           "children": []
         },
         {
+          "name": "Kabarett",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Parody Music",
           "short_summary": null,
           "children": []
         },
         {
           "name": "Stand-Up",
-          "short_summary": null,
-          "children": []
-        },
-        {
-          "name": "Kabarett",
           "short_summary": null,
           "children": []
         }
@@ -1104,7 +1215,18 @@
         {
           "name": "Honky Tonk",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Bakersfield Sound",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Truck-Driving Country",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Instrumental Country",
@@ -1134,7 +1256,13 @@
         {
           "name": "Progressive Country",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Outlaw Country",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Psychobilly/punkabilly",
@@ -1149,7 +1277,13 @@
         {
           "name": "Rockabilly",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Psychobilly",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Sertanejo",
@@ -1221,6 +1355,11 @@
           "name": "New-Age Music",
           "short_summary": null,
           "children": []
+        },
+        {
+          "name": "Space Age Pop",
+          "short_summary": null,
+          "children": []
         }
       ]
     },
@@ -1280,6 +1419,16 @@
           "children": []
         },
         {
+          "name": "Berlin School",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Bitpop",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Breakbeat",
           "short_summary": null,
           "children": [
@@ -1304,6 +1453,11 @@
               "children": []
             },
             {
+              "name": "Breakbeat Hardcore",
+              "short_summary": null,
+              "children": []
+            },
+            {
               "name": "Broken Beat",
               "short_summary": null,
               "children": []
@@ -1317,8 +1471,23 @@
               "name": "Nu Skool Breaks",
               "short_summary": null,
               "children": []
+            },
+            {
+              "name": "Progressive Breaks",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Psybreaks",
+              "short_summary": null,
+              "children": []
             }
           ]
+        },
+        {
+          "name": "Chillwave",
+          "short_summary": null,
+          "children": []
         },
         {
           "name": "Chiptune",
@@ -1356,6 +1525,11 @@
           "short_summary": null,
           "children": [
             {
+              "name": "Boogie",
+              "short_summary": null,
+              "children": []
+            },
+            {
               "name": "Cosmic Disco",
               "short_summary": null,
               "children": []
@@ -1370,6 +1544,11 @@
                   "children": []
                 }
               ]
+            },
+            {
+              "name": "Euro Disco",
+              "short_summary": null,
+              "children": []
             },
             {
               "name": "Italo Disco",
@@ -1464,6 +1643,11 @@
               "children": []
             },
             {
+              "name": "Halftime",
+              "short_summary": null,
+              "children": []
+            },
+            {
               "name": "Hardstep",
               "short_summary": null,
               "children": []
@@ -1479,16 +1663,6 @@
               "children": []
             },
             {
-              "name": "Liquid Funk",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Neurofunk",
-              "short_summary": null,
-              "children": []
-            },
-            {
               "name": "Jungle",
               "short_summary": null,
               "children": [
@@ -1498,16 +1672,31 @@
                   "children": []
                 },
                 {
-                  "name": "Ragga Jungle",
+                  "name": "Oldschool Jungle",
                   "short_summary": null,
                   "children": []
                 },
                 {
-                  "name": "Oldschool Jungle",
+                  "name": "Ragga Jungle",
                   "short_summary": null,
                   "children": []
                 }
               ]
+            },
+            {
+              "name": "Leftfield",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Liquid Funk",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Neurofunk",
+              "short_summary": null,
+              "children": []
             },
             {
               "name": "Raggacore",
@@ -1521,16 +1710,6 @@
             },
             {
               "name": "Techstep",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Leftfield",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Halftime",
               "short_summary": null,
               "children": []
             }
@@ -1559,6 +1738,23 @@
               "name": "Electropop",
               "short_summary": null,
               "children": []
+            }
+          ]
+        },
+        {
+          "name": "Electro-Industrial",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Dark Electro",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Aggrotech",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             }
           ]
         },
@@ -1597,6 +1793,11 @@
               "children": []
             },
             {
+              "name": "Musique Concrète",
+              "short_summary": null,
+              "children": []
+            },
+            {
               "name": "Soundscape Composition",
               "short_summary": null,
               "children": []
@@ -1605,6 +1806,423 @@
               "name": "Tape Music",
               "short_summary": null,
               "children": []
+            }
+          ]
+        },
+        {
+          "name": "Electronic Art Music",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Electronic Dance Music",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Balearic Beat",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Breakbeat",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Acid Breaks",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Baltimore Club",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Big Beat",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Breakbeat Hardcore",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Florida Breaks",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Nu Skool Breaks",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Progressive Breaks",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Psybreaks",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Broken Beat",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Coupé-Décalé",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Drum And Bass",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Darkstep",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Drumfunk",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Drumstep",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Halftime",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Hardstep",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Jump-Up",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Jungle",
+                  "short_summary": null,
+                  "children": [
+                    {
+                      "name": "Ragga Jungle",
+                      "short_summary": null,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "Neurofunk",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Techstep",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Dubstep",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Electro",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Electroclash",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Eurobeat",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Eurodance",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Bubblegum Dance",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Italo Dance",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Footwork",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Ghettotech",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Grime",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "House",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Acid House",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Ambient House",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Baltimore Club",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Bassline",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Chicago House",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Deep House",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Diva House",
+                  "short_summary": null,
+                  "children": [
+                    {
+                      "name": "Hardbag",
+                      "short_summary": null,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "Electro House",
+                  "short_summary": null,
+                  "children": [
+                    {
+                      "name": "Dutch House",
+                      "short_summary": null,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "French House",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Funky House",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Ghetto House",
+                  "short_summary": null,
+                  "children": [
+                    {
+                      "name": "Juke",
+                      "short_summary": null,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "Hip House",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Italo House",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Kwaito",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Latin House",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Progressive House",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Speed Garage",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Tech House",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Tribal House",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "UK Hard House",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Kuduro",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Makina",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Moombahton",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Nu-Disco",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Shangaan Electro",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Skweee",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Techno",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Acid Techno",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Ambient Techno",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Detroit Techno",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Trance",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Acid Trance",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Dream Trance",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Hard Trance",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Tech Trance",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Uplifting Trance",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Vocal Trance",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "UK Garage",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "2-Step",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Bassline",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Breakstep",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Speed Garage",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             }
           ]
         },
@@ -1623,6 +2241,11 @@
                 },
                 {
                   "name": "Madchester",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "New Rave",
                   "short_summary": null,
                   "children": []
                 }
@@ -1666,7 +2289,13 @@
             {
               "name": "Indietronica",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Chillwave",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "New Rave",
@@ -1681,7 +2310,13 @@
             {
               "name": "Synthpop",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Futurepop",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Synthpunk",
@@ -1691,70 +2326,9 @@
           ]
         },
         {
-          "name": "Electronica",
+          "name": "Electropop",
           "short_summary": null,
-          "children": [
-            {
-              "name": "Berlin School",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Chillwave",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Electronic Art Music",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Electronic Dance Music",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Folktronica",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Freestyle Music",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Glitch",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "IDM",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Laptronica",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Skweee",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Sound Art",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Synthcore",
-              "short_summary": null,
-              "children": []
-            }
-          ]
+          "children": []
         },
         {
           "name": "Eurodance",
@@ -1778,6 +2352,26 @@
           ]
         },
         {
+          "name": "Folktronica",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Freestyle Music",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Glitch",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Glitch Hop",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Hardcore",
           "short_summary": null,
           "children": [
@@ -1799,7 +2393,13 @@
             {
               "name": "Breakcore",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Raggacore",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Digital Hardcore",
@@ -1824,12 +2424,29 @@
             {
               "name": "Happy Hardcore",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Bouncy Techno",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "UK Hardcore",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Hardstyle",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Dubstyle",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Jumpstyle",
@@ -1889,6 +2506,21 @@
               "children": []
             },
             {
+              "name": "Ambient House",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Baltimore Club",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Bassline",
+              "short_summary": null,
+              "children": []
+            },
+            {
               "name": "Chicago House",
               "short_summary": null,
               "children": []
@@ -1901,7 +2533,13 @@
             {
               "name": "Diva House",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Hardbag",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Dutch House",
@@ -1911,7 +2549,13 @@
             {
               "name": "Electro House",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Dutch House",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Freestyle House",
@@ -1931,7 +2575,13 @@
             {
               "name": "Ghetto House",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Juke",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Hardbag",
@@ -1945,6 +2595,11 @@
             },
             {
               "name": "Italo House",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Kwaito",
               "short_summary": null,
               "children": []
             },
@@ -1965,6 +2620,11 @@
             },
             {
               "name": "Rave Music",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Speed Garage",
               "short_summary": null,
               "children": []
             },
@@ -2001,6 +2661,27 @@
           ]
         },
         {
+          "name": "IDM",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Illbient",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Indietronica",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Chillwave",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
           "name": "Industrial",
           "short_summary": null,
           "children": [
@@ -2022,7 +2703,13 @@
             {
               "name": "Dark Electro",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Aggrotech",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Death Industrial",
@@ -2032,7 +2719,19 @@
             {
               "name": "Electro-Industrial",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Dark Electro",
+                  "short_summary": null,
+                  "children": [
+                    {
+                      "name": "Aggrotech",
+                      "short_summary": null,
+                      "children": []
+                    }
+                  ]
+                }
+              ]
             },
             {
               "name": "Electronic Body Music",
@@ -2040,17 +2739,6 @@
               "children": [
                 {
                   "name": "Futurepop",
-                  "short_summary": null,
-                  "children": []
-                }
-              ]
-            },
-            {
-              "name": "Industrial Metal",
-              "short_summary": null,
-              "children": [
-                {
-                  "name": "Neue Deutsche Härte",
                   "short_summary": null,
                   "children": []
                 }
@@ -2073,10 +2761,27 @@
                 {
                   "name": "Power Electronics",
                   "short_summary": null,
-                  "children": []
+                  "children": [
+                    {
+                      "name": "Death Industrial",
+                      "short_summary": null,
+                      "children": []
+                    }
+                  ]
                 },
                 {
                   "name": "Power Noise",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Power Electronics",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Death Industrial",
                   "short_summary": null,
                   "children": []
                 }
@@ -2101,6 +2806,21 @@
           ]
         },
         {
+          "name": "Laptronica",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Livetronica",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Nu Jazz",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Post-Disco",
           "short_summary": null,
           "children": [
@@ -2112,14 +2832,51 @@
             {
               "name": "Dance-Pop",
               "short_summary": null,
+              "children": [
+                {
+                  "name": "Bubblegum Dance",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Disco Polo",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Power Electronics",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Death Industrial",
+              "short_summary": null,
               "children": []
             }
           ]
         },
         {
+          "name": "Power Noise",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Progressive",
           "short_summary": null,
           "children": [
+            {
+              "name": "Progressive Breaks",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Progressive Drum & Bass",
+              "short_summary": null,
+              "children": []
+            },
             {
               "name": "Progressive House/trance",
               "short_summary": null,
@@ -2142,17 +2899,33 @@
               ]
             },
             {
-              "name": "Progressive Breaks",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Progressive Drum & Bass",
-              "short_summary": null,
-              "children": []
-            },
-            {
               "name": "Progressive Techno",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Skweee",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Sound Art",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Synthcore",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Synthpop",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Futurepop",
               "short_summary": null,
               "children": []
             }
@@ -2164,6 +2937,11 @@
           "children": [
             {
               "name": "Acid Techno",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Ambient Techno",
               "short_summary": null,
               "children": []
             },
@@ -2223,6 +3001,11 @@
               "children": []
             }
           ]
+        },
+        {
+          "name": "Tecnobrega",
+          "short_summary": null,
+          "children": []
         },
         {
           "name": "Trance",
@@ -2352,6 +3135,11 @@
               "children": []
             }
           ]
+        },
+        {
+          "name": "Witch House",
+          "short_summary": null,
+          "children": []
         }
       ]
     },
@@ -2382,7 +3170,39 @@
         {
           "name": "Contemporary Folk",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Anti-Folk",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Indie Folk",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Neofolk",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Progressive Folk",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Psychedelic Folk",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Freak Folk",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            }
+          ]
         },
         {
           "name": "Filk Music",
@@ -2417,7 +3237,13 @@
         {
           "name": "Psychedelic Folk",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Freak Folk",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Sung Poetry",
@@ -2441,12 +3267,27 @@
           "children": []
         },
         {
+          "name": "Austrian Hip Hop",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Avant-Garde Hip Hop",
           "short_summary": null,
           "children": []
         },
         {
+          "name": "Bongo Flava",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Chap Hop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Chopped And Screwed",
           "short_summary": null,
           "children": []
         },
@@ -2457,6 +3298,16 @@
         },
         {
           "name": "Conscious Hip Hop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Country Rap",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Crunk",
           "short_summary": null,
           "children": []
         },
@@ -2482,7 +3333,24 @@
             {
               "name": "Hardcore Hip Hop",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Gangsta Rap",
+                  "short_summary": null,
+                  "children": [
+                    {
+                      "name": "Mafioso Rap",
+                      "short_summary": null,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "Horrorcore",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Mafioso Rap",
@@ -2514,6 +3382,22 @@
         {
           "name": "Gangsta Rap",
           "short_summary": null,
+          "children": [
+            {
+              "name": "Mafioso Rap",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Genge",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "German Hip Hop",
+          "short_summary": null,
           "children": []
         },
         {
@@ -2527,12 +3411,39 @@
           "children": []
         },
         {
+          "name": "Hardcore Hip Hop",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Gangsta Rap",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Mafioso Rap",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Horrorcore",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
           "name": "Hip Hop Soul",
           "short_summary": null,
           "children": []
         },
         {
           "name": "Hip Pop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Hiplife",
           "short_summary": null,
           "children": []
         },
@@ -2568,6 +3479,11 @@
         },
         {
           "name": "Merenrap",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Miami Bass",
           "short_summary": null,
           "children": []
         },
@@ -2629,6 +3545,11 @@
         },
         {
           "name": "Political Hip Hop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Pop Rap",
           "short_summary": null,
           "children": []
         },
@@ -2697,6 +3618,11 @@
           ]
         },
         {
+          "name": "Trap",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Turntablism",
           "short_summary": null,
           "children": []
@@ -2726,16 +3652,6 @@
               "children": []
             }
           ]
-        },
-        {
-          "name": "Austrian Hip Hop",
-          "short_summary": null,
-          "children": []
-        },
-        {
-          "name": "German Hip Hop",
-          "short_summary": null,
-          "children": []
         }
       ]
     },
@@ -2751,7 +3667,19 @@
         {
           "name": "Avant-Garde Jazz",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Free Jazz",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "European Free Jazz",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            }
+          ]
         },
         {
           "name": "Bebop",
@@ -2770,6 +3698,11 @@
         },
         {
           "name": "British Dance Band",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Cape Jazz",
           "short_summary": null,
           "children": []
         },
@@ -2826,7 +3759,13 @@
         {
           "name": "Free Jazz",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "European Free Jazz",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Gypsy Jazz",
@@ -3011,6 +3950,16 @@
           "children": []
         },
         {
+          "name": "Bitpop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Blue-Eyed Soul",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Bubblegum Pop",
           "short_summary": null,
           "children": []
@@ -3022,6 +3971,37 @@
         },
         {
           "name": "Classical Crossover",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Country Pop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Dance-Pop",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Bubblegum Dance",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Disco Polo",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Dangdut",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Electropop",
           "short_summary": null,
           "children": []
         },
@@ -3067,17 +4047,64 @@
           ]
         },
         {
+          "name": "French Pop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Indian Pop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Indie Pop",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Twee Pop",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
           "name": "Iranian Pop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "J-Pop",
           "short_summary": null,
           "children": []
         },
         {
           "name": "Jangle Pop",
           "short_summary": null,
+          "children": [
+            {
+              "name": "Paisley Underground",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "K-Pop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Kayōkyoku",
+          "short_summary": null,
           "children": []
         },
         {
           "name": "Latin Ballad",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Latin Pop",
           "short_summary": null,
           "children": []
         },
@@ -3102,12 +4129,64 @@
           "children": []
         },
         {
+          "name": "Nederpop",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "New Romanticism",
           "short_summary": null,
           "children": []
         },
         {
           "name": "Pop Rap",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Pop Rock",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Britpop",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Jangle Pop",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Paisley Underground",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Post-Britpop",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Power Pop",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Soft Rock",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Twee Pop",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Pop Sunda",
           "short_summary": null,
           "children": []
         },
@@ -3124,7 +4203,13 @@
         {
           "name": "Schlager",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Levenslied",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Soft Rock",
@@ -3152,6 +4237,17 @@
           "children": []
         },
         {
+          "name": "Synthpop",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Futurepop",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
           "name": "Teen Pop",
           "short_summary": null,
           "children": []
@@ -3172,9 +4268,109 @@
           "children": []
         },
         {
+          "name": "Vocal Trance",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Wonky Pop",
           "short_summary": null,
           "children": []
+        }
+      ]
+    },
+    {
+      "name": "Reggae",
+      "short_summary": null,
+      "children": [
+        {
+          "name": "Dancehall",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Ragga",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Dub",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Lovers Rock",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Raggamuffin",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Ragga",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Reggae En Español",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Reggae 110",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Reggae Bultrón",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Romantic Flow",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Spanish Reggae",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Reggae Fusion",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Roots Reggae",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Seggae",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Ska",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "2 Tone",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Rocksteady",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         }
       ]
     },
@@ -3197,6 +4393,11 @@
               "children": []
             },
             {
+              "name": "Jazz-Funk",
+              "short_summary": null,
+              "children": []
+            },
+            {
               "name": "P-Funk",
               "short_summary": null,
               "children": []
@@ -3209,6 +4410,11 @@
           "children": [
             {
               "name": "Blue-Eyed Soul",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Country Soul",
               "short_summary": null,
               "children": []
             },
@@ -3234,6 +4440,17 @@
           "name": "Alternative Rock",
           "short_summary": null,
           "children": [
+            {
+              "name": "Alternative Dance",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "New Rave",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
             {
               "name": "Britpop",
               "short_summary": null,
@@ -3280,7 +4497,54 @@
             {
               "name": "Indie Rock",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Baggy",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Dunedin Sound",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "New Rave",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Noise Pop",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Post-Punk Revival",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Slowcore",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Twee Pop",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Jangle Pop",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Paisley Underground",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Noise Pop",
@@ -3289,6 +4553,16 @@
             },
             {
               "name": "Nu Metal",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Post-Britpop",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Post-Grunge",
               "short_summary": null,
               "children": []
             },
@@ -3326,12 +4600,22 @@
           ]
         },
         {
+          "name": "Art Punk",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Art Rock",
           "short_summary": null,
           "children": []
         },
         {
           "name": "Beat Music",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Blues Rock",
           "short_summary": null,
           "children": []
         },
@@ -3351,6 +4635,21 @@
           "children": []
         },
         {
+          "name": "Comedy Rock",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Country Rock",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Cowpunk",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Dark Cabaret",
           "short_summary": null,
           "children": []
@@ -3361,9 +4660,26 @@
           "children": []
         },
         {
+          "name": "Emo",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Screamo",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
           "name": "Experimental Rock",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Krautrock",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Folk Rock",
@@ -3373,7 +4689,18 @@
         {
           "name": "Garage Rock",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Freakbeat",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Garage Punk",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Glam Rock",
@@ -3383,7 +4710,18 @@
         {
           "name": "Hard Rock",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Glam Metal",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Stoner Rock",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Heavy Metal",
@@ -3395,6 +4733,21 @@
               "children": [
                 {
                   "name": "Funk Metal",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Neue Deutsche Härte",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Nu Metal",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Rap Metal",
                   "short_summary": null,
                   "children": []
                 }
@@ -3490,11 +4843,6 @@
               ]
             },
             {
-              "name": "Funk Metal",
-              "short_summary": null,
-              "children": []
-            },
-            {
               "name": "Glam Metal",
               "short_summary": null,
               "children": []
@@ -3534,21 +4882,11 @@
                       "children": []
                     }
                   ]
-                },
-                {
-                  "name": "Synthcore",
-                  "short_summary": null,
-                  "children": []
                 }
               ]
             },
             {
               "name": "Neoclassical Metal",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Post-Metal",
               "short_summary": null,
               "children": []
             },
@@ -3628,6 +4966,16 @@
           ]
         },
         {
+          "name": "Industrial Rock",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Jazz Rock",
+          "short_summary": null,
+          "children": []
+        },
+        {
           "name": "Math Rock",
           "short_summary": null,
           "children": []
@@ -3637,11 +4985,21 @@
           "short_summary": null,
           "children": [
             {
+              "name": "2 Tone",
+              "short_summary": null,
+              "children": []
+            },
+            {
               "name": "World Fusion",
               "short_summary": null,
               "children": []
             }
           ]
+        },
+        {
+          "name": "Noise Rock",
+          "short_summary": null,
+          "children": []
         },
         {
           "name": "Paisley Underground",
@@ -3651,16 +5009,69 @@
         {
           "name": "Pop Rock",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Britpop",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Jangle Pop",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Paisley Underground",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Post-Britpop",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Power Pop",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Soft Rock",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Twee Pop",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Post-Punk",
           "short_summary": null,
           "children": [
             {
-              "name": "Gothic Rock",
+              "name": "Coldwave",
               "short_summary": null,
               "children": []
+            },
+            {
+              "name": "Dance-Punk",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Gothic Rock",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Deathrock",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "No Wave",
@@ -3671,8 +5082,18 @@
               "name": "Noise Rock",
               "short_summary": null,
               "children": []
+            },
+            {
+              "name": "Post-Punk Revival",
+              "short_summary": null,
+              "children": []
             }
           ]
+        },
+        {
+          "name": "Post-Rock",
+          "short_summary": null,
+          "children": []
         },
         {
           "name": "Power Pop",
@@ -3722,14 +5143,40 @@
             {
               "name": "Neo-Psychedelia",
               "short_summary": null,
-              "children": []
+              "children": [
+                {
+                  "name": "Baggy",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Dream Pop",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Paisley Underground",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Raga Rock",
               "short_summary": null,
               "children": []
+            },
+            {
+              "name": "Space Rock",
+              "short_summary": null,
+              "children": []
             }
           ]
+        },
+        {
+          "name": "Punk Blues",
+          "short_summary": null,
+          "children": []
         },
         {
           "name": "Punk Rock",
@@ -3754,6 +5201,11 @@
             },
             {
               "name": "Art Punk",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Celtic Punk",
               "short_summary": null,
               "children": []
             },
@@ -3803,6 +5255,16 @@
                   "children": []
                 },
                 {
+                  "name": "Cybergrind",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Goregrind",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
                   "name": "Noisegrind",
                   "short_summary": null,
                   "children": []
@@ -3813,6 +5275,21 @@
               "name": "Hardcore Punk",
               "short_summary": null,
               "children": [
+                {
+                  "name": "Crossover Thrash",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Crust Punk",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "D-Beat",
+                  "short_summary": null,
+                  "children": []
+                },
                 {
                   "name": "Post-Hardcore",
                   "short_summary": null,
@@ -3827,6 +5304,11 @@
                           "children": []
                         }
                       ]
+                    },
+                    {
+                      "name": "Screamo",
+                      "short_summary": null,
+                      "children": []
                     }
                   ]
                 },
@@ -3843,7 +5325,13 @@
                 {
                   "name": "Thrashcore",
                   "short_summary": null,
-                  "children": []
+                  "children": [
+                    {
+                      "name": "Powerviolence",
+                      "short_summary": null,
+                      "children": []
+                    }
+                  ]
                 }
               ]
             },
@@ -3891,9 +5379,32 @@
           ]
         },
         {
+          "name": "Rap Rock",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "Rap Metal",
+              "short_summary": null,
+              "children": []
+            }
+          ]
+        },
+        {
           "name": "Rock And Roll",
           "short_summary": null,
-          "children": []
+          "children": [
+            {
+              "name": "Rockabilly",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Psychobilly",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            }
+          ]
         },
         {
           "name": "Southern Rock",
@@ -3924,100 +5435,11 @@
       ]
     },
     {
-      "name": "Reggae",
-      "short_summary": null,
-      "children": [
-        {
-          "name": "Roots Reggae",
-          "short_summary": null,
-          "children": []
-        },
-        {
-          "name": "Reggae Fusion",
-          "short_summary": null,
-          "children": []
-        },
-        {
-          "name": "Reggae En Español",
-          "short_summary": null,
-          "children": [
-            {
-              "name": "Spanish Reggae",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Reggae 110",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Reggae Bultrón",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Romantic Flow",
-              "short_summary": null,
-              "children": []
-            }
-          ]
-        },
-        {
-          "name": "Lovers Rock",
-          "short_summary": null,
-          "children": []
-        },
-        {
-          "name": "Raggamuffin",
-          "short_summary": null,
-          "children": [
-            {
-              "name": "Ragga",
-              "short_summary": null,
-              "children": []
-            }
-          ]
-        },
-        {
-          "name": "Dancehall",
-          "short_summary": null,
-          "children": []
-        },
-        {
-          "name": "Ska",
-          "short_summary": null,
-          "children": [
-            {
-              "name": "2 Tone",
-              "short_summary": null,
-              "children": []
-            },
-            {
-              "name": "Rocksteady",
-              "short_summary": null,
-              "children": []
-            }
-          ]
-        },
-        {
-          "name": "Dub",
-          "short_summary": null,
-          "children": []
-        }
-      ]
-    },
-    {
-      "name": "Soundtrack",
-      "short_summary": null,
-      "children": []
-    },
-    {
       "name": "Singer-Songwriter",
       "short_summary": null,
       "children": [
         {
-          "name": "Cantautorato",
+          "name": "Canción De Autor",
           "short_summary": null,
           "children": []
         },
@@ -4032,12 +5454,12 @@
           "children": []
         },
         {
-          "name": "Chanson",
+          "name": "Cantautorato",
           "short_summary": null,
           "children": []
         },
         {
-          "name": "Canción De Autor",
+          "name": "Chanson",
           "short_summary": null,
           "children": []
         },
@@ -4049,16 +5471,16 @@
       ]
     },
     {
+      "name": "Soundtrack",
+      "short_summary": null,
+      "children": []
+    },
+    {
       "name": "World",
       "short_summary": null,
       "children": [
         {
           "name": "World Dub",
-          "short_summary": null,
-          "children": []
-        },
-        {
-          "name": "World Fusion",
           "short_summary": null,
           "children": []
         },
