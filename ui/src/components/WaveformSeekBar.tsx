@@ -215,9 +215,50 @@ export default function WaveformSeekBar() {
     [duration, seek, handleSeekStart],
   );
 
+  const onTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      const el = containerRef.current;
+      if (!el || duration <= 0) return;
+      const touch = e.touches[0];
+      if (!touch) return;
+      e.stopPropagation();
+      handleSeekStart(touch.clientX);
+
+      const rect = el.getBoundingClientRect();
+
+      const onMove = (ev: TouchEvent) => {
+        const t = ev.touches[0];
+        if (!t) return;
+        ev.preventDefault();
+        const frac = Math.max(0, Math.min(1, (t.clientX - rect.left) / rect.width));
+        setSeekPos(frac * duration);
+      };
+      const onEnd = (ev: TouchEvent) => {
+        const t = ev.changedTouches[0];
+        if (t) {
+          const frac = Math.max(0, Math.min(1, (t.clientX - rect.left) / rect.width));
+          seek(frac * duration);
+        }
+        setIsSeeking(false);
+        window.removeEventListener("touchmove", onMove);
+        window.removeEventListener("touchend", onEnd);
+        window.removeEventListener("touchcancel", onEnd);
+      };
+      window.addEventListener("touchmove", onMove, { passive: false });
+      window.addEventListener("touchend", onEnd);
+      window.addEventListener("touchcancel", onEnd);
+    },
+    [duration, seek, handleSeekStart],
+  );
+
   return (
     <div className="waveform-container">
-      <div ref={containerRef} className="waveform-canvas-wrap" onMouseDown={onMouseDown}>
+      <div
+        ref={containerRef}
+        className="waveform-canvas-wrap"
+        onMouseDown={onMouseDown}
+        onTouchStart={onTouchStart}
+      >
         <canvas ref={canvasRef} className="waveform-canvas" />
       </div>
       <div className="waveform-times">

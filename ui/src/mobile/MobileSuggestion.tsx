@@ -1,0 +1,177 @@
+import { useCallback, useEffect, useState } from "react";
+import { useLibraryStore } from "../stores/libraryStore";
+import { usePlaybackStore } from "../stores/playbackStore";
+import {
+  ART_SIZE,
+  getArtUrl,
+  getAlbumColors,
+  getAlbumGenres,
+  setAlbumPalette,
+} from "../lib/commands";
+import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
+import { IconMusicNote, IconShuffle, IconClose } from "../components/Icons";
+import FlowLayout from "../components/FlowLayout";
+
+interface Props {
+  onClose: () => void;
+}
+
+export default function MobileSuggestion({ onClose }: Props) {
+  const album = useLibraryStore((s) => s.suggestion);
+  const playAlbum = useLibraryStore((s) => s.playAlbum);
+  const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
+  const clearSuggestion = useLibraryStore((s) => s.clearSuggestion);
+  const selectGenreByName = useLibraryStore((s) => s.selectGenreByName);
+
+  const [artSrc, setArtSrc] = useState<string | null>(null);
+  const [artErr, setArtErr] = useState(false);
+  const [genres, setGenres] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!album?.thumb) {
+      setArtSrc(null);
+      return;
+    }
+    setArtErr(false);
+    setArtSrc(null);
+    let cancelled = false;
+    getArtUrl(album.thumb, ART_SIZE.LARGE)
+      .then((url) => {
+        if (!cancelled) setArtSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setArtErr(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [album?.thumb]);
+
+  useEffect(() => {
+    if (!album) return;
+    if (album.genres.length) {
+      setGenres(album.genres);
+    } else {
+      getAlbumGenres(album.ratingKey)
+        .then(setGenres)
+        .catch(() => {});
+    }
+    // Prime cached palette from DB so art fallback still tints the background.
+    usePlaybackStore.setState({ vibrantPalette: null, ultraBlurColors: null });
+    getAlbumColors(album.ratingKey)
+      .then((result) => {
+        if (result.palette) {
+          usePlaybackStore.setState({
+            vibrantPalette: result.palette,
+            ultraBlurColors: blurColorsFromPalette(result.palette),
+          });
+        }
+      })
+      .catch(() => {});
+  }, [album]);
+
+  const handleArtLoad = useCallback(
+    (e: React.SyntheticEvent<HTMLImageElement>) => {
+      const existing = usePlaybackStore.getState().vibrantPalette;
+      if (existing) {
+        const [r, g, b] = accentFromPalette(existing);
+        document.documentElement.style.setProperty("--accent-r", String(r));
+        document.documentElement.style.setProperty("--accent-g", String(g));
+        document.documentElement.style.setProperty("--accent-b", String(b));
+        return;
+      }
+      extractPalette(e.currentTarget).then((palette) => {
+        if (!palette) return;
+        const [r, g, b] = accentFromPalette(palette);
+        document.documentElement.style.setProperty("--accent-r", String(r));
+        document.documentElement.style.setProperty("--accent-g", String(g));
+        document.documentElement.style.setProperty("--accent-b", String(b));
+        const blur = blurColorsFromPalette(palette);
+        usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blur });
+        if (album) setAlbumPalette(album.ratingKey, palette).catch(() => {});
+      });
+    },
+    [album],
+  );
+
+  const handleClose = () => {
+    clearSuggestion();
+    onClose();
+  };
+
+  if (!album) {
+    return (
+      <div className="mobile-screen mobile-suggestion">
+        <header className="mobile-header">
+          <button
+            className="mobile-header-circle"
+            onClick={loadSuggestion}
+            aria-label="New suggestion"
+          >
+            <IconShuffle />
+          </button>
+          <div className="mobile-header-title"> </div>
+          <button className="mobile-header-circle" onClick={handleClose} aria-label="Close">
+            <IconClose />
+          </button>
+        </header>
+        <div className="mobile-empty">Loading suggestion...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mobile-screen mobile-suggestion">
+      <header className="mobile-header">
+        <button
+          className="mobile-header-circle"
+          onClick={loadSuggestion}
+          aria-label="New suggestion"
+        >
+          <IconShuffle />
+        </button>
+        <div className="mobile-header-title"> </div>
+        <button className="mobile-header-circle" onClick={handleClose} aria-label="Close">
+          <IconClose />
+        </button>
+      </header>
+
+      <div className="mobile-suggestion-body">
+        <button
+          className="mobile-suggestion-card"
+          onClick={() => {
+            playAlbum(album);
+            clearSuggestion();
+          }}
+        >
+          {artSrc && !artErr ? (
+            <img
+              src={artSrc}
+              alt={album.title}
+              crossOrigin="anonymous"
+              onLoad={handleArtLoad}
+              onError={() => setArtErr(true)}
+            />
+          ) : (
+            <div className="mobile-suggestion-art-ph">
+              <IconMusicNote size={64} />
+            </div>
+          )}
+        </button>
+        <div className="mobile-suggestion-title">{album.title}</div>
+        <div className="mobile-suggestion-artist">{album.artistName}</div>
+        {genres.length > 0 && (
+          <div className="mobile-suggestion-genres">
+            <FlowLayout
+              genres={genres}
+              onGenreClick={(g) => {
+                clearSuggestion();
+                selectGenreByName(g);
+              }}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

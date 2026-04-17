@@ -1,0 +1,166 @@
+import { useCallback, useEffect, useState } from "react";
+import { useLibraryStore } from "../stores/libraryStore";
+import { useArtUrl } from "../lib/useArtUrl";
+import { ART_SIZE, getAlbumGenres } from "../lib/commands";
+import { formatDuration, formatCodec } from "../lib/format";
+import {
+  IconChevronLeft,
+  IconStarFilled,
+  IconStarEmpty,
+  IconMusicNote,
+  IconPlay,
+} from "../components/Icons";
+import FlowLayout from "../components/FlowLayout";
+
+/**
+ * Album detail: hero art + artist/year/genres, then track list. Reuses the
+ * desktop action verbs (toggleAlbumFav, playAlbum, ...) so search/queue
+ * semantics stay identical between mobile and desktop.
+ */
+export default function MobileAlbumDetail() {
+  const album = useLibraryStore((s) => s.detailAlbum);
+  const tracks = useLibraryStore((s) => s.detailTracks);
+  const closeAlbumDetail = useLibraryStore((s) => s.closeAlbumDetail);
+  const playAlbum = useLibraryStore((s) => s.playAlbum);
+  const toggleAlbumFav = useLibraryStore((s) => s.toggleAlbumFav);
+  const toggleTrackFav = useLibraryStore((s) => s.toggleTrackFav);
+  const loadAlbumsForArtistName = useLibraryStore((s) => s.loadAlbumsForArtistName);
+  const loadAlbumsForYear = useLibraryStore((s) => s.loadAlbumsForYear);
+  const selectGenreByName = useLibraryStore((s) => s.selectGenreByName);
+
+  const { artSrc, artErr, setArtErr } = useArtUrl(album?.thumb, ART_SIZE.MEDIUM);
+  const [genres, setGenres] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!album) {
+      setGenres([]);
+      return;
+    }
+    if (album.genres.length) {
+      setGenres(album.genres);
+      return;
+    }
+    let cancelled = false;
+    getAlbumGenres(album.ratingKey)
+      .then((g) => {
+        if (!cancelled) setGenres(g);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [album]);
+
+  const handleGenreClick = useCallback(
+    (g: string) => {
+      closeAlbumDetail();
+      selectGenreByName(g);
+    },
+    [closeAlbumDetail, selectGenreByName],
+  );
+
+  if (!album) return null;
+
+  const codec = tracks.length ? formatCodec(tracks[0].codec, tracks[0].bitrate) : null;
+  const totalMinutes = Math.round(tracks.reduce((s, t) => s + t.duration, 0) / 60);
+  const hasMultipleDiscs = tracks.some((t) => (t.discNumber ?? 1) > 1);
+
+  return (
+    <div className="mobile-screen">
+      <header className="mobile-header">
+        <button className="mobile-header-circle" onClick={closeAlbumDetail} aria-label="Back">
+          <IconChevronLeft />
+        </button>
+        <div className="mobile-header-title mobile-header-title-short">{album.title}</div>
+        <button
+          className={`mobile-header-circle${album.isFavourite ? " accent" : ""}`}
+          onClick={() => toggleAlbumFav(album)}
+          aria-label={album.isFavourite ? "Remove favourite" : "Add favourite"}
+        >
+          {album.isFavourite ? <IconStarFilled /> : <IconStarEmpty />}
+        </button>
+      </header>
+
+      <div className="mobile-detail-body">
+        <div className="mobile-detail-hero">
+          <div className="mobile-detail-art">
+            {artSrc && !artErr ? (
+              <img src={artSrc} alt={album.title} onError={() => setArtErr(true)} />
+            ) : (
+              <div className="mobile-detail-art-ph">
+                <IconMusicNote size={48} />
+              </div>
+            )}
+            <button
+              className="mobile-detail-play"
+              aria-label="Play album"
+              onClick={() => playAlbum(album)}
+            >
+              <IconPlay />
+            </button>
+          </div>
+          <div
+            className="mobile-detail-artist"
+            onClick={() => loadAlbumsForArtistName(album.artistName)}
+          >
+            {album.artistName}
+          </div>
+          {album.year && (
+            <div className="mobile-detail-year" onClick={() => loadAlbumsForYear(album.year!)}>
+              {album.year}
+            </div>
+          )}
+          {genres.length > 0 && (
+            <div className="mobile-detail-genres">
+              <FlowLayout genres={genres} onGenreClick={handleGenreClick} />
+            </div>
+          )}
+          <div className="mobile-detail-summary">
+            {tracks.length} {tracks.length === 1 ? "track" : "tracks"} &middot; {totalMinutes} min
+          </div>
+        </div>
+
+        <ul className="mobile-track-list">
+          {tracks.map((t, i) => {
+            const showDiscHeader =
+              hasMultipleDiscs && (i === 0 || t.discNumber !== tracks[i - 1].discNumber);
+            const hasTrackArtist =
+              t.trackArtist && t.trackArtist.toLowerCase() !== album.artistName.toLowerCase();
+            return (
+              <li key={t.ratingKey} className="mobile-track-li">
+                {showDiscHeader && (
+                  <div className="mobile-disc-header">Disc {t.discNumber ?? 1}</div>
+                )}
+                <button className="mobile-track-row" onClick={() => playAlbum(album, i)}>
+                  <span className="mobile-track-num">{t.index ?? i + 1}</span>
+                  <div className="mobile-track-info">
+                    <div className="mobile-track-title">{t.title}</div>
+                    {hasTrackArtist && <div className="mobile-track-artist">{t.trackArtist}</div>}
+                  </div>
+                  <span className="mobile-track-duration">{formatDuration(t.duration)}</span>
+                  <button
+                    className={`mobile-track-fav${t.isFavourite ? " active" : ""}`}
+                    aria-label={t.isFavourite ? "Remove favourite" : "Add favourite"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleTrackFav(t);
+                    }}
+                  >
+                    {t.isFavourite ? <IconStarFilled /> : <IconStarEmpty />}
+                  </button>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        {(album.studio || codec) && (
+          <div className="mobile-detail-footer">
+            {album.studio && <span>{album.studio}</span>}
+            {codec && <span>{codec}</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

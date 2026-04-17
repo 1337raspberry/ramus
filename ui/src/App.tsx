@@ -4,6 +4,7 @@ import { usePlaybackEvents } from "./lib/usePlaybackEvents";
 import { useWindowTitle } from "./lib/useWindowTitle";
 import { useFullscreenSync } from "./lib/useFullscreenSync";
 import { useAppKeyboard } from "./lib/useAppKeyboard";
+import { useIsMobile } from "./lib/useIsMobile";
 import { usePlaybackStore } from "./stores/playbackStore";
 import { useLibraryStore } from "./stores/libraryStore";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -21,6 +22,7 @@ import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
 import OnboardingFlow from "./components/onboarding/OnboardingFlow";
 import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackground";
 import BreadcrumbDebugPanel from "./components/BreadcrumbDebugPanel";
+import MobileApp from "./mobile/MobileApp";
 
 const initialPalette = randomPalette();
 const initialColors = initialPalette.colors;
@@ -30,6 +32,7 @@ document.documentElement.style.setProperty("--accent-g", String(initialPalette.a
 document.documentElement.style.setProperty("--accent-b", String(initialPalette.accent[2]));
 
 export default function App() {
+  const isMobile = useIsMobile();
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [searchInitial, setSearchInitial] = useState<string | undefined>();
@@ -80,7 +83,7 @@ export default function App() {
     return (
       <>
         <UltraBlurBackground colors={blurColors} />
-        <TrafficLights />
+        {!isMobile && <TrafficLights />}
         <div className="empty-state">loading...</div>
       </>
     );
@@ -90,8 +93,27 @@ export default function App() {
     return (
       <>
         <UltraBlurBackground colors={blurColors} />
-        <TrafficLights />
+        {!isMobile && <TrafficLights />}
         <OnboardingFlow onComplete={() => setAuthed(true)} />
+      </>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <>
+        <UltraBlurBackground colors={blurColors} />
+        <MobileApp onOpenSettings={() => setShowSettings(true)} />
+        {showSettings && (
+          <LibrarySettingsPanel
+            onDismiss={() => setShowSettings(false)}
+            onSignOut={() => {
+              setShowSettings(false);
+              usePlaybackStore.setState({ isFocusMode: false });
+              setAuthed(false);
+            }}
+          />
+        )}
       </>
     );
   }
