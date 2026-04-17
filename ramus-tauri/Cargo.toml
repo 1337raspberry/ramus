@@ -86,6 +86,20 @@ libc = "0.2"
 # `target_os = "ios"`, so this does not leak into the iOS build.
 objc2 = "0.6"
 
+[target.'cfg(target_os = "ios")'.dependencies]
+# Force the UIWindow to fill the screen after Tauri creates it at the
+# 1200x800 size baked into `tauri.conf.json`. tao's iOS window honors
+# that inner_size at creation time and `set_inner_size` is a no-op on
+# iOS, so we reach into the view controller's window via objc and
+# setFrame: [UIScreen mainScreen].bounds ourselves.
+objc2 = "0.6"
+objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
+# Used to defer the window resize until after tauri's setup runloop has
+# finished wiring up the view hierarchy. Synchronous setFrame leaves
+# the WKWebView scroll-view's cached viewport stale — the gap only
+# disappears once UIKit fires a layout event (keyboard focus, rotation).
+dispatch2 = "0.3"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

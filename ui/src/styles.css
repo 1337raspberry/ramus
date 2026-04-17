@@ -3125,3 +3125,1187 @@ body.is-fullscreen .focus-body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ============================================================
+   Mobile layout (iOS / narrow viewports)
+   ============================================================
+   Activated by MobileApp at <= 820px viewports. The desktop
+   three-column tree is never mounted on mobile, so none of these
+   selectors need to compete with the desktop rules — they are
+   scoped to .mobile-root and its descendants.
+   -----------------------------------------------------------*/
+
+.mobile-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  color: var(--text-primary);
+  font-size: 15px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
+}
+
+.mobile-root.with-mini .mobile-body {
+  /* 56px mini-bar + ~40px waveform strip; leave headroom for the
+     mini-player overlay so the last scrolled row isn't hidden. */
+  padding-bottom: 108px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - 144px),
+    transparent calc(100% - 108px)
+  );
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 144px), transparent calc(100% - 108px));
+}
+
+.mobile-empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+  padding: 48px 16px;
+}
+
+.mobile-screen {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* --- Toolbar (top row of 7 icons) --- */
+
+.mobile-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.mobile-toolbar-btn {
+  width: 44px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.mobile-toolbar-btn.active {
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.55);
+  color: #fff;
+}
+
+.mobile-toolbar-btn.disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mobile-toolbar-btn:active:not(.disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* --- Generic mobile header (back/title/action) --- */
+
+.mobile-header {
+  display: grid;
+  grid-template-columns: 48px 1fr 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px 12px;
+  flex-shrink: 0;
+}
+
+.mobile-header-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.mobile-header-circle.accent {
+  color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
+  border-color: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.55);
+}
+
+.mobile-header-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 17px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-header-title-short {
+  font-size: 16px;
+}
+
+/* --- Genre tree --- */
+
+.mobile-genre-tree {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 0 24px;
+}
+
+.mobile-genre-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  cursor: pointer;
+  position: relative;
+}
+
+.mobile-genre-row:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mobile-genre-name {
+  font-size: 17px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-genre-count {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mobile-genre-chev {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -12px -12px -12px 0;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.mobile-genre-chev:empty {
+  width: 8px;
+  height: 20px;
+  margin: 0;
+}
+
+/* --- Artist list --- */
+
+.mobile-artist-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 24px;
+}
+
+.mobile-artist-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 20px;
+  background: transparent;
+  border: none;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mobile-artist-row:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mobile-artist-name {
+  font-size: 17px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Album grid --- */
+
+.mobile-album-grid-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 16px 28px;
+}
+
+.mobile-album-grid-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 14px;
+  padding-bottom: 20px;
+  box-sizing: border-box;
+}
+
+.mobile-album-card {
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mobile-album-art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.mobile-album-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mobile-album-art-ph {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.mobile-album-fav {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  color: #ffcb57;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  display: inline-flex;
+}
+
+.mobile-album-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 4px;
+}
+
+.mobile-album-artist {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-album-year {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* --- Album detail --- */
+
+.mobile-detail-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 24px;
+}
+
+.mobile-detail-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 20px 16px;
+  text-align: center;
+}
+
+.mobile-detail-art {
+  position: relative;
+  width: min(70vw, 300px);
+  height: min(70vw, 300px);
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+  margin-bottom: 14px;
+}
+
+.mobile-detail-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mobile-detail-art-ph {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.mobile-detail-play {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.9);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.mobile-detail-artist {
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+}
+
+.mobile-detail-year {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+}
+
+.mobile-detail-genres {
+  margin-top: 8px;
+  display: flex;
+  justify-content: center;
+}
+
+.mobile-detail-summary {
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.mobile-track-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mobile-track-li {
+  padding: 0 8px;
+}
+
+.mobile-disc-header {
+  padding: 16px 12px 8px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.mobile-track-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 28px 1fr auto 36px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.mobile-track-row:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mobile-track-num {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 13px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mobile-track-info {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.mobile-track-title {
+  font-size: 15px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-track-artist {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-track-duration {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mobile-track-fav {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+}
+
+.mobile-track-fav.active {
+  color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
+}
+
+.mobile-detail-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 20px 24px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* --- Suggestion --- */
+
+.mobile-suggestion-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 32px 20px;
+  text-align: center;
+}
+
+.mobile-suggestion-card {
+  width: min(80vw, 360px);
+  height: min(80vw, 360px);
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.mobile-suggestion-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mobile-suggestion-art-ph {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.mobile-suggestion-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  margin-top: 8px;
+}
+
+.mobile-suggestion-artist {
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.mobile-suggestion-genres {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+/* --- Search --- */
+
+.mobile-search .mobile-header {
+  grid-template-columns: 48px 1fr;
+}
+
+.mobile-search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.mobile-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-size: 15px;
+  min-width: 0;
+}
+
+.mobile-search-clear {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.mobile-search-results {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 24px;
+}
+
+.mobile-search-section {
+  padding: 16px 20px 8px;
+  font-size: 20px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.mobile-search-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mobile-search-row:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mobile-search-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mobile-search-thumb-ph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.mobile-search-lines {
+  min-width: 0;
+}
+
+.mobile-search-primary {
+  font-size: 15px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-search-secondary {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-search-fav {
+  color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
+  display: inline-flex;
+}
+
+/* --- Mini-player (bottom bar, docked) --- */
+
+.mobile-miniplayer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: rgba(10, 10, 10, 0.82);
+  -webkit-backdrop-filter: blur(24px) saturate(1.1);
+  backdrop-filter: blur(24px) saturate(1.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.mobile-miniplayer.hidden {
+  display: none;
+}
+
+.mobile-miniplayer-wave {
+  height: 40px;
+  padding: 0 16px;
+}
+
+.mobile-miniplayer-wave .waveform-container,
+.mobile-miniplayer-wave .waveform-canvas-wrap {
+  height: 100%;
+}
+
+.mobile-miniplayer-wave .waveform-times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  padding-top: 2px;
+}
+
+.mobile-miniplayer-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px 10px;
+}
+
+.mobile-miniplayer-art {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  /* Also rendered as a <button> — strip browser default styling. */
+  padding: 0;
+  border: none;
+  cursor: pointer;
+}
+
+.mobile-miniplayer-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mobile-miniplayer-art-ph {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.mobile-miniplayer-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-miniplayer-title {
+  font-size: 14px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.mobile-miniplayer-artist {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-miniplayer-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mobile-miniplayer-btn {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.mobile-miniplayer-btn:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* --- Expanded sheet --- */
+
+.mobile-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  animation: mobile-sheet-in 260ms cubic-bezier(0.2, 0.9, 0.2, 1);
+  /* Solid base so nothing from the album grid bleeds through. The
+     UltraBlurBackground copy rendered inside `.mobile-sheet-bg` paints
+     over this with the accent-tinted gradient. */
+  background: #0a0a0c;
+}
+
+/* Wrapper that scopes the .ultrablur-bg (which uses `position: fixed;
+   inset: 0`) to the sheet. With `contain: strict`, the fixed-positioned
+   child is clipped to this wrapper's box, so the gradient renders at
+   the sheet's dimensions instead of the whole viewport. */
+.mobile-sheet-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  contain: strict;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.mobile-sheet > :not(.mobile-sheet-bg) {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes mobile-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.mobile-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+}
+
+.mobile-sheet-fav {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  font-size: 22px;
+}
+
+.mobile-sheet-fav.active {
+  color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
+}
+
+.mobile-sheet-collapse {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.mobile-sheet-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 24px 24px;
+  text-align: center;
+}
+
+.mobile-sheet-art {
+  /* Lock to a square. Explicit height alongside aspect-ratio because
+     inside a vertical flex column the flex-shrink default (1) can
+     collapse the aspect-ratio-derived height when space is tight. */
+  width: min(80vw, 360px);
+  height: min(80vw, 360px);
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+  margin: 12px 0 18px;
+}
+
+.mobile-sheet-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+.mobile-sheet-art-ph {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.mobile-sheet-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-sheet-artist {
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.mobile-sheet-album {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.mobile-sheet-lyrics {
+  margin-top: 8px;
+  width: 44px;
+  height: 26px;
+  border-radius: 14px;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.8);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.mobile-sheet-wave {
+  width: 100%;
+  height: 70px;
+  margin-top: 12px;
+}
+
+.mobile-sheet-wave .waveform-container,
+.mobile-sheet-wave .waveform-canvas-wrap {
+  height: 50px;
+}
+
+.mobile-sheet-wave .waveform-times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 4px 2px 0;
+}
+
+.mobile-sheet-transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  margin-top: 8px;
+}
+
+.mobile-sheet-transport-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 28px;
+}
+
+.mobile-sheet-transport-btn svg {
+  width: 32px;
+  height: 32px;
+}
+
+.mobile-sheet-transport-btn.primary svg {
+  width: 40px;
+  height: 40px;
+}
+
+.mobile-sheet-transport-btn:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mobile-sheet-genres {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.mobile-sheet-foot {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+}
+
+.mobile-sheet-track-fav {
+  cursor: pointer;
+  display: inline-flex;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.mobile-sheet-track-fav.active {
+  color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
+}
+
+/* Genre pills override: make touch-friendly on mobile */
+
+.mobile-root .flow-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.mobile-root .genre-pill {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  border: none;
+  border-radius: 14px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mobile-root .genre-pill:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* --- Mobile settings row (bottom of genre tree / artist list) --- */
+
+.mobile-settings-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.65);
+  text-align: left;
+  font-size: 15px;
+  cursor: pointer;
+  margin-top: 12px;
+}
+
+.mobile-settings-row:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* --- Settings panel on mobile: full-screen sheet --- */
+
+@media (max-width: 820px) {
+  .settings-panel {
+    width: 100% \!important;
+    height: 100% \!important;
+    max-height: 100% \!important;
+    max-width: 100% \!important;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .settings-backdrop {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .settings-header {
+    padding: 16px 20px;
+    font-size: 17px;
+  }
+
+  .settings-header h2 {
+    font-size: 20px;
+  }
+
+  .settings-close {
+    font-size: 17px;
+    padding: 8px 12px;
+    min-height: 40px;
+  }
+
+  .settings-body {
+    padding: 12px 20px 32px;
+    gap: 14px;
+  }
+
+  .settings-row {
+    font-size: 14px;
+    min-height: 44px;
+  }
+
+  .settings-row select,
+  .settings-row input[type="number"],
+  .settings-row input[type="text"] {
+    font-size: 15px;
+    min-height: 36px;
+  }
+
+  .settings-section-header {
+    font-size: 11px;
+    margin-top: 16px;
+  }
+}
+
+/* --- Mini-player drag-to-expand feedback --- */
+
+.mobile-miniplayer {
+  will-change: transform;
+  transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+/* Disable the transition during an active drag so the transform tracks the
+   pointer without smoothing lag. We detect "active drag" by the non-zero
+   inline-style transform set by MobileNowPlaying. */
+.mobile-miniplayer[style*="transform"] {
+  transition: none;
+}
+
+/* --- Force dynamic viewport height on iOS so the layout tracks the
+     actual visible area, not the URL-bar-inflated "large" viewport.
+     100dvh updates during URL-bar show/hide; 100vh doesn't. --- */
+
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+  .mobile-root {
+    height: 100dvh;
+  }
+}

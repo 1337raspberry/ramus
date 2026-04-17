@@ -355,6 +355,103 @@ pub fn run() {
             #[cfg(target_os = "ios")]
             crate::keychain_ios::register(&app_handle);
 
+            // Force-fit the UIWindow to the full screen on iOS. The shared
+            // `tauri.conf.json` sets `width: 1200, height: 800` for desktop,
+            // which tao's iOS window constructor respects verbatim, leaving
+            // an empty strip below the app. tao's `set_inner_size` is a
+            // no-op on iOS and `WebviewWindow::set_fullscreen` only compiles
+            // on `cfg(desktop)`, so we reach into the WKWebView's view
+            // controller via `with_webview`, walk up to the UIWindow, and
+            // resize it with `setFrame: [[UIScreen mainScreen] bounds]`.
+            #[cfg(target_os = "ios")]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.with_webview(|pw| {
+                        // Capture as usize so the closure is Send + 'static; we
+                        // cast back to pointers on the main thread inside the
+                        // dispatched block.
+                        let vc_ptr = pw.view_controller() as usize;
+                        let webview_ptr = pw.inner() as usize;
+
+                        dispatch2::DispatchQueue::main().exec_async(move || unsafe {
+                            use objc2::msg_send;
+                            use objc2::runtime::AnyObject;
+                            use objc2_core_foundation::CGRect;
+
+                            let vc = vc_ptr as *mut AnyObject;
+                            let webview = webview_ptr as *mut AnyObject;
+                            if vc.is_null() || webview.is_null() {
+                                return;
+                            }
+                            let root_view: *mut AnyObject = msg_send![vc, view];
+                            if root_view.is_null() {
+                                return;
+                            }
+                            let win: *mut AnyObject = msg_send![root_view, window];
+                            if win.is_null() {
+                                return;
+                            }
+                            let uiscreen_cls = objc2::runtime::AnyClass::get(
+                                std::ffi::CStr::from_bytes_with_nul_unchecked(b"UIScreen\0"),
+                            );
+                            let Some(uiscreen_cls) = uiscreen_cls else {
+                                return;
+                            };
+                            let main_screen: *mut AnyObject = msg_send![uiscreen_cls, mainScreen];
+                            if main_screen.is_null() {
+                                return;
+                            }
+                            let bounds: CGRect = msg_send![main_screen, bounds];
+
+                            // Flexible W|H so future resizes (rotation, keyboard)
+                            // propagate through all three layers.
+                            // 2 = UIViewAutoresizingFlexibleWidth
+                            // 16 = UIViewAutoresizingFlexibleHeight
+                            let flexible: u64 = 2 | 16;
+                            let _: () = msg_send![root_view, setAutoresizingMask: flexible];
+                            let _: () = msg_send![
+                                webview,
+                                setTranslatesAutoresizingMaskIntoConstraints: true
+                            ];
+                            let _: () = msg_send![webview, setAutoresizingMask: flexible];
+
+                            let _: () = msg_send![win, setFrame: bounds];
+                            let _: () = msg_send![root_view, setFrame: bounds];
+                            let _: () = msg_send![webview, setFrame: bounds];
+
+                            // Disable the scrollView's automatic content-inset
+                            // adjustment. By default iOS sets it to `Automatic`,
+                            // which inserts padding for the safe area on top of
+                            // our CSS — and the scrollView only recomputes that
+                            // padding on a layout event (keyboard focus, rotate).
+                            // With `viewport-fit=cover` + explicit
+                            // `env(safe-area-inset-*)` CSS, we own the safe-area
+                            // handling and iOS should stay out of it.
+                            //   Never = 2
+                            let scroll_view: *mut AnyObject = msg_send![webview, scrollView];
+                            if !scroll_view.is_null() {
+                                let never: i64 = 2;
+                                let _: () = msg_send![
+                                    scroll_view,
+                                    setContentInsetAdjustmentBehavior: never
+                                ];
+                            }
+
+                            // Force the scrollView inside WKWebView to recompute
+                            // its viewport + safe-area insets. Without this,
+                            // CSS `100dvh` and `env(safe-area-inset-*)` return
+                            // stale values until UIKit fires a layout event
+                            // (keyboard focus, rotation).
+                            let _: () = msg_send![root_view, setNeedsLayout];
+                            let _: () = msg_send![webview, setNeedsLayout];
+                            let _: () = msg_send![root_view, layoutIfNeeded];
+                            let _: () = msg_send![webview, layoutIfNeeded];
+                        });
+                    });
+                }
+            }
+
             // Restore persistent client_identifier, or generate a new one.
             let id_path = ramus_core::plex::token_store::config_dir()
                 .ok()
