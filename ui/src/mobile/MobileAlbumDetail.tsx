@@ -11,6 +11,7 @@ import {
   IconPlay,
 } from "../components/Icons";
 import FlowLayout from "../components/FlowLayout";
+import MarqueeText from "../components/MarqueeText";
 
 /**
  * Album detail: hero art + artist/year/genres, then track list. Reuses the
@@ -69,15 +70,17 @@ export default function MobileAlbumDetail() {
     <div className="mobile-screen">
       <header className="mobile-header">
         <button className="mobile-header-circle" onClick={closeAlbumDetail} aria-label="Back">
-          <IconChevronLeft />
+          <IconChevronLeft size={22} />
         </button>
-        <div className="mobile-header-title mobile-header-title-short">{album.title}</div>
+        <MarqueeText className="mobile-header-title mobile-header-title-short">
+          {album.title}
+        </MarqueeText>
         <button
           className={`mobile-header-circle${album.isFavourite ? " accent" : ""}`}
           onClick={() => toggleAlbumFav(album)}
           aria-label={album.isFavourite ? "Remove favourite" : "Add favourite"}
         >
-          {album.isFavourite ? <IconStarFilled /> : <IconStarEmpty />}
+          {album.isFavourite ? <IconStarFilled size={22} /> : <IconStarEmpty size={22} />}
         </button>
       </header>
 
@@ -96,7 +99,7 @@ export default function MobileAlbumDetail() {
               aria-label="Play album"
               onClick={() => playAlbum(album)}
             >
-              <IconPlay />
+              <IconPlay size={26} />
             </button>
           </div>
           <div
