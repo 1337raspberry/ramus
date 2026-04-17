@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { create } from "zustand";
 import { usePlaybackStore } from "../stores/playbackStore";
 import {
   ART_SIZE,
@@ -13,6 +14,140 @@ import { useNowPlayingActions } from "../lib/useNowPlayingActions";
 import WaveformSeekBar from "../components/WaveformSeekBar";
 import FlowLayout from "../components/FlowLayout";
 import UltraBlurBackground from "../components/UltraBlurBackground";
+import MarqueeText from "../components/MarqueeText";
+
+export const useMiniPlayerDebugStore = create<{
+  darken: number;
+  wavePadTop: number;
+  waveHeight: number;
+  wavePadSide: number;
+  wavePadLeft: number;
+  barPadTop: number;
+  barPadBottom: number;
+  barPadSide: number;
+  barGap: number;
+  safeBottom: number;
+  artSize: number;
+  artTop: number;
+  artLeft: number;
+  brickwall: boolean;
+  showDebug: boolean;
+}>(() => ({
+  darken: 0.3,
+  wavePadTop: 10,
+  waveHeight: 40,
+  wavePadSide: 14,
+  wavePadLeft: 64,
+  barPadTop: 10,
+  barPadBottom: 0,
+  barPadSide: 14,
+  barGap: 0,
+  safeBottom: -1,
+  artSize: 42,
+  artTop: 10,
+  artLeft: 14,
+  brickwall: false,
+  showDebug: false,
+}));
+
+const SLIDERS: {
+  label: string;
+  key: keyof ReturnType<typeof useMiniPlayerDebugStore.getState>;
+  min: number;
+  max: number;
+  scale?: number;
+  unit: string;
+}[] = [
+  { label: "Darken", key: "darken", min: 0, max: 100, scale: 100, unit: "%" },
+  { label: "Wave pad top", key: "wavePadTop", min: -20, max: 40, unit: "px" },
+  { label: "Wave height", key: "waveHeight", min: 10, max: 80, unit: "px" },
+  { label: "Wave pad side", key: "wavePadSide", min: 0, max: 60, unit: "px" },
+  { label: "Wave pad left", key: "wavePadLeft", min: -1, max: 120, unit: "px" },
+  { label: "Bar pad top", key: "barPadTop", min: -20, max: 40, unit: "px" },
+  { label: "Bar pad bottom", key: "barPadBottom", min: -20, max: 40, unit: "px" },
+  { label: "Bar pad side", key: "barPadSide", min: 0, max: 60, unit: "px" },
+  { label: "Bar gap", key: "barGap", min: 0, max: 40, unit: "px" },
+  { label: "Safe bottom", key: "safeBottom", min: -1, max: 50, unit: "px" },
+  { label: "Art size", key: "artSize", min: 16, max: 80, unit: "px" },
+  { label: "Art top", key: "artTop", min: -60, max: 60, unit: "px" },
+  { label: "Art left", key: "artLeft", min: -20, max: 60, unit: "px" },
+];
+
+export function MiniPlayerDebugPanel() {
+  const state = useMiniPlayerDebugStore();
+  if (!state.showDebug) return null;
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: 180,
+        left: 12,
+        right: 12,
+        zIndex: 9999,
+        background: "rgba(0,0,0,0.9)",
+        borderRadius: 10,
+        padding: "10px 14px",
+        color: "#fff",
+        fontSize: 12,
+      }}
+    >
+      {SLIDERS.map((s) => {
+        const scale = s.scale ?? 1;
+        const raw = state[s.key] as number;
+        const display = Math.round(raw * scale);
+        return (
+          <div key={s.key} style={{ marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+              <span>{s.label}</span>
+              <span>
+                {display}
+                {s.unit}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={s.min}
+              max={s.max}
+              value={display}
+              onChange={(e) =>
+                useMiniPlayerDebugStore.setState({ [s.key]: Number(e.target.value) / scale })
+              }
+              style={{ width: "100%" }}
+            />
+          </div>
+        );
+      })}
+      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <button
+          style={{
+            background: state.brickwall ? "rgba(255,80,80,0.6)" : "rgba(255,255,255,0.15)",
+            border: "none",
+            borderRadius: 6,
+            color: "#fff",
+            padding: "4px 10px",
+            fontSize: 11,
+          }}
+          onClick={() => useMiniPlayerDebugStore.setState({ brickwall: !state.brickwall })}
+        >
+          {state.brickwall ? "Brickwall ON" : "Brickwall"}
+        </button>
+        <button
+          style={{
+            background: "rgba(255,255,255,0.15)",
+            border: "none",
+            borderRadius: 6,
+            color: "#fff",
+            padding: "4px 10px",
+            fontSize: 11,
+          }}
+          onClick={() => useMiniPlayerDebugStore.setState({ showDebug: false })}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
 import {
   IconPlay,
   IconPause,
@@ -23,6 +158,24 @@ import {
   IconChevronDown,
   IconMusicNote,
 } from "../components/Icons";
+
+function IconSkipBack({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 6l-9 6 9 6V6z" />
+      <path d="M22 6l-9 6 9 6V6z" />
+    </svg>
+  );
+}
+
+function IconSkipForward({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M2 6l9 6-9 6V6z" />
+      <path d="M12 6l9 6-9 6V6z" />
+    </svg>
+  );
+}
 
 function IconQuote() {
   return (
@@ -50,6 +203,19 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const status = usePlaybackStore((s) => s.status);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
   const sheetBlurColors = usePlaybackStore((s) => s.ultraBlurColors);
+  const miniDarken = useMiniPlayerDebugStore((s) => s.darken);
+  const wavePadTop = useMiniPlayerDebugStore((s) => s.wavePadTop);
+  const waveHeight = useMiniPlayerDebugStore((s) => s.waveHeight);
+  const barPadTop = useMiniPlayerDebugStore((s) => s.barPadTop);
+  const barPadBottom = useMiniPlayerDebugStore((s) => s.barPadBottom);
+  const barPadSide = useMiniPlayerDebugStore((s) => s.barPadSide);
+  const barGap = useMiniPlayerDebugStore((s) => s.barGap);
+  const wavePadSide = useMiniPlayerDebugStore((s) => s.wavePadSide);
+  const wavePadLeft = useMiniPlayerDebugStore((s) => s.wavePadLeft);
+  const artSize = useMiniPlayerDebugStore((s) => s.artSize);
+  const artTop = useMiniPlayerDebugStore((s) => s.artTop);
+  const artLeft = useMiniPlayerDebugStore((s) => s.artLeft);
+  const safeBottom = useMiniPlayerDebugStore((s) => s.safeBottom);
 
   const {
     track,
@@ -149,6 +315,17 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     e.stopPropagation();
   }, []);
 
+  const debugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onInfoPointerDown = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation();
+    debugTimer.current = setTimeout(() => {
+      useMiniPlayerDebugStore.setState((s) => ({ showDebug: !s.showDebug }));
+    }, 800);
+  }, []);
+  const onInfoPointerUp = useCallback(() => {
+    if (debugTimer.current) clearTimeout(debugTimer.current);
+  }, []);
+
   const onSheetHeaderPointerDown = useCallback((e: React.PointerEvent) => {
     dragStartY.current = e.clientY;
   }, []);
@@ -184,7 +361,10 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
           warm, hidden when expanded so taps hit the sheet. */}
       <div
         className={`mobile-miniplayer${expanded ? " hidden" : ""}`}
-        style={dragDeltaY !== 0 ? { transform: `translateY(${dragDeltaY}px)` } : undefined}
+        style={{
+          ...(dragDeltaY !== 0 ? { transform: `translateY(${dragDeltaY}px)` } : {}),
+          ...(safeBottom >= 0 ? { paddingBottom: safeBottom } : {}),
+        }}
         onPointerDown={onMiniPointerDown}
         onPointerMove={onMiniPointerMove}
         onPointerUp={onMiniPointerUp}
@@ -193,32 +373,60 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
           setDragDeltaY(0);
         }}
       >
-        <div className="mobile-miniplayer-wave" onPointerDown={swallowPointerDown}>
-          <WaveformSeekBar />
+        {sheetBlurColors && (
+          <div className="mobile-miniplayer-bg">
+            <UltraBlurBackground colors={sheetBlurColors} />
+            <div
+              className="mobile-miniplayer-darken"
+              style={{ background: `rgba(0,0,0,${miniDarken})` }}
+            />
+          </div>
+        )}
+        <div
+          className="mobile-miniplayer-wave"
+          onPointerDown={swallowPointerDown}
+          style={{
+            paddingTop: wavePadTop,
+            paddingLeft: wavePadLeft >= 0 ? wavePadLeft : wavePadSide,
+            paddingRight: wavePadSide,
+          }}
+        >
+          <div style={{ height: waveHeight }}>
+            <WaveformSeekBar />
+          </div>
         </div>
-        <div className="mobile-miniplayer-bar">
-          <button
-            className="mobile-miniplayer-art"
-            onClick={onExpand}
-            onPointerDown={(e) => e.stopPropagation()}
-            aria-label="Open now playing"
+        <button
+          className="mobile-miniplayer-art mobile-miniplayer-art-float"
+          onClick={onExpand}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Open now playing"
+          style={{ width: artSize, height: artSize, top: artTop, left: artLeft }}
+        >
+          {artSrc && !artErr ? (
+            <img
+              src={artSrc}
+              alt=""
+              crossOrigin="anonymous"
+              onLoad={handleArtLoad}
+              onError={() => setArtErr(true)}
+            />
+          ) : (
+            <div className="mobile-miniplayer-art-ph">
+              <IconMusicNote size={18} />
+            </div>
+          )}
+        </button>
+        <div
+          className="mobile-miniplayer-bar"
+          style={{ padding: `${barPadTop}px ${barPadSide}px ${barPadBottom}px`, gap: barGap }}
+        >
+          <div
+            className="mobile-miniplayer-info"
+            onPointerDown={onInfoPointerDown}
+            onPointerUp={onInfoPointerUp}
+            onPointerCancel={onInfoPointerUp}
           >
-            {artSrc && !artErr ? (
-              <img
-                src={artSrc}
-                alt=""
-                crossOrigin="anonymous"
-                onLoad={handleArtLoad}
-                onError={() => setArtErr(true)}
-              />
-            ) : (
-              <div className="mobile-miniplayer-art-ph">
-                <IconMusicNote size={18} />
-              </div>
-            )}
-          </button>
-          <div className="mobile-miniplayer-info">
-            <div className="mobile-miniplayer-title">{track.title}</div>
+            <MarqueeText className="mobile-miniplayer-title">{track.title}</MarqueeText>
             <div className="mobile-miniplayer-artist">{track.artistName}</div>
           </div>
           <div
@@ -231,21 +439,21 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
               onClick={() => previousTrack().catch(() => {})}
               aria-label="Previous"
             >
-              <IconPrevious />
+              <IconSkipBack size={22} />
             </button>
             <button
               className="mobile-miniplayer-btn"
               onClick={() => togglePlayPause().catch(() => {})}
               aria-label={isPlaying ? "Pause" : "Play"}
             >
-              {isPlaying ? <IconPause /> : <IconPlay />}
+              {isPlaying ? <IconPause size={26} /> : <IconPlay size={26} />}
             </button>
             <button
               className="mobile-miniplayer-btn"
               onClick={() => nextTrack().catch(() => {})}
               aria-label="Next"
             >
-              <IconNext />
+              <IconSkipForward size={22} />
             </button>
           </div>
         </div>

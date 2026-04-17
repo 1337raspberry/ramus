@@ -171,13 +171,22 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
       searchQuery: null,
       browseArtistName: null,
       browseYear: null,
+      selectedGenreId: null,
+      selectedArtistId: null,
     });
     usePlaybackStore.setState({ isFocusMode: false });
 
-    if (v === "genres") setSidebarMode("genres");
-    else if (v === "favourites") setSidebarMode("favourites");
-    else if (v === "artists") setSidebarMode("artists");
-    else if (v === "suggestion") {
+    if (v === "genres") {
+      setSidebarMode("genres");
+      // setSidebarMode sets selectedGenreId:"__all__" — on mobile we
+      // want the genre tree, not the "All" album grid.
+      useLibraryStore.setState({ selectedGenreId: null });
+    } else if (v === "favourites") {
+      setSidebarMode("favourites");
+      useLibraryStore.setState({ selectedGenreId: null });
+    } else if (v === "artists") {
+      setSidebarMode("artists");
+    } else if (v === "suggestion") {
       loadSuggestion();
     } else if (v === "search") {
       useLibraryStore.setState({ searchQuery: "" });

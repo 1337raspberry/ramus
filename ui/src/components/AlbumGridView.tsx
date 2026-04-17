@@ -6,7 +6,6 @@ import type { Album } from "../lib/types";
 import { ART_SIZE, getArtUrl, getFavouriteTracks, playTracks, getQueue } from "../lib/commands";
 import { IconPlay, IconStarFilled, IconStarEmpty, IconMusicNote, IconShuffle } from "./Icons";
 import BreadcrumbBar from "./BreadcrumbBar";
-import { useBreadcrumbDebugStore } from "./BreadcrumbDebugPanel";
 
 const SORT_OPTIONS: { value: AlbumSortOrder; label: string }[] = [
   { value: "alphabetical", label: "A-Z" },
@@ -119,8 +118,6 @@ export default function AlbumGridView() {
   const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const searchQuery = useLibraryStore((s) => s.searchQuery);
   const clearSearchResults = useLibraryStore((s) => s.clearSearchResults);
-  const fadeHeight = useBreadcrumbDebugStore((s) => s.fadeHeight);
-  const fadeStartOpacity = useBreadcrumbDebugStore((s) => s.fadeStartOpacity);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const { cols, cardWidth, callbackRef } = useGridLayout();
@@ -182,10 +179,7 @@ export default function AlbumGridView() {
       .catch(() => {});
   }, []);
 
-  const maskImage =
-    fadeHeight > 0 && scrolled
-      ? `linear-gradient(to bottom, rgba(0,0,0,${fadeStartOpacity}) 0px, black ${fadeHeight}px)`
-      : undefined;
+  const maskImage = scrolled ? `linear-gradient(to bottom, transparent, black 36px)` : undefined;
 
   if (!albums.length) {
     return (

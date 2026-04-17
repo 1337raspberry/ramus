@@ -9,7 +9,7 @@ import {
   setAlbumPalette,
 } from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
-import { IconMusicNote, IconShuffle, IconClose } from "../components/Icons";
+import { IconMusicNote, IconShuffle, IconChevronLeft } from "../components/Icons";
 import FlowLayout from "../components/FlowLayout";
 
 interface Props {
@@ -56,22 +56,28 @@ export default function MobileSuggestion({ onClose }: Props) {
         .then(setGenres)
         .catch(() => {});
     }
-    // Prime cached palette from DB so art fallback still tints the background.
-    usePlaybackStore.setState({ vibrantPalette: null, ultraBlurColors: null });
-    getAlbumColors(album.ratingKey)
-      .then((result) => {
-        if (result.palette) {
-          usePlaybackStore.setState({
-            vibrantPalette: result.palette,
-            ultraBlurColors: blurColorsFromPalette(result.palette),
-          });
-        }
-      })
-      .catch(() => {});
+    // Only tint the background when nothing is playing — the now-playing
+    // track's palette always takes precedence.
+    const isPlaying = !!usePlaybackStore.getState().currentTrack;
+    if (!isPlaying) {
+      usePlaybackStore.setState({ vibrantPalette: null, ultraBlurColors: null });
+      getAlbumColors(album.ratingKey)
+        .then((result) => {
+          if (usePlaybackStore.getState().currentTrack) return;
+          if (result.palette) {
+            usePlaybackStore.setState({
+              vibrantPalette: result.palette,
+              ultraBlurColors: blurColorsFromPalette(result.palette),
+            });
+          }
+        })
+        .catch(() => {});
+    }
   }, [album]);
 
   const handleArtLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
+      if (usePlaybackStore.getState().currentTrack) return;
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);
@@ -81,7 +87,7 @@ export default function MobileSuggestion({ onClose }: Props) {
         return;
       }
       extractPalette(e.currentTarget).then((palette) => {
-        if (!palette) return;
+        if (!palette || usePlaybackStore.getState().currentTrack) return;
         const [r, g, b] = accentFromPalette(palette);
         document.documentElement.style.setProperty("--accent-r", String(r));
         document.documentElement.style.setProperty("--accent-g", String(g));
@@ -103,16 +109,16 @@ export default function MobileSuggestion({ onClose }: Props) {
     return (
       <div className="mobile-screen mobile-suggestion">
         <header className="mobile-header">
+          <button className="mobile-header-circle" onClick={handleClose} aria-label="Back">
+            <IconChevronLeft size={22} />
+          </button>
+          <div className="mobile-header-title"> </div>
           <button
             className="mobile-header-circle"
             onClick={loadSuggestion}
             aria-label="New suggestion"
           >
-            <IconShuffle />
-          </button>
-          <div className="mobile-header-title"> </div>
-          <button className="mobile-header-circle" onClick={handleClose} aria-label="Close">
-            <IconClose />
+            <IconShuffle size={22} />
           </button>
         </header>
         <div className="mobile-empty">Loading suggestion...</div>
@@ -123,16 +129,16 @@ export default function MobileSuggestion({ onClose }: Props) {
   return (
     <div className="mobile-screen mobile-suggestion">
       <header className="mobile-header">
+        <button className="mobile-header-circle" onClick={handleClose} aria-label="Back">
+          <IconChevronLeft size={22} />
+        </button>
+        <div className="mobile-header-title"> </div>
         <button
           className="mobile-header-circle"
           onClick={loadSuggestion}
           aria-label="New suggestion"
         >
-          <IconShuffle />
-        </button>
-        <div className="mobile-header-title"> </div>
-        <button className="mobile-header-circle" onClick={handleClose} aria-label="Close">
-          <IconClose />
+          <IconShuffle size={22} />
         </button>
       </header>
 

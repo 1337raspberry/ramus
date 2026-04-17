@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { useEdgeSwipeBack } from "./useEdgeSwipeBack";
 import MobileToolbar, { type MobileView } from "./MobileToolbar";
 import MobileGenreTree from "./MobileGenreTree";
 import MobileAlbumGrid from "./MobileAlbumGrid";
@@ -8,24 +9,22 @@ import MobileAlbumDetail from "./MobileAlbumDetail";
 import MobileArtistList from "./MobileArtistList";
 import MobileSuggestion from "./MobileSuggestion";
 import MobileSearch from "./MobileSearch";
-import MobileNowPlaying from "./MobileNowPlaying";
+import MobileNowPlaying, { MiniPlayerDebugPanel } from "./MobileNowPlaying";
+import type { GenreNode } from "../lib/types";
+
+function findNode(nodes: GenreNode[], id: string): GenreNode | null {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    const hit = n.children ? findNode(n.children, id) : null;
+    if (hit) return hit;
+  }
+  return null;
+}
 
 interface Props {
   onOpenSettings: () => void;
 }
 
-/**
- * Root of the stacked mobile layout. Picks one of:
- *   - genre tree / favourite genre tree (toolbar tabs 1/2)
- *   - artist list (toolbar tab 3)
- *   - suggestion card (toolbar button 4)
- *   - search page (toolbar button 7)
- * and overlays the now-playing sheet / mini-player when a track is playing.
- *
- * Navigation is driven by libraryStore state (selectedGenreId, detailAlbum,
- * suggestion, searchQuery) plus a local `view` selector for the toolbar
- * mode. Back buttons set the appropriate store state to `null`.
- */
 export default function MobileApp({ onOpenSettings }: Props) {
   const [view, setView] = useState<MobileView>("genres");
   const sidebarMode = useLibraryStore((s) => s.sidebarMode);
@@ -45,8 +44,6 @@ export default function MobileApp({ onOpenSettings }: Props) {
     store.loadAllAlbums();
   }, []);
 
-  // Keep the toolbar view in sync with navigation that happens from
-  // elsewhere (e.g. tapping a genre chip in now-playing).
   useEffect(() => {
     if (sidebarMode === "favourites") setView("favourites");
     else if (sidebarMode === "artists") setView("artists");
@@ -61,9 +58,6 @@ export default function MobileApp({ onOpenSettings }: Props) {
     if (searchQuery !== null) setView("search");
   }, [searchQuery]);
 
-  // When the user collapses the sheet (e.g. by pulling down to the mini
-  // player), drop out of focus mode so desktop visualizer logic doesn't
-  // run in the background.
   useEffect(() => {
     if (!sheetExpanded) {
       usePlaybackStore.setState({ isFocusMode: false });
@@ -72,8 +66,87 @@ export default function MobileApp({ onOpenSettings }: Props) {
 
   const miniPlayerVisible = !!currentTrack && !sheetExpanded;
 
+  // Hide toolbar when drilled into a grid or detail view; keep it on
+  // top-level lists (genre tree, artist list, favourite tree).
+  const inGrid =
+    !!selectedGenreId ||
+    !!browseArtistName ||
+    !!browseYear ||
+    (view === "artists" && !!selectedArtistId);
+  const showToolbar = !inGrid && !detailAlbum && view !== "search" && view !== "suggestion";
+
+  // Unified back navigation — pops one level of the view hierarchy
+  const handleBack = useCallback(() => {
+    const s = useLibraryStore.getState();
+
+    if (s.detailAlbum) {
+      s.closeAlbumDetail();
+      return;
+    }
+
+    if (view === "search") {
+      useLibraryStore.setState({ searchQuery: null });
+      setView("genres");
+      return;
+    }
+
+    if (view === "suggestion") {
+      useLibraryStore.setState({ suggestion: null });
+      setView("genres");
+      return;
+    }
+
+    if (s.browseArtistName || s.browseYear || s.searchQuery !== null) {
+      useLibraryStore.setState({
+        browseArtistName: null,
+        browseYear: null,
+        searchQuery: null,
+      });
+      const gid = s.selectedGenreId;
+      if (!gid || gid === "__all__") {
+        if (s.sidebarMode === "favourites") s.loadFavouriteAlbums();
+        else s.loadAllAlbums();
+      } else {
+        const node = findNode(s.genreTree, gid);
+        if (node) s.selectGenre(node);
+      }
+      return;
+    }
+
+    if (view === "artists" && s.selectedArtistId) {
+      useLibraryStore.setState({ selectedArtistId: null, albums: [] });
+      return;
+    }
+
+    if (s.selectedGenreId === "__all__") {
+      useLibraryStore.setState({ selectedGenreId: null });
+      return;
+    }
+
+    if (s.selectedGenreId) {
+      useLibraryStore.setState({ selectedGenreId: null });
+      return;
+    }
+  }, [view]);
+
+  const canGoBack =
+    !!detailAlbum ||
+    view === "search" ||
+    view === "suggestion" ||
+    !!browseArtistName ||
+    !!browseYear ||
+    searchQuery !== null ||
+    (view === "artists" && !!selectedArtistId) ||
+    !!selectedGenreId;
+
+  const { containerRef, swipeX } = useEdgeSwipeBack(handleBack, canGoBack && !sheetExpanded);
+
+  const bodyStyle =
+    swipeX > 0
+      ? { transform: `translateX(${swipeX}px)`, opacity: Math.max(0.6, 1 - swipeX / 300) }
+      : undefined;
+
   const renderBody = () => {
-    // Album detail takes priority when set, regardless of the selected tab.
     if (detailAlbum) return <MobileAlbumDetail />;
 
     if (view === "search") return <MobileSearch onBack={() => setView("genres")} />;
@@ -84,22 +157,23 @@ export default function MobileApp({ onOpenSettings }: Props) {
       return <MobileArtistList onOpenSettings={onOpenSettings} />;
     }
 
-    // Genres or favourites: drill from tree into a grid when a specific
-    // genre is chosen, or when the user drilled into an artist/year from
-    // a now-playing chip.
-    const inGrid =
+    const drillGrid =
       (selectedGenreId && selectedGenreId !== "__all__") || !!browseArtistName || !!browseYear;
 
-    if (inGrid) return <MobileAlbumGrid contextLabel="" />;
+    if (drillGrid) return <MobileAlbumGrid contextLabel="" />;
     if (selectedGenreId === "__all__") return <MobileAlbumGrid contextLabel="All" />;
 
     return <MobileGenreTree onOpenSettings={onOpenSettings} />;
   };
 
   return (
-    <div className={`mobile-root${miniPlayerVisible ? " with-mini" : ""}`}>
-      <MobileToolbar view={view} onSelect={setView} onOpenSettings={onOpenSettings} />
-      <div className="mobile-body">{renderBody()}</div>
+    <div ref={containerRef} className={`mobile-root${miniPlayerVisible ? " with-mini" : ""}`}>
+      {showToolbar && (
+        <MobileToolbar view={view} onSelect={setView} onOpenSettings={onOpenSettings} />
+      )}
+      <div className="mobile-body" style={bodyStyle}>
+        {renderBody()}
+      </div>
 
       {currentTrack && (
         <MobileNowPlaying
@@ -108,6 +182,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
           onCollapse={() => setSheetExpanded(false)}
         />
       )}
+      <MiniPlayerDebugPanel />
     </div>
   );
 }

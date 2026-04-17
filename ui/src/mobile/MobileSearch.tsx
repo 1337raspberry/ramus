@@ -101,7 +101,7 @@ export default function MobileSearch({ onBack }: Props) {
     <div className="mobile-screen mobile-search">
       <header className="mobile-header">
         <button className="mobile-header-circle" onClick={onBack} aria-label="Back">
-          <IconChevronLeft />
+          <IconChevronLeft size={22} />
         </button>
         <div className="mobile-search-field">
           <IconSearch size={16} />
