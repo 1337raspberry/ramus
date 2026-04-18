@@ -13,9 +13,8 @@ pub mod media_controls;
 pub mod media_controls;
 
 // libmpv is loaded at runtime via `libloading` on desktop (see mpv_ffi.rs).
-// iOS forbids `dlopen` of arbitrary dylibs, so the real controller is not
-// compiled on iOS — `stub_player` provides a no-op `MpvPlayer` so
-// `AudioPlayer` and the rest of the playback call sites keep compiling.
+// iOS uses `mpv_ios.rs` instead, which delegates to the Swift plugin's
+// MPVKit handle via Tauri IPC.
 #[cfg(not(target_os = "ios"))]
 pub mod mpv_controller;
 #[cfg(not(target_os = "ios"))]
