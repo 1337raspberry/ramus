@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import {
   ART_SIZE,
@@ -164,44 +164,11 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   // --- Swipe gestures ---
   // Mini-player: swipe up to expand. Sheet header: swipe down to collapse.
   // We track pointer delta-Y and commit on pointerup when it crosses a
-  // threshold. Live transform feedback is intentionally skipped; the CSS
-  // keyframe handles the expand animation and a live drag would fight it.
+  // threshold. The sheet is always mounted — expand/collapse just toggles
+  // the .expanded CSS class which drives a transform transition.
   const SWIPE_THRESHOLD = 50;
   const dragStartY = useRef<number | null>(null);
   const [dragDeltaY, setDragDeltaY] = useState(0);
-  const [sheetMounted, setSheetMounted] = useState(expanded);
-
-  useEffect(() => {
-    if (expanded) {
-      setSheetMounted(true);
-    } else if (!sheetDismissing.current) {
-      setSheetMounted(false);
-    }
-  }, [expanded]);
-
-  useLayoutEffect(() => {
-    if (!sheetMounted || !expanded) return;
-    const el = sheetRef.current;
-    if (!el) return;
-    const fromY = sheetExpandFrom.current;
-    sheetExpandFrom.current = null;
-    if (fromY != null) {
-      const vh = window.innerHeight;
-      const startPct = ((fromY / vh) * 100).toFixed(1);
-      el.style.animation = "none";
-      el.style.transform = `translateY(${startPct}%)`;
-      void el.offsetHeight;
-      el.style.transition = "transform 300ms cubic-bezier(0.2, 0.9, 0.2, 1)";
-      el.style.transform = "translateY(0)";
-      const cleanup = () => {
-        el.style.transition = "";
-        el.style.transform = "";
-      };
-      el.addEventListener("transitionend", cleanup, { once: true });
-    }
-  }, [sheetMounted, expanded]);
-
-  const sheetExpandFrom = useRef<number | null>(null);
 
   const onMiniPointerDown = useCallback((e: React.PointerEvent) => {
     dragStartY.current = e.clientY;
@@ -221,7 +188,6 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
       dragStartY.current = null;
       setDragDeltaY(0);
       if (delta < -SWIPE_THRESHOLD) {
-        sheetExpandFrom.current = e.clientY;
         onExpand();
       }
     },
@@ -237,19 +203,18 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   }, []);
 
   const [sheetDragY, setSheetDragY] = useState(0);
-  const sheetDismissing = useRef(false);
+  const [dismissing, setDismissing] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const sheetBodyRef = useRef<HTMLDivElement>(null);
   const [mainMinHeight, setMainMinHeight] = useState<number | undefined>(undefined);
 
-  useLayoutEffect(() => {
-    if (!sheetMounted || !expanded) return;
+  useEffect(() => {
+    if (!expanded) return;
     const el = sheetBodyRef.current;
     if (el) setMainMinHeight(el.clientHeight);
-  }, [sheetMounted, expanded]);
+  }, [expanded, track?.ratingKey]);
 
   const onSheetHeaderPointerDown = useCallback((e: React.PointerEvent) => {
-    if (sheetDismissing.current) return;
     dragStartY.current = e.clientY;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }, []);
@@ -260,41 +225,26 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     if (delta > 0) setSheetDragY(delta);
   }, []);
 
-  const onSheetHeaderPointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      if (dragStartY.current == null) return;
-      const delta = e.clientY - dragStartY.current;
-      dragStartY.current = null;
-      if (delta > SWIPE_THRESHOLD) {
-        sheetDismissing.current = true;
+  const onSheetHeaderPointerUp = useCallback((e: React.PointerEvent) => {
+    if (dragStartY.current == null) return;
+    const delta = e.clientY - dragStartY.current;
+    dragStartY.current = null;
+    if (delta > SWIPE_THRESHOLD) {
+      setSheetDragY(0);
+      setDismissing(true);
+    } else {
+      setSheetDragY(0);
+    }
+  }, []);
+
+  const onSheetTransitionEnd = useCallback(
+    (e: React.TransitionEvent) => {
+      if (e.propertyName === "transform" && dismissing) {
+        setDismissing(false);
         onCollapse();
-        const dismiss = () => {
-          sheetDismissing.current = false;
-          setSheetDragY(0);
-          setSheetMounted(false);
-        };
-        const el = sheetRef.current;
-        if (el) {
-          el.style.transform = `translateY(${delta}px)`;
-          void el.offsetHeight;
-          el.style.transition = "transform 200ms cubic-bezier(0.2, 0.9, 0.2, 1)";
-          el.style.transform = "translateY(100%)";
-          let done = false;
-          const finish = () => {
-            if (done) return;
-            done = true;
-            dismiss();
-          };
-          el.addEventListener("transitionend", finish, { once: true });
-          setTimeout(finish, 300);
-        } else {
-          dismiss();
-        }
-      } else {
-        setSheetDragY(0);
       }
     },
-    [onCollapse],
+    [dismissing, onCollapse],
   );
 
   useEffect(() => {
@@ -325,7 +275,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
       {/* Mini-player: always mounted to keep the waveform offscreen shape
           warm, hidden when expanded so taps hit the sheet. */}
       <div
-        className={`mobile-miniplayer${expanded ? " hidden" : ""}`}
+        className="mobile-miniplayer"
         style={{
           ...(dragDeltaY !== 0 ? { transform: `translateY(${dragDeltaY}px)` } : {}),
           paddingBottom: 40,
@@ -398,7 +348,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
           onClick={onExpand}
           onPointerDown={(e) => e.stopPropagation()}
           aria-label="Open now playing"
-          style={{ width: 42, height: 42, top: 61, left: 14 }}
+          style={{ width: 42, height: 42, top: 68, left: 14 }}
         >
           {artSrc && !artErr ? (
             <img
@@ -416,221 +366,218 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
         </button>
       </div>
 
-      {/* Expanded sheet — stays mounted during dismiss animation */}
-      {sheetMounted && (
-        <div
-          ref={sheetRef}
-          className="mobile-sheet"
-          style={sheetDragY > 0 ? { transform: `translateY(${sheetDragY}px)` } : undefined}
-        >
-          {sheetBlurColors && (
-            <div className="mobile-sheet-bg">
-              <UltraBlurBackground colors={sheetBlurColors} />
-            </div>
-          )}
-          <header
-            className="mobile-sheet-header"
-            onPointerDown={onSheetHeaderPointerDown}
-            onPointerMove={onSheetHeaderPointerMove}
-            onPointerUp={onSheetHeaderPointerUp}
-            onPointerCancel={() => {
-              dragStartY.current = null;
-              setSheetDragY(0);
-            }}
-          >
-            <div className="mobile-sheet-hint-bar" />
-            <button
-              className={`mobile-sheet-fav${albumFav ? " active" : ""}`}
-              onClick={handleAlbumFavToggle}
-              aria-label={albumFav ? "Remove album favourite" : "Favourite album"}
-              style={{ top: -6 }}
-            >
-              {albumFav ? <IconStarFilled /> : <IconStarEmpty />}
-            </button>
-          </header>
-          <div className="mobile-sheet-body" ref={sheetBodyRef}>
-            <div
-              className="mobile-sheet-main"
-              style={mainMinHeight ? { minHeight: mainMinHeight } : undefined}
-            >
-              <div className="mobile-sheet-art" style={{ marginBottom: 12 }}>
-                {artSrc && !artErr ? (
-                  <img
-                    src={artSrc}
-                    alt={track.title}
-                    crossOrigin="anonymous"
-                    onLoad={handleArtLoad}
-                    onError={() => setArtErr(true)}
-                  />
-                ) : (
-                  <div className="mobile-sheet-art-ph">
-                    <IconMusicNote size={64} />
-                  </div>
-                )}
-              </div>
-
-              <div
-                className="mobile-sheet-title"
-                role="button"
-                tabIndex={0}
-                onClick={handleAlbumClick}
-                style={{ fontSize: 16 }}
-              >
-                {track.title}
-              </div>
-              <div
-                className="mobile-sheet-artist"
-                role="button"
-                tabIndex={0}
-                onClick={handleArtistClick}
-                style={{ fontSize: 14 }}
-              >
-                {hasTrackArtist ? `${track.artistName} (${track.trackArtist})` : track.artistName}
-              </div>
-              {nowPlayingAlbum && (
-                <div
-                  className="mobile-sheet-album"
-                  role="button"
-                  tabIndex={0}
-                  onClick={handleYearClick}
-                  style={{ fontSize: 12 }}
-                >
-                  {nowPlayingAlbum.title}
-                  {albumYear}
-                </div>
-              )}
-
-              <button
-                className="mobile-sheet-lyrics"
-                onClick={toggleLyrics}
-                aria-label="Toggle lyrics"
-                style={{
-                  width: 40,
-                  height: 18,
-                  marginTop: 8,
-                }}
-              >
-                <IconQuote />
-              </button>
-
-              <div
-                className="mobile-sheet-wave"
-                style={
-                  {
-                    height: 60,
-                    marginTop: 10,
-                    "--sheet-wave-canvas": "50px",
-                    "--sheet-time-font": "12px",
-                    "--sheet-time-pad": "4px",
-                  } as React.CSSProperties
-                }
-              >
-                <WaveformSeekBar />
-              </div>
-
-              <div className="mobile-sheet-transport" style={{ gap: 42 }}>
-                <button
-                  className="mobile-sheet-transport-btn"
-                  onClick={() => previousTrack().catch(() => {})}
-                  aria-label="Previous"
-                  style={{ width: 48, height: 48 }}
-                >
-                  <IconPrevious size={34} />
-                </button>
-                <button
-                  className="mobile-sheet-transport-btn primary"
-                  onClick={() => togglePlayPause().catch(() => {})}
-                  aria-label={isPlaying ? "Pause" : "Play"}
-                  style={{ width: 48, height: 48 }}
-                >
-                  {isPlaying ? <IconPause size={56} /> : <IconPlay size={56} />}
-                </button>
-                <button
-                  className="mobile-sheet-transport-btn"
-                  onClick={() => nextTrack().catch(() => {})}
-                  aria-label="Next"
-                  style={{ width: 48, height: 48 }}
-                >
-                  <IconNext size={34} />
-                </button>
-              </div>
-
-              {currentGenres.length > 0 && (
-                <div className="mobile-sheet-genres">
-                  <FlowLayout genres={currentGenres} onGenreClick={handleGenreClick} />
-                </div>
-              )}
-
-              <div className="mobile-sheet-foot">
-                {codec && <span>{codec}</span>}
-                <span
-                  className={`mobile-sheet-track-fav${trackFav ? " active" : ""}`}
-                  onClick={handleTrackFavToggle}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={trackFav ? "Remove track favourite" : "Favourite track"}
-                >
-                  {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
-                </span>
-              </div>
-              {queue.length > queueIndex + 1 && (
-                <div className="mobile-sheet-scroll-hint" style={{ paddingTop: 44 }}>
-                  <IconChevronDown size={20} />
-                </div>
-              )}
-            </div>
-
-            {(() => {
-              const upcomingStart = queueIndex + 1;
-              const upcoming = queue.slice(upcomingStart);
-              if (upcoming.length === 0) return null;
-              return (
-                <div className="mobile-upnext">
-                  <div className="mobile-upnext-header">Up Next</div>
-                  {upcoming.map((t, i) => {
-                    const globalIndex = upcomingStart + i;
-                    return (
-                      <div
-                        key={`${globalIndex}-${t.ratingKey}`}
-                        className="mobile-upnext-row"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => jumpToIndex(globalIndex)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            jumpToIndex(globalIndex);
-                          }
-                        }}
-                      >
-                        <span className="mobile-upnext-num">{i + 1}</span>
-                        <UpNextThumb thumb={t.thumb} />
-                        <div className="mobile-upnext-info">
-                          <div className="mobile-upnext-title">{t.title}</div>
-                          <div className="mobile-upnext-artist">
-                            {t.trackArtist || t.artistName}
-                          </div>
-                        </div>
-                        <span className="mobile-upnext-duration">{formatDuration(t.duration)}</span>
-                        <button
-                          className="mobile-upnext-remove"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeQueueItem(globalIndex);
-                          }}
-                          aria-label="Remove from queue"
-                        >
-                          <IconClose size={12} />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
+      {/* Expanded sheet — always mounted, visibility controlled by CSS */}
+      <div
+        ref={sheetRef}
+        className={`mobile-sheet${expanded ? " expanded" : ""}${dismissing ? " dismissing" : ""}`}
+        style={sheetDragY > 0 ? { transform: `translateY(${sheetDragY}px)` } : undefined}
+        onTransitionEnd={dismissing ? onSheetTransitionEnd : undefined}
+      >
+        {sheetBlurColors && (
+          <div className="mobile-sheet-bg">
+            <UltraBlurBackground colors={sheetBlurColors} />
           </div>
+        )}
+        <header
+          className="mobile-sheet-header"
+          onPointerDown={onSheetHeaderPointerDown}
+          onPointerMove={onSheetHeaderPointerMove}
+          onPointerUp={onSheetHeaderPointerUp}
+          onPointerCancel={() => {
+            dragStartY.current = null;
+            setSheetDragY(0);
+          }}
+        >
+          <div className="mobile-sheet-hint-bar" />
+          <button
+            className={`mobile-sheet-fav${albumFav ? " active" : ""}`}
+            onClick={handleAlbumFavToggle}
+            aria-label={albumFav ? "Remove album favourite" : "Favourite album"}
+            style={{ top: -6 }}
+          >
+            {albumFav ? <IconStarFilled /> : <IconStarEmpty />}
+          </button>
+        </header>
+        <div className="mobile-sheet-body" ref={sheetBodyRef}>
+          <div
+            className="mobile-sheet-main"
+            style={mainMinHeight ? { minHeight: mainMinHeight } : undefined}
+          >
+            <div className="mobile-sheet-art" style={{ marginBottom: 12 }}>
+              {artSrc && !artErr ? (
+                <img
+                  src={artSrc}
+                  alt={track.title}
+                  crossOrigin="anonymous"
+                  onLoad={handleArtLoad}
+                  onError={() => setArtErr(true)}
+                />
+              ) : (
+                <div className="mobile-sheet-art-ph">
+                  <IconMusicNote size={64} />
+                </div>
+              )}
+            </div>
+
+            <div
+              className="mobile-sheet-title"
+              role="button"
+              tabIndex={0}
+              onClick={handleAlbumClick}
+              style={{ fontSize: 16 }}
+            >
+              {track.title}
+            </div>
+            <div
+              className="mobile-sheet-artist"
+              role="button"
+              tabIndex={0}
+              onClick={handleArtistClick}
+              style={{ fontSize: 14 }}
+            >
+              {hasTrackArtist ? `${track.artistName} (${track.trackArtist})` : track.artistName}
+            </div>
+            {nowPlayingAlbum && (
+              <div
+                className="mobile-sheet-album"
+                role="button"
+                tabIndex={0}
+                onClick={handleYearClick}
+                style={{ fontSize: 12 }}
+              >
+                {nowPlayingAlbum.title}
+                {albumYear}
+              </div>
+            )}
+
+            <button
+              className="mobile-sheet-lyrics"
+              onClick={toggleLyrics}
+              aria-label="Toggle lyrics"
+              style={{
+                width: 40,
+                height: 18,
+                marginTop: 8,
+              }}
+            >
+              <IconQuote />
+            </button>
+
+            <div
+              className="mobile-sheet-wave"
+              style={
+                {
+                  height: 60,
+                  marginTop: 10,
+                  "--sheet-wave-canvas": "50px",
+                  "--sheet-time-font": "12px",
+                  "--sheet-time-pad": "4px",
+                } as React.CSSProperties
+              }
+            >
+              <WaveformSeekBar />
+            </div>
+
+            <div className="mobile-sheet-transport" style={{ gap: 42 }}>
+              <button
+                className="mobile-sheet-transport-btn"
+                onClick={() => previousTrack().catch(() => {})}
+                aria-label="Previous"
+                style={{ width: 48, height: 48 }}
+              >
+                <IconPrevious size={34} />
+              </button>
+              <button
+                className="mobile-sheet-transport-btn primary"
+                onClick={() => togglePlayPause().catch(() => {})}
+                aria-label={isPlaying ? "Pause" : "Play"}
+                style={{ width: 48, height: 48 }}
+              >
+                {isPlaying ? <IconPause size={56} /> : <IconPlay size={56} />}
+              </button>
+              <button
+                className="mobile-sheet-transport-btn"
+                onClick={() => nextTrack().catch(() => {})}
+                aria-label="Next"
+                style={{ width: 48, height: 48 }}
+              >
+                <IconNext size={34} />
+              </button>
+            </div>
+
+            {currentGenres.length > 0 && (
+              <div className="mobile-sheet-genres">
+                <FlowLayout genres={currentGenres} onGenreClick={handleGenreClick} />
+              </div>
+            )}
+
+            <div className="mobile-sheet-foot">
+              {codec && <span>{codec}</span>}
+              <span
+                className={`mobile-sheet-track-fav${trackFav ? " active" : ""}`}
+                onClick={handleTrackFavToggle}
+                role="button"
+                tabIndex={0}
+                aria-label={trackFav ? "Remove track favourite" : "Favourite track"}
+              >
+                {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
+              </span>
+            </div>
+            {queue.length > queueIndex + 1 && (
+              <div className="mobile-sheet-scroll-hint" style={{ paddingTop: 44 }}>
+                <IconChevronDown size={20} />
+              </div>
+            )}
+          </div>
+
+          {(() => {
+            const upcomingStart = queueIndex + 1;
+            const upcoming = queue.slice(upcomingStart);
+            if (upcoming.length === 0) return null;
+            return (
+              <div className="mobile-upnext">
+                <div className="mobile-upnext-header">Up Next</div>
+                {upcoming.map((t, i) => {
+                  const globalIndex = upcomingStart + i;
+                  return (
+                    <div
+                      key={`${globalIndex}-${t.ratingKey}`}
+                      className="mobile-upnext-row"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => jumpToIndex(globalIndex)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          jumpToIndex(globalIndex);
+                        }
+                      }}
+                    >
+                      <span className="mobile-upnext-num">{i + 1}</span>
+                      <UpNextThumb thumb={t.thumb} />
+                      <div className="mobile-upnext-info">
+                        <div className="mobile-upnext-title">{t.title}</div>
+                        <div className="mobile-upnext-artist">{t.trackArtist || t.artistName}</div>
+                      </div>
+                      <span className="mobile-upnext-duration">{formatDuration(t.duration)}</span>
+                      <button
+                        className="mobile-upnext-remove"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeQueueItem(globalIndex);
+                        }}
+                        aria-label="Remove from queue"
+                      >
+                        <IconClose size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
-      )}
+      </div>
     </>
   );
 }

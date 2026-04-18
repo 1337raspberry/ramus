@@ -14,9 +14,10 @@ import FlowLayout from "../components/FlowLayout";
 
 interface Props {
   onClose: () => void;
+  onPlay: () => void;
 }
 
-export default function MobileSuggestion({ onClose }: Props) {
+export default function MobileSuggestion({ onClose, onPlay }: Props) {
   const album = useLibraryStore((s) => s.suggestion);
   const playAlbum = useLibraryStore((s) => s.playAlbum);
   const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
@@ -148,6 +149,7 @@ export default function MobileSuggestion({ onClose }: Props) {
           onClick={() => {
             playAlbum(album);
             clearSuggestion();
+            onPlay();
           }}
         >
           {artSrc && !artErr ? (

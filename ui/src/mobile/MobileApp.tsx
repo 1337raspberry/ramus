@@ -65,7 +65,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
     }
   }, [sheetExpanded]);
 
-  const miniPlayerVisible = hasTrack && !sheetExpanded;
+  const miniPlayerVisible = hasTrack;
 
   // Hide toolbar when drilled into a grid or detail view; keep it on
   // top-level lists (genre tree, artist list, favourite tree).
@@ -162,7 +162,16 @@ export default function MobileApp({ onOpenSettings }: Props) {
       const label = useSettingsStore.getState().savedSearch ?? "Saved Search";
       return <MobileAlbumGrid contextLabel={label} onBack={() => setView("genres")} />;
     }
-    if (view === "suggestion") return <MobileSuggestion onClose={() => setView("genres")} />;
+    if (view === "suggestion")
+      return (
+        <MobileSuggestion
+          onClose={() => setView("genres")}
+          onPlay={() => {
+            setView("genres");
+            setSheetExpanded(true);
+          }}
+        />
+      );
 
     if (view === "artists") {
       if (selectedArtistId) return <MobileAlbumGrid contextLabel="Artist" />;
