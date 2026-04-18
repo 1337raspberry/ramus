@@ -502,6 +502,7 @@ mod tests {
                     added_at: None,
                     last_viewed_at: None,
                     first_genre: None,
+                    first_collection: None,
                 },
                 AlbumUpsertRow {
                     title: "Reign in Blood".into(),
@@ -513,6 +514,7 @@ mod tests {
                     added_at: None,
                     last_viewed_at: None,
                     first_genre: None,
+                    first_collection: None,
                 },
                 AlbumUpsertRow {
                     title: "Kid A".into(),
@@ -524,6 +526,7 @@ mod tests {
                     added_at: None,
                     last_viewed_at: None,
                     first_genre: None,
+                    first_collection: None,
                 },
             ])
             .unwrap();

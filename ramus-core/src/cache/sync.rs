@@ -333,14 +333,20 @@ impl SyncEngine {
                 .and_then(|g| g.first())
                 .map(|g| g.tag.to_lowercase());
 
+            let api_collection = item
+                .collection
+                .as_ref()
+                .and_then(|c| c.first())
+                .map(|c| c.tag.to_lowercase());
+
             let is_changed = if incremental {
                 if let Some(info) = cached.get(&item.rating_key) {
                     let timestamp_changed = info.updated_at != item.updated_at;
-                    // NULL firstGenre means the row predates the column —
-                    // trust updatedAt for this sync; the value gets written below.
                     let cached_genre = info.first_genre.as_ref().map(|g| g.to_lowercase());
                     let genre_changed = cached_genre.is_some() && api_genre != cached_genre;
-                    timestamp_changed || genre_changed
+                    let cached_col = info.first_collection.as_ref().map(|c| c.to_lowercase());
+                    let col_changed = cached_col.is_some() && api_collection != cached_col;
+                    timestamp_changed || genre_changed || col_changed
                 } else {
                     true
                 }
@@ -359,6 +365,7 @@ impl SyncEngine {
                     added_at: item.added_at,
                     last_viewed_at: item.last_viewed_at,
                     first_genre: api_genre.clone(),
+                    first_collection: api_collection.clone(),
                 });
                 changed_ids.insert(item.rating_key.clone());
 

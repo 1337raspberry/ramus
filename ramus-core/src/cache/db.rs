@@ -27,6 +27,7 @@ pub struct CachedAlbumInfo {
     pub id: i64,
     pub updated_at: Option<i64>,
     pub first_genre: Option<String>,
+    pub first_collection: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -120,7 +121,8 @@ impl CacheDatabase {
                 vibrantPalette TEXT,
                 addedAt INTEGER,
                 lastViewedAt INTEGER,
-                firstGenre TEXT
+                firstGenre TEXT,
+                firstCollection TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_albums_title ON albums(title);
             CREATE INDEX IF NOT EXISTS idx_albums_artistId ON albums(artistId);
@@ -609,6 +611,7 @@ mod tests {
                 added_at: Some(900),
                 last_viewed_at: None,
                 first_genre: None,
+                first_collection: None,
             }])
             .unwrap();
         *map.get(source_id).unwrap()
@@ -686,6 +689,7 @@ mod tests {
                 added_at: Some(900),
                 last_viewed_at: None,
                 first_genre: None,
+                first_collection: None,
             }])
             .unwrap();
 
@@ -766,6 +770,7 @@ mod tests {
                 added_at: None,
                 last_viewed_at: None,
                 first_genre: None,
+                first_collection: None,
             });
         }
         let album_map = db.batch_upsert_albums(&album_items).unwrap();

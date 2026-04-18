@@ -33,7 +33,7 @@ impl CacheDatabase {
         // `MIN(g.name)` — that is alphabetical order, and mismatches would
         // trigger false-positive re-fetches.
         let mut stmt = conn.prepare(
-            "SELECT sourceId, id, updatedAt, firstGenre FROM albums",
+            "SELECT sourceId, id, updatedAt, firstGenre, firstCollection FROM albums",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((
@@ -42,6 +42,7 @@ impl CacheDatabase {
                     id: row.get(1)?,
                     updated_at: row.get(2)?,
                     first_genre: row.get(3)?,
+                    first_collection: row.get(4)?,
                 },
             ))
         })?;
