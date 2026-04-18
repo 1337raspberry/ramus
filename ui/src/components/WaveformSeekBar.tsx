@@ -1,16 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
-import { useMiniPlayerDebugStore } from "../mobile/MobileNowPlaying"; // DEBUG — remove with debug panel
 import { formatDuration } from "../lib/format";
 
 export default function WaveformSeekBar() {
-  const rawLevels = usePlaybackStore((s) => s.waveformLevels);
-  // DEBUG — brickwall toggle (remove with debug panel; just use rawLevels directly)
-  const brickwall = useMiniPlayerDebugStore((s) => s.brickwall);
-  const levels = useMemo(
-    () => (brickwall && rawLevels ? rawLevels.map(() => 1) : rawLevels),
-    [rawLevels, brickwall],
-  );
+  const levels = usePlaybackStore((s) => s.waveformLevels);
   const position = usePlaybackStore((s) => s.position);
   const duration = usePlaybackStore((s) => s.duration);
   const seek = usePlaybackStore((s) => s.seek);

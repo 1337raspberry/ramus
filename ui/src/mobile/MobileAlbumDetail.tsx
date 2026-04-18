@@ -182,7 +182,15 @@ export default function MobileAlbumDetail() {
                 {showDiscHeader && (
                   <div className="mobile-disc-header">Disc {t.discNumber ?? 1}</div>
                 )}
-                <button className="mobile-track-row" onClick={() => playAlbum(album, i)}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  className="mobile-track-row"
+                  onClick={() => playAlbum(album, i)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") playAlbum(album, i);
+                  }}
+                >
                   <span className="mobile-track-num">{t.index ?? i + 1}</span>
                   <div className="mobile-track-info">
                     <div className="mobile-track-title">{t.title}</div>
@@ -234,7 +242,7 @@ export default function MobileAlbumDetail() {
                       </div>
                     )}
                   </div>
-                </button>
+                </div>
               </li>
             );
           })}
