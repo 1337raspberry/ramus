@@ -122,6 +122,28 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
 
+    pub fn dismiss_keyboard(&self) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin::<Empty>("dismissKeyboard", Empty::default())?;
+        Ok(())
+    }
+
+    pub fn show_native_search_bar(&self, initial_query: &str) -> crate::Result<()> {
+        self.0.run_mobile_plugin::<Empty>(
+            "showNativeSearchBar",
+            ShowSearchBarArgs {
+                initial_query: initial_query.to_string(),
+            },
+        )?;
+        Ok(())
+    }
+
+    pub fn hide_native_search_bar(&self) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin::<Empty>("hideNativeSearchBar", Empty::default())?;
+        Ok(())
+    }
+
     pub fn now_playing_update(&self, metadata: NowPlayingMetadata) -> crate::Result<()> {
         self.0
             .run_mobile_plugin::<Empty>("nowPlayingUpdate", metadata)?;

@@ -57,6 +57,15 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn mpv_stop(&self) -> crate::Result<()> {
         Ok(())
     }
+    pub fn dismiss_keyboard(&self) -> crate::Result<()> {
+        Ok(())
+    }
+    pub fn show_native_search_bar(&self, _initial_query: &str) -> crate::Result<()> {
+        Ok(())
+    }
+    pub fn hide_native_search_bar(&self) -> crate::Result<()> {
+        Ok(())
+    }
     pub fn now_playing_update(&self, _metadata: NowPlayingMetadata) -> crate::Result<()> {
         Ok(())
     }

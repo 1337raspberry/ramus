@@ -109,6 +109,12 @@ pub struct KeychainBoolResponse {
     pub ok: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShowSearchBarArgs {
+    pub initial_query: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NowPlayingMetadata {

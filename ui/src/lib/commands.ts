@@ -206,3 +206,12 @@ export const getAudioCacheStats = () =>
 
 export const getAcknowledgementsText = () =>
   invoke<AcknowledgementsText>("get_acknowledgements_text");
+
+// --- Platform ---
+
+export const dismissKeyboard = () => invoke<void>("dismiss_keyboard");
+
+export const showNativeSearchBar = (initialQuery: string) =>
+  invoke<void>("show_native_search_bar", { initialQuery });
+
+export const hideNativeSearchBar = () => invoke<void>("hide_native_search_bar");

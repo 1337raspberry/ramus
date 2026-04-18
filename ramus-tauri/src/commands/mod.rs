@@ -3,6 +3,7 @@ pub type CmdResult<T> = Result<T, String>;
 pub mod acknowledgements;
 pub mod auth;
 pub mod library;
+pub mod platform;
 pub mod playback;
 pub mod search;
 pub mod settings;
