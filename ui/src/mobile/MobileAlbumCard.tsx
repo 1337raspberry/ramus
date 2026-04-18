@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { Album } from "../lib/types";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useLibraryStore } from "../stores/libraryStore";
@@ -8,7 +9,7 @@ interface Props {
   album: Album;
 }
 
-export default function MobileAlbumCard({ album }: Props) {
+export default memo(function MobileAlbumCard({ album }: Props) {
   const openAlbumDetail = useLibraryStore((s) => s.openAlbumDetail);
   const { artSrc, artErr, setArtErr } = useArtUrl(album.thumb, ART_SIZE.MEDIUM);
 
@@ -37,4 +38,4 @@ export default function MobileAlbumCard({ album }: Props) {
       {album.year && <div className="mobile-album-year">{album.year}</div>}
     </button>
   );
-}
+});

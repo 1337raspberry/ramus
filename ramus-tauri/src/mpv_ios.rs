@@ -53,19 +53,23 @@ impl<R: Runtime> IosMpvPlayer<R> {
 
 impl<R: Runtime> MpvPlayer for IosMpvPlayer<R> {
     fn load_file(&self, url: &str, mode: LoadMode, options: Option<&str>) {
-        let _ = self.bridge().mpv_load_file(LoadFileArgs {
+        if let Err(e) = self.bridge().mpv_load_file(LoadFileArgs {
             url: url.to_string(),
             mode: mode.as_str().to_string(),
             options: options.map(|s| s.to_string()),
-        });
+        }) {
+            log::error!("mpv_load_file failed: {e}");
+        }
     }
 
     fn load_file_at(&self, url: &str, index: i64, options: Option<&str>) {
-        let _ = self.bridge().mpv_load_file_at(LoadFileAtArgs {
+        if let Err(e) = self.bridge().mpv_load_file_at(LoadFileAtArgs {
             url: url.to_string(),
             index,
             options: options.map(|s| s.to_string()),
-        });
+        }) {
+            log::error!("mpv_load_file_at failed: {e}");
+        }
     }
 
     fn playlist_play_index(&self, index: i64) {

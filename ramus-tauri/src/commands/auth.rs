@@ -292,10 +292,15 @@ pub async fn logout(state: State<'_, AppState>) -> CmdResult<()> {
     state.client.set_token(None);
     state.client.set_server_url(None);
 
-    if let Ok(token_store) = TokenStore::new() {
-        token_store.delete(TokenKey::AuthToken);
-        token_store.delete(TokenKey::ServerToken);
-        auth::delete_server_config(&token_store);
+    match TokenStore::new() {
+        Ok(token_store) => {
+            token_store.delete(TokenKey::AuthToken);
+            token_store.delete(TokenKey::ServerToken);
+            auth::delete_server_config(&token_store);
+        }
+        Err(e) => {
+            log::error!("logout: token store unavailable, persisted tokens not deleted: {e}");
+        }
     }
 
     *state.cache.lock() = None;

@@ -58,6 +58,28 @@ class MpvBridgePlugin: Plugin {
 
         UIApplication.shared.beginReceivingRemoteControlEvents()
 
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: session,
+            queue: .main
+        ) { [weak self] note in
+            guard let info = note.userInfo,
+                  let typeVal = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeVal)
+            else { return }
+            switch type {
+            case .began:
+                self?.mpv?.setPause(true)
+            case .ended:
+                let opts = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                if AVAudioSession.InterruptionOptions(rawValue: opts).contains(.shouldResume) {
+                    try? session.setActive(true)
+                    self?.mpv?.setPause(false)
+                }
+            @unknown default: break
+            }
+        }
+
         if nowPlaying == nil {
             nowPlaying = NowPlayingBridge { [weak self] name, data in
                 DispatchQueue.main.async { self?.trigger(name, data: data) }
@@ -70,6 +92,10 @@ class MpvBridgePlugin: Plugin {
     @objc public func mpvInit(_ invoke: Invoke) throws {
         if mpv == nil {
             let controller = MpvController()
+            guard controller.isReady else {
+                invoke.reject("mpv initialization failed")
+                return
+            }
             controller.onPositionChange = { [weak self] pos in
                 DispatchQueue.main.async { self?.trigger("mpvPositionChange", data: ["position": pos]) }
             }

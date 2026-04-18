@@ -28,6 +28,7 @@ final class MpvController {
 
     // MARK: - State
 
+    var isReady: Bool { mpv != nil }
     private var mpv: OpaquePointer?
     private let eventQueue = DispatchQueue(
         label: "com.raspsoft.ramus.mpv-events",

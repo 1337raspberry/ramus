@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Album, GenreNode } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
@@ -187,7 +187,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
  * 2,255 parallel IPC + Plex fetches at mount, swamps the bridge,
  * and leaks memory in the WKWebView image cache.
  */
-function VirtualizedAlbumGrid({ albums }: { albums: Album[] }) {
+const VirtualizedAlbumGrid = memo(function VirtualizedAlbumGrid({ albums }: { albums: Album[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = useState(false);
   const rowCount = Math.ceil(albums.length / COLS);
@@ -243,4 +243,4 @@ function VirtualizedAlbumGrid({ albums }: { albums: Album[] }) {
       </div>
     </div>
   );
-}
+});
