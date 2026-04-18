@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type SidebarMode } from "../stores/libraryStore";
+import { useSettingsStore } from "../stores/settingsStore";
+import { updateSettings } from "../lib/commands";
 import GenreTreeView from "./GenreTreeView";
 import { useGenreDebugStore } from "./GenreDebugPanel";
-import { useSettingsStore } from "../stores/settingsStore";
+import SavedSearchModal from "../mobile/SavedSearchModal";
 
 const TABS: { mode: SidebarMode; label: string }[] = [
   { mode: "genres", label: "Genres" },
@@ -96,6 +98,8 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
   const artists = useLibraryStore((s) => s.artists);
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
   const selectArtist = useLibraryStore((s) => s.selectArtist);
+  const savedSearch = useSettingsStore((s) => s.savedSearch);
+  const [showSavedModal, setShowSavedModal] = useState(false);
 
   useEffect(() => {
     const store = useLibraryStore.getState();
@@ -103,6 +107,29 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
     store.loadAllAlbums();
     useLibraryStore.setState({ selectedGenreId: "__all__" });
   }, []);
+
+  const handleSavedClick = () => {
+    if (savedSearch) {
+      useLibraryStore.getState().loadSavedSearch(savedSearch);
+    } else {
+      setShowSavedModal(true);
+    }
+  };
+
+  const handleSave = async (query: string) => {
+    const next = { ...useSettingsStore.getState(), savedSearch: query };
+    useSettingsStore.setState({ savedSearch: query });
+    await updateSettings(next).catch(() => {});
+    setShowSavedModal(false);
+    useLibraryStore.getState().loadSavedSearch(query);
+  };
+
+  const handleClear = async () => {
+    const next = { ...useSettingsStore.getState(), savedSearch: null };
+    useSettingsStore.setState({ savedSearch: null });
+    await updateSettings(next).catch(() => {});
+    setShowSavedModal(false);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -134,12 +161,31 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
           </button>
         )}
         <button
-          className="sidebar-bottom-btn sidebar-lucky-btn"
+          className="sidebar-bottom-btn"
           onClick={() => useLibraryStore.getState().loadSuggestion()}
         >
-          Feelin' Lucky
+          Suggest
+        </button>
+        <button
+          className="sidebar-bottom-btn"
+          onClick={handleSavedClick}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setShowSavedModal(true);
+          }}
+        >
+          Saved
         </button>
       </div>
+
+      {showSavedModal && (
+        <SavedSearchModal
+          initialQuery={savedSearch ?? ""}
+          onSave={handleSave}
+          onClear={savedSearch ? handleClear : undefined}
+          onDismiss={() => setShowSavedModal(false)}
+        />
+      )}
     </div>
   );
 }

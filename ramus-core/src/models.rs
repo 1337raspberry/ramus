@@ -432,6 +432,7 @@ pub struct Settings {
     pub flat_genres: bool,
     pub eq_enabled: bool,
     pub eq_bands: [f32; 10],
+    pub saved_search: Option<String>,
 }
 
 impl Default for Settings {
@@ -450,6 +451,7 @@ impl Default for Settings {
             flat_genres: false,
             eq_enabled: false,
             eq_bands: [0.0; 10],
+            saved_search: None,
         }
     }
 }

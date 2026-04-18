@@ -64,13 +64,15 @@ function findNode(nodes: GenreNode[], id: string): GenreNode | null {
 interface Props {
   /** Fallback title when no genre/artist/year context is active. */
   contextLabel: string;
+  /** Override internal back navigation (used by saved search view). */
+  onBack?: () => void;
 }
 
 /**
  * 3-column album grid with back + title + shuffle header. Title is the
  * current genre name (or artist, year, search query, "Favourites", "All").
  */
-export default function MobileAlbumGrid({ contextLabel }: Props) {
+export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }: Props) {
   const albums = useLibraryStore((s) => s.albums);
   const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const selectedGenreId = useLibraryStore((s) => s.selectedGenreId);
@@ -109,8 +111,10 @@ export default function MobileAlbumGrid({ contextLabel }: Props) {
   ]);
 
   const handleBack = () => {
-    // Pop one level: drop browse context first, then genre selection, then
-    // fall back to the top-level tree view by clearing the selected genre.
+    if (onBackOverride) {
+      onBackOverride();
+      return;
+    }
     const store = useLibraryStore.getState();
     if (browseArtistName || browseYear || searchQuery !== null) {
       useLibraryStore.setState({
