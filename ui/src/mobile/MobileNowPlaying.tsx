@@ -7,7 +7,10 @@ import {
   togglePlayPause,
   nextTrack,
   previousTrack,
+  getQueue,
+  getArtUrl,
 } from "../lib/commands";
+import { formatDuration } from "../lib/format";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
@@ -16,6 +19,14 @@ import FlowLayout from "../components/FlowLayout";
 import UltraBlurBackground from "../components/UltraBlurBackground";
 import MarqueeText from "../components/MarqueeText";
 
+// ===== MINI-PLAYER DEBUG PANEL — REMOVE BEFORE PRODUCTION =====
+// Mini-player layout debug store + panel. Long-press gesture on mini-player info is disabled.
+// To re-enable: uncomment the debugTimer block in the component.
+// Once values are finalised, bake them into CSS and delete this entire block
+// (store, SLIDERS, MiniPlayerDebugPanel, all miniDarken/wavePadTop/etc selectors,
+// and the inline styles that reference them in the mini-player JSX).
+// Also remove: import in MobileApp.tsx, <MiniPlayerDebugPanel /> render,
+// and the brickwall import in WaveformSeekBar.tsx.
 export const useMiniPlayerDebugStore = create<{
   darken: number;
   wavePadTop: number;
@@ -165,6 +176,8 @@ export function MiniPlayerDebugPanel() {
     </div>
   );
 }
+// ===== END MINI-PLAYER DEBUG PANEL — REMOVE BEFORE PRODUCTION =====
+
 import {
   IconPlay,
   IconPause,
@@ -173,7 +186,154 @@ import {
   IconStarFilled,
   IconStarEmpty,
   IconMusicNote,
+  IconChevronDown,
+  IconClose,
 } from "../components/Icons";
+
+// ===== DEBUG PANEL — REMOVE BEFORE PRODUCTION =====
+// Sheet layout debug store + panel. Long-press gesture on album art is disabled.
+// To re-enable: uncomment the sheetDebugTimer/onSheetArtPointer* block in the component,
+// and re-attach onPointerDown/Up/Cancel to the .mobile-sheet-art div.
+// Once values are finalised, bake them into CSS and delete this entire block
+// (store, SHEET_SLIDERS, SheetDebugPanel, and all `sd.*` inline styles).
+export const useSheetDebugStore = create<{
+  transportBtnSize: number;
+  transportIconSize: number;
+  transportPrimaryIconSize: number;
+  transportGap: number;
+  waveHeight: number;
+  waveCanvasHeight: number;
+  waveMarginTop: number;
+  timeFontSize: number;
+  lyricsWidth: number;
+  lyricsHeight: number;
+  lyricsMarginTop: number;
+  titleFontSize: number;
+  artistFontSize: number;
+  albumFontSize: number;
+  chevronPadTop: number;
+  timePadTop: number;
+  artMarginBottom: number;
+  favTopPad: number;
+  showDebug: boolean;
+}>(() => ({
+  transportBtnSize: 48,
+  transportIconSize: 34,
+  transportPrimaryIconSize: 56,
+  transportGap: 42,
+  waveHeight: 60,
+  waveCanvasHeight: 50,
+  waveMarginTop: 10,
+  timeFontSize: 12,
+  lyricsWidth: 40,
+  lyricsHeight: 18,
+  lyricsMarginTop: 8,
+  titleFontSize: 16,
+  artistFontSize: 14,
+  albumFontSize: 12,
+  chevronPadTop: 44,
+  timePadTop: 4,
+  artMarginBottom: 12,
+  favTopPad: -6,
+  showDebug: false,
+}));
+
+const SHEET_SLIDERS: {
+  label: string;
+  key: keyof ReturnType<typeof useSheetDebugStore.getState>;
+  min: number;
+  max: number;
+  unit: string;
+}[] = [
+  { label: "Transport btn", key: "transportBtnSize", min: 20, max: 80, unit: "px" },
+  { label: "Transport icon", key: "transportIconSize", min: 12, max: 60, unit: "px" },
+  { label: "Transport primary", key: "transportPrimaryIconSize", min: 16, max: 70, unit: "px" },
+  { label: "Transport gap", key: "transportGap", min: 8, max: 80, unit: "px" },
+  { label: "Wave height", key: "waveHeight", min: 20, max: 120, unit: "px" },
+  { label: "Wave canvas", key: "waveCanvasHeight", min: 10, max: 100, unit: "px" },
+  { label: "Wave margin top", key: "waveMarginTop", min: 0, max: 40, unit: "px" },
+  { label: "Time font", key: "timeFontSize", min: 8, max: 20, unit: "px" },
+  { label: "Lyrics W", key: "lyricsWidth", min: 20, max: 80, unit: "px" },
+  { label: "Lyrics H", key: "lyricsHeight", min: 14, max: 50, unit: "px" },
+  { label: "Lyrics margin", key: "lyricsMarginTop", min: 0, max: 30, unit: "px" },
+  { label: "Title font", key: "titleFontSize", min: 10, max: 36, unit: "px" },
+  { label: "Artist font", key: "artistFontSize", min: 8, max: 28, unit: "px" },
+  { label: "Album font", key: "albumFontSize", min: 8, max: 24, unit: "px" },
+  { label: "Chevron pad", key: "chevronPadTop", min: 0, max: 60, unit: "px" },
+  { label: "Time pad top", key: "timePadTop", min: 0, max: 20, unit: "px" },
+  { label: "Art gap below", key: "artMarginBottom", min: 0, max: 40, unit: "px" },
+  { label: "Fav star pad", key: "favTopPad", min: -20, max: 30, unit: "px" },
+];
+
+export function SheetDebugPanel() {
+  const state = useSheetDebugStore();
+  if (!state.showDebug) return null;
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 60,
+        left: 12,
+        right: 12,
+        maxHeight: "50vh",
+        zIndex: 9999,
+        background: "rgba(0,0,0,0.92)",
+        borderRadius: 10,
+        padding: "8px 14px",
+        color: "#fff",
+        fontSize: 11,
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <div
+        style={{
+          flex: "1 1 auto",
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        {SHEET_SLIDERS.map((s) => {
+          const raw = state[s.key] as number;
+          return (
+            <div key={s.key} style={{ marginBottom: 2 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>{s.label}</span>
+                <span>
+                  {raw}
+                  {s.unit}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={s.min}
+                max={s.max}
+                value={raw}
+                onChange={(e) => useSheetDebugStore.setState({ [s.key]: Number(e.target.value) })}
+                style={{ width: "100%", height: 20 }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <button
+        style={{
+          background: "rgba(255,255,255,0.15)",
+          border: "none",
+          borderRadius: 6,
+          color: "#fff",
+          padding: "4px 10px",
+          fontSize: 11,
+          marginTop: 4,
+        }}
+        onClick={() => useSheetDebugStore.setState({ showDebug: false })}
+      >
+        Close
+      </button>
+    </div>
+  );
+}
+// ===== END DEBUG PANEL — REMOVE BEFORE PRODUCTION =====
 
 function IconSkipBack({ size = 22 }: { size?: number }) {
   return (
@@ -201,6 +361,35 @@ function IconQuote() {
   );
 }
 
+function UpNextThumb({ thumb }: { thumb: string | null }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    if (!thumb) return;
+    let cancelled = false;
+    getArtUrl(thumb, ART_SIZE.SMALL)
+      .then((url) => {
+        if (!cancelled) setSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setErr(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [thumb]);
+
+  if (src && !err) {
+    return <img className="mobile-upnext-thumb" src={src} alt="" onError={() => setErr(true)} />;
+  }
+  return (
+    <div className="mobile-upnext-thumb mobile-upnext-thumb-ph">
+      <IconMusicNote size={14} />
+    </div>
+  );
+}
+
 interface Props {
   expanded: boolean;
   onExpand: () => void;
@@ -219,6 +408,11 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const status = usePlaybackStore((s) => s.status);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
   const sheetBlurColors = usePlaybackStore((s) => s.ultraBlurColors);
+  const queue = usePlaybackStore((s) => s.queue);
+  const queueIndex = usePlaybackStore((s) => s.queueIndex);
+  const jumpToIndex = usePlaybackStore((s) => s.jumpToIndex);
+  const removeQueueItem = usePlaybackStore((s) => s.removeQueueItem);
+  // DEBUG — mini-player debug selectors (remove with debug panel)
   const miniDarken = useMiniPlayerDebugStore((s) => s.darken);
   const wavePadTop = useMiniPlayerDebugStore((s) => s.wavePadTop);
   const waveHeight = useMiniPlayerDebugStore((s) => s.waveHeight);
@@ -234,10 +428,13 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const safeBottom = useMiniPlayerDebugStore((s) => s.safeBottom);
   const hintTop = useMiniPlayerDebugStore((s) => s.hintTop);
   const hintWidth = useMiniPlayerDebugStore((s) => s.hintWidth);
+  // DEBUG — sheet debug selectors (remove with debug panel)
+  const sd = useSheetDebugStore();
 
   const {
     track,
     nowPlayingAlbum,
+    hasTrackArtist,
     year,
     codec,
     albumFav,
@@ -362,9 +559,10 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     e.stopPropagation();
   }, []);
 
+  // DEBUG — mini-player debug gesture disabled (remove with debug panel)
   const debugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onInfoPointerDown = useCallback((_e: React.PointerEvent) => {
-    // Debug panel gesture disabled — uncomment to re-enable long-press toggle
+    // uncomment to re-enable long-press toggle:
     // debugTimer.current = setTimeout(() => {
     //   useMiniPlayerDebugStore.setState((s) => ({ showDebug: !s.showDebug }));
     // }, 800);
@@ -373,10 +571,28 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const onInfoPointerUp = useCallback(() => {
     if (debugTimer.current) clearTimeout(debugTimer.current);
   }, []);
+  // DEBUG — sheet debug gesture disabled (remove with debug panel)
+  // const sheetDebugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // const onSheetArtPointerDown = useCallback(() => {
+  //   sheetDebugTimer.current = setTimeout(() => {
+  //     useSheetDebugStore.setState((s) => ({ showDebug: !s.showDebug }));
+  //   }, 800);
+  // }, []);
+  // const onSheetArtPointerUp = useCallback(() => {
+  //   if (sheetDebugTimer.current) clearTimeout(sheetDebugTimer.current);
+  // }, []);
 
   const [sheetDragY, setSheetDragY] = useState(0);
   const sheetDismissing = useRef(false);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const sheetBodyRef = useRef<HTMLDivElement>(null);
+  const [mainMinHeight, setMainMinHeight] = useState<number | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    if (!sheetMounted || !expanded) return;
+    const el = sheetBodyRef.current;
+    if (el) setMainMinHeight(el.clientHeight);
+  }, [sheetMounted, expanded]);
 
   const onSheetHeaderPointerDown = useCallback((e: React.PointerEvent) => {
     if (sheetDismissing.current) return;
@@ -426,6 +642,14 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     },
     [onCollapse],
   );
+
+  useEffect(() => {
+    if (expanded) {
+      getQueue()
+        .then((q) => usePlaybackStore.setState({ queue: q }))
+        .catch(() => {});
+    }
+  }, [expanded]);
 
   // Close the sheet on Escape (iOS keyboard / external keyboard).
   useEffect(() => {
@@ -573,94 +797,181 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
               className={`mobile-sheet-fav${albumFav ? " active" : ""}`}
               onClick={handleAlbumFavToggle}
               aria-label={albumFav ? "Remove album favourite" : "Favourite album"}
+              style={{ top: sd.favTopPad }}
             >
               {albumFav ? <IconStarFilled /> : <IconStarEmpty />}
             </button>
           </header>
+          <SheetDebugPanel /> {/* DEBUG — remove with debug panel */}
+          <div className="mobile-sheet-body" ref={sheetBodyRef}>
+            <div
+              className="mobile-sheet-main"
+              style={mainMinHeight ? { minHeight: mainMinHeight } : undefined}
+            >
+              <div className="mobile-sheet-art" style={{ marginBottom: sd.artMarginBottom }}>
+                {artSrc && !artErr ? (
+                  <img
+                    src={artSrc}
+                    alt={track.title}
+                    crossOrigin="anonymous"
+                    onLoad={handleArtLoad}
+                    onError={() => setArtErr(true)}
+                  />
+                ) : (
+                  <div className="mobile-sheet-art-ph">
+                    <IconMusicNote size={64} />
+                  </div>
+                )}
+              </div>
 
-          <div className="mobile-sheet-body">
-            <div className="mobile-sheet-art">
-              {artSrc && !artErr ? (
-                <img
-                  src={artSrc}
-                  alt={track.title}
-                  crossOrigin="anonymous"
-                  onLoad={handleArtLoad}
-                  onError={() => setArtErr(true)}
-                />
-              ) : (
-                <div className="mobile-sheet-art-ph">
-                  <IconMusicNote size={64} />
+              <div
+                className="mobile-sheet-title"
+                onClick={handleAlbumClick}
+                style={{ fontSize: sd.titleFontSize }}
+              >
+                {track.title}
+              </div>
+              <div
+                className="mobile-sheet-artist"
+                onClick={handleArtistClick}
+                style={{ fontSize: sd.artistFontSize }}
+              >
+                {hasTrackArtist ? `${track.artistName} (${track.trackArtist})` : track.artistName}
+              </div>
+              {nowPlayingAlbum && (
+                <div
+                  className="mobile-sheet-album"
+                  onClick={handleYearClick}
+                  style={{ fontSize: sd.albumFontSize }}
+                >
+                  {nowPlayingAlbum.title}
+                  {albumYear}
+                </div>
+              )}
+
+              <button
+                className="mobile-sheet-lyrics"
+                onClick={toggleLyrics}
+                aria-label="Toggle lyrics"
+                style={{
+                  width: sd.lyricsWidth,
+                  height: sd.lyricsHeight,
+                  marginTop: sd.lyricsMarginTop,
+                }}
+              >
+                <IconQuote />
+              </button>
+
+              <div
+                className="mobile-sheet-wave"
+                style={
+                  {
+                    height: sd.waveHeight,
+                    marginTop: sd.waveMarginTop,
+                    "--sheet-wave-canvas": `${sd.waveCanvasHeight}px`,
+                    "--sheet-time-font": `${sd.timeFontSize}px`,
+                    "--sheet-time-pad": `${sd.timePadTop}px`,
+                  } as React.CSSProperties
+                }
+              >
+                <WaveformSeekBar />
+              </div>
+
+              <div className="mobile-sheet-transport" style={{ gap: sd.transportGap }}>
+                <button
+                  className="mobile-sheet-transport-btn"
+                  onClick={() => previousTrack().catch(() => {})}
+                  aria-label="Previous"
+                  style={{ width: sd.transportBtnSize, height: sd.transportBtnSize }}
+                >
+                  <IconPrevious size={sd.transportIconSize} />
+                </button>
+                <button
+                  className="mobile-sheet-transport-btn primary"
+                  onClick={() => togglePlayPause().catch(() => {})}
+                  aria-label={isPlaying ? "Pause" : "Play"}
+                  style={{ width: sd.transportBtnSize, height: sd.transportBtnSize }}
+                >
+                  {isPlaying ? (
+                    <IconPause size={sd.transportPrimaryIconSize} />
+                  ) : (
+                    <IconPlay size={sd.transportPrimaryIconSize} />
+                  )}
+                </button>
+                <button
+                  className="mobile-sheet-transport-btn"
+                  onClick={() => nextTrack().catch(() => {})}
+                  aria-label="Next"
+                  style={{ width: sd.transportBtnSize, height: sd.transportBtnSize }}
+                >
+                  <IconNext size={sd.transportIconSize} />
+                </button>
+              </div>
+
+              {currentGenres.length > 0 && (
+                <div className="mobile-sheet-genres">
+                  <FlowLayout genres={currentGenres} onGenreClick={handleGenreClick} />
+                </div>
+              )}
+
+              <div className="mobile-sheet-foot">
+                {codec && <span>{codec}</span>}
+                <span
+                  className={`mobile-sheet-track-fav${trackFav ? " active" : ""}`}
+                  onClick={handleTrackFavToggle}
+                  role="button"
+                  aria-label={trackFav ? "Remove track favourite" : "Favourite track"}
+                >
+                  {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
+                </span>
+              </div>
+              {queue.length > queueIndex + 1 && (
+                <div className="mobile-sheet-scroll-hint" style={{ paddingTop: sd.chevronPadTop }}>
+                  <IconChevronDown size={20} />
                 </div>
               )}
             </div>
 
-            <div className="mobile-sheet-title" onClick={handleAlbumClick}>
-              {track.title}
-            </div>
-            <div className="mobile-sheet-artist" onClick={handleArtistClick}>
-              {track.artistName}
-            </div>
-            {nowPlayingAlbum && (
-              <div className="mobile-sheet-album" onClick={handleYearClick}>
-                {nowPlayingAlbum.title}
-                {albumYear}
-              </div>
-            )}
-
-            <button
-              className="mobile-sheet-lyrics"
-              onClick={toggleLyrics}
-              aria-label="Toggle lyrics"
-            >
-              <IconQuote />
-            </button>
-
-            <div className="mobile-sheet-wave">
-              <WaveformSeekBar />
-            </div>
-
-            <div className="mobile-sheet-transport">
-              <button
-                className="mobile-sheet-transport-btn"
-                onClick={() => previousTrack().catch(() => {})}
-                aria-label="Previous"
-              >
-                <IconPrevious />
-              </button>
-              <button
-                className="mobile-sheet-transport-btn primary"
-                onClick={() => togglePlayPause().catch(() => {})}
-                aria-label={isPlaying ? "Pause" : "Play"}
-              >
-                {isPlaying ? <IconPause /> : <IconPlay />}
-              </button>
-              <button
-                className="mobile-sheet-transport-btn"
-                onClick={() => nextTrack().catch(() => {})}
-                aria-label="Next"
-              >
-                <IconNext />
-              </button>
-            </div>
-
-            {currentGenres.length > 0 && (
-              <div className="mobile-sheet-genres">
-                <FlowLayout genres={currentGenres} onGenreClick={handleGenreClick} />
-              </div>
-            )}
-
-            <div className="mobile-sheet-foot">
-              {codec && <span>{codec}</span>}
-              <span
-                className={`mobile-sheet-track-fav${trackFav ? " active" : ""}`}
-                onClick={handleTrackFavToggle}
-                role="button"
-                aria-label={trackFav ? "Remove track favourite" : "Favourite track"}
-              >
-                {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
-              </span>
-            </div>
+            {(() => {
+              const upcomingStart = queueIndex + 1;
+              const upcoming = queue.slice(upcomingStart);
+              if (upcoming.length === 0) return null;
+              return (
+                <div className="mobile-upnext">
+                  <div className="mobile-upnext-header">Up Next</div>
+                  {upcoming.map((t, i) => {
+                    const globalIndex = upcomingStart + i;
+                    return (
+                      <button
+                        key={`${globalIndex}-${t.ratingKey}`}
+                        className="mobile-upnext-row"
+                        onClick={() => jumpToIndex(globalIndex)}
+                      >
+                        <span className="mobile-upnext-num">{i + 1}</span>
+                        <UpNextThumb thumb={t.thumb} />
+                        <div className="mobile-upnext-info">
+                          <div className="mobile-upnext-title">{t.title}</div>
+                          <div className="mobile-upnext-artist">
+                            {t.trackArtist || t.artistName}
+                          </div>
+                        </div>
+                        <span className="mobile-upnext-duration">{formatDuration(t.duration)}</span>
+                        <button
+                          className="mobile-upnext-remove"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeQueueItem(globalIndex);
+                          }}
+                          aria-label="Remove from queue"
+                        >
+                          <IconClose size={12} />
+                        </button>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
