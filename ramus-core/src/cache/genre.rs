@@ -81,12 +81,13 @@ impl CacheDatabase {
         Ok(())
     }
 
-    /// Atomically update album deep metadata (genres by name, rating, studio, colors).
+    /// Atomically update album deep metadata (genres, collections, rating, studio, colors).
     /// `COALESCE` preserves existing values when new values are `NULL`.
     pub fn update_album_deep_metadata(
         &self,
         album_id: i64,
         genre_names: &[String],
+        collection_names: &[String],
         rating: Option<f64>,
         studio: Option<&str>,
         colors_json: Option<&str>,
@@ -121,6 +122,27 @@ impl CacheDatabase {
                 genre_stmt.execute(params![name])?;
                 let genre_id: i64 = id_stmt.query_row(params![name], |r| r.get(0))?;
                 link_stmt.execute(params![album_id, genre_id])?;
+            }
+        }
+
+        tx.execute(
+            "DELETE FROM album_collections WHERE albumId = ?1",
+            params![album_id],
+        )?;
+        {
+            let mut col_stmt = tx.prepare_cached(
+                "INSERT INTO collections (name) VALUES (?1) ON CONFLICT(name) DO NOTHING",
+            )?;
+            let mut col_id_stmt =
+                tx.prepare_cached("SELECT id FROM collections WHERE name = ?1 COLLATE NOCASE")?;
+            let mut col_link_stmt = tx.prepare_cached(
+                "INSERT OR IGNORE INTO album_collections (albumId, collectionId) VALUES (?1, ?2)",
+            )?;
+
+            for name in collection_names {
+                col_stmt.execute(params![name])?;
+                let col_id: i64 = col_id_stmt.query_row(params![name], |r| r.get(0))?;
+                col_link_stmt.execute(params![album_id, col_id])?;
             }
         }
 

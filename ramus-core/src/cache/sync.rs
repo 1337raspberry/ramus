@@ -311,6 +311,7 @@ impl SyncEngine {
 
         let mut changed: Vec<AlbumUpsertRow> = Vec::new();
         let mut genre_links: Vec<(String, String)> = Vec::new();
+        let mut collection_links: Vec<(String, Vec<String>)> = Vec::new();
 
         for item in items {
             let artist_key = item.parent_rating_key.as_deref().unwrap_or("");
@@ -365,6 +366,13 @@ impl SyncEngine {
                 if let Some(genre) = item.genre.as_ref().and_then(|g| g.first()) {
                     genre_links.push((item.rating_key.clone(), genre.tag.clone()));
                 }
+
+                if let Some(cols) = &item.collection {
+                    let names: Vec<String> = cols.iter().map(|c| c.tag.clone()).collect();
+                    if !names.is_empty() {
+                        collection_links.push((item.rating_key.clone(), names));
+                    }
+                }
             }
         }
 
@@ -390,6 +398,16 @@ impl SyncEngine {
                 })
                 .collect();
             self.cache.batch_upsert_genres_and_links(&link_rows)?;
+        }
+
+        if !collection_links.is_empty() {
+            let col_rows: Vec<(i64, Vec<String>)> = collection_links
+                .into_iter()
+                .filter_map(|(source_id, names)| {
+                    map.get(&source_id).map(|&id| (id, names))
+                })
+                .collect();
+            self.cache.batch_upsert_collections_and_links(&col_rows)?;
         }
 
         Ok((map, changed_ids))
@@ -588,8 +606,10 @@ async fn process_album_deep_sync(
 ) -> Result<(), SyncError> {
     let metadata = client.fetch_item_metadata(source_id).await?;
     let genres = metadata.genre.unwrap_or_default();
+    let collections = metadata.collection.unwrap_or_default();
 
     let genre_names: Vec<String> = genres.into_iter().map(|g| g.tag).collect();
+    let collection_names: Vec<String> = collections.into_iter().map(|c| c.tag).collect();
 
     let colors_json = metadata
         .ultra_blur_colors
@@ -599,6 +619,7 @@ async fn process_album_deep_sync(
     cache.update_album_deep_metadata(
         album_id,
         &genre_names,
+        &collection_names,
         metadata.user_rating,
         metadata.studio.as_deref(),
         colors_json.as_deref(),

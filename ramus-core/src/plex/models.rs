@@ -34,6 +34,8 @@ pub struct MediaItem {
     pub media: Option<Vec<MediaInfo>>,
     #[serde(rename = "Genre")]
     pub genre: Option<Vec<PlexTag>>,
+    #[serde(rename = "Collection")]
+    pub collection: Option<Vec<PlexTag>>,
     #[serde(rename = "UltraBlurColors")]
     pub ultra_blur_colors: Option<UltraBlurColors>,
 }

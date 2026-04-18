@@ -7,6 +7,7 @@ pub enum SearchFilter {
     Artist(String),
     AlbumTitle(String),
     TrackSearch(String),
+    Collection(String),
     Range(RangeField, RangeOp, f64),
     Favourites,
 }
@@ -63,6 +64,16 @@ impl ParsedQuery {
             .iter()
             .filter_map(|f| match f {
                 SearchFilter::TrackSearch(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn collection_filters(&self) -> Vec<&str> {
+        self.filters
+            .iter()
+            .filter_map(|f| match f {
+                SearchFilter::Collection(c) => Some(c.as_str()),
                 _ => None,
             })
             .collect()
@@ -166,6 +177,13 @@ impl QueryParser {
                 return None;
             }
             Some(SearchFilter::AlbumTitle(value.to_string()))
+        } else if lower.starts_with("col:") {
+            let rest = &segment[4..];
+            let value = rest.trim();
+            if value.is_empty() {
+                return None;
+            }
+            Some(SearchFilter::Collection(value.to_string()))
         } else if lower.starts_with("fav:") || lower.starts_with("favourites:") {
             Some(SearchFilter::Favourites)
         } else if let Some(rest) = segment.strip_prefix('#') {
@@ -336,6 +354,32 @@ mod tests {
         assert!(QueryParser::parse("@").is_empty());
         assert!(QueryParser::parse("!").is_empty());
         assert!(QueryParser::parse("%").is_empty());
+        assert!(QueryParser::parse("col:").is_empty());
+    }
+
+    #[test]
+    fn test_parse_collection_filter() {
+        let q = QueryParser::parse("col:Sleep");
+        assert_eq!(q.collection_filters(), vec!["Sleep"]);
+    }
+
+    #[test]
+    fn test_parse_collection_multi_word() {
+        let q = QueryParser::parse("col:Gym Music");
+        assert_eq!(q.collection_filters(), vec!["Gym Music"]);
+    }
+
+    #[test]
+    fn test_parse_collection_combined() {
+        let q = QueryParser::parse("col:Sleep AND @radiohead");
+        assert_eq!(q.collection_filters(), vec!["Sleep"]);
+        assert_eq!(q.artist_filters(), vec!["radiohead"]);
+    }
+
+    #[test]
+    fn test_parse_collection_case_insensitive_prefix() {
+        let q = QueryParser::parse("COL:Sleep");
+        assert_eq!(q.collection_filters(), vec!["Sleep"]);
     }
 
 

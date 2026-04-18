@@ -1,4 +1,5 @@
 pub mod db;
+pub mod collection;
 pub mod colors;
 pub mod genre;
 pub mod image_cache;

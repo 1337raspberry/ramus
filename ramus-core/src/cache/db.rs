@@ -164,7 +164,19 @@ impl CacheDatabase {
                 genreId INTEGER NOT NULL REFERENCES genres(id) ON DELETE CASCADE,
                 PRIMARY KEY (albumId, genreId)
             );
-            CREATE INDEX IF NOT EXISTS idx_album_genres_genreId ON album_genres(genreId);",
+            CREATE INDEX IF NOT EXISTS idx_album_genres_genreId ON album_genres(genreId);
+
+            CREATE TABLE IF NOT EXISTS collections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE COLLATE NOCASE
+            );
+
+            CREATE TABLE IF NOT EXISTS album_collections (
+                albumId INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+                collectionId INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+                PRIMARY KEY (albumId, collectionId)
+            );
+            CREATE INDEX IF NOT EXISTS idx_album_collections_collectionId ON album_collections(collectionId);",
         )?;
 
         // Back-compat: add firstGenre to an albums table that predates the
@@ -893,6 +905,7 @@ mod tests {
         db.update_album_deep_metadata(
             album_id,
             &["Rock".into()],
+            &[],
             Some(8.0),
             Some("Parlophone"),
             Some(r##"{"topLeft":"#fff"}"##),
@@ -915,6 +928,7 @@ mod tests {
         db.update_album_deep_metadata(
             album_id,
             &["Rock".into()],
+            &[],
             Some(8.0),
             Some("Parlophone"),
             None,
@@ -925,6 +939,7 @@ mod tests {
         db.update_album_deep_metadata(
             album_id,
             &["Rock".into()],
+            &[],
             None,
             None,
             None,
@@ -933,6 +948,107 @@ mod tests {
 
         let albums = db.all_albums().unwrap();
         assert_eq!(albums[0].studio, Some("Parlophone".into()));
+    }
+
+    #[test]
+    fn test_collection_crud() {
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Radiohead");
+        let album_id = seed_album(&db, "al1", "OK Computer", artist_id, Some(1997));
+
+        let sleep_id = db.upsert_collection("Sleep").unwrap();
+        let gym_id = db.upsert_collection("Gym Music").unwrap();
+        db.link_album_collection(album_id, sleep_id).unwrap();
+        db.link_album_collection(album_id, gym_id).unwrap();
+
+        let cols = db.album_collections("al1").unwrap();
+        assert_eq!(cols.len(), 2);
+        assert!(cols.contains(&"Sleep".into()));
+        assert!(cols.contains(&"Gym Music".into()));
+    }
+
+    #[test]
+    fn test_collection_upsert_case_insensitivity() {
+        let db = setup();
+        let id1 = db.upsert_collection("Sleep").unwrap();
+        let id2 = db.upsert_collection("sleep").unwrap();
+        let id3 = db.upsert_collection("SLEEP").unwrap();
+        assert_eq!(id1, id2);
+        assert_eq!(id2, id3);
+    }
+
+    #[test]
+    fn test_set_album_collections_replaces() {
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Radiohead");
+        let album_id = seed_album(&db, "al1", "OK Computer", artist_id, Some(1997));
+
+        let sleep_id = db.upsert_collection("Sleep").unwrap();
+        let gym_id = db.upsert_collection("Gym").unwrap();
+        let chill_id = db.upsert_collection("Chill").unwrap();
+
+        db.set_album_collections(album_id, &[sleep_id, gym_id]).unwrap();
+        let c = db.album_collections("al1").unwrap();
+        assert_eq!(c.len(), 2);
+
+        db.set_album_collections(album_id, &[chill_id]).unwrap();
+        let c = db.album_collections("al1").unwrap();
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0], "Chill");
+    }
+
+    #[test]
+    fn test_album_ids_for_collection_names() {
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Radiohead");
+        let al1 = seed_album(&db, "al1", "OK Computer", artist_id, Some(1997));
+        let al2 = seed_album(&db, "al2", "Kid A", artist_id, Some(2000));
+
+        let sleep_id = db.upsert_collection("Sleep").unwrap();
+        db.link_album_collection(al1, sleep_id).unwrap();
+        db.link_album_collection(al2, sleep_id).unwrap();
+
+        let ids = db.album_ids_for_collection_names(&["Sleep".into()]).unwrap();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&al1));
+        assert!(ids.contains(&al2));
+    }
+
+    #[test]
+    fn test_deep_metadata_with_collections() {
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Radiohead");
+        let album_id = seed_album(&db, "al1", "OK Computer", artist_id, Some(1997));
+
+        db.update_album_deep_metadata(
+            album_id,
+            &["Rock".into()],
+            &["Sleep".into(), "Chill".into()],
+            Some(8.0),
+            Some("Parlophone"),
+            None,
+        )
+        .unwrap();
+
+        let cols = db.album_collections("al1").unwrap();
+        assert_eq!(cols.len(), 2);
+        assert!(cols.contains(&"Sleep".into()));
+        assert!(cols.contains(&"Chill".into()));
+
+        // Deep metadata replaces collections
+        db.update_album_deep_metadata(
+            album_id,
+            &["Rock".into()],
+            &["Focus".into()],
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let cols = db.album_collections("al1").unwrap();
+        assert_eq!(cols.len(), 1);
+        assert_eq!(cols[0], "Focus");
     }
 
     #[test]

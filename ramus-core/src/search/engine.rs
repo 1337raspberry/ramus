@@ -41,6 +41,7 @@ impl SearchEngine {
             || !query.artist_filters().is_empty()
             || !query.album_title_filters().is_empty()
             || !query.genre_filters().is_empty()
+            || !query.collection_filters().is_empty()
             || !query.range_filters().is_empty()
             || query.has_favourites_filter();
 
@@ -327,6 +328,17 @@ impl SearchEngine {
                 constrained_ids = Some(existing.intersection(&fav_ids).copied().collect());
             } else {
                 constrained_ids = Some(fav_ids);
+            }
+        }
+
+        let collections = query.collection_filters();
+        if !collections.is_empty() {
+            let names: Vec<String> = collections.iter().map(|s| s.to_string()).collect();
+            let col_ids = self.db.album_ids_for_collection_names(&names)?;
+            if let Some(existing) = constrained_ids {
+                constrained_ids = Some(existing.intersection(&col_ids).copied().collect());
+            } else {
+                constrained_ids = Some(col_ids);
             }
         }
 
@@ -800,5 +812,48 @@ mod tests {
             albums.iter().any(|r| r.album_title == "OK Computer"),
             "token-AND album search should find OK Computer"
         );
+    }
+
+    #[test]
+    fn test_collection_filter_returns_matching_albums() {
+        let (db, engine) = setup();
+        let ok_id = db.album_id("album-1").unwrap().unwrap();
+        let kid_a_id = db.album_id("album-3").unwrap().unwrap();
+
+        let sleep_id = db.upsert_collection("Sleep").unwrap();
+        db.link_album_collection(ok_id, sleep_id).unwrap();
+        db.link_album_collection(kid_a_id, sleep_id).unwrap();
+
+        let q = QueryParser::parse("col:Sleep");
+        let results = engine.search(&q, 100).unwrap();
+        assert!(!results.is_empty());
+        let titles: HashSet<_> = results.iter().map(|r| r.album_title.as_str()).collect();
+        assert!(titles.contains("OK Computer"));
+        assert!(titles.contains("Kid A"));
+        assert!(!titles.contains("Reign in Blood"));
+    }
+
+    #[test]
+    fn test_collection_filter_combined_with_genre() {
+        let (db, engine) = setup();
+        let ok_id = db.album_id("album-1").unwrap().unwrap();
+        let reign_id = db.album_id("album-2").unwrap().unwrap();
+
+        let sleep_id = db.upsert_collection("Sleep").unwrap();
+        db.link_album_collection(ok_id, sleep_id).unwrap();
+        db.link_album_collection(reign_id, sleep_id).unwrap();
+
+        let q = QueryParser::parse("col:Sleep AND /rock");
+        let results = engine.search(&q, 100).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].album_title, "OK Computer");
+    }
+
+    #[test]
+    fn test_collection_filter_no_match_returns_empty() {
+        let (_db, engine) = setup();
+        let q = QueryParser::parse("col:Nonexistent");
+        let results = engine.search(&q, 100).unwrap();
+        assert!(results.is_empty());
     }
 }
