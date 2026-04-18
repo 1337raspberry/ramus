@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { usePlaybackStore } from "../stores/playbackStore";
 import {
@@ -30,22 +30,26 @@ export const useMiniPlayerDebugStore = create<{
   artSize: number;
   artTop: number;
   artLeft: number;
+  hintTop: number;
+  hintWidth: number;
   brickwall: boolean;
   showDebug: boolean;
 }>(() => ({
   darken: 0.3,
-  wavePadTop: 10,
-  waveHeight: 40,
+  wavePadTop: 0,
+  waveHeight: 42,
   wavePadSide: 14,
   wavePadLeft: 64,
-  barPadTop: 10,
-  barPadBottom: 0,
+  barPadTop: 4,
+  barPadBottom: 4,
   barPadSide: 14,
   barGap: 0,
-  safeBottom: -1,
+  safeBottom: 40,
   artSize: 42,
-  artTop: 10,
+  artTop: 61,
   artLeft: 14,
+  hintTop: 10,
+  hintWidth: 50,
   brickwall: false,
   showDebug: false,
 }));
@@ -59,18 +63,20 @@ const SLIDERS: {
   unit: string;
 }[] = [
   { label: "Darken", key: "darken", min: 0, max: 100, scale: 100, unit: "%" },
-  { label: "Wave pad top", key: "wavePadTop", min: -20, max: 40, unit: "px" },
-  { label: "Wave height", key: "waveHeight", min: 10, max: 80, unit: "px" },
-  { label: "Wave pad side", key: "wavePadSide", min: 0, max: 60, unit: "px" },
-  { label: "Wave pad left", key: "wavePadLeft", min: -1, max: 120, unit: "px" },
-  { label: "Bar pad top", key: "barPadTop", min: -20, max: 40, unit: "px" },
-  { label: "Bar pad bottom", key: "barPadBottom", min: -20, max: 40, unit: "px" },
-  { label: "Bar pad side", key: "barPadSide", min: 0, max: 60, unit: "px" },
-  { label: "Bar gap", key: "barGap", min: 0, max: 40, unit: "px" },
-  { label: "Safe bottom", key: "safeBottom", min: -1, max: 50, unit: "px" },
-  { label: "Art size", key: "artSize", min: 16, max: 80, unit: "px" },
-  { label: "Art top", key: "artTop", min: -60, max: 60, unit: "px" },
-  { label: "Art left", key: "artLeft", min: -20, max: 60, unit: "px" },
+  { label: "Wave pad top", key: "wavePadTop", min: -60, max: 120, unit: "px" },
+  { label: "Wave height", key: "waveHeight", min: 0, max: 240, unit: "px" },
+  { label: "Wave pad side", key: "wavePadSide", min: 0, max: 180, unit: "px" },
+  { label: "Wave pad left", key: "wavePadLeft", min: -1, max: 360, unit: "px" },
+  { label: "Bar pad top", key: "barPadTop", min: -60, max: 120, unit: "px" },
+  { label: "Bar pad bottom", key: "barPadBottom", min: -60, max: 120, unit: "px" },
+  { label: "Bar pad side", key: "barPadSide", min: 0, max: 180, unit: "px" },
+  { label: "Bar gap", key: "barGap", min: 0, max: 120, unit: "px" },
+  { label: "Safe bottom", key: "safeBottom", min: -1, max: 150, unit: "px" },
+  { label: "Art size", key: "artSize", min: 0, max: 240, unit: "px" },
+  { label: "Art top", key: "artTop", min: -180, max: 180, unit: "px" },
+  { label: "Art left", key: "artLeft", min: -60, max: 180, unit: "px" },
+  { label: "Hint top", key: "hintTop", min: -20, max: 60, unit: "px" },
+  { label: "Hint width", key: "hintWidth", min: 10, max: 120, unit: "px" },
 ];
 
 export function MiniPlayerDebugPanel() {
@@ -83,40 +89,51 @@ export function MiniPlayerDebugPanel() {
         bottom: 180,
         left: 12,
         right: 12,
+        maxHeight: "50vh",
         zIndex: 9999,
-        background: "rgba(0,0,0,0.9)",
+        background: "rgba(0,0,0,0.92)",
         borderRadius: 10,
-        padding: "10px 14px",
+        padding: "8px 14px",
         color: "#fff",
-        fontSize: 12,
+        fontSize: 11,
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      {SLIDERS.map((s) => {
-        const scale = s.scale ?? 1;
-        const raw = state[s.key] as number;
-        const display = Math.round(raw * scale);
-        return (
-          <div key={s.key} style={{ marginBottom: 8 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-              <span>{s.label}</span>
-              <span>
-                {display}
-                {s.unit}
-              </span>
+      <div
+        style={{
+          flex: "1 1 auto",
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        {SLIDERS.map((s) => {
+          const scale = s.scale ?? 1;
+          const raw = state[s.key] as number;
+          const display = Math.round(raw * scale);
+          return (
+            <div key={s.key} style={{ marginBottom: 2 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>{s.label}</span>
+                <span>
+                  {display}
+                  {s.unit}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={s.min}
+                max={s.max}
+                value={display}
+                onChange={(e) =>
+                  useMiniPlayerDebugStore.setState({ [s.key]: Number(e.target.value) / scale })
+                }
+                style={{ width: "100%", height: 20 }}
+              />
             </div>
-            <input
-              type="range"
-              min={s.min}
-              max={s.max}
-              value={display}
-              onChange={(e) =>
-                useMiniPlayerDebugStore.setState({ [s.key]: Number(e.target.value) / scale })
-              }
-              style={{ width: "100%" }}
-            />
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
         <button
           style={{
@@ -155,7 +172,6 @@ import {
   IconNext,
   IconStarFilled,
   IconStarEmpty,
-  IconChevronDown,
   IconMusicNote,
 } from "../components/Icons";
 
@@ -216,6 +232,8 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const artTop = useMiniPlayerDebugStore((s) => s.artTop);
   const artLeft = useMiniPlayerDebugStore((s) => s.artLeft);
   const safeBottom = useMiniPlayerDebugStore((s) => s.safeBottom);
+  const hintTop = useMiniPlayerDebugStore((s) => s.hintTop);
+  const hintWidth = useMiniPlayerDebugStore((s) => s.hintWidth);
 
   const {
     track,
@@ -277,6 +295,39 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const SWIPE_THRESHOLD = 50;
   const dragStartY = useRef<number | null>(null);
   const [dragDeltaY, setDragDeltaY] = useState(0);
+  const [sheetMounted, setSheetMounted] = useState(expanded);
+
+  useEffect(() => {
+    if (expanded) {
+      setSheetMounted(true);
+    } else if (!sheetDismissing.current) {
+      setSheetMounted(false);
+    }
+  }, [expanded]);
+
+  useLayoutEffect(() => {
+    if (!sheetMounted || !expanded) return;
+    const el = sheetRef.current;
+    if (!el) return;
+    const fromY = sheetExpandFrom.current;
+    sheetExpandFrom.current = null;
+    if (fromY != null) {
+      const vh = window.innerHeight;
+      const startPct = ((fromY / vh) * 100).toFixed(1);
+      el.style.animation = "none";
+      el.style.transform = `translateY(${startPct}%)`;
+      void el.offsetHeight;
+      el.style.transition = "transform 300ms cubic-bezier(0.2, 0.9, 0.2, 1)";
+      el.style.transform = "translateY(0)";
+      const cleanup = () => {
+        el.style.transition = "";
+        el.style.transform = "";
+      };
+      el.addEventListener("transitionend", cleanup, { once: true });
+    }
+  }, [sheetMounted, expanded]);
+
+  const sheetExpandFrom = useRef<number | null>(null);
 
   const onMiniPointerDown = useCallback((e: React.PointerEvent) => {
     dragStartY.current = e.clientY;
@@ -286,8 +337,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const onMiniPointerMove = useCallback((e: React.PointerEvent) => {
     if (dragStartY.current == null) return;
     const delta = e.clientY - dragStartY.current;
-    // Only react to upward drags (delta < 0); clamp to show a tiny lift.
-    if (delta < 0) setDragDeltaY(Math.max(delta, -80));
+    if (delta < 0) setDragDeltaY(delta);
   }, []);
 
   const onMiniPointerUp = useCallback(
@@ -296,11 +346,8 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
       const delta = e.clientY - dragStartY.current;
       dragStartY.current = null;
       setDragDeltaY(0);
-      // Only an upward swipe expands — taps on empty space do nothing.
-      // The art thumb has its own onClick for tap-to-expand, and the
-      // waveform / transport buttons stop propagation so they never
-      // reach this handler.
       if (delta < -SWIPE_THRESHOLD) {
+        sheetExpandFrom.current = e.clientY;
         onExpand();
       }
     },
@@ -316,18 +363,31 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   }, []);
 
   const debugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onInfoPointerDown = useCallback((e: React.PointerEvent) => {
-    e.stopPropagation();
-    debugTimer.current = setTimeout(() => {
-      useMiniPlayerDebugStore.setState((s) => ({ showDebug: !s.showDebug }));
-    }, 800);
+  const onInfoPointerDown = useCallback((_e: React.PointerEvent) => {
+    // Debug panel gesture disabled — uncomment to re-enable long-press toggle
+    // debugTimer.current = setTimeout(() => {
+    //   useMiniPlayerDebugStore.setState((s) => ({ showDebug: !s.showDebug }));
+    // }, 800);
+    void debugTimer.current;
   }, []);
   const onInfoPointerUp = useCallback(() => {
     if (debugTimer.current) clearTimeout(debugTimer.current);
   }, []);
 
+  const [sheetDragY, setSheetDragY] = useState(0);
+  const sheetDismissing = useRef(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+
   const onSheetHeaderPointerDown = useCallback((e: React.PointerEvent) => {
+    if (sheetDismissing.current) return;
     dragStartY.current = e.clientY;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
+
+  const onSheetHeaderPointerMove = useCallback((e: React.PointerEvent) => {
+    if (dragStartY.current == null) return;
+    const delta = e.clientY - dragStartY.current;
+    if (delta > 0) setSheetDragY(delta);
   }, []);
 
   const onSheetHeaderPointerUp = useCallback(
@@ -335,7 +395,34 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
       if (dragStartY.current == null) return;
       const delta = e.clientY - dragStartY.current;
       dragStartY.current = null;
-      if (delta > SWIPE_THRESHOLD) onCollapse();
+      if (delta > SWIPE_THRESHOLD) {
+        sheetDismissing.current = true;
+        onCollapse();
+        const dismiss = () => {
+          sheetDismissing.current = false;
+          setSheetDragY(0);
+          setSheetMounted(false);
+        };
+        const el = sheetRef.current;
+        if (el) {
+          el.style.transform = `translateY(${delta}px)`;
+          void el.offsetHeight;
+          el.style.transition = "transform 200ms cubic-bezier(0.2, 0.9, 0.2, 1)";
+          el.style.transform = "translateY(100%)";
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            dismiss();
+          };
+          el.addEventListener("transitionend", finish, { once: true });
+          setTimeout(finish, 300);
+        } else {
+          dismiss();
+        }
+      } else {
+        setSheetDragY(0);
+      }
     },
     [onCollapse],
   );
@@ -382,40 +469,9 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
             />
           </div>
         )}
-        <div
-          className="mobile-miniplayer-wave"
-          onPointerDown={swallowPointerDown}
-          style={{
-            paddingTop: wavePadTop,
-            paddingLeft: wavePadLeft >= 0 ? wavePadLeft : wavePadSide,
-            paddingRight: wavePadSide,
-          }}
-        >
-          <div style={{ height: waveHeight }}>
-            <WaveformSeekBar />
-          </div>
+        <div className="mobile-miniplayer-hint" style={{ paddingTop: hintTop }}>
+          <div className="mobile-miniplayer-hint-pill" style={{ width: hintWidth }} />
         </div>
-        <button
-          className="mobile-miniplayer-art mobile-miniplayer-art-float"
-          onClick={onExpand}
-          onPointerDown={(e) => e.stopPropagation()}
-          aria-label="Open now playing"
-          style={{ width: artSize, height: artSize, top: artTop, left: artLeft }}
-        >
-          {artSrc && !artErr ? (
-            <img
-              src={artSrc}
-              alt=""
-              crossOrigin="anonymous"
-              onLoad={handleArtLoad}
-              onError={() => setArtErr(true)}
-            />
-          ) : (
-            <div className="mobile-miniplayer-art-ph">
-              <IconMusicNote size={18} />
-            </div>
-          )}
-        </button>
         <div
           className="mobile-miniplayer-bar"
           style={{ padding: `${barPadTop}px ${barPadSide}px ${barPadBottom}px`, gap: barGap }}
@@ -457,11 +513,49 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
             </button>
           </div>
         </div>
+        <div
+          className="mobile-miniplayer-wave"
+          onPointerDown={swallowPointerDown}
+          style={{
+            paddingTop: wavePadTop,
+            paddingLeft: wavePadLeft >= 0 ? wavePadLeft : wavePadSide,
+            paddingRight: wavePadSide,
+          }}
+        >
+          <div style={{ height: waveHeight }}>
+            <WaveformSeekBar />
+          </div>
+        </div>
+        <button
+          className="mobile-miniplayer-art mobile-miniplayer-art-float"
+          onClick={onExpand}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Open now playing"
+          style={{ width: artSize, height: artSize, top: artTop, left: artLeft }}
+        >
+          {artSrc && !artErr ? (
+            <img
+              src={artSrc}
+              alt=""
+              crossOrigin="anonymous"
+              onLoad={handleArtLoad}
+              onError={() => setArtErr(true)}
+            />
+          ) : (
+            <div className="mobile-miniplayer-art-ph">
+              <IconMusicNote size={18} />
+            </div>
+          )}
+        </button>
       </div>
 
-      {/* Expanded sheet */}
-      {expanded && (
-        <div className="mobile-sheet">
+      {/* Expanded sheet — stays mounted during dismiss animation */}
+      {sheetMounted && (
+        <div
+          ref={sheetRef}
+          className="mobile-sheet"
+          style={sheetDragY > 0 ? { transform: `translateY(${sheetDragY}px)` } : undefined}
+        >
           {sheetBlurColors && (
             <div className="mobile-sheet-bg">
               <UltraBlurBackground colors={sheetBlurColors} />
@@ -470,21 +564,17 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
           <header
             className="mobile-sheet-header"
             onPointerDown={onSheetHeaderPointerDown}
+            onPointerMove={onSheetHeaderPointerMove}
             onPointerUp={onSheetHeaderPointerUp}
+            onPointerCancel={onSheetHeaderPointerUp}
           >
+            <div className="mobile-sheet-hint-bar" />
             <button
               className={`mobile-sheet-fav${albumFav ? " active" : ""}`}
               onClick={handleAlbumFavToggle}
               aria-label={albumFav ? "Remove album favourite" : "Favourite album"}
             >
               {albumFav ? <IconStarFilled /> : <IconStarEmpty />}
-            </button>
-            <button
-              className="mobile-sheet-collapse"
-              onClick={onCollapse}
-              aria-label="Collapse now playing"
-            >
-              <IconChevronDown />
             </button>
           </header>
 

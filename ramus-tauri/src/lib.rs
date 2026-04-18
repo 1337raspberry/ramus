@@ -503,7 +503,12 @@ pub fn run() {
             *reporter_ref.lock() = Some(session_reporter.clone());
 
             // Load saved settings and apply playback config (defaults to DirectPlay).
-            let saved_settings = ramus_core::settings::load();
+            #[allow(unused_mut)]
+            let mut saved_settings = ramus_core::settings::load();
+            #[cfg(target_os = "ios")]
+            {
+                saved_settings.disable_spectrum = true;
+            }
             player.update_config(saved_settings.to_playback_config());
             player.apply_equalizer(saved_settings.eq_enabled, &saved_settings.eq_bands);
 
