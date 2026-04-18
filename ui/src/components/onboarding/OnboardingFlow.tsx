@@ -8,10 +8,10 @@ import InitialSync from "./InitialSync";
 
 type Step = "signIn" | "discoverServers" | "selectLibrary" | "initialSync";
 
-// Onboarding progress survives a WKWebView reload via sessionStorage. On iOS
-// the webview is often purged while the user completes OAuth in Safari, and
-// without this the flow would restart from the sign-in screen even though
-// the pin has already been authorised.
+// Onboarding progress survives a WKWebView content-process kill via
+// localStorage. sessionStorage is lost when iOS terminates the web content
+// process under memory pressure (common during OAuth since Safari adds a
+// second web process). localStorage persists across process restarts.
 const STORAGE_KEY = "ramus.onboarding.v1";
 
 interface PersistedState {
@@ -22,7 +22,7 @@ interface PersistedState {
 
 function loadPersisted(): PersistedState | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as PersistedState;
   } catch {
@@ -32,13 +32,13 @@ function loadPersisted(): PersistedState | null {
 
 function savePersisted(state: PersistedState) {
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {}
 }
 
-function clearPersisted() {
+export function clearOnboardingStorage() {
   try {
-    sessionStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_KEY);
   } catch {}
 }
 
@@ -83,12 +83,12 @@ export default function OnboardingFlow({ onComplete }: Props) {
   );
 
   const handleSyncComplete = useCallback(() => {
-    clearPersisted();
+    clearOnboardingStorage();
     onComplete();
   }, [onComplete]);
 
   const handleSkip = useCallback(() => {
-    clearPersisted();
+    clearOnboardingStorage();
     onComplete();
   }, [onComplete]);
 

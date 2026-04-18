@@ -13,7 +13,7 @@ interface PersistedPin {
 
 function loadPin(): PersistedPin | null {
   try {
-    const raw = sessionStorage.getItem(PIN_STORAGE_KEY);
+    const raw = localStorage.getItem(PIN_STORAGE_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as PersistedPin;
   } catch {
@@ -23,13 +23,13 @@ function loadPin(): PersistedPin | null {
 
 function savePin(p: PersistedPin) {
   try {
-    sessionStorage.setItem(PIN_STORAGE_KEY, JSON.stringify(p));
+    localStorage.setItem(PIN_STORAGE_KEY, JSON.stringify(p));
   } catch {}
 }
 
-function clearPin() {
+export function clearPin() {
   try {
-    sessionStorage.removeItem(PIN_STORAGE_KEY);
+    localStorage.removeItem(PIN_STORAGE_KEY);
   } catch {}
 }
 
@@ -44,9 +44,12 @@ export default function OAuthSignIn({ onSuccess }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [polling, setPolling] = useState(stored !== null);
   const [copied, setCopied] = useState(false);
+  const [starting, setStarting] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const startAuth = useCallback(async () => {
+    if (starting) return;
+    setStarting(true);
     setError(null);
     try {
       const raw = await startOauth();
@@ -61,8 +64,10 @@ export default function OAuthSignIn({ onSuccess }: Props) {
       // the OS: NSWorkspace / UIApplication / ShellExecuteW / xdg-open).
     } catch (e) {
       setError(String(e));
+    } finally {
+      setStarting(false);
     }
-  }, []);
+  }, [starting]);
 
   const copyUrl = useCallback(async () => {
     if (!authUrl) return;
@@ -107,8 +112,8 @@ export default function OAuthSignIn({ onSuccess }: Props) {
       <p className="onboarding-subtitle">Sign in with your Plex account to get started.</p>
 
       {!polling && (
-        <button className="onboarding-primary-btn" onClick={startAuth}>
-          Sign in with Plex
+        <button className="onboarding-primary-btn" onClick={startAuth} disabled={starting}>
+          {starting ? "Connecting…" : "Sign in with Plex"}
         </button>
       )}
 

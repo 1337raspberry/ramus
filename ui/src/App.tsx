@@ -19,7 +19,8 @@ import FocusNowPlayingView from "./components/FocusNowPlayingView";
 import SearchOverlay from "./components/SearchOverlay";
 import EqualizerPanel from "./components/EqualizerPanel";
 import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
-import OnboardingFlow from "./components/onboarding/OnboardingFlow";
+import OnboardingFlow, { clearOnboardingStorage } from "./components/onboarding/OnboardingFlow";
+import { clearPin } from "./components/onboarding/OAuthSignIn";
 import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackground";
 import BreadcrumbDebugPanel from "./components/BreadcrumbDebugPanel";
 import MobileApp from "./mobile/MobileApp";
@@ -110,6 +111,8 @@ export default function App() {
             onSignOut={() => {
               setShowSettings(false);
               usePlaybackStore.setState({ isFocusMode: false });
+              clearOnboardingStorage();
+              clearPin();
               setAuthed(false);
             }}
           />

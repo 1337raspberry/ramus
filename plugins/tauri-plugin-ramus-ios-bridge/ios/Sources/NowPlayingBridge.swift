@@ -111,31 +111,30 @@ final class NowPlayingBridge {
 
     private func loadArtwork(from urlString: String) {
         guard let url = URL(string: urlString) else { return }
+        let expectedUrl = urlString
 
         if url.isFileURL {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let image = UIImage(contentsOfFile: url.path) else { return }
                 DispatchQueue.main.async {
-                    self?.setArtwork(image)
+                    self?.setArtwork(image, expectedUrl: expectedUrl)
                 }
             }
             return
         }
 
-        // Copying `self` into the Task pre-hop avoids the Swift 6
-        // Sendable warning about capturing the outer `self` across the
-        // `MainActor.run` boundary.
         let bridge = self
         Task.detached {
             guard let (data, _) = try? await URLSession.shared.data(from: url),
                   let image = UIImage(data: data) else { return }
             await MainActor.run {
-                bridge.setArtwork(image)
+                bridge.setArtwork(image, expectedUrl: expectedUrl)
             }
         }
     }
 
-    private func setArtwork(_ image: UIImage) {
+    private func setArtwork(_ image: UIImage, expectedUrl: String) {
+        guard lastArtworkUrl == expectedUrl else { return }
         let art = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
         info[MPMediaItemPropertyArtwork] = art
