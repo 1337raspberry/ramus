@@ -952,6 +952,10 @@ pub fn run() {
             commands::settings::get_image_cache_stats,
             commands::settings::clear_audio_cache,
             commands::settings::get_audio_cache_stats,
+            // platform
+            commands::platform::dismiss_keyboard,
+            commands::platform::show_native_search_bar,
+            commands::platform::hide_native_search_bar,
             // acknowledgements / licenses
             commands::acknowledgements::get_acknowledgements_text,
         ])

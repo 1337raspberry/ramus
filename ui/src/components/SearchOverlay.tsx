@@ -307,7 +307,7 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
           <input
             ref={inputRef}
             className="search-input"
-            type="text"
+            type="search"
             placeholder="/genre @artist %album !track #>2000 col:name"
             value={query}
             onChange={(e) => setQuery(e.target.value)}

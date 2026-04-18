@@ -7,6 +7,8 @@ import {
   getTrack,
   playTracks,
   getAlbum,
+  showNativeSearchBar,
+  hideNativeSearchBar,
 } from "../lib/commands";
 import { useLibraryStore } from "../stores/libraryStore";
 import type { SearchResult } from "../lib/types";
@@ -21,6 +23,8 @@ import {
 interface Props {
   onBack: () => void;
 }
+
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
 
 function SearchThumb({ path }: { path: string | null }) {
   const [src, setSrc] = useState<string | null>(null);
@@ -59,9 +63,32 @@ export default function MobileSearch({ onBack }: Props) {
   const openAlbumDetail = useLibraryStore((s) => s.openAlbumDetail);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const onBackRef = useRef(onBack);
+  onBackRef.current = onBack;
 
   useEffect(() => {
-    inputRef.current?.focus();
+    if (!IS_IOS) {
+      inputRef.current?.focus();
+      return;
+    }
+    showNativeSearchBar("");
+
+    const onText = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && typeof detail.text === "string") {
+        setQuery(detail.text);
+      }
+    };
+    const onCancel = () => onBackRef.current();
+
+    window.addEventListener("nativeSearchText", onText);
+    window.addEventListener("nativeSearchCancel", onCancel);
+
+    return () => {
+      hideNativeSearchBar();
+      window.removeEventListener("nativeSearchText", onText);
+      window.removeEventListener("nativeSearchCancel", onCancel);
+    };
   }, []);
 
   useEffect(() => {
@@ -84,8 +111,6 @@ export default function MobileSearch({ onBack }: Props) {
     const tracksList = await getTracksForAlbum(sourceId);
     if (!tracksList.length) return;
     const first = tracksList[0];
-    // Build a minimal Album shape from what we have; opening via store is
-    // cleaner but we don't have the full Album object here.
     useLibraryStore.setState({ detailTracks: tracksList, tracks: tracksList });
     const album = await getAlbum(first.albumKey ?? sourceId);
     if (album) openAlbumDetail(album);
@@ -99,27 +124,35 @@ export default function MobileSearch({ onBack }: Props) {
 
   return (
     <div className="mobile-screen mobile-search">
-      <header className="mobile-header">
-        <button className="mobile-header-circle" onClick={onBack} aria-label="Back">
-          <IconChevronLeft size={22} />
-        </button>
-        <div className="mobile-search-field">
-          <IconSearch size={16} />
-          <input
-            ref={inputRef}
-            className="mobile-search-input"
-            type="text"
-            value={query}
-            placeholder="Search"
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {query && (
-            <button className="mobile-search-clear" onClick={() => setQuery("")} aria-label="Clear">
-              <IconClose size={14} />
-            </button>
-          )}
-        </div>
-      </header>
+      {IS_IOS ? (
+        <div style={{ height: 56, flexShrink: 0 }} />
+      ) : (
+        <header className="mobile-header">
+          <button className="mobile-header-circle" onClick={onBack} aria-label="Back">
+            <IconChevronLeft size={22} />
+          </button>
+          <div className="mobile-search-field">
+            <IconSearch size={16} />
+            <input
+              ref={inputRef}
+              className="mobile-search-input"
+              type="text"
+              value={query}
+              placeholder="Search"
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {query && (
+              <button
+                className="mobile-search-clear"
+                onClick={() => setQuery("")}
+                aria-label="Clear"
+              >
+                <IconClose size={14} />
+              </button>
+            )}
+          </div>
+        </header>
+      )}
 
       <div className="mobile-search-results">
         {albums.length > 0 && (

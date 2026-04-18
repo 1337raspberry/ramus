@@ -20,6 +20,29 @@ import WebKit
 class MpvBridgePlugin: Plugin {
     private var mpv: MpvController?
     private var nowPlaying: NowPlayingBridge?
+    private weak var webView: WKWebView?
+    private var searchBar: UISearchBar?
+    private var allowEndEditing = false
+
+    override func load(webview: WKWebView) {
+        self.webView = webview
+        webview.scrollView.keyboardDismissMode = .interactive
+        webview.overrideUserInterfaceStyle = .dark
+        Self.removeInputAccessoryView()
+    }
+
+    /// Swizzle WKContentView's inputAccessoryView to return nil, removing
+    /// the chevron/checkmark toolbar that WKWebView adds above the keyboard.
+    private static var swizzled = false
+    private static func removeInputAccessoryView() {
+        guard !swizzled else { return }
+        swizzled = true
+        guard let wkContentView = NSClassFromString("WKContentView"),
+              let original = class_getInstanceMethod(wkContentView, #selector(getter: UIResponder.inputAccessoryView)),
+              let replacement = class_getInstanceMethod(UIView.self, #selector(UIView._ramus_nilAccessoryView))
+        else { return }
+        method_exchangeImplementations(original, replacement)
+    }
 
     // MARK: - Initialization
 
@@ -152,6 +175,75 @@ class MpvBridgePlugin: Plugin {
         invoke.resolve([:])
     }
 
+    // MARK: - Keyboard
+
+    @objc public func dismissKeyboard(_ invoke: Invoke) throws {
+        DispatchQueue.main.async { [weak self] in
+            self?.webView?.endEditing(true)
+        }
+        invoke.resolve([:])
+    }
+
+    // MARK: - Native Search Bar
+
+    @objc public func showNativeSearchBar(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(ShowSearchBarArgs.self)
+        DispatchQueue.main.async { [weak self] in
+            self?.presentSearchBar(initialText: args.initialQuery)
+        }
+        invoke.resolve([:])
+    }
+
+    @objc public func hideNativeSearchBar(_ invoke: Invoke) throws {
+        DispatchQueue.main.async { [weak self] in
+            self?.removeSearchBar()
+        }
+        invoke.resolve([:])
+    }
+
+    private func presentSearchBar(initialText: String) {
+        guard searchBar == nil, let webView = webView, let parent = webView.superview else { return }
+
+        let bar = UISearchBar()
+        bar.delegate = self
+        bar.text = initialText.isEmpty ? nil : initialText
+        bar.placeholder = "Search"
+        bar.showsCancelButton = true
+        bar.searchBarStyle = .minimal
+        bar.overrideUserInterfaceStyle = .dark
+        bar.tintColor = .white
+        bar.translatesAutoresizingMaskIntoConstraints = false
+
+        parent.addSubview(bar)
+        NSLayoutConstraint.activate([
+            bar.topAnchor.constraint(equalTo: parent.safeAreaLayoutGuide.topAnchor),
+            bar.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: parent.trailingAnchor),
+        ])
+
+        searchBar = bar
+        bar.becomeFirstResponder()
+    }
+
+    private func removeSearchBar() {
+        searchBar?.removeFromSuperview()
+        searchBar = nil
+        webView?.endEditing(true)
+    }
+
+    private func dispatchSearchEvent(_ name: String, detail: [String: Any]?) {
+        let detailJS: String
+        if let d = detail,
+           let data = try? JSONSerialization.data(withJSONObject: d),
+           let s = String(data: data, encoding: .utf8) {
+            detailJS = s
+        } else {
+            detailJS = "null"
+        }
+        let js = "window.dispatchEvent(new CustomEvent('\(name)', { detail: \(detailJS) }))"
+        webView?.evaluateJavaScript(js, completionHandler: nil)
+    }
+
     // MARK: - Keychain
 
     @objc public func keychainRead(_ invoke: Invoke) throws {
@@ -224,6 +316,10 @@ class KeychainWriteArgs: Decodable {
     let value: String
 }
 
+class ShowSearchBarArgs: Decodable {
+    let initialQuery: String
+}
+
 class NowPlayingMetadata: Decodable {
     let title: String
     let artist: String
@@ -232,6 +328,37 @@ class NowPlayingMetadata: Decodable {
     let position: Double
     let isPlaying: Bool
     let coverUrl: String?
+}
+
+extension MpvBridgePlugin: UISearchBarDelegate {
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        dispatchSearchEvent("nativeSearchText", detail: ["text": searchText])
+    }
+
+    func searchBarShouldEndEditing(_ searchBar: UISearchBar) -> Bool {
+        if allowEndEditing { return true }
+        // User tapped outside (e.g. on a search result). Yank the bar
+        // before UIKit transfers first-responder to the WKWebView.
+        removeSearchBar()
+        return false
+    }
+
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        // Flag lets shouldEndEditing return true so resignFirstResponder
+        // dismisses the keyboard normally, keeping the bar visible.
+        allowEndEditing = true
+        searchBar.resignFirstResponder()
+        allowEndEditing = false
+    }
+
+    func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
+        removeSearchBar()
+        dispatchSearchEvent("nativeSearchCancel", detail: nil)
+    }
+}
+
+extension UIView {
+    @objc func _ramus_nilAccessoryView() -> UIView? { nil }
 }
 
 @_cdecl("init_plugin_ramus_ios_bridge")
