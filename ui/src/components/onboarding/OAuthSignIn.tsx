@@ -50,7 +50,7 @@ export default function OAuthSignIn({ onSuccess }: Props) {
     setError(null);
     try {
       const raw = await startOauth();
-      // start_oauth returns JSON: { authUrl, pinId, code }.
+      // start_oauth returns JSON: { authUrl, pinId }.
       const data = JSON.parse(raw);
       setPinId(data.pinId);
       setAuthUrl(data.authUrl);
