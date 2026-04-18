@@ -84,6 +84,9 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
   const albumSortOrder = useLibraryStore((s) => s.albumSortOrder);
   const setAlbumSortOrder = useLibraryStore((s) => s.setAlbumSortOrder);
+  const selectGenre = useLibraryStore((s) => s.selectGenre);
+
+  const [showBreadcrumb, setShowBreadcrumb] = useState(false);
 
   const title = useMemo(() => {
     if (searchQuery) return `"${searchQuery}"`;
@@ -110,7 +113,45 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
     contextLabel,
   ]);
 
+  const isGenreContext =
+    !searchQuery &&
+    !browseArtistName &&
+    !browseYear &&
+    !(sidebarMode === "artists" && selectedArtistId) &&
+    !!selectedGenreId &&
+    selectedGenreId !== "__all__";
+
+  const crumbs = useMemo(() => {
+    if (!isGenreContext || !selectedGenreId) return [];
+    const segments = selectedGenreId.split("/");
+    const trail: { label: string; depth: number; node: GenreNode | null }[] = [
+      { label: "All", depth: 0, node: null },
+    ];
+    for (let i = 0; i < segments.length; i++) {
+      const partialId = segments.slice(0, i + 1).join("/");
+      const node = findNode(genreTree, partialId);
+      trail.push({ label: node?.name ?? segments[i], depth: i + 1, node });
+    }
+    return trail;
+  }, [isGenreContext, selectedGenreId, genreTree]);
+
+  const handleCrumbClick = useCallback(
+    (crumb: { label: string; depth: number; node: GenreNode | null }) => {
+      setShowBreadcrumb(false);
+      if (crumb.depth === 0) {
+        useLibraryStore.setState({ selectedGenreId: "__all__" });
+        const mode = useLibraryStore.getState().sidebarMode;
+        if (mode === "favourites") useLibraryStore.getState().loadFavouriteAlbums();
+        else useLibraryStore.getState().loadAllAlbums();
+      } else if (crumb.node) {
+        selectGenre(crumb.node);
+      }
+    },
+    [selectGenre],
+  );
+
   const handleBack = () => {
+    setShowBreadcrumb(false);
     if (onBackOverride) {
       onBackOverride();
       return;
@@ -151,9 +192,41 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
         <button className="mobile-header-circle" onClick={handleBack} aria-label="Back">
           <IconChevronLeft size={22} />
         </button>
-        <div className="mobile-header-title">
-          <span>{title}</span>
-          <IconChevronDown size={14} />
+        <div className="mobile-header-title-wrap">
+          <div
+            className={`mobile-header-title${isGenreContext ? " clickable" : ""}`}
+            onClick={isGenreContext ? () => setShowBreadcrumb((s) => !s) : undefined}
+          >
+            <span>{title}</span>
+            {isGenreContext && (
+              <span className={`mobile-breadcrumb-chevron${showBreadcrumb ? " open" : ""}`}>
+                <IconChevronDown size={14} />
+              </span>
+            )}
+          </div>
+          {showBreadcrumb && (
+            <>
+              <div
+                className="mobile-breadcrumb-backdrop"
+                onClick={() => setShowBreadcrumb(false)}
+              />
+              <div className="mobile-breadcrumb-dropdown">
+                {crumbs.map((crumb, i) => {
+                  const isLast = i === crumbs.length - 1;
+                  return (
+                    <button
+                      key={crumb.node?.id ?? "all"}
+                      className={`mobile-breadcrumb-item${isLast ? " current" : ""}`}
+                      style={{ paddingLeft: 14 + crumb.depth * 16 }}
+                      onClick={isLast ? undefined : () => handleCrumbClick(crumb)}
+                    >
+                      {crumb.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
         <div className="mobile-sort-wrap">
           <SortIcon mode={albumSortOrder} />
