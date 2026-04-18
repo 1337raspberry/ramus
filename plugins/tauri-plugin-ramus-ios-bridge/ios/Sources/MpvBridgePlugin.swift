@@ -57,7 +57,9 @@ class MpvBridgePlugin: Plugin {
             return
         }
 
-        UIApplication.shared.beginReceivingRemoteControlEvents()
+        DispatchQueue.main.async {
+            UIApplication.shared.beginReceivingRemoteControlEvents()
+        }
 
         if interruptionObserver != nil { return }
         interruptionObserver = NotificationCenter.default.addObserver(
