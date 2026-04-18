@@ -762,6 +762,28 @@ textarea {
   background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 1);
 }
 
+.adv-hero-menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.adv-hero-dots {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.adv-hero-dots:hover {
+  opacity: 1;
+}
+
 .adv-summary {
   padding: 0 16px 8px;
   font-size: 11px;

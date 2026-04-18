@@ -92,7 +92,7 @@ export default function AlbumDetailView() {
   useEffect(() => {
     if (!openMenuKey) return;
     const handler = (e: MouseEvent) => {
-      if (!(e.target as Element).closest(".adv-dropdown, .adv-track-dots")) {
+      if (!(e.target as Element).closest(".adv-dropdown, .adv-track-dots, .adv-hero-dots")) {
         setOpenMenuKey(null);
       }
     };
@@ -157,6 +157,41 @@ export default function AlbumDetailView() {
         <button className="adv-hero-play" onClick={handlePlayAlbum} title="Play Album">
           <IconPlay />
         </button>
+        <div className="adv-hero-menu-wrap">
+          <button
+            className="adv-hero-dots"
+            onClick={() => setOpenMenuKey((prev) => (prev === "__album__" ? null : "__album__"))}
+            title="More actions"
+          >
+            <IconMoreDots />
+          </button>
+          {openMenuKey === "__album__" && (
+            <div className="adv-dropdown">
+              <button
+                onClick={() => {
+                  insertNext(tracks)
+                    .then(() => getQueue())
+                    .then((q) => usePlaybackStore.setState({ queue: q }))
+                    .catch(() => {});
+                  setOpenMenuKey(null);
+                }}
+              >
+                Play Next
+              </button>
+              <button
+                onClick={() => {
+                  appendToQueue(tracks)
+                    .then(() => getQueue())
+                    .then((q) => usePlaybackStore.setState({ queue: q }))
+                    .catch(() => {});
+                  setOpenMenuKey(null);
+                }}
+              >
+                Add to Queue
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="adv-summary">
