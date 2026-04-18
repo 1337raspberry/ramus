@@ -38,7 +38,6 @@ pub async fn start_oauth(app: AppHandle, state: State<'_, AppState>) -> CmdResul
     Ok(serde_json::json!({
         "authUrl": url,
         "pinId": pin.id,
-        "code": pin.code,
     })
     .to_string())
 }

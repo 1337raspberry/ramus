@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useArtUrl } from "../lib/useArtUrl";
@@ -34,12 +34,12 @@ export default function MobileAlbumDetail() {
   const { artSrc, artErr, setArtErr } = useArtUrl(album?.thumb, ART_SIZE.MEDIUM);
   const [genres, setGenres] = useState<string[]>([]);
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!openMenuKey) return;
     const handleTap = (e: MouseEvent | TouchEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-menu-wrap]")) {
         setOpenMenuKey(null);
       }
     };
@@ -145,7 +145,7 @@ export default function MobileAlbumDetail() {
               >
                 <IconPlay size={22} />
               </button>
-              <div className="mobile-menu-wrap" ref={openMenuKey === "__album__" ? menuRef : null}>
+              <div className="mobile-menu-wrap" data-menu-wrap>
                 <button
                   className="mobile-dots"
                   onClick={() =>
@@ -207,10 +207,7 @@ export default function MobileAlbumDetail() {
                   >
                     {t.isFavourite ? <IconStarFilled /> : <IconStarEmpty />}
                   </button>
-                  <div
-                    className="mobile-menu-wrap"
-                    ref={openMenuKey === t.ratingKey ? menuRef : null}
-                  >
+                  <div className="mobile-menu-wrap" data-menu-wrap>
                     <button
                       className="mobile-dots"
                       onClick={(e) => {
