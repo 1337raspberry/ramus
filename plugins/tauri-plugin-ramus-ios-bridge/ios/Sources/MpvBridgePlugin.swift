@@ -60,7 +60,7 @@ class MpvBridgePlugin: Plugin {
 
         if nowPlaying == nil {
             nowPlaying = NowPlayingBridge { [weak self] name, data in
-                self?.trigger(name, data: data)
+                DispatchQueue.main.async { self?.trigger(name, data: data) }
             }
         }
 
@@ -71,25 +71,25 @@ class MpvBridgePlugin: Plugin {
         if mpv == nil {
             let controller = MpvController()
             controller.onPositionChange = { [weak self] pos in
-                self?.trigger("mpvPositionChange", data: ["position": pos])
+                DispatchQueue.main.async { self?.trigger("mpvPositionChange", data: ["position": pos]) }
             }
             controller.onDurationChange = { [weak self] dur in
-                self?.trigger("mpvDurationChange", data: ["duration": dur])
+                DispatchQueue.main.async { self?.trigger("mpvDurationChange", data: ["duration": dur]) }
             }
             controller.onPlaylistPosChange = { [weak self] pos in
-                self?.trigger("mpvPlaylistPosChange", data: ["index": pos])
+                DispatchQueue.main.async { self?.trigger("mpvPlaylistPosChange", data: ["index": pos]) }
             }
             controller.onPauseChange = { [weak self] paused in
-                self?.trigger("mpvPauseChange", data: ["paused": paused])
+                DispatchQueue.main.async { self?.trigger("mpvPauseChange", data: ["paused": paused]) }
             }
             controller.onIdleActive = { [weak self] in
-                self?.trigger("mpvIdleActive", data: [:])
+                DispatchQueue.main.async { self?.trigger("mpvIdleActive", data: [:]) }
             }
             controller.onFileLoaded = { [weak self] in
-                self?.trigger("mpvFileLoaded", data: [:])
+                DispatchQueue.main.async { self?.trigger("mpvFileLoaded", data: [:]) }
             }
             controller.onFileEnded = { [weak self] reason in
-                self?.trigger("mpvFileEnded", data: ["reason": reason])
+                DispatchQueue.main.async { self?.trigger("mpvFileEnded", data: ["reason": reason]) }
             }
             mpv = controller
         }

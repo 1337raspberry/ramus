@@ -103,9 +103,9 @@ final class MpvController {
 
     deinit {
         if let handle = mpv {
-            wakeupContext?.shutdown = true
             mpv_set_wakeup_callback(handle, nil, nil)
-            eventQueue.sync {} // flush any in-flight drains
+            wakeupContext?.setShutdown()
+            eventQueue.sync {}
             mpv_destroy(handle)
         }
     }
@@ -246,13 +246,26 @@ final class MpvController {
 
 /// Event-loop context owned by `MpvController` and referenced by libmpv's
 /// wakeup callback via an unretained opaque pointer. Controller's deinit
-/// sets `shutdown = true` then clears the wakeup callback, so no drain
-/// can dereference a freed owner.
+/// clears the wakeup callback first (preventing new dispatches), then
+/// sets `shutdown`, then sync-fences the event queue.
 private final class WakeupContext {
     let queue: DispatchQueue
     let mpvHandle: OpaquePointer
     weak var owner: MpvController?
-    var shutdown = false
+    private let lock = NSLock()
+    private var _shutdown = false
+
+    var isShutdown: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _shutdown
+    }
+
+    func setShutdown() {
+        lock.lock()
+        _shutdown = true
+        lock.unlock()
+    }
 
     init(queue: DispatchQueue, mpvHandle: OpaquePointer, owner: MpvController) {
         self.queue = queue
@@ -261,7 +274,7 @@ private final class WakeupContext {
     }
 
     func drainEvents() {
-        while !shutdown {
+        while !isShutdown {
             guard let event = mpv_wait_event(mpvHandle, 0) else { break }
             if event.pointee.event_id == MPV_EVENT_NONE { break }
 

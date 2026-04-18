@@ -30,40 +30,42 @@ final class NowPlayingBridge {
     // MARK: - Public API
 
     func update(_ meta: NowPlayingMetadata) {
-        var info: [String: Any] = [
-            MPMediaItemPropertyTitle: meta.title,
-            MPMediaItemPropertyArtist: meta.artist,
-            MPMediaItemPropertyAlbumTitle: meta.album,
-            MPMediaItemPropertyPlaybackDuration: meta.duration,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: meta.position,
-            MPNowPlayingInfoPropertyPlaybackRate: meta.isPlaying ? 1.0 : 0.0,
-        ]
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            var info: [String: Any] = [
+                MPMediaItemPropertyTitle: meta.title,
+                MPMediaItemPropertyArtist: meta.artist,
+                MPMediaItemPropertyAlbumTitle: meta.album,
+                MPMediaItemPropertyPlaybackDuration: meta.duration,
+                MPNowPlayingInfoPropertyElapsedPlaybackTime: meta.position,
+                MPNowPlayingInfoPropertyPlaybackRate: meta.isPlaying ? 1.0 : 0.0,
+            ]
 
-        // Preserve existing artwork when only transport state changes;
-        // otherwise the lock-screen flickers the cover to black each tick.
-        let infoCenter = MPNowPlayingInfoCenter.default()
-        if let existing = infoCenter.nowPlayingInfo?[MPMediaItemPropertyArtwork] {
-            info[MPMediaItemPropertyArtwork] = existing
-        }
+            // Preserve existing artwork when only transport state changes;
+            // otherwise the lock-screen flickers the cover to black each tick.
+            let infoCenter = MPNowPlayingInfoCenter.default()
+            if let existing = infoCenter.nowPlayingInfo?[MPMediaItemPropertyArtwork] {
+                info[MPMediaItemPropertyArtwork] = existing
+            }
 
-        infoCenter.nowPlayingInfo = info
-        // Setting `playbackState` is what actually triggers iOS to show
-        // the Now Playing widget on the lock screen / Control Center /
-        // Dynamic Island. Without it, the info dict is accepted but
-        // nothing displays because iOS doesn't know we're live.
-        infoCenter.playbackState = meta.isPlaying ? .playing : .paused
+            infoCenter.nowPlayingInfo = info
+            infoCenter.playbackState = meta.isPlaying ? .playing : .paused
 
-        if let coverUrl = meta.coverUrl, coverUrl != lastArtworkUrl {
-            lastArtworkUrl = coverUrl
-            loadArtwork(from: coverUrl)
+            if let coverUrl = meta.coverUrl, coverUrl != self.lastArtworkUrl {
+                self.lastArtworkUrl = coverUrl
+                self.loadArtwork(from: coverUrl)
+            }
         }
     }
 
     func clear() {
-        let infoCenter = MPNowPlayingInfoCenter.default()
-        infoCenter.nowPlayingInfo = nil
-        infoCenter.playbackState = .stopped
-        lastArtworkUrl = nil
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let infoCenter = MPNowPlayingInfoCenter.default()
+            infoCenter.nowPlayingInfo = nil
+            infoCenter.playbackState = .stopped
+            self.lastArtworkUrl = nil
+        }
     }
 
     // MARK: - Remote command wiring
@@ -111,8 +113,11 @@ final class NowPlayingBridge {
         guard let url = URL(string: urlString) else { return }
 
         if url.isFileURL {
-            if let image = UIImage(contentsOfFile: url.path) {
-                setArtwork(image)
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let image = UIImage(contentsOfFile: url.path) else { return }
+                DispatchQueue.main.async {
+                    self?.setArtwork(image)
+                }
             }
             return
         }
