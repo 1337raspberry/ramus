@@ -123,12 +123,11 @@ final class NowPlayingBridge {
             return
         }
 
-        let bridge = self
-        Task.detached {
+        Task.detached { [weak self] in
             guard let (data, _) = try? await URLSession.shared.data(from: url),
                   let image = UIImage(data: data) else { return }
             await MainActor.run {
-                bridge.setArtwork(image, expectedUrl: expectedUrl)
+                self?.setArtwork(image, expectedUrl: expectedUrl)
             }
         }
     }
