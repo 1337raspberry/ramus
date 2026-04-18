@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
+import { usePlaybackStore } from "../stores/playbackStore";
 import { useArtUrl } from "../lib/useArtUrl";
-import { ART_SIZE, getAlbumGenres } from "../lib/commands";
+import { ART_SIZE, getAlbumGenres, insertNext, appendToQueue, getQueue } from "../lib/commands";
 import { formatDuration, formatCodec } from "../lib/format";
 import {
   IconChevronLeft,
@@ -9,6 +10,7 @@ import {
   IconStarEmpty,
   IconMusicNote,
   IconPlay,
+  IconMoreDots,
 } from "../components/Icons";
 import FlowLayout from "../components/FlowLayout";
 import MarqueeText from "../components/MarqueeText";
@@ -31,6 +33,23 @@ export default function MobileAlbumDetail() {
 
   const { artSrc, artErr, setArtErr } = useArtUrl(album?.thumb, ART_SIZE.MEDIUM);
   const [genres, setGenres] = useState<string[]>([]);
+  const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!openMenuKey) return;
+    const handleTap = (e: MouseEvent | TouchEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuKey(null);
+      }
+    };
+    document.addEventListener("touchstart", handleTap);
+    document.addEventListener("mousedown", handleTap);
+    return () => {
+      document.removeEventListener("touchstart", handleTap);
+      document.removeEventListener("mousedown", handleTap);
+    };
+  }, [openMenuKey]);
 
   useEffect(() => {
     if (!album) {
@@ -59,6 +78,14 @@ export default function MobileAlbumDetail() {
     },
     [closeAlbumDetail, selectGenreByName],
   );
+
+  const queueAction = useCallback((fn: typeof insertNext, items: typeof tracks) => {
+    fn(items)
+      .then(() => getQueue())
+      .then((q) => usePlaybackStore.setState({ queue: q }))
+      .catch(() => {});
+    setOpenMenuKey(null);
+  }, []);
 
   if (!album) return null;
 
@@ -91,37 +118,58 @@ export default function MobileAlbumDetail() {
               <img src={artSrc} alt={album.title} onError={() => setArtErr(true)} />
             ) : (
               <div className="mobile-detail-art-ph">
-                <IconMusicNote size={48} />
+                <IconMusicNote size={32} />
               </div>
             )}
-            <button
-              className="mobile-detail-play"
-              aria-label="Play album"
-              onClick={() => playAlbum(album)}
+          </div>
+          <div className="mobile-detail-meta">
+            <div
+              className="mobile-detail-artist"
+              onClick={() => loadAlbumsForArtistName(album.artistName)}
             >
-              <IconPlay size={26} />
-            </button>
-          </div>
-          <div
-            className="mobile-detail-artist"
-            onClick={() => loadAlbumsForArtistName(album.artistName)}
-          >
-            {album.artistName}
-          </div>
-          {album.year && (
-            <div className="mobile-detail-year" onClick={() => loadAlbumsForYear(album.year!)}>
-              {album.year}
+              {album.artistName}
             </div>
-          )}
-          {genres.length > 0 && (
-            <div className="mobile-detail-genres">
-              <FlowLayout genres={genres} onGenreClick={handleGenreClick} />
+            {album.year && (
+              <div className="mobile-detail-year" onClick={() => loadAlbumsForYear(album.year!)}>
+                {album.year}
+              </div>
+            )}
+            <div className="mobile-detail-summary">
+              {tracks.length} {tracks.length === 1 ? "track" : "tracks"} &middot; {totalMinutes} min
             </div>
-          )}
-          <div className="mobile-detail-summary">
-            {tracks.length} {tracks.length === 1 ? "track" : "tracks"} &middot; {totalMinutes} min
+            <div className="mobile-detail-actions">
+              <button
+                className="mobile-detail-play"
+                aria-label="Play album"
+                onClick={() => playAlbum(album)}
+              >
+                <IconPlay size={22} />
+              </button>
+              <div className="mobile-menu-wrap" ref={openMenuKey === "__album__" ? menuRef : null}>
+                <button
+                  className="mobile-dots"
+                  onClick={() =>
+                    setOpenMenuKey((prev) => (prev === "__album__" ? null : "__album__"))
+                  }
+                  aria-label="More actions"
+                >
+                  <IconMoreDots size={20} />
+                </button>
+                {openMenuKey === "__album__" && (
+                  <div className="mobile-dropdown">
+                    <button onClick={() => queueAction(insertNext, tracks)}>Play Next</button>
+                    <button onClick={() => queueAction(appendToQueue, tracks)}>Add to Queue</button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
+        {genres.length > 0 && (
+          <div className="mobile-detail-genres">
+            <FlowLayout genres={genres} onGenreClick={handleGenreClick} />
+          </div>
+        )}
 
         <ul className="mobile-track-list">
           {tracks.map((t, i) => {
@@ -151,6 +199,41 @@ export default function MobileAlbumDetail() {
                   >
                     {t.isFavourite ? <IconStarFilled /> : <IconStarEmpty />}
                   </button>
+                  <div
+                    className="mobile-menu-wrap"
+                    ref={openMenuKey === t.ratingKey ? menuRef : null}
+                  >
+                    <button
+                      className="mobile-dots"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenMenuKey((prev) => (prev === t.ratingKey ? null : t.ratingKey));
+                      }}
+                      aria-label="More actions"
+                    >
+                      <IconMoreDots size={18} />
+                    </button>
+                    {openMenuKey === t.ratingKey && (
+                      <div className="mobile-dropdown">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            queueAction(insertNext, [t]);
+                          }}
+                        >
+                          Play Next
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            queueAction(appendToQueue, [t]);
+                          }}
+                        >
+                          Add to Queue
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </button>
               </li>
             );

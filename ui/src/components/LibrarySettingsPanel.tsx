@@ -299,16 +299,18 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
             </select>
           </label>
 
-          <label className="settings-row">
-            <span>Library padding ({settings.libraryPadding + 8})</span>
-            <input
-              type="range"
-              min={-8}
-              max={8}
-              value={settings.libraryPadding}
-              onChange={(e) => save({ libraryPadding: Number(e.target.value) })}
-            />
-          </label>
+          {!isMobile && (
+            <label className="settings-row">
+              <span>Library padding ({settings.libraryPadding + 8})</span>
+              <input
+                type="range"
+                min={-8}
+                max={8}
+                value={settings.libraryPadding}
+                onChange={(e) => save({ libraryPadding: Number(e.target.value) })}
+              />
+            </label>
+          )}
 
           <div className="settings-sync-buttons">
             <button

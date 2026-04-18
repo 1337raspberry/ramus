@@ -10,7 +10,7 @@ import MobileAlbumDetail from "./MobileAlbumDetail";
 import MobileArtistList from "./MobileArtistList";
 import MobileSuggestion from "./MobileSuggestion";
 import MobileSearch from "./MobileSearch";
-import MobileNowPlaying, { MiniPlayerDebugPanel } from "./MobileNowPlaying";
+import MobileNowPlaying, { MiniPlayerDebugPanel } from "./MobileNowPlaying"; // DEBUG — remove MiniPlayerDebugPanel import
 import type { GenreNode } from "../lib/types";
 
 function findNode(nodes: GenreNode[], id: string): GenreNode | null {
@@ -186,7 +186,6 @@ export default function MobileApp({ onOpenSettings }: Props) {
       <div className="mobile-body" style={bodyStyle}>
         {renderBody()}
       </div>
-
       {currentTrack && (
         <MobileNowPlaying
           expanded={sheetExpanded}
@@ -194,7 +193,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
           onCollapse={() => setSheetExpanded(false)}
         />
       )}
-      <MiniPlayerDebugPanel />
+      <MiniPlayerDebugPanel /> {/* DEBUG — remove with debug panel */}
     </div>
   );
 }
