@@ -79,6 +79,7 @@ export function useEdgeSwipeBack(onBack: () => void, enabled = true) {
       el.removeEventListener("touchmove", onMove);
       el.removeEventListener("touchend", onEnd);
       el.removeEventListener("touchcancel", onCancel);
+      setSwipeX(0);
     };
   }, [enabled]);
 

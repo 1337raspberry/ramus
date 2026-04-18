@@ -10,7 +10,7 @@ import MobileAlbumDetail from "./MobileAlbumDetail";
 import MobileArtistList from "./MobileArtistList";
 import MobileSuggestion from "./MobileSuggestion";
 import MobileSearch from "./MobileSearch";
-import MobileNowPlaying, { MiniPlayerDebugPanel } from "./MobileNowPlaying"; // DEBUG — remove MiniPlayerDebugPanel import
+import MobileNowPlaying from "./MobileNowPlaying";
 import type { GenreNode } from "../lib/types";
 
 function findNode(nodes: GenreNode[], id: string): GenreNode | null {
@@ -36,7 +36,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
   const browseArtistName = useLibraryStore((s) => s.browseArtistName);
   const browseYear = useLibraryStore((s) => s.browseYear);
-  const currentTrack = usePlaybackStore((s) => s.currentTrack);
+  const hasTrack = usePlaybackStore((s) => !!s.currentTrack);
   const [sheetExpanded, setSheetExpanded] = useState(false);
 
   useEffect(() => {
@@ -65,7 +65,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
     }
   }, [sheetExpanded]);
 
-  const miniPlayerVisible = !!currentTrack && !sheetExpanded;
+  const miniPlayerVisible = hasTrack && !sheetExpanded;
 
   // Hide toolbar when drilled into a grid or detail view; keep it on
   // top-level lists (genre tree, artist list, favourite tree).
@@ -186,14 +186,13 @@ export default function MobileApp({ onOpenSettings }: Props) {
       <div className="mobile-body" style={bodyStyle}>
         {renderBody()}
       </div>
-      {currentTrack && (
+      {hasTrack && (
         <MobileNowPlaying
           expanded={sheetExpanded}
           onExpand={() => setSheetExpanded(true)}
           onCollapse={() => setSheetExpanded(false)}
         />
       )}
-      <MiniPlayerDebugPanel /> {/* DEBUG — remove with debug panel */}
     </div>
   );
 }
