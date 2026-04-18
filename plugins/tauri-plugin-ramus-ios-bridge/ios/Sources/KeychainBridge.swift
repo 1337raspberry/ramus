@@ -1,5 +1,8 @@
 import Foundation
+import os
 import Security
+
+private let log = Logger(subsystem: "com.raspsoft.ramus", category: "keychain")
 
 /// Thin wrapper over `SecItem*` for `kSecClassGenericPassword` items keyed by
 /// a single service + account pair. `service` is the shared bundle-scoped
@@ -54,6 +57,7 @@ final class KeychainBridge {
             return true
         }
         if updateStatus != errSecItemNotFound {
+            log.warning("keychain update failed for '\(account, privacy: .public)': OSStatus \(updateStatus)")
             return false
         }
 
@@ -61,6 +65,9 @@ final class KeychainBridge {
         addQuery[kSecValueData as String] = data
         addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus != errSecSuccess {
+            log.warning("keychain add failed for '\(account, privacy: .public)': OSStatus \(addStatus)")
+        }
         return addStatus == errSecSuccess
     }
 

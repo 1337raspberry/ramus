@@ -12,6 +12,7 @@
 //! `run_mobile_plugin`; event plumbing is one-way plugin→Rust via the
 //! channels.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use serde::Deserialize;
@@ -23,6 +24,7 @@ use ramus_core::playback::mpv::{FileEndReason, LoadMode, MpvCallbacks, MpvPlayer
 pub struct IosMpvPlayer<R: Runtime> {
     app: AppHandle<R>,
     shutdown: Arc<std::sync::atomic::AtomicBool>,
+    cached_volume: AtomicU64,
 }
 
 impl<R: Runtime> IosMpvPlayer<R> {
@@ -43,7 +45,11 @@ impl<R: Runtime> IosMpvPlayer<R> {
             .map_err(|e| format!("failed to register mpv listeners: {e}"))?;
 
         let shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        Ok(Self { app, shutdown })
+        Ok(Self {
+            app,
+            shutdown,
+            cached_volume: AtomicU64::new(100.0_f64.to_bits()),
+        })
     }
 
     fn bridge(&self) -> &tauri_plugin_ramus_ios_bridge::RamusIosBridge<R> {
@@ -93,11 +99,12 @@ impl<R: Runtime> MpvPlayer for IosMpvPlayer<R> {
     }
 
     fn set_volume(&self, volume: f64) {
+        self.cached_volume.store(volume.to_bits(), Ordering::Relaxed);
         let _ = self.bridge().mpv_set_volume(volume);
     }
 
     fn get_volume(&self) -> f64 {
-        self.bridge().mpv_get_volume().unwrap_or(100.0)
+        f64::from_bits(self.cached_volume.load(Ordering::Relaxed))
     }
 
     fn set_audio_filters(&self, value: &str) {

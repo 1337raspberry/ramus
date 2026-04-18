@@ -226,14 +226,16 @@ pub async fn finalize_onboarding(
     let db = CacheDatabase::open(&db_path).map_err(|e| e.to_string())?;
     let db_arc = Arc::new(db);
 
+    // Open the second DB handle before mutating shared state so a failure
+    // here doesn't leave sync_engine/search_engine half-initialised.
+    let db2 = CacheDatabase::open(&db_path).map_err(|e| e.to_string())?;
+
     let sync_engine = SyncEngine::new(db_arc.clone(), state.client.clone());
     *state.sync_engine.lock() = Some(sync_engine);
 
     let search = SearchEngine::new(db_arc.clone(), None);
     *state.search_engine.write() = Some(search);
 
-    // Separate cache handle for direct queries.
-    let db2 = CacheDatabase::open(&db_path).map_err(|e| e.to_string())?;
     *state.cache.lock() = Some(db2);
 
     // url::Url::parse adds a trailing slash that Plex connection URIs don't have.

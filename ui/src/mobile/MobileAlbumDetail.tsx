@@ -51,17 +51,19 @@ export default function MobileAlbumDetail() {
     };
   }, [openMenuKey]);
 
+  const albumKey = album?.ratingKey;
+  const inlineGenres = album?.genres;
   useEffect(() => {
-    if (!album) {
+    if (!albumKey || !inlineGenres) {
       setGenres([]);
       return;
     }
-    if (album.genres.length) {
-      setGenres(album.genres);
+    if (inlineGenres.length) {
+      setGenres(inlineGenres);
       return;
     }
     let cancelled = false;
-    getAlbumGenres(album.ratingKey)
+    getAlbumGenres(albumKey)
       .then((g) => {
         if (!cancelled) setGenres(g);
       })
@@ -69,7 +71,7 @@ export default function MobileAlbumDetail() {
     return () => {
       cancelled = true;
     };
-  }, [album]);
+  }, [albumKey, inlineGenres]);
 
   const handleGenreClick = useCallback(
     (g: string) => {
@@ -188,7 +190,10 @@ export default function MobileAlbumDetail() {
                   className="mobile-track-row"
                   onClick={() => playAlbum(album, i)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") playAlbum(album, i);
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      playAlbum(album, i);
+                    }
                   }}
                 >
                   <span className="mobile-track-num">{t.index ?? i + 1}</span>
