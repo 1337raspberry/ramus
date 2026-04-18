@@ -35,8 +35,7 @@
             "$APPDATA/**",
             "$HOME/Library/Application Support/com.raspsoft.ramus/**",
             "$HOME/.local/share/ramus/**",
-            "$HOME/AppData/Roaming/raspsoft/ramus/**",
-            "**/com.raspsoft.ramus/**"
+            "$HOME/AppData/Roaming/raspsoft/ramus/**"
           ]
         }
       }

@@ -26,7 +26,6 @@ ramus-core = { path = "../ramus-core" }
 # this dep is unconditional.
 tauri-plugin-ramus-ios-bridge = { path = "../plugins/tauri-plugin-ramus-ios-bridge" }
 tauri = { version = "2", features = ["protocol-asset"] }
-tauri-build = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
