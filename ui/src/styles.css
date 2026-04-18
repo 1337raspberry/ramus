@@ -3864,12 +3864,23 @@ body.is-fullscreen .focus-body {
   cursor: pointer;
 }
 
+.mobile-miniplayer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: -100vh;
+  background: #0a0a0c;
+  z-index: -1;
+}
+
 .mobile-miniplayer-bg {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  bottom: -100px;
+  bottom: -100vh;
   z-index: 0;
   overflow: hidden;
   contain: strict;
@@ -3904,6 +3915,19 @@ body.is-fullscreen .focus-body {
 
 .mobile-miniplayer-wave .waveform-times {
   display: none;
+}
+
+.mobile-miniplayer-hint {
+  display: flex;
+  justify-content: center;
+  position: relative;
+  z-index: 2;
+}
+
+.mobile-miniplayer-hint-pill {
+  height: 5px;
+  border-radius: 2.5px;
+  background: rgba(255, 255, 255, 0.35);
 }
 
 .mobile-miniplayer-bar {
@@ -4002,9 +4026,7 @@ body.is-fullscreen .focus-body {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   animation: mobile-sheet-in 260ms cubic-bezier(0.2, 0.9, 0.2, 1);
-  /* Solid base so nothing from the album grid bleeds through. The
-     UltraBlurBackground copy rendered inside `.mobile-sheet-bg` paints
-     over this with the accent-tinted gradient. */
+  will-change: transform;
   background: #0a0a0c;
 }
 
@@ -4037,12 +4059,33 @@ body.is-fullscreen .focus-body {
 
 .mobile-sheet-header {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
+  padding: 12px 16px 8px;
+  position: relative;
+  z-index: 2;
+}
+
+.mobile-sheet-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: -80px;
+}
+
+.mobile-sheet-hint-bar {
+  width: 36px;
+  height: 5px;
+  border-radius: 2.5px;
+  background: rgba(255, 255, 255, 0.35);
 }
 
 .mobile-sheet-fav {
+  position: absolute;
+  right: 16px;
+  top: 4px;
   width: 40px;
   height: 40px;
   display: inline-flex;
@@ -4058,19 +4101,6 @@ body.is-fullscreen .focus-body {
 
 .mobile-sheet-fav.active {
   color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
-}
-
-.mobile-sheet-collapse {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: transparent;
-  color: #fff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
 }
 
 .mobile-sheet-body {

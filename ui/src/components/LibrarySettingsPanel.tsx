@@ -18,6 +18,7 @@ import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { ImageCacheRow, AudioCacheRow } from "./CacheStatsRow";
 import AcknowledgementsPanel from "./AcknowledgementsPanel";
+import { useIsMobile } from "../lib/useIsMobile";
 
 interface Props {
   onDismiss: () => void;
@@ -33,6 +34,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
   const [genreWarnings, setGenreWarnings] = useState<string[]>([]);
   const [hasCustomGenres, setHasCustomGenres] = useState(false);
   const [showAcknowledgements, setShowAcknowledgements] = useState(false);
+  const isMobile = useIsMobile();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -267,14 +269,16 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
           <ImageCacheRow />
           <AudioCacheRow />
 
-          <label className="settings-row">
-            <span>Disable visualiser</span>
-            <input
-              type="checkbox"
-              checked={settings.disableSpectrum}
-              onChange={(e) => save({ disableSpectrum: e.target.checked })}
-            />
-          </label>
+          {!isMobile && (
+            <label className="settings-row">
+              <span>Disable visualiser</span>
+              <input
+                type="checkbox"
+                checked={settings.disableSpectrum}
+                onChange={(e) => save({ disableSpectrum: e.target.checked })}
+              />
+            </label>
+          )}
 
           <div className="settings-section-header">LIBRARY</div>
 
