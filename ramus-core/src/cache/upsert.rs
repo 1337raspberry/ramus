@@ -34,6 +34,10 @@ pub struct AlbumUpsertRow {
     /// sorted or alphabetical value here causes every multi-genre album to
     /// look changed on every sync.
     pub first_genre: Option<String>,
+    /// First collection in Plex API response order, lowercased. Same
+    /// sentinel pattern as `first_genre` — detects collection-only edits
+    /// that don't bump `updatedAt`.
+    pub first_collection: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -102,8 +106,8 @@ impl CacheDatabase {
 
         {
             let mut stmt = tx.prepare_cached(
-                "INSERT INTO albums (title, artistId, year, sourceId, artUrl, updatedAt, addedAt, lastViewedAt, firstGenre)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                "INSERT INTO albums (title, artistId, year, sourceId, artUrl, updatedAt, addedAt, lastViewedAt, firstGenre, firstCollection)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                  ON CONFLICT(sourceId) DO UPDATE SET
                      title = excluded.title,
                      artistId = excluded.artistId,
@@ -114,7 +118,8 @@ impl CacheDatabase {
                      updatedAt = excluded.updatedAt,
                      addedAt = COALESCE(excluded.addedAt, albums.addedAt),
                      lastViewedAt = COALESCE(excluded.lastViewedAt, albums.lastViewedAt),
-                     firstGenre = COALESCE(excluded.firstGenre, albums.firstGenre)
+                     firstGenre = COALESCE(excluded.firstGenre, albums.firstGenre),
+                     firstCollection = COALESCE(excluded.firstCollection, albums.firstCollection)
                  RETURNING id, sourceId",
             )?;
 
@@ -130,6 +135,7 @@ impl CacheDatabase {
                         row.added_at,
                         row.last_viewed_at,
                         row.first_genre,
+                        row.first_collection,
                     ],
                     |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
                 )?;

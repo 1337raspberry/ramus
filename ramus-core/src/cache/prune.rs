@@ -249,6 +249,7 @@ mod tests {
                 added_at: None,
                 last_viewed_at: None,
                 first_genre: None,
+                first_collection: None,
             }])
             .unwrap();
         *map.get(source_id).unwrap()
