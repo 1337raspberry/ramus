@@ -107,7 +107,7 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const trimmed = query.trim();
-    if (!trimmed || /^[/@!%#]$/.test(trimmed)) {
+    if (!trimmed || /^[/@!%#]$/.test(trimmed) || trimmed.toLowerCase() === "col:") {
       setResults([]);
       setSelectedIndex(0);
       return;
@@ -308,7 +308,7 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
             ref={inputRef}
             className="search-input"
             type="text"
-            placeholder="/genre @artist %album !track #>2000"
+            placeholder="/genre @artist %album !track #>2000 col:name"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoComplete="off"
