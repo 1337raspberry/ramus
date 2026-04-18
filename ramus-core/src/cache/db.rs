@@ -194,6 +194,18 @@ impl CacheDatabase {
             conn.execute("ALTER TABLE albums ADD COLUMN firstGenre TEXT", [])?;
         }
 
+        let has_first_collection: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('albums') WHERE name = 'firstCollection'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_first_collection == 0 {
+            conn.execute(
+                "ALTER TABLE albums ADD COLUMN firstCollection TEXT",
+                [],
+            )?;
+        }
+
         Ok(())
     }
 

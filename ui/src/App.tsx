@@ -148,9 +148,9 @@ export default function App() {
           onDismiss={() => setShowSettings(false)}
           onSignOut={() => {
             setShowSettings(false);
-            // Clear focus mode so re-auth doesn't drop into a dangling focus
-            // overlay with no track playing.
             usePlaybackStore.setState({ isFocusMode: false });
+            clearOnboardingStorage();
+            clearPin();
             setAuthed(false);
           }}
         />

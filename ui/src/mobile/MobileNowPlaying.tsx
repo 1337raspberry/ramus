@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { create } from "zustand";
 import { usePlaybackStore } from "../stores/playbackStore";
 import {
   ART_SIZE,
@@ -19,165 +18,6 @@ import FlowLayout from "../components/FlowLayout";
 import UltraBlurBackground from "../components/UltraBlurBackground";
 import MarqueeText from "../components/MarqueeText";
 
-// ===== MINI-PLAYER DEBUG PANEL — REMOVE BEFORE PRODUCTION =====
-// Mini-player layout debug store + panel. Long-press gesture on mini-player info is disabled.
-// To re-enable: uncomment the debugTimer block in the component.
-// Once values are finalised, bake them into CSS and delete this entire block
-// (store, SLIDERS, MiniPlayerDebugPanel, all miniDarken/wavePadTop/etc selectors,
-// and the inline styles that reference them in the mini-player JSX).
-// Also remove: import in MobileApp.tsx, <MiniPlayerDebugPanel /> render,
-// and the brickwall import in WaveformSeekBar.tsx.
-export const useMiniPlayerDebugStore = create<{
-  darken: number;
-  wavePadTop: number;
-  waveHeight: number;
-  wavePadSide: number;
-  wavePadLeft: number;
-  barPadTop: number;
-  barPadBottom: number;
-  barPadSide: number;
-  barGap: number;
-  safeBottom: number;
-  artSize: number;
-  artTop: number;
-  artLeft: number;
-  hintTop: number;
-  hintWidth: number;
-  brickwall: boolean;
-  showDebug: boolean;
-}>(() => ({
-  darken: 0.3,
-  wavePadTop: 0,
-  waveHeight: 42,
-  wavePadSide: 14,
-  wavePadLeft: 64,
-  barPadTop: 4,
-  barPadBottom: 4,
-  barPadSide: 14,
-  barGap: 0,
-  safeBottom: 40,
-  artSize: 42,
-  artTop: 61,
-  artLeft: 14,
-  hintTop: 10,
-  hintWidth: 50,
-  brickwall: false,
-  showDebug: false,
-}));
-
-const SLIDERS: {
-  label: string;
-  key: keyof ReturnType<typeof useMiniPlayerDebugStore.getState>;
-  min: number;
-  max: number;
-  scale?: number;
-  unit: string;
-}[] = [
-  { label: "Darken", key: "darken", min: 0, max: 100, scale: 100, unit: "%" },
-  { label: "Wave pad top", key: "wavePadTop", min: -60, max: 120, unit: "px" },
-  { label: "Wave height", key: "waveHeight", min: 0, max: 240, unit: "px" },
-  { label: "Wave pad side", key: "wavePadSide", min: 0, max: 180, unit: "px" },
-  { label: "Wave pad left", key: "wavePadLeft", min: -1, max: 360, unit: "px" },
-  { label: "Bar pad top", key: "barPadTop", min: -60, max: 120, unit: "px" },
-  { label: "Bar pad bottom", key: "barPadBottom", min: -60, max: 120, unit: "px" },
-  { label: "Bar pad side", key: "barPadSide", min: 0, max: 180, unit: "px" },
-  { label: "Bar gap", key: "barGap", min: 0, max: 120, unit: "px" },
-  { label: "Safe bottom", key: "safeBottom", min: -1, max: 150, unit: "px" },
-  { label: "Art size", key: "artSize", min: 0, max: 240, unit: "px" },
-  { label: "Art top", key: "artTop", min: -180, max: 180, unit: "px" },
-  { label: "Art left", key: "artLeft", min: -60, max: 180, unit: "px" },
-  { label: "Hint top", key: "hintTop", min: -20, max: 60, unit: "px" },
-  { label: "Hint width", key: "hintWidth", min: 10, max: 120, unit: "px" },
-];
-
-export function MiniPlayerDebugPanel() {
-  const state = useMiniPlayerDebugStore();
-  if (!state.showDebug) return null;
-  return (
-    <div
-      style={{
-        position: "fixed",
-        bottom: 180,
-        left: 12,
-        right: 12,
-        maxHeight: "50vh",
-        zIndex: 9999,
-        background: "rgba(0,0,0,0.92)",
-        borderRadius: 10,
-        padding: "8px 14px",
-        color: "#fff",
-        fontSize: 11,
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <div
-        style={{
-          flex: "1 1 auto",
-          overflowY: "auto",
-          WebkitOverflowScrolling: "touch",
-        }}
-      >
-        {SLIDERS.map((s) => {
-          const scale = s.scale ?? 1;
-          const raw = state[s.key] as number;
-          const display = Math.round(raw * scale);
-          return (
-            <div key={s.key} style={{ marginBottom: 2 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>{s.label}</span>
-                <span>
-                  {display}
-                  {s.unit}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={s.min}
-                max={s.max}
-                value={display}
-                onChange={(e) =>
-                  useMiniPlayerDebugStore.setState({ [s.key]: Number(e.target.value) / scale })
-                }
-                style={{ width: "100%", height: 20 }}
-              />
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-        <button
-          style={{
-            background: state.brickwall ? "rgba(255,80,80,0.6)" : "rgba(255,255,255,0.15)",
-            border: "none",
-            borderRadius: 6,
-            color: "#fff",
-            padding: "4px 10px",
-            fontSize: 11,
-          }}
-          onClick={() => useMiniPlayerDebugStore.setState({ brickwall: !state.brickwall })}
-        >
-          {state.brickwall ? "Brickwall ON" : "Brickwall"}
-        </button>
-        <button
-          style={{
-            background: "rgba(255,255,255,0.15)",
-            border: "none",
-            borderRadius: 6,
-            color: "#fff",
-            padding: "4px 10px",
-            fontSize: 11,
-          }}
-          onClick={() => useMiniPlayerDebugStore.setState({ showDebug: false })}
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  );
-}
-// ===== END MINI-PLAYER DEBUG PANEL — REMOVE BEFORE PRODUCTION =====
-
 import {
   IconPlay,
   IconPause,
@@ -189,151 +29,6 @@ import {
   IconChevronDown,
   IconClose,
 } from "../components/Icons";
-
-// ===== DEBUG PANEL — REMOVE BEFORE PRODUCTION =====
-// Sheet layout debug store + panel. Long-press gesture on album art is disabled.
-// To re-enable: uncomment the sheetDebugTimer/onSheetArtPointer* block in the component,
-// and re-attach onPointerDown/Up/Cancel to the .mobile-sheet-art div.
-// Once values are finalised, bake them into CSS and delete this entire block
-// (store, SHEET_SLIDERS, SheetDebugPanel, and all `sd.*` inline styles).
-export const useSheetDebugStore = create<{
-  transportBtnSize: number;
-  transportIconSize: number;
-  transportPrimaryIconSize: number;
-  transportGap: number;
-  waveHeight: number;
-  waveCanvasHeight: number;
-  waveMarginTop: number;
-  timeFontSize: number;
-  lyricsWidth: number;
-  lyricsHeight: number;
-  lyricsMarginTop: number;
-  titleFontSize: number;
-  artistFontSize: number;
-  albumFontSize: number;
-  chevronPadTop: number;
-  timePadTop: number;
-  artMarginBottom: number;
-  favTopPad: number;
-  showDebug: boolean;
-}>(() => ({
-  transportBtnSize: 48,
-  transportIconSize: 34,
-  transportPrimaryIconSize: 56,
-  transportGap: 42,
-  waveHeight: 60,
-  waveCanvasHeight: 50,
-  waveMarginTop: 10,
-  timeFontSize: 12,
-  lyricsWidth: 40,
-  lyricsHeight: 18,
-  lyricsMarginTop: 8,
-  titleFontSize: 16,
-  artistFontSize: 14,
-  albumFontSize: 12,
-  chevronPadTop: 44,
-  timePadTop: 4,
-  artMarginBottom: 12,
-  favTopPad: -6,
-  showDebug: false,
-}));
-
-const SHEET_SLIDERS: {
-  label: string;
-  key: keyof ReturnType<typeof useSheetDebugStore.getState>;
-  min: number;
-  max: number;
-  unit: string;
-}[] = [
-  { label: "Transport btn", key: "transportBtnSize", min: 20, max: 80, unit: "px" },
-  { label: "Transport icon", key: "transportIconSize", min: 12, max: 60, unit: "px" },
-  { label: "Transport primary", key: "transportPrimaryIconSize", min: 16, max: 70, unit: "px" },
-  { label: "Transport gap", key: "transportGap", min: 8, max: 80, unit: "px" },
-  { label: "Wave height", key: "waveHeight", min: 20, max: 120, unit: "px" },
-  { label: "Wave canvas", key: "waveCanvasHeight", min: 10, max: 100, unit: "px" },
-  { label: "Wave margin top", key: "waveMarginTop", min: 0, max: 40, unit: "px" },
-  { label: "Time font", key: "timeFontSize", min: 8, max: 20, unit: "px" },
-  { label: "Lyrics W", key: "lyricsWidth", min: 20, max: 80, unit: "px" },
-  { label: "Lyrics H", key: "lyricsHeight", min: 14, max: 50, unit: "px" },
-  { label: "Lyrics margin", key: "lyricsMarginTop", min: 0, max: 30, unit: "px" },
-  { label: "Title font", key: "titleFontSize", min: 10, max: 36, unit: "px" },
-  { label: "Artist font", key: "artistFontSize", min: 8, max: 28, unit: "px" },
-  { label: "Album font", key: "albumFontSize", min: 8, max: 24, unit: "px" },
-  { label: "Chevron pad", key: "chevronPadTop", min: 0, max: 60, unit: "px" },
-  { label: "Time pad top", key: "timePadTop", min: 0, max: 20, unit: "px" },
-  { label: "Art gap below", key: "artMarginBottom", min: 0, max: 40, unit: "px" },
-  { label: "Fav star pad", key: "favTopPad", min: -20, max: 30, unit: "px" },
-];
-
-export function SheetDebugPanel() {
-  const state = useSheetDebugStore();
-  if (!state.showDebug) return null;
-  return (
-    <div
-      style={{
-        position: "fixed",
-        top: 60,
-        left: 12,
-        right: 12,
-        maxHeight: "50vh",
-        zIndex: 9999,
-        background: "rgba(0,0,0,0.92)",
-        borderRadius: 10,
-        padding: "8px 14px",
-        color: "#fff",
-        fontSize: 11,
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <div
-        style={{
-          flex: "1 1 auto",
-          overflowY: "auto",
-          WebkitOverflowScrolling: "touch",
-        }}
-      >
-        {SHEET_SLIDERS.map((s) => {
-          const raw = state[s.key] as number;
-          return (
-            <div key={s.key} style={{ marginBottom: 2 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>{s.label}</span>
-                <span>
-                  {raw}
-                  {s.unit}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={s.min}
-                max={s.max}
-                value={raw}
-                onChange={(e) => useSheetDebugStore.setState({ [s.key]: Number(e.target.value) })}
-                style={{ width: "100%", height: 20 }}
-              />
-            </div>
-          );
-        })}
-      </div>
-      <button
-        style={{
-          background: "rgba(255,255,255,0.15)",
-          border: "none",
-          borderRadius: 6,
-          color: "#fff",
-          padding: "4px 10px",
-          fontSize: 11,
-          marginTop: 4,
-        }}
-        onClick={() => useSheetDebugStore.setState({ showDebug: false })}
-      >
-        Close
-      </button>
-    </div>
-  );
-}
-// ===== END DEBUG PANEL — REMOVE BEFORE PRODUCTION =====
 
 function IconSkipBack({ size = 22 }: { size?: number }) {
   return (
@@ -412,24 +107,6 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const queueIndex = usePlaybackStore((s) => s.queueIndex);
   const jumpToIndex = usePlaybackStore((s) => s.jumpToIndex);
   const removeQueueItem = usePlaybackStore((s) => s.removeQueueItem);
-  // DEBUG — mini-player debug selectors (remove with debug panel)
-  const miniDarken = useMiniPlayerDebugStore((s) => s.darken);
-  const wavePadTop = useMiniPlayerDebugStore((s) => s.wavePadTop);
-  const waveHeight = useMiniPlayerDebugStore((s) => s.waveHeight);
-  const barPadTop = useMiniPlayerDebugStore((s) => s.barPadTop);
-  const barPadBottom = useMiniPlayerDebugStore((s) => s.barPadBottom);
-  const barPadSide = useMiniPlayerDebugStore((s) => s.barPadSide);
-  const barGap = useMiniPlayerDebugStore((s) => s.barGap);
-  const wavePadSide = useMiniPlayerDebugStore((s) => s.wavePadSide);
-  const wavePadLeft = useMiniPlayerDebugStore((s) => s.wavePadLeft);
-  const artSize = useMiniPlayerDebugStore((s) => s.artSize);
-  const artTop = useMiniPlayerDebugStore((s) => s.artTop);
-  const artLeft = useMiniPlayerDebugStore((s) => s.artLeft);
-  const safeBottom = useMiniPlayerDebugStore((s) => s.safeBottom);
-  const hintTop = useMiniPlayerDebugStore((s) => s.hintTop);
-  const hintWidth = useMiniPlayerDebugStore((s) => s.hintWidth);
-  // DEBUG — sheet debug selectors (remove with debug panel)
-  const sd = useSheetDebugStore();
 
   const {
     track,
@@ -559,29 +236,6 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     e.stopPropagation();
   }, []);
 
-  // DEBUG — mini-player debug gesture disabled (remove with debug panel)
-  const debugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onInfoPointerDown = useCallback((_e: React.PointerEvent) => {
-    // uncomment to re-enable long-press toggle:
-    // debugTimer.current = setTimeout(() => {
-    //   useMiniPlayerDebugStore.setState((s) => ({ showDebug: !s.showDebug }));
-    // }, 800);
-    void debugTimer.current;
-  }, []);
-  const onInfoPointerUp = useCallback(() => {
-    if (debugTimer.current) clearTimeout(debugTimer.current);
-  }, []);
-  // DEBUG — sheet debug gesture disabled (remove with debug panel)
-  // const sheetDebugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // const onSheetArtPointerDown = useCallback(() => {
-  //   sheetDebugTimer.current = setTimeout(() => {
-  //     useSheetDebugStore.setState((s) => ({ showDebug: !s.showDebug }));
-  //   }, 800);
-  // }, []);
-  // const onSheetArtPointerUp = useCallback(() => {
-  //   if (sheetDebugTimer.current) clearTimeout(sheetDebugTimer.current);
-  // }, []);
-
   const [sheetDragY, setSheetDragY] = useState(0);
   const sheetDismissing = useRef(false);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -674,7 +328,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
         className={`mobile-miniplayer${expanded ? " hidden" : ""}`}
         style={{
           ...(dragDeltaY !== 0 ? { transform: `translateY(${dragDeltaY}px)` } : {}),
-          ...(safeBottom >= 0 ? { paddingBottom: safeBottom } : {}),
+          paddingBottom: 40,
         }}
         onPointerDown={onMiniPointerDown}
         onPointerMove={onMiniPointerMove}
@@ -687,25 +341,14 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
         {sheetBlurColors && (
           <div className="mobile-miniplayer-bg">
             <UltraBlurBackground colors={sheetBlurColors} />
-            <div
-              className="mobile-miniplayer-darken"
-              style={{ background: `rgba(0,0,0,${miniDarken})` }}
-            />
+            <div className="mobile-miniplayer-darken" style={{ background: "rgba(0,0,0,0.3)" }} />
           </div>
         )}
-        <div className="mobile-miniplayer-hint" style={{ paddingTop: hintTop }}>
-          <div className="mobile-miniplayer-hint-pill" style={{ width: hintWidth }} />
+        <div className="mobile-miniplayer-hint" style={{ paddingTop: 10 }}>
+          <div className="mobile-miniplayer-hint-pill" style={{ width: 50 }} />
         </div>
-        <div
-          className="mobile-miniplayer-bar"
-          style={{ padding: `${barPadTop}px ${barPadSide}px ${barPadBottom}px`, gap: barGap }}
-        >
-          <div
-            className="mobile-miniplayer-info"
-            onPointerDown={onInfoPointerDown}
-            onPointerUp={onInfoPointerUp}
-            onPointerCancel={onInfoPointerUp}
-          >
+        <div className="mobile-miniplayer-bar" style={{ padding: "4px 14px 4px", gap: 0 }}>
+          <div className="mobile-miniplayer-info">
             <MarqueeText className="mobile-miniplayer-title">{track.title}</MarqueeText>
             <div className="mobile-miniplayer-artist">{track.artistName}</div>
           </div>
@@ -741,12 +384,12 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
           className="mobile-miniplayer-wave"
           onPointerDown={swallowPointerDown}
           style={{
-            paddingTop: wavePadTop,
-            paddingLeft: wavePadLeft >= 0 ? wavePadLeft : wavePadSide,
-            paddingRight: wavePadSide,
+            paddingTop: 0,
+            paddingLeft: 64,
+            paddingRight: 14,
           }}
         >
-          <div style={{ height: waveHeight }}>
+          <div style={{ height: 42 }}>
             <WaveformSeekBar />
           </div>
         </div>
@@ -755,7 +398,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
           onClick={onExpand}
           onPointerDown={(e) => e.stopPropagation()}
           aria-label="Open now playing"
-          style={{ width: artSize, height: artSize, top: artTop, left: artLeft }}
+          style={{ width: 42, height: 42, top: 61, left: 14 }}
         >
           {artSrc && !artErr ? (
             <img
@@ -790,25 +433,27 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
             onPointerDown={onSheetHeaderPointerDown}
             onPointerMove={onSheetHeaderPointerMove}
             onPointerUp={onSheetHeaderPointerUp}
-            onPointerCancel={onSheetHeaderPointerUp}
+            onPointerCancel={() => {
+              dragStartY.current = null;
+              setSheetDragY(0);
+            }}
           >
             <div className="mobile-sheet-hint-bar" />
             <button
               className={`mobile-sheet-fav${albumFav ? " active" : ""}`}
               onClick={handleAlbumFavToggle}
               aria-label={albumFav ? "Remove album favourite" : "Favourite album"}
-              style={{ top: sd.favTopPad }}
+              style={{ top: -6 }}
             >
               {albumFav ? <IconStarFilled /> : <IconStarEmpty />}
             </button>
           </header>
-          <SheetDebugPanel /> {/* DEBUG — remove with debug panel */}
           <div className="mobile-sheet-body" ref={sheetBodyRef}>
             <div
               className="mobile-sheet-main"
               style={mainMinHeight ? { minHeight: mainMinHeight } : undefined}
             >
-              <div className="mobile-sheet-art" style={{ marginBottom: sd.artMarginBottom }}>
+              <div className="mobile-sheet-art" style={{ marginBottom: 12 }}>
                 {artSrc && !artErr ? (
                   <img
                     src={artSrc}
@@ -826,23 +471,29 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
 
               <div
                 className="mobile-sheet-title"
+                role="button"
+                tabIndex={0}
                 onClick={handleAlbumClick}
-                style={{ fontSize: sd.titleFontSize }}
+                style={{ fontSize: 16 }}
               >
                 {track.title}
               </div>
               <div
                 className="mobile-sheet-artist"
+                role="button"
+                tabIndex={0}
                 onClick={handleArtistClick}
-                style={{ fontSize: sd.artistFontSize }}
+                style={{ fontSize: 14 }}
               >
                 {hasTrackArtist ? `${track.artistName} (${track.trackArtist})` : track.artistName}
               </div>
               {nowPlayingAlbum && (
                 <div
                   className="mobile-sheet-album"
+                  role="button"
+                  tabIndex={0}
                   onClick={handleYearClick}
-                  style={{ fontSize: sd.albumFontSize }}
+                  style={{ fontSize: 12 }}
                 >
                   {nowPlayingAlbum.title}
                   {albumYear}
@@ -854,9 +505,9 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                 onClick={toggleLyrics}
                 aria-label="Toggle lyrics"
                 style={{
-                  width: sd.lyricsWidth,
-                  height: sd.lyricsHeight,
-                  marginTop: sd.lyricsMarginTop,
+                  width: 40,
+                  height: 18,
+                  marginTop: 8,
                 }}
               >
                 <IconQuote />
@@ -866,45 +517,41 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                 className="mobile-sheet-wave"
                 style={
                   {
-                    height: sd.waveHeight,
-                    marginTop: sd.waveMarginTop,
-                    "--sheet-wave-canvas": `${sd.waveCanvasHeight}px`,
-                    "--sheet-time-font": `${sd.timeFontSize}px`,
-                    "--sheet-time-pad": `${sd.timePadTop}px`,
+                    height: 60,
+                    marginTop: 10,
+                    "--sheet-wave-canvas": "50px",
+                    "--sheet-time-font": "12px",
+                    "--sheet-time-pad": "4px",
                   } as React.CSSProperties
                 }
               >
                 <WaveformSeekBar />
               </div>
 
-              <div className="mobile-sheet-transport" style={{ gap: sd.transportGap }}>
+              <div className="mobile-sheet-transport" style={{ gap: 42 }}>
                 <button
                   className="mobile-sheet-transport-btn"
                   onClick={() => previousTrack().catch(() => {})}
                   aria-label="Previous"
-                  style={{ width: sd.transportBtnSize, height: sd.transportBtnSize }}
+                  style={{ width: 48, height: 48 }}
                 >
-                  <IconPrevious size={sd.transportIconSize} />
+                  <IconPrevious size={34} />
                 </button>
                 <button
                   className="mobile-sheet-transport-btn primary"
                   onClick={() => togglePlayPause().catch(() => {})}
                   aria-label={isPlaying ? "Pause" : "Play"}
-                  style={{ width: sd.transportBtnSize, height: sd.transportBtnSize }}
+                  style={{ width: 48, height: 48 }}
                 >
-                  {isPlaying ? (
-                    <IconPause size={sd.transportPrimaryIconSize} />
-                  ) : (
-                    <IconPlay size={sd.transportPrimaryIconSize} />
-                  )}
+                  {isPlaying ? <IconPause size={56} /> : <IconPlay size={56} />}
                 </button>
                 <button
                   className="mobile-sheet-transport-btn"
                   onClick={() => nextTrack().catch(() => {})}
                   aria-label="Next"
-                  style={{ width: sd.transportBtnSize, height: sd.transportBtnSize }}
+                  style={{ width: 48, height: 48 }}
                 >
-                  <IconNext size={sd.transportIconSize} />
+                  <IconNext size={34} />
                 </button>
               </div>
 
@@ -920,13 +567,14 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                   className={`mobile-sheet-track-fav${trackFav ? " active" : ""}`}
                   onClick={handleTrackFavToggle}
                   role="button"
+                  tabIndex={0}
                   aria-label={trackFav ? "Remove track favourite" : "Favourite track"}
                 >
                   {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
                 </span>
               </div>
               {queue.length > queueIndex + 1 && (
-                <div className="mobile-sheet-scroll-hint" style={{ paddingTop: sd.chevronPadTop }}>
+                <div className="mobile-sheet-scroll-hint" style={{ paddingTop: 44 }}>
                   <IconChevronDown size={20} />
                 </div>
               )}
@@ -942,10 +590,18 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                   {upcoming.map((t, i) => {
                     const globalIndex = upcomingStart + i;
                     return (
-                      <button
+                      <div
                         key={`${globalIndex}-${t.ratingKey}`}
                         className="mobile-upnext-row"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => jumpToIndex(globalIndex)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            jumpToIndex(globalIndex);
+                          }
+                        }}
                       >
                         <span className="mobile-upnext-num">{i + 1}</span>
                         <UpNextThumb thumb={t.thumb} />
@@ -966,7 +622,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                         >
                           <IconClose size={12} />
                         </button>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>

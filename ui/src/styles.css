@@ -1753,6 +1753,8 @@ textarea {
   color: var(--text-primary);
   font-size: 13px;
   font-family: var(--font-mono);
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .search-input::placeholder {
@@ -3223,7 +3225,7 @@ body.is-fullscreen .focus-body {
 
 .mobile-toolbar-btn {
   width: 44px;
-  height: 36px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3263,8 +3265,8 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-header-circle {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 0;
   border: none;
   background: transparent;
@@ -3620,6 +3622,8 @@ body.is-fullscreen .focus-body {
   border: none;
   color: rgba(255, 255, 255, 0.5);
   padding: 4px;
+  min-width: 44px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3733,8 +3737,8 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-track-fav {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4168,8 +4172,8 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-miniplayer-btn {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4276,6 +4280,7 @@ body.is-fullscreen .focus-body {
   flex: 1 1 auto;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 0 24px 40px;
   text-align: center;
 }
@@ -4541,8 +4546,8 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-upnext-remove {
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

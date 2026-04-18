@@ -23,6 +23,7 @@ class MpvBridgePlugin: Plugin {
     private weak var webView: WKWebView?
     private var searchBar: UISearchBar?
     private var allowEndEditing = false
+    private var interruptionObserver: NSObjectProtocol?
 
     override func load(webview: WKWebView) {
         self.webView = webview
@@ -58,7 +59,8 @@ class MpvBridgePlugin: Plugin {
 
         UIApplication.shared.beginReceivingRemoteControlEvents()
 
-        NotificationCenter.default.addObserver(
+        if interruptionObserver != nil { return }
+        interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
             object: session,
             queue: .main
@@ -125,14 +127,22 @@ class MpvBridgePlugin: Plugin {
     // MARK: - MPV command proxies
 
     @objc public func mpvLoadFile(_ invoke: Invoke) throws {
+        guard let mpv else {
+            invoke.reject("mpv not initialized")
+            return
+        }
         let args = try invoke.parseArgs(LoadFileArgs.self)
-        mpv?.loadFile(args.url, mode: args.mode, options: args.options)
+        mpv.loadFile(args.url, mode: args.mode, options: args.options)
         invoke.resolve([:])
     }
 
     @objc public func mpvLoadFileAt(_ invoke: Invoke) throws {
+        guard let mpv else {
+            invoke.reject("mpv not initialized")
+            return
+        }
         let args = try invoke.parseArgs(LoadFileAtArgs.self)
-        mpv?.loadFileAt(args.url, index: args.index, options: args.options)
+        mpv.loadFileAt(args.url, index: args.index, options: args.options)
         invoke.resolve([:])
     }
 
