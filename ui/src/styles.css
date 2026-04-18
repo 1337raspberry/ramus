@@ -3515,6 +3515,7 @@ body.is-fullscreen .focus-body {
 
 .mobile-detail-body {
   flex: 1 1 auto;
+  overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 24px;
