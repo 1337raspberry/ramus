@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { useEdgeSwipeBack } from "./useEdgeSwipeBack";
 import MobileToolbar, { type MobileView } from "./MobileToolbar";
 import MobileGenreTree from "./MobileGenreTree";
@@ -73,7 +74,8 @@ export default function MobileApp({ onOpenSettings }: Props) {
     !!browseArtistName ||
     !!browseYear ||
     (view === "artists" && !!selectedArtistId);
-  const showToolbar = !inGrid && !detailAlbum && view !== "search" && view !== "suggestion";
+  const showToolbar =
+    !inGrid && !detailAlbum && view !== "search" && view !== "suggestion" && view !== "savedSearch";
 
   // Unified back navigation — pops one level of the view hierarchy
   const handleBack = useCallback(() => {
@@ -86,6 +88,11 @@ export default function MobileApp({ onOpenSettings }: Props) {
 
     if (view === "search") {
       useLibraryStore.setState({ searchQuery: null });
+      setView("genres");
+      return;
+    }
+
+    if (view === "savedSearch") {
       setView("genres");
       return;
     }
@@ -132,6 +139,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
   const canGoBack =
     !!detailAlbum ||
     view === "search" ||
+    view === "savedSearch" ||
     view === "suggestion" ||
     !!browseArtistName ||
     !!browseYear ||
@@ -150,6 +158,10 @@ export default function MobileApp({ onOpenSettings }: Props) {
     if (detailAlbum) return <MobileAlbumDetail />;
 
     if (view === "search") return <MobileSearch onBack={() => setView("genres")} />;
+    if (view === "savedSearch") {
+      const label = useSettingsStore.getState().savedSearch ?? "Saved Search";
+      return <MobileAlbumGrid contextLabel={label} onBack={() => setView("genres")} />;
+    }
     if (view === "suggestion") return <MobileSuggestion onClose={() => setView("genres")} />;
 
     if (view === "artists") {

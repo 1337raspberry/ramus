@@ -100,6 +100,7 @@ export interface Settings {
   flatGenres: boolean;
   eqEnabled: boolean;
   eqBands: number[];
+  savedSearch: string | null;
 }
 
 export interface CacheStats {

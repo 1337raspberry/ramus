@@ -20,6 +20,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   flatGenres: false,
   eqEnabled: false,
   eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  savedSearch: null,
 
   loadSettings: async () => {
     try {

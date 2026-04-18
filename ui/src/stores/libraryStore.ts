@@ -83,6 +83,7 @@ interface LibraryState {
   // --- Search Results ---
   searchQuery: string | null;
   loadSearchResults: (query: string) => Promise<void>;
+  loadSavedSearch: (query: string) => Promise<void>;
   clearSearchResults: () => void;
 
   // --- Actions ---
@@ -401,6 +402,27 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       set({
         albums: [],
         searchQuery: query,
+        browseArtistName: null,
+        browseYear: null,
+        detailAlbum: null,
+        suggestion: null,
+      });
+    }
+  },
+
+  loadSavedSearch: async (query) => {
+    try {
+      const albums = await searchAlbumsForGrid(query);
+      set((state) => ({
+        albums: sortAlbums(albums, state.albumSortOrder),
+        browseArtistName: null,
+        browseYear: null,
+        detailAlbum: null,
+        suggestion: null,
+      }));
+    } catch {
+      set({
+        albums: [],
         browseArtistName: null,
         browseYear: null,
         detailAlbum: null,
