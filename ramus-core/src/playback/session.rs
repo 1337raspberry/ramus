@@ -234,6 +234,7 @@ mod tests {
             is_favourite: false,
             bitrate: None,
             disc_number: None,
+            file_size_bytes: None,
         }
     }
 

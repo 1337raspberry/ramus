@@ -148,6 +148,11 @@ pub struct Track {
     pub is_favourite: bool,
     pub bitrate: Option<i32>,
     pub disc_number: Option<i32>,
+    /// File size in bytes. Populated at sync time from the Plex Part
+    /// response. Missing on tracks that haven't been resynced since the
+    /// column was added; downstream size estimates fall back to
+    /// `bitrate × duration` in that case.
+    pub file_size_bytes: Option<i64>,
 }
 
 impl Track {
@@ -500,6 +505,7 @@ mod tests {
             is_favourite: false,
             bitrate: None,
             disc_number: None,
+            file_size_bytes: None,
         }
     }
 

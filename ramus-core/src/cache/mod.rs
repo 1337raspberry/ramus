@@ -1,6 +1,7 @@
 pub mod db;
 pub mod collection;
 pub mod colors;
+pub mod downloads;
 pub mod genre;
 pub mod image_cache;
 pub mod prune;

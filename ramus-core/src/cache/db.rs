@@ -144,10 +144,21 @@ impl CacheDatabase {
                 streamId INTEGER,
                 userRating DOUBLE,
                 bitrate INTEGER,
-                trackArtist TEXT
+                trackArtist TEXT,
+                fileSizeBytes INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_tracks_albumId ON tracks(albumId);
             CREATE INDEX IF NOT EXISTS idx_tracks_userRating ON tracks(userRating);
+
+            CREATE TABLE IF NOT EXISTS downloads (
+                ratingKey TEXT PRIMARY KEY,
+                albumRatingKey TEXT NOT NULL,
+                filePath TEXT NOT NULL,
+                sizeBytes INTEGER NOT NULL,
+                codec TEXT NOT NULL,
+                downloadedAt INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_downloads_album ON downloads(albumRatingKey);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING FTS5(
                 title,
@@ -204,6 +215,15 @@ impl CacheDatabase {
                 "ALTER TABLE albums ADD COLUMN firstCollection TEXT",
                 [],
             )?;
+        }
+
+        let has_file_size: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name = 'fileSizeBytes'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_file_size == 0 {
+            conn.execute("ALTER TABLE tracks ADD COLUMN fileSizeBytes INTEGER", [])?;
         }
 
         Ok(())
@@ -333,7 +353,8 @@ impl CacheDatabase {
         let mut stmt = conn.prepare(
             "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
                     al.title, al.sourceId, t.trackNumber, t.durationMs,
-                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber
+                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
+                    t.fileSizeBytes
              FROM tracks t
              JOIN albums al ON al.id = t.albumId
              JOIN artists ar ON ar.id = t.artistId
@@ -351,7 +372,8 @@ impl CacheDatabase {
         let mut stmt = conn.prepare(
             "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
                     al.title, al.sourceId, t.trackNumber, t.durationMs,
-                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber
+                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
+                    t.fileSizeBytes
              FROM tracks t
              JOIN albums al ON al.id = t.albumId
              JOIN artists ar ON ar.id = t.artistId
@@ -370,7 +392,8 @@ impl CacheDatabase {
         let mut stmt = conn.prepare(
             "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
                     al.title, al.sourceId, t.trackNumber, t.durationMs,
-                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber
+                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
+                    t.fileSizeBytes
              FROM tracks t
              JOIN albums al ON al.id = t.albumId
              JOIN artists ar ON ar.id = t.artistId
@@ -556,7 +579,7 @@ impl CacheDatabase {
         Ok(albums)
     }
 
-    /// Map a 14-column track row into a [`Track`].
+    /// Map a 15-column track row into a [`Track`].
     pub(super) fn map_track_row(row: &rusqlite::Row) -> rusqlite::Result<Track> {
         let rating: Option<f64> = row.get(11)?;
         Ok(Track {
@@ -577,6 +600,7 @@ impl CacheDatabase {
             is_favourite: rating.map(|r| r >= 10.0).unwrap_or(false),
             bitrate: row.get(12)?,
             disc_number: row.get(13)?,
+            file_size_bytes: row.get(14)?,
         })
     }
 }
@@ -651,6 +675,7 @@ mod tests {
             bitrate: Some(1411),
             track_artist: None,
             updated_at: Some(1000),
+            file_size_bytes: None,
         }])
         .unwrap();
     }

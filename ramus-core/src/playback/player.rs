@@ -3,9 +3,11 @@
 //! playback queue, track URL resolution, LRU download cache, and 10-band
 //! parametric equalizer filter strings.
 
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use url::Url;
 
 use crate::models::{PlaybackConfig, PlaybackStatus, PlayerState, Track};
@@ -97,6 +99,11 @@ struct PlayerInner {
 pub struct AudioPlayer {
     mpv: Arc<dyn MpvPlayer>,
     inner: Mutex<PlayerInner>,
+    /// Permanent downloads. Checked before the LRU prefetch cache when
+    /// resolving a track's URL — if a track is here, playback always uses
+    /// the local file, online or offline. Populated at startup from the
+    /// `downloads` DB table and on every successful user download.
+    persistent_cache: RwLock<HashMap<String, PathBuf>>,
 }
 
 impl AudioPlayer {
@@ -117,7 +124,35 @@ impl AudioPlayer {
                 play_session_id: uuid::Uuid::new_v4().to_string(),
                 cache: DownloadCache::new(PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES as u64),
             }),
+            persistent_cache: RwLock::new(HashMap::new()),
         }
+    }
+
+    /// Register a downloaded file as permanently cached. Takes priority
+    /// over the LRU prefetch cache in `resolve_url`.
+    pub fn register_persistent_download(&self, rating_key: String, path: PathBuf) {
+        self.persistent_cache.write().insert(rating_key, path);
+    }
+
+    /// Unregister a downloaded file (e.g. user removed it from the downloads panel).
+    pub fn unregister_persistent_download(&self, rating_key: &str) {
+        self.persistent_cache.write().remove(rating_key);
+    }
+
+    /// Replace the entire persistent cache. Called once at app startup
+    /// after loading the `downloads` table.
+    pub fn rehydrate_persistent_cache(&self, entries: HashMap<String, PathBuf>) {
+        *self.persistent_cache.write() = entries;
+    }
+
+    /// Whether a rating key has a permanent download on disk.
+    pub fn has_persistent_download(&self, rating_key: &str) -> bool {
+        self.persistent_cache.read().contains_key(rating_key)
+    }
+
+    /// Snapshot of all persistent download paths. Used by the downloads panel.
+    pub fn persistent_download_paths(&self) -> HashMap<String, PathBuf> {
+        self.persistent_cache.read().clone()
     }
 
     /// Set server connection details.
@@ -175,6 +210,7 @@ impl AudioPlayer {
         // Snapshot per-track URLs under the lock, then release before
         // touching mpv (FFI calls may block briefly).
         let loads: Vec<Option<String>> = {
+            let persistent = self.persistent_cache.read();
             let mut inner = self.inner.lock();
             inner.state.queue = tracks;
             inner.state.queue_index = start_at;
@@ -189,7 +225,7 @@ impl AudioPlayer {
                 .state
                 .queue
                 .iter()
-                .map(|t| resolve_url(t, &inner))
+                .map(|t| resolve_url(t, &inner, &persistent))
                 .collect()
         };
 
@@ -219,6 +255,7 @@ impl AudioPlayer {
         }
 
         let (was_stopped, loads) = {
+            let persistent = self.persistent_cache.read();
             let mut inner = self.inner.lock();
             let was_stopped =
                 inner.state.queue.is_empty() || inner.state.status == PlaybackStatus::Stopped;
@@ -229,7 +266,7 @@ impl AudioPlayer {
             } else {
                 let loads: Vec<Option<String>> = tracks
                     .iter()
-                    .map(|t| resolve_url(t, &inner))
+                    .map(|t| resolve_url(t, &inner, &persistent))
                     .collect();
                 (false, loads)
             }
@@ -263,6 +300,7 @@ impl AudioPlayer {
         }
 
         let (insert_base, loads) = {
+            let persistent = self.persistent_cache.read();
             let mut inner = self.inner.lock();
             let insert_base = inner.state.queue_index + 1;
 
@@ -275,7 +313,7 @@ impl AudioPlayer {
 
             let loads: Vec<Option<String>> = tracks
                 .iter()
-                .map(|t| resolve_url(t, &inner))
+                .map(|t| resolve_url(t, &inner, &persistent))
                 .collect();
             (insert_base, loads)
         };
@@ -572,6 +610,7 @@ impl AudioPlayer {
     /// Called fresh on every iteration of the prefetch worker's serial
     /// loop, so it auto-reflects queue advancement.
     pub fn next_uncached_target_in_lookahead(&self, include_current: bool) -> Option<(String, String)> {
+        let persistent = self.persistent_cache.read();
         let inner = self.inner.lock();
         let depth = inner.config.lookahead_depth as usize;
         let pos = inner.state.queue_index;
@@ -583,7 +622,9 @@ impl AudioPlayer {
             let idx = pos + offset;
             let track = inner.state.queue.get(idx)?;
 
-            if inner.cache.get(&track.rating_key).is_some() {
+            if persistent.contains_key(&track.rating_key)
+                || inner.cache.get(&track.rating_key).is_some()
+            {
                 continue;
             }
             if transcode::should_transcode(
@@ -633,6 +674,7 @@ impl AudioPlayer {
     /// playing entry (mpv refuses to playlist-remove the active index).
     pub fn swap_playlist_entry_to_cached(&self, track_id: &str) {
         let (idx, file_url) = {
+            let persistent = self.persistent_cache.read();
             let inner = self.inner.lock();
             let Some(idx) = inner
                 .state
@@ -645,7 +687,11 @@ impl AudioPlayer {
             if idx == inner.state.queue_index {
                 return;
             }
-            let Some(path) = inner.cache.get(track_id) else {
+            let path = persistent
+                .get(track_id)
+                .cloned()
+                .or_else(|| inner.cache.get(track_id).map(|p| p.to_path_buf()));
+            let Some(path) = path else {
                 return;
             };
             (idx, format!("file://{}", path.display()))
@@ -677,7 +723,14 @@ impl AudioPlayer {
     }
 }
 
-fn resolve_url(track: &Track, inner: &PlayerInner) -> Option<String> {
+fn resolve_url(
+    track: &Track,
+    inner: &PlayerInner,
+    persistent: &HashMap<String, PathBuf>,
+) -> Option<String> {
+    if let Some(path) = persistent.get(&track.rating_key) {
+        return Some(format!("file://{}", path.display()));
+    }
     if let Some(path) = inner.cache.get(&track.rating_key) {
         return Some(format!("file://{}", path.display()));
     }
@@ -824,6 +877,7 @@ mod tests {
             is_favourite: false,
             bitrate: None,
             disc_number: None,
+            file_size_bytes: None,
         }
     }
 
@@ -1517,6 +1571,70 @@ mod tests {
             assert!(url.starts_with("file://"));
             assert!(url.contains("/tmp/cache/123.flac"));
         }
+    }
+
+    #[test]
+    fn test_persistent_download_wins_over_lru_cache() {
+        let (player, mpv) = make_player();
+
+        // LRU says /tmp/cache, persistent says /tmp/downloads — persistent wins.
+        player.with_cache(|cache| {
+            cache.insert(
+                "123".into(),
+                PathBuf::from("/tmp/cache/123.flac"),
+                1000,
+            );
+        });
+        player.register_persistent_download(
+            "123".into(),
+            PathBuf::from("/tmp/downloads/123.flac"),
+        );
+
+        let track = make_test_track("123");
+        player.load_queue(vec![track], 0);
+
+        let calls = mpv.calls();
+        let load = calls
+            .iter()
+            .find(|c| matches!(c, MockCall::LoadFile { .. }));
+        match load {
+            Some(MockCall::LoadFile { url, .. }) => {
+                assert!(url.starts_with("file://"));
+                assert!(
+                    url.contains("/tmp/downloads/123.flac"),
+                    "persistent download should win, got {url}"
+                );
+            }
+            _ => panic!("expected LoadFile call"),
+        }
+    }
+
+    #[test]
+    fn test_unregister_persistent_download() {
+        let (player, _) = make_player();
+        player.register_persistent_download(
+            "123".into(),
+            PathBuf::from("/tmp/downloads/123.flac"),
+        );
+        assert!(player.has_persistent_download("123"));
+        player.unregister_persistent_download("123");
+        assert!(!player.has_persistent_download("123"));
+    }
+
+    #[test]
+    fn test_rehydrate_persistent_cache_replaces_contents() {
+        let (player, _) = make_player();
+        player.register_persistent_download(
+            "old".into(),
+            PathBuf::from("/tmp/downloads/old.flac"),
+        );
+
+        let mut entries = HashMap::new();
+        entries.insert("new".into(), PathBuf::from("/tmp/downloads/new.flac"));
+        player.rehydrate_persistent_cache(entries);
+
+        assert!(!player.has_persistent_download("old"));
+        assert!(player.has_persistent_download("new"));
     }
 
     #[test]

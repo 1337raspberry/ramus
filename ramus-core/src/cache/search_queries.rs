@@ -80,7 +80,8 @@ impl CacheDatabase {
         let mut stmt = conn.prepare(
             "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
                     al.title, al.sourceId, t.trackNumber, t.durationMs,
-                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber
+                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
+                    t.fileSizeBytes
              FROM tracks_fts fts
              JOIN tracks t ON t.id = fts.rowid
              JOIN albums al ON al.id = t.albumId

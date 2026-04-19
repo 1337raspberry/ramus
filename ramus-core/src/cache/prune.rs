@@ -271,6 +271,7 @@ mod tests {
             bitrate: Some(1411),
             track_artist: None,
             updated_at: Some(1000),
+            file_size_bytes: None,
         }])
         .unwrap();
     }
