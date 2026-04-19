@@ -9,14 +9,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use souvlaki::{
-    MediaControlEvent, MediaControls, MediaPlayback, MediaPosition, PlatformConfig,
-};
+use souvlaki::{MediaControlEvent, MediaControls, MediaPlayback, MediaPosition, PlatformConfig};
 
 use ramus_core::cache::image_cache::ImageCache;
 use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
 use ramus_core::playback::player::AudioPlayer;
 use ramus_core::plex::client::PlexClient;
+use ramus_core::util::plex_art_url;
 
 /// Deferred-population slot for media controls; matches `ReporterRef` and
 /// `PrefetchHandleRef`.
@@ -187,13 +186,7 @@ fn spawn_art_download(
             None => return,
         };
 
-        let url = format!(
-            "{}/photo/:/transcode?width={}&height={}&minSize=1&upscale=1&url={}",
-            server_url.as_str().trim_end_matches('/'),
-            ART_DOWNLOAD_SIZE,
-            ART_DOWNLOAD_SIZE,
-            urlencoding::encode(&thumb),
-        );
+        let url = plex_art_url(&server_url, &thumb, ART_DOWNLOAD_SIZE);
 
         let response = match http_client
             .get(&url)

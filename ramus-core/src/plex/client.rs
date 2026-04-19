@@ -262,17 +262,30 @@ impl PlexClient {
                     name: r.name,
                     access_token: token,
                     owned: r.owned.unwrap_or(false),
-                    connections: r
-                        .connections
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|c| PlexServerConnection {
-                            uri: c.uri,
-                            local: c.local.unwrap_or(false),
-                            relay: c.relay.unwrap_or(false),
-                            protocol: c.protocol.unwrap_or_else(|| "https".into()),
-                        })
-                        .collect(),
+                    connections: {
+                        // plex.tv remembers stale loopback paths registered by
+                        // any previous client (e.g. someone who reached this
+                        // server through a Tailscale exit-node proxy that
+                        // made Plex see itself as 127.0.0.1). These are only
+                        // reachable from the advertising device, never from us.
+                        //
+                        // Drop them — UNLESS they're the only connections
+                        // available, in which case we're running on the same
+                        // machine as the Plex server and the loopback IS the
+                        // only valid path.
+                        let raw = r.connections.unwrap_or_default();
+                        let has_non_loopback =
+                            raw.iter().any(|c| !crate::util::is_loopback_uri(&c.uri));
+                        raw.into_iter()
+                            .filter(|c| !has_non_loopback || !crate::util::is_loopback_uri(&c.uri))
+                            .map(|c| PlexServerConnection {
+                                uri: c.uri,
+                                local: c.local.unwrap_or(false),
+                                relay: c.relay.unwrap_or(false),
+                                protocol: c.protocol.unwrap_or_else(|| "https".into()),
+                            })
+                            .collect()
+                    },
                 })
             })
             .collect())

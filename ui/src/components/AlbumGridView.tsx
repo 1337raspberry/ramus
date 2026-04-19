@@ -3,9 +3,18 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type AlbumSortOrder } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import type { Album } from "../lib/types";
-import { ART_SIZE, getArtUrl, getFavouriteTracks, playTracks, getQueue } from "../lib/commands";
-import { IconPlay, IconStarFilled, IconStarEmpty, IconMusicNote, IconShuffle } from "./Icons";
+import { ART_SIZE, getArtUrl, getFavouriteTracks, getQueue, playTracks } from "../lib/commands";
+import { useQueueAlbum } from "../lib/useQueueAlbum";
+import {
+  IconPlay,
+  IconStarFilled,
+  IconStarEmpty,
+  IconMusicNote,
+  IconShuffle,
+  IconMoreDots,
+} from "./Icons";
 import BreadcrumbBar from "./BreadcrumbBar";
+import { AlbumDownloadMenuItem } from "./DownloadMenuItems";
 
 const SORT_OPTIONS: { value: AlbumSortOrder; label: string }[] = [
   { value: "alphabetical", label: "A-Z" },
@@ -23,6 +32,7 @@ const CARD_PAD = 8; // 4px top, 4px bottom
 const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
   const [artSrc, setArtSrc] = useState<string | null>(null);
   const [artError, setArtError] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const openAlbumDetail = useLibraryStore((s) => s.openAlbumDetail);
   const playAlbum = useLibraryStore((s) => s.playAlbum);
   const toggleAlbumFav = useLibraryStore((s) => s.toggleAlbumFav);
@@ -41,6 +51,19 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
       cancelled = true;
     };
   }, [album.thumb]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as Element).closest(".album-card-menu-wrap")) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
+
+  const queueTracks = useQueueAlbum(album.ratingKey);
 
   return (
     <div className="album-card" onClick={() => openAlbumDetail(album)}>
@@ -80,6 +103,44 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
       >
         {album.isFavourite ? <IconStarFilled size="1.5em" /> : <IconStarEmpty size="1.5em" />}
       </button>
+      <div className="album-card-menu-wrap">
+        <button
+          className={`album-card-dots${menuOpen ? " visible" : ""}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuOpen((v) => !v);
+          }}
+          title="More actions"
+        >
+          <IconMoreDots />
+        </button>
+        {menuOpen && (
+          <div className="album-card-dropdown">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                queueTracks("next").catch(() => {});
+                setMenuOpen(false);
+              }}
+            >
+              Play Next
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                queueTracks("append").catch(() => {});
+                setMenuOpen(false);
+              }}
+            >
+              Add to Queue
+            </button>
+            <AlbumDownloadMenuItem
+              albumRatingKey={album.ratingKey}
+              onDone={() => setMenuOpen(false)}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 });

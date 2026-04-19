@@ -81,6 +81,9 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn keychain_delete(&self, _account: &str) -> crate::Result<bool> {
         Ok(false)
     }
+    pub fn exclude_from_backup(&self, _path: &str) -> crate::Result<bool> {
+        Ok(true)
+    }
     pub fn register_listener(
         &self,
         _event: &str,

@@ -151,7 +151,9 @@ impl SessionReporter {
         let dur = tl.duration_ms;
         let sid = tl.play_session_id.clone();
         tauri::async_runtime::spawn(async move {
-            client.report_timeline(&rk, &state_str, time, dur, &sid).await;
+            client
+                .report_timeline(&rk, &state_str, time, dur, &sid)
+                .await;
         });
     }
 

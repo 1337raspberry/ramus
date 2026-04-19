@@ -99,7 +99,8 @@ impl<R: Runtime> MpvPlayer for IosMpvPlayer<R> {
     }
 
     fn set_volume(&self, volume: f64) {
-        self.cached_volume.store(volume.to_bits(), Ordering::Relaxed);
+        self.cached_volume
+            .store(volume.to_bits(), Ordering::Relaxed);
         let _ = self.bridge().mpv_set_volume(volume);
     }
 

@@ -483,13 +483,14 @@ impl SyncEngine {
                         .and_then(|m| m.first())
                         .and_then(|m| m.bitrate)
                 });
-            let part_key = item
+            let first_part = item
                 .media
                 .as_ref()
                 .and_then(|m| m.first())
                 .and_then(|m| m.parts.as_ref())
-                .and_then(|p| p.first())
-                .and_then(|p| p.key.clone());
+                .and_then(|p| p.first());
+            let part_key = first_part.and_then(|p| p.key.clone());
+            let file_size_bytes = first_part.and_then(|p| p.size);
             let stream_id = audio_stream.and_then(|s| s.id);
 
             changed.push(TrackUpsertRow {
@@ -507,6 +508,7 @@ impl SyncEngine {
                 bitrate,
                 track_artist: item.original_title.clone(),
                 updated_at: item.updated_at,
+                file_size_bytes,
             });
         }
 

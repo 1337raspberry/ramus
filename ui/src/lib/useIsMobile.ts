@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 
-const MOBILE_BREAKPOINT_PX = 820;
-const QUERY = `(max-width: ${MOBILE_BREAKPOINT_PX}px)`;
+// `pointer: coarse` matches devices whose primary input is touch — iOS,
+// Android, handheld tablets. A desktop with an optional touchscreen stays
+// `pointer: fine` because the mouse is the primary pointer. Crucially,
+// resizing a desktop window doesn't change the pointer type, so shrinking
+// the window no longer flips the UI into the stacked mobile layout.
+const QUERY = "(pointer: coarse)";
 
 /**
- * Returns true when the viewport is phone/narrow-tablet sized. Used to
- * branch the root App between the desktop three-column layout and the
- * stacked mobile layout.
+ * Returns true when the app is running on a touch-primary device
+ * (iOS / Android / touch-first tablet). Used to branch the root App
+ * between the desktop three-column layout and the stacked mobile layout.
  *
  * SSR-safe: returns false on the server and re-evaluates on mount.
  */

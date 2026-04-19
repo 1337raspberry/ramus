@@ -550,6 +550,7 @@ mod tests {
                 bitrate: None,
                 track_artist: None,
                 updated_at: None,
+                file_size_bytes: None,
             },
             TrackUpsertRow {
                 title: "Karma Police".into(),
@@ -566,6 +567,7 @@ mod tests {
                 bitrate: None,
                 track_artist: None,
                 updated_at: None,
+                file_size_bytes: None,
             },
             TrackUpsertRow {
                 title: "Angel of Death".into(),
@@ -582,6 +584,7 @@ mod tests {
                 bitrate: None,
                 track_artist: None,
                 updated_at: None,
+                file_size_bytes: None,
             },
             TrackUpsertRow {
                 title: "Raining Blood".into(),
@@ -598,6 +601,7 @@ mod tests {
                 bitrate: None,
                 track_artist: None,
                 updated_at: None,
+                file_size_bytes: None,
             },
             TrackUpsertRow {
                 title: "Everything In Its Right Place".into(),
@@ -614,6 +618,7 @@ mod tests {
                 bitrate: None,
                 track_artist: None,
                 updated_at: None,
+                file_size_bytes: None,
             },
         ])
         .unwrap();

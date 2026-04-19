@@ -304,6 +304,19 @@ class MpvBridgePlugin: Plugin {
         let ok = KeychainBridge.shared.delete(account: args.account)
         invoke.resolve(["ok": ok])
     }
+
+    @objc public func excludeFromBackup(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(ExcludeBackupArgs.self)
+        var url = URL(fileURLWithPath: args.path)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        do {
+            try url.setResourceValues(values)
+            invoke.resolve(["ok": true])
+        } catch {
+            invoke.resolve(["ok": false])
+        }
+    }
 }
 
 // MARK: - Argument payloads
@@ -352,6 +365,10 @@ class KeychainAccountArgs: Decodable {
 class KeychainWriteArgs: Decodable {
     let account: String
     let value: String
+}
+
+class ExcludeBackupArgs: Decodable {
+    let path: String
 }
 
 class ShowSearchBarArgs: Decodable {

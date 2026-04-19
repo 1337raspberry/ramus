@@ -15,19 +15,43 @@ pub mod media_controls;
 // libmpv is loaded at runtime via `libloading` on desktop (see mpv_ffi.rs).
 // iOS uses `mpv_ios.rs` instead, which delegates to the Swift plugin's
 // MPVKit handle via Tauri IPC.
+#[cfg(target_os = "ios")]
+pub mod keychain_ios;
 #[cfg(not(target_os = "ios"))]
 pub mod mpv_controller;
 #[cfg(not(target_os = "ios"))]
 pub mod mpv_ffi;
 #[cfg(target_os = "ios")]
 pub mod mpv_ios;
-#[cfg(target_os = "ios")]
-pub mod keychain_ios;
 
+pub mod ios_backup;
 pub mod prefetch;
 pub mod session_reporter;
 pub mod spectrum_analyzer;
 pub mod state;
+
+/// Cheap "is the internet reachable" probe. Races bare-TCP connects to
+/// well-known, always-on endpoints (Cloudflare 1.1.1.1 and Google 8.8.8.8).
+/// First success wins; if both time out within `per_host_timeout`, the
+/// machine is genuinely offline and there's no point grinding through a
+/// 30s Plex discovery. Much faster than HTTP since we skip TLS entirely.
+async fn internet_reachable(per_host_timeout: std::time::Duration) -> bool {
+    let candidates = ["1.1.1.1:443", "8.8.8.8:443"];
+    let mut set = tokio::task::JoinSet::new();
+    for addr in candidates {
+        set.spawn(async move {
+            tokio::time::timeout(per_host_timeout, tokio::net::TcpStream::connect(addr))
+                .await
+                .is_ok_and(|r| r.is_ok())
+        });
+    }
+    while let Some(res) = set.join_next().await {
+        if let Ok(true) = res {
+            return true;
+        }
+    }
+    false
+}
 
 use std::sync::Arc;
 
@@ -78,8 +102,9 @@ pub fn create_mpv_player(
 
     // The player is needed inside callbacks but owns the MpvController. A
     // shared Arc populated after construction breaks the cycle.
-    let player_ref: Arc<parking_lot::Mutex<Option<Arc<ramus_core::playback::player::AudioPlayer>>>> =
-        Arc::new(parking_lot::Mutex::new(None));
+    let player_ref: Arc<
+        parking_lot::Mutex<Option<Arc<ramus_core::playback::player::AudioPlayer>>>,
+    > = Arc::new(parking_lot::Mutex::new(None));
     let pr1 = player_ref.clone();
     let pr2 = player_ref.clone();
     let pr3 = player_ref.clone();
@@ -272,13 +297,17 @@ pub fn create_mpv_player(
         // it tried; surface that verbatim if it fails.
         let mpv_lib = Arc::new(MpvLib::load().unwrap_or_else(|e| panic!("{e}")));
         let mpv = MpvController::new(mpv_lib, callbacks).expect("Failed to initialize libmpv");
-        Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(mpv)))
+        Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(
+            mpv,
+        )))
     };
     #[cfg(target_os = "ios")]
     let player = {
         let ios_mpv = crate::mpv_ios::IosMpvPlayer::new(app_handle.clone(), callbacks)
             .expect("failed to initialise iOS mpv bridge");
-        Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(ios_mpv)))
+        Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(
+            ios_mpv,
+        )))
     };
 
     *player_ref.lock() = Some(player.clone());
@@ -353,6 +382,11 @@ pub fn run() {
             // file+AES backend and never touches the global slot.
             #[cfg(target_os = "ios")]
             crate::keychain_ios::register(&app_handle);
+
+            // Register the iOS backup-exclusion backend so downloaded audio
+            // files stay out of iCloud / iTunes backups. Desktop is a no-op.
+            #[cfg(target_os = "ios")]
+            crate::ios_backup::register_ios(&app_handle);
 
             // Force-fit the UIWindow to the full screen on iOS. The shared
             // `tauri.conf.json` sets `width: 1200, height: 800` for desktop,
@@ -537,6 +571,10 @@ pub fn run() {
                 discovered_servers: Arc::new(parking_lot::Mutex::new(Vec::new())),
                 media_controls: media_controls_ref.clone(),
                 sync_in_progress: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                // Optimistic default — flipped to false by the startup probe
+                // if no server answers, or by on_connection_lost callbacks
+                // from the connection monitor.
+                server_reachable: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             };
 
             // Restore previous session. State is set synchronously (no blocking
@@ -544,17 +582,40 @@ pub fn run() {
             // task verifies connectivity and tests alternative connections.
             if let Ok(token_store) = TokenStore::new() {
                 if let Some(config) = auth::stored_server_config(&token_store) {
-                    if let Some(url_str) = config.active_uri.clone() {
-                        if let Ok(url) = url::Url::parse(&url_str) {
-                            let settings = state.settings.read().clone();
+                    // Pick a usable starting URL. Prefer the stored activeUri
+                    // when it passes the refuse_http gate, otherwise fall back
+                    // to the highest-priority connection in the stored list
+                    // that does. Falling back (instead of skipping the whole
+                    // restore) matters: the probe has added stale / per-boot
+                    // URIs to activeUri in the past (loopback ports, relay
+                    // URIs that expired), and a bogus activeUri shouldn't
+                    // lock the user out of their own library when the
+                    // connection list still has a valid HTTPS entry.
+                    let settings_snapshot = state.settings.read().clone();
+                    let allow_http = !settings_snapshot.refuse_http;
+                    let usable = |u: &str| {
+                        url::Url::parse(u)
+                            .ok()
+                            .filter(|p| allow_http || p.scheme() == "https")
+                    };
+                    let chosen_url = config
+                        .active_uri
+                        .as_deref()
+                        .and_then(usable)
+                        .or_else(|| {
+                            // activeUri unusable — take the highest-priority
+                            // connection that passes. `sorted_connections`
+                            // already prefers local/https.
+                            ramus_core::models::PlexServer::from(&config)
+                                .sorted_connections()
+                                .iter()
+                                .find_map(|c| usable(&c.uri))
+                        });
 
-                            // Skip restoration if the stored URL is HTTP and refuse_http is enabled.
-                            if settings.refuse_http && url.scheme() == "http" {
-                                log::warn!(
-                                    "stored server URL is HTTP but refuse_http is enabled — skipping session restore"
-                                );
-                            } else {
-                                let token = config.access_token.clone();
+                    if let Some(url) = chosen_url {
+                        let url_str = url.as_str().trim_end_matches('/').to_string();
+                        let settings = settings_snapshot;
+                        let token = config.access_token.clone();
                                 let client_id = client.client_identifier.clone();
 
                                 client.set_server_url(Some(url.clone()));
@@ -578,6 +639,10 @@ pub fn run() {
                                         *state.search_engine.write() = Some(search);
 
                                         if let Ok(db2) = CacheDatabase::open(&db_path) {
+                                            crate::prefetch::rehydrate_persistent_downloads(
+                                                &state.player,
+                                                &db2,
+                                            );
                                             *state.cache.lock() = Some(db2);
                                         }
                                     }
@@ -609,13 +674,52 @@ pub fn run() {
 
                                 // Update player when monitor switches connections.
                                 let monitor_player = state.player.clone();
+                                let monitor_reachable = state.server_reachable.clone();
+                                let monitor_app = app_handle.clone();
+                                let monitor_settings_for_changed = state.settings.clone();
                                 connection_monitor.set_on_connection_changed(
                                     std::sync::Arc::new(move |url, token, is_local, _is_http| {
                                         let is_remote = !is_local;
                                         monitor_player.update_server_connection(url, token, is_remote);
-                                        log::info!("monitor: updated player connection (is_remote={})", is_remote);
+                                        monitor_reachable
+                                            .store(true, std::sync::atomic::Ordering::Release);
+                                        let offline_manual =
+                                            monitor_settings_for_changed.read().offline_mode;
+                                        crate::events::emit_connection_status(
+                                            &monitor_app,
+                                            crate::events::ConnectionStatusPayload {
+                                                online: true,
+                                                offline_mode_manual: offline_manual,
+                                                effective_offline: offline_manual,
+                                            },
+                                        );
+                                        log::info!(
+                                            "monitor: updated player connection (is_remote={})",
+                                            is_remote,
+                                        );
                                     }),
                                 );
+
+                                // Flip reachable=false when all connections fail.
+                                let lost_reachable = state.server_reachable.clone();
+                                let lost_app = app_handle.clone();
+                                let lost_settings = state.settings.clone();
+                                connection_monitor.set_on_connection_lost(std::sync::Arc::new(
+                                    move || {
+                                        lost_reachable
+                                            .store(false, std::sync::atomic::Ordering::Release);
+                                        let offline_manual = lost_settings.read().offline_mode;
+                                        crate::events::emit_connection_status(
+                                            &lost_app,
+                                            crate::events::ConnectionStatusPayload {
+                                                online: false,
+                                                offline_mode_manual: offline_manual,
+                                                effective_offline: true,
+                                            },
+                                        );
+                                        log::info!("monitor: connection lost");
+                                    },
+                                ));
 
                                 connection_monitor.start(
                                     plex_server.clone(),
@@ -630,6 +734,8 @@ pub fn run() {
                                 let bg_monitor = connection_monitor.clone();
                                 let bg_settings = state.settings.clone();
                                 let bg_player = state.player.clone();
+                                let bg_reachable = state.server_reachable.clone();
+                                let bg_app = app_handle.clone();
                                 tauri::async_runtime::spawn(async move {
                                     let allow_http = !bg_settings.read().refuse_http;
 
@@ -748,18 +854,42 @@ pub fn run() {
                                             .find_best_connection(&filtered_server, allow_http, true)
                                             .await;
                                         if let Some(conn) = best {
-                                            apply_connection(&conn);
-                                            return;
+                                            if apply_connection(&conn) {
+                                                return;
+                                            }
                                         }
                                     }
 
-                                    // 4. Re-discover from plex.tv.
-                                    if bg_auth_token.is_empty() {
+                                    // 4. Re-discover from plex.tv. Skipped if
+                                    // we can't reach it — no stored auth
+                                    // token, or a cheap internet probe fails
+                                    // (airplane mode, dead router). Either
+                                    // way we fall through to the offline
+                                    // emit at the end. LAN-only Plex setups
+                                    // with no internet still got through
+                                    // steps 1–3 above.
+                                    let can_rediscover = if bg_auth_token.is_empty() {
                                         log::warn!("cannot re-discover from plex.tv — no auth token stored");
-                                        return;
-                                    }
-                                    log::info!("no cached alternatives, re-discovering from plex.tv");
-                                    if let Ok(servers) = bg_client.discover_servers(&bg_auth_token).await {
+                                        false
+                                    } else if !internet_reachable(std::time::Duration::from_secs(1)).await {
+                                        log::info!(
+                                            "startup probe: internet unreachable, skipping plex.tv re-discovery"
+                                        );
+                                        false
+                                    } else {
+                                        true
+                                    };
+                                    if can_rediscover {
+                                        log::info!("no cached alternatives, re-discovering from plex.tv");
+                                        // Cap re-discovery at 5s. The reqwest
+                                        // default is ~30s which felt glacial
+                                        // on a boot where plex.tv is slow.
+                                        let rediscover = tokio::time::timeout(
+                                            std::time::Duration::from_secs(5),
+                                            bg_client.discover_servers(&bg_auth_token),
+                                        )
+                                        .await;
+                                        if let Ok(Ok(servers)) = rediscover {
                                         if let Some(found) = servers
                                             .iter()
                                             .find(|s| s.machine_identifier == plex_server.machine_identifier)
@@ -778,6 +908,9 @@ pub fn run() {
                                                         Some(&found.connections),
                                                         None,
                                                     );
+                                                    // Connected via plex.tv — skip the
+                                                    // fall-through offline emit below.
+                                                    return;
                                                 }
                                             } else {
                                                 log::warn!(
@@ -795,9 +928,24 @@ pub fn run() {
                                     } else {
                                         log::warn!("plex.tv re-discovery failed");
                                     }
+                                    } // end if can_rediscover
+
+                                    // Fall-through: none of the four probe
+                                    // paths connected. Flip the reachability
+                                    // flag and notify the UI so it can enter
+                                    // offline mode.
+                                    bg_reachable
+                                        .store(false, std::sync::atomic::Ordering::Release);
+                                    let offline_manual = bg_settings.read().offline_mode;
+                                    crate::events::emit_connection_status(
+                                        &bg_app,
+                                        crate::events::ConnectionStatusPayload {
+                                            online: false,
+                                            offline_mode_manual: offline_manual,
+                                            effective_offline: true,
+                                        },
+                                    );
                                 });
-                            }
-                        }
                     }
                 }
             }
@@ -957,6 +1105,20 @@ pub fn run() {
             commands::platform::hide_native_search_bar,
             // acknowledgements / licenses
             commands::acknowledgements::get_acknowledgements_text,
+            // downloads
+            commands::downloads::download_track,
+            commands::downloads::download_album,
+            commands::downloads::download_all_starred_tracks,
+            commands::downloads::download_all_starred_albums,
+            commands::downloads::cancel_download,
+            commands::downloads::cancel_all_downloads,
+            commands::downloads::remove_download,
+            commands::downloads::remove_album_downloads,
+            commands::downloads::remove_all_downloads,
+            commands::downloads::get_downloads_overview,
+            commands::downloads::estimate_starred_tracks_size,
+            commands::downloads::estimate_starred_albums_size,
+            commands::downloads::get_connection_status,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")

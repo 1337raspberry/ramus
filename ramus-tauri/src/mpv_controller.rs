@@ -363,4 +363,3 @@ fn event_loop(
         }
     }
 }
-
