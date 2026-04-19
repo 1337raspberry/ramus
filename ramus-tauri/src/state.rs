@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use parking_lot::RwLock;
@@ -36,4 +36,17 @@ pub struct AppState {
     pub media_controls: crate::media_controls::MediaControlsRef,
     /// Prevents overlapping sync operations from corrupting the database.
     pub sync_in_progress: Arc<AtomicBool>,
+    /// Live server reachability as reported by `ConnectionMonitor`. Starts
+    /// `true` on boot; flipped by the startup probe and on-connection-lost
+    /// callbacks. Read together with `Settings.offline_mode` to determine
+    /// whether library queries should filter to downloaded-only content.
+    pub server_reachable: Arc<AtomicBool>,
+}
+
+impl AppState {
+    /// Whether the app should present an offline UI — either the user
+    /// ticked "Work Offline" in settings or the server is unreachable.
+    pub fn effective_offline(&self) -> bool {
+        self.settings.read().offline_mode || !self.server_reachable.load(Ordering::Acquire)
+    }
 }

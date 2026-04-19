@@ -538,6 +538,10 @@ pub fn run() {
                 discovered_servers: Arc::new(parking_lot::Mutex::new(Vec::new())),
                 media_controls: media_controls_ref.clone(),
                 sync_in_progress: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                // Optimistic default — flipped to false by the startup probe
+                // if no server answers, or by on_connection_lost callbacks
+                // from the connection monitor.
+                server_reachable: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             };
 
             // Restore previous session. State is set synchronously (no blocking
@@ -610,13 +614,52 @@ pub fn run() {
 
                                 // Update player when monitor switches connections.
                                 let monitor_player = state.player.clone();
+                                let monitor_reachable = state.server_reachable.clone();
+                                let monitor_app = app_handle.clone();
+                                let monitor_settings_for_changed = state.settings.clone();
                                 connection_monitor.set_on_connection_changed(
                                     std::sync::Arc::new(move |url, token, is_local, _is_http| {
                                         let is_remote = !is_local;
                                         monitor_player.update_server_connection(url, token, is_remote);
-                                        log::info!("monitor: updated player connection (is_remote={})", is_remote);
+                                        monitor_reachable
+                                            .store(true, std::sync::atomic::Ordering::Release);
+                                        let offline_manual =
+                                            monitor_settings_for_changed.read().offline_mode;
+                                        crate::events::emit_connection_status(
+                                            &monitor_app,
+                                            crate::events::ConnectionStatusPayload {
+                                                online: true,
+                                                offline_mode_manual: offline_manual,
+                                                effective_offline: offline_manual,
+                                            },
+                                        );
+                                        log::info!(
+                                            "monitor: updated player connection (is_remote={})",
+                                            is_remote,
+                                        );
                                     }),
                                 );
+
+                                // Flip reachable=false when all connections fail.
+                                let lost_reachable = state.server_reachable.clone();
+                                let lost_app = app_handle.clone();
+                                let lost_settings = state.settings.clone();
+                                connection_monitor.set_on_connection_lost(std::sync::Arc::new(
+                                    move || {
+                                        lost_reachable
+                                            .store(false, std::sync::atomic::Ordering::Release);
+                                        let offline_manual = lost_settings.read().offline_mode;
+                                        crate::events::emit_connection_status(
+                                            &lost_app,
+                                            crate::events::ConnectionStatusPayload {
+                                                online: false,
+                                                offline_mode_manual: offline_manual,
+                                                effective_offline: true,
+                                            },
+                                        );
+                                        log::info!("monitor: connection lost");
+                                    },
+                                ));
 
                                 connection_monitor.start(
                                     plex_server.clone(),
@@ -631,6 +674,8 @@ pub fn run() {
                                 let bg_monitor = connection_monitor.clone();
                                 let bg_settings = state.settings.clone();
                                 let bg_player = state.player.clone();
+                                let bg_reachable = state.server_reachable.clone();
+                                let bg_app = app_handle.clone();
                                 tauri::async_runtime::spawn(async move {
                                     let allow_http = !bg_settings.read().refuse_http;
 
@@ -796,6 +841,22 @@ pub fn run() {
                                     } else {
                                         log::warn!("plex.tv re-discovery failed");
                                     }
+
+                                    // Fall-through: none of the four probe
+                                    // paths connected. Flip the reachability
+                                    // flag and notify the UI so it can enter
+                                    // offline mode.
+                                    bg_reachable
+                                        .store(false, std::sync::atomic::Ordering::Release);
+                                    let offline_manual = bg_settings.read().offline_mode;
+                                    crate::events::emit_connection_status(
+                                        &bg_app,
+                                        crate::events::ConnectionStatusPayload {
+                                            online: false,
+                                            offline_mode_manual: offline_manual,
+                                            effective_offline: true,
+                                        },
+                                    );
                                 });
                             }
                         }
@@ -971,6 +1032,7 @@ pub fn run() {
             commands::downloads::get_downloads_overview,
             commands::downloads::estimate_starred_tracks_size,
             commands::downloads::estimate_starred_albums_size,
+            commands::downloads::get_connection_status,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")

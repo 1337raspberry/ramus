@@ -125,6 +125,36 @@ impl CacheDatabase {
         Ok(ids)
     }
 
+    /// Internal album rowids that have at least one downloaded track.
+    /// Used to intersect with the genre-tree album sets (which key on
+    /// internal ids) without an N-round trip.
+    pub fn downloaded_album_internal_ids(&self) -> Result<HashSet<i64>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT a.id FROM albums a
+             JOIN downloads d ON d.albumRatingKey = a.sourceId",
+        )?;
+        let ids: HashSet<i64> = stmt
+            .query_map([], |r| r.get::<_, i64>(0))?
+            .collect::<Result<_, _>>()?;
+        Ok(ids)
+    }
+
+    /// Artist names that have at least one downloaded track. Used by
+    /// offline-mode to filter the artists list.
+    pub fn downloaded_artist_names(&self) -> Result<HashSet<String>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT ar.name FROM artists ar
+             JOIN albums a ON a.artistId = ar.id
+             JOIN downloads d ON d.albumRatingKey = a.sourceId",
+        )?;
+        let names: HashSet<String> = stmt
+            .query_map([], |r| r.get::<_, String>(0))?
+            .collect::<Result<_, _>>()?;
+        Ok(names)
+    }
+
     /// Total size of all downloads in bytes.
     pub fn total_download_bytes(&self) -> Result<i64, CacheError> {
         let conn = self.conn.lock();

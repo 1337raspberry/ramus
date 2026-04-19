@@ -5,13 +5,14 @@
 //! worker; the commands just translate rating keys into enqueued jobs.
 
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 
 use tauri::{AppHandle, State};
 
 use ramus_core::models::Track;
 use ramus_core::playback::transcode;
 
-use crate::events::emit_downloads_changed;
+use crate::events::{emit_downloads_changed, ConnectionStatusPayload};
 use crate::prefetch::{DownloadManagerSnapshot, UserDownloadJob};
 use crate::state::AppState;
 
@@ -326,6 +327,24 @@ pub async fn estimate_starred_albums_size(
         total += estimate_total_bytes(&tracks);
     }
     Ok(total)
+}
+
+// --- Connection status ---
+
+/// Current reachability snapshot for the frontend. Called once on mount to
+/// sync initial state; subsequent changes arrive via the `connection-status`
+/// event stream.
+#[tauri::command]
+pub async fn get_connection_status(
+    state: State<'_, AppState>,
+) -> CmdResult<ConnectionStatusPayload> {
+    let online = state.server_reachable.load(Ordering::Acquire);
+    let offline_manual = state.settings.read().offline_mode;
+    Ok(ConnectionStatusPayload {
+        online,
+        offline_mode_manual: offline_manual,
+        effective_offline: offline_manual || !online,
+    })
 }
 
 // --- Helpers ---
