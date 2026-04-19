@@ -138,7 +138,7 @@ export default function MobileSearch({ onBack }: Props) {
               className="mobile-search-input"
               type="text"
               value={query}
-              placeholder="Search"
+              placeholder="/genre @artist %album !track #>year col:name"
               onChange={(e) => setQuery(e.target.value)}
             />
             {query && (
@@ -155,6 +155,45 @@ export default function MobileSearch({ onBack }: Props) {
       )}
 
       <div className="mobile-search-results">
+        {!query.trim() && (
+          <div className="mobile-search-hints">
+            <div className="mobile-search-hints-title">Search operators</div>
+            <div className="mobile-search-hints-list">
+              <div className="mobile-search-hint-row">
+                <code>/genre</code>
+                <span>genre</span>
+              </div>
+              <div className="mobile-search-hint-row">
+                <code>@artist</code>
+                <span>artist</span>
+              </div>
+              <div className="mobile-search-hint-row">
+                <code>%album</code>
+                <span>album title</span>
+              </div>
+              <div className="mobile-search-hint-row">
+                <code>!track</code>
+                <span>track title</span>
+              </div>
+              <div className="mobile-search-hint-row">
+                <code>#&gt;2000</code>
+                <span>year filter</span>
+              </div>
+              <div className="mobile-search-hint-row">
+                <code>col:name</code>
+                <span>collection</span>
+              </div>
+              <div className="mobile-search-hint-row">
+                <code>fav:</code>
+                <span>favourites only</span>
+              </div>
+            </div>
+            <div className="mobile-search-hints-foot">
+              Combine with <code>AND</code> — e.g. <code>/rock AND #&gt;1990</code>
+            </div>
+          </div>
+        )}
+
         {albums.length > 0 && (
           <>
             <div className="mobile-search-section">Albums</div>

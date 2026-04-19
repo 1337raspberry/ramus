@@ -4024,6 +4024,67 @@ body.is-fullscreen .focus-body {
   display: inline-flex;
 }
 
+.mobile-search-hints {
+  padding: 20px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.mobile-search-hints-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 12px;
+}
+
+.mobile-search-hints-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-search-hint-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.mobile-search-hint-row code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
+  text-align: center;
+  justify-self: start;
+}
+
+.mobile-search-hint-row span {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.mobile-search-hints-foot {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.5;
+}
+
+.mobile-search-hints-foot code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+}
+
 /* --- Saved Search Modal --- */
 
 .saved-search-backdrop {
