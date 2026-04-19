@@ -123,7 +123,6 @@ export default function App() {
     return (
       <>
         <UltraBlurBackground colors={blurColors} />
-        {connection.effectiveOffline && <div className="offline-pill">Offline</div>}
         <MobileApp onOpenSettings={() => setShowSettings(true)} />
         {showSettings && (
           <LibrarySettingsPanel
@@ -149,7 +148,6 @@ export default function App() {
   return (
     <>
       <UltraBlurBackground colors={blurColors} />
-      {connection.effectiveOffline && <div className="offline-pill">Offline</div>}
       <TrafficLights />
       <ThreeColumnLayout
         sidebar={<SidebarView onOpenSettings={() => setShowSettings(true)} />}

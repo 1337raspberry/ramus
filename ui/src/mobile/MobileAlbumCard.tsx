@@ -109,36 +109,43 @@ export default memo(function MobileAlbumCard({ album }: Props) {
           }}
         >
           <div className="mobile-action-sheet">
-            <div className="mobile-action-sheet-title">{album.title}</div>
-            <div className="mobile-action-sheet-subtitle">{album.artistName}</div>
-            <button
-              onClick={() => {
-                setSheetOpen(false);
-                playAlbum(album);
-              }}
-            >
-              Play
+            <div className="mobile-action-sheet-header">
+              <div className="mobile-action-sheet-title">{album.title}</div>
+              <div className="mobile-action-sheet-subtitle">{album.artistName}</div>
+            </div>
+            <div className="mobile-action-sheet-group">
+              <button
+                onClick={() => {
+                  setSheetOpen(false);
+                  playAlbum(album);
+                }}
+              >
+                Play
+              </button>
+              <button
+                onClick={() => {
+                  setSheetOpen(false);
+                  queueTracks("next").catch(() => {});
+                }}
+              >
+                Play Next
+              </button>
+              <button
+                onClick={() => {
+                  setSheetOpen(false);
+                  queueTracks("append").catch(() => {});
+                }}
+              >
+                Add to Queue
+              </button>
+              <AlbumDownloadMenuItem
+                albumRatingKey={album.ratingKey}
+                onDone={() => setSheetOpen(false)}
+              />
+            </div>
+            <button className="mobile-action-sheet-cancel" onClick={() => setSheetOpen(false)}>
+              Cancel
             </button>
-            <button
-              onClick={() => {
-                setSheetOpen(false);
-                queueTracks("next").catch(() => {});
-              }}
-            >
-              Play Next
-            </button>
-            <button
-              onClick={() => {
-                setSheetOpen(false);
-                queueTracks("append").catch(() => {});
-              }}
-            >
-              Add to Queue
-            </button>
-            <AlbumDownloadMenuItem
-              albumRatingKey={album.ratingKey}
-              onDone={() => setSheetOpen(false)}
-            />
           </div>
         </div>
       )}
