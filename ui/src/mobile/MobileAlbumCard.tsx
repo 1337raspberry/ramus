@@ -109,10 +109,6 @@ export default memo(function MobileAlbumCard({ album }: Props) {
           }}
         >
           <div className="mobile-action-sheet">
-            <div className="mobile-action-sheet-header">
-              <div className="mobile-action-sheet-title">{album.title}</div>
-              <div className="mobile-action-sheet-subtitle">{album.artistName}</div>
-            </div>
             <div className="mobile-action-sheet-group">
               <button
                 onClick={() => {
