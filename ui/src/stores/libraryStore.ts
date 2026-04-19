@@ -19,6 +19,8 @@ import {
   playTracks,
 } from "../lib/commands";
 import { usePlaybackStore } from "./playbackStore";
+import { useConnectionStore } from "./connectionStore";
+import { useDownloadsStore } from "./downloadsStore";
 
 export type SidebarMode = "genres" | "favourites" | "artists";
 export type AlbumSortOrder = "alphabetical" | "latestAdded" | "recentlyPlayed" | "random";
@@ -573,6 +575,27 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         tracks = await getTracksForAlbum(album.ratingKey);
         set({ selectedAlbum: album, tracks });
       }
+
+      // Offline: drop any track that isn't in the persistent download
+      // set. mpv would otherwise receive null URLs for those entries and
+      // silently stall. If the user clicked play on a specific (faded)
+      // track, shift startAt to the nearest downloaded track at-or-after
+      // the click.
+      if (useConnectionStore.getState().effectiveOffline) {
+        const downloaded = useDownloadsStore.getState().downloadedTrackIds;
+        const playable: { track: Track; originalIdx: number }[] = tracks
+          .map((t, idx) => ({ track: t, originalIdx: idx }))
+          .filter(({ track }) => downloaded.has(track.ratingKey));
+        if (playable.length === 0) return;
+        const nextAt = playable.findIndex(({ originalIdx }) => originalIdx >= startAt);
+        const newStart = nextAt < 0 ? 0 : nextAt;
+        await playTracks(
+          playable.map(({ track }) => track),
+          newStart,
+        );
+        return;
+      }
+
       await playTracks(tracks, startAt);
     } catch {}
   },

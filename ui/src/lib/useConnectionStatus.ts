@@ -1,36 +1,20 @@
-import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { useEffect } from "react";
 
+import { useConnectionStore } from "../stores/connectionStore";
 import type { ConnectionStatusPayload } from "./types";
-import { getConnectionStatus } from "./commands";
 
-/// Subscribes to the `connection-status` event stream and syncs initial
-/// state from `get_connection_status`. The payload combines live server
-/// reachability with the user's manual Work Offline toggle into a single
-/// `effectiveOffline` flag that consumers should use to decide whether
-/// to render degraded / filtered UI.
+/// React hook over the shared connection store. First mount installs the
+/// `connection-status` event listener + fetches the initial state; every
+/// subsequent subscriber just reads from the store.
 export function useConnectionStatus(): ConnectionStatusPayload {
-  const [status, setStatus] = useState<ConnectionStatusPayload>({
-    online: true,
-    offlineModeManual: false,
-    effectiveOffline: false,
-  });
+  const ensureListener = useConnectionStore((s) => s.ensureListener);
+  const online = useConnectionStore((s) => s.online);
+  const offlineModeManual = useConnectionStore((s) => s.offlineModeManual);
+  const effectiveOffline = useConnectionStore((s) => s.effectiveOffline);
 
   useEffect(() => {
-    let cancelled = false;
-    getConnectionStatus()
-      .then((s) => {
-        if (!cancelled) setStatus(s);
-      })
-      .catch(() => {});
-    const unlisten = listen<ConnectionStatusPayload>("connection-status", (event) => {
-      if (!cancelled) setStatus(event.payload);
-    });
-    return () => {
-      cancelled = true;
-      unlisten.then((fn) => fn());
-    };
-  }, []);
+    ensureListener();
+  }, [ensureListener]);
 
-  return status;
+  return { online, offlineModeManual, effectiveOffline };
 }
