@@ -236,6 +236,7 @@ pub async fn finalize_onboarding(
     let search = SearchEngine::new(db_arc.clone(), None);
     *state.search_engine.write() = Some(search);
 
+    crate::prefetch::rehydrate_persistent_downloads(&state.player, &db2);
     *state.cache.lock() = Some(db2);
 
     // url::Url::parse adds a trailing slash that Plex connection URIs don't have.

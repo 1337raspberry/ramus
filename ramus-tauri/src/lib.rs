@@ -588,6 +588,10 @@ pub fn run() {
                                         *state.search_engine.write() = Some(search);
 
                                         if let Ok(db2) = CacheDatabase::open(&db_path) {
+                                            crate::prefetch::rehydrate_persistent_downloads(
+                                                &state.player,
+                                                &db2,
+                                            );
                                             *state.cache.lock() = Some(db2);
                                         }
                                     }

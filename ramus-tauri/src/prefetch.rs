@@ -263,9 +263,10 @@ impl PrefetchHandle {
 }
 
 /// Spawn the long-lived prefetch / download worker task. Call once at
-/// app startup. Rehydrates both the ephemeral prefetch LRU cache and the
-/// permanent downloads map from disk before the worker begins accepting
-/// commands.
+/// app startup. Rehydrates the ephemeral prefetch LRU cache from disk;
+/// persistent downloads are rehydrated separately via
+/// `rehydrate_persistent_downloads` once the cache DB is open (the DB
+/// isn't available until onboarding / session restore).
 pub fn spawn_worker(
     player: Arc<AudioPlayer>,
     http_client: reqwest::Client,
@@ -273,7 +274,6 @@ pub fn spawn_worker(
 ) -> PrefetchHandle {
     if let Ok(cfg_dir) = ramus_core::plex::token_store::config_dir() {
         rehydrate_cache_from_disk(&player, &cfg_dir.join("audio_cache"));
-        rehydrate_persistent_downloads(&player, &app, &cfg_dir.join("downloads"));
     }
 
     let (tx, rx) = mpsc::unbounded_channel();
@@ -340,21 +340,17 @@ fn rehydrate_cache_from_disk(player: &AudioPlayer, cache_dir: &std::path::Path) 
     }
 }
 
-/// Load the `downloads` table, verify each file still exists on disk (and
-/// matches the recorded size), and populate `AudioPlayer::persistent_cache`.
-/// Also deletes stale `downloads` rows whose files have vanished.
-fn rehydrate_persistent_downloads(
+/// Load the `downloads` table, verify each file still exists on disk, and
+/// populate `AudioPlayer::persistent_cache`. Deletes stale DB rows whose
+/// files have vanished. Called once the cache DB is open — from
+/// `finalize_onboarding` and from session restore in `lib.rs`.
+pub fn rehydrate_persistent_downloads(
     player: &AudioPlayer,
-    app: &AppHandle,
-    downloads_dir: &std::path::Path,
+    cache: &ramus_core::cache::db::CacheDatabase,
 ) {
-    let _ = std::fs::create_dir_all(downloads_dir);
-
-    let state = app.state::<crate::state::AppState>();
-    let cache_guard = state.cache.lock();
-    let Some(cache) = cache_guard.as_ref() else {
-        return;
-    };
+    if let Ok(cfg_dir) = ramus_core::plex::token_store::config_dir() {
+        let _ = std::fs::create_dir_all(cfg_dir.join("downloads"));
+    }
 
     let rows = match cache.all_download_paths() {
         Ok(r) => r,
