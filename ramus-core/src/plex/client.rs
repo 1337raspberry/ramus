@@ -266,6 +266,7 @@ impl PlexClient {
                         .connections
                         .unwrap_or_default()
                         .into_iter()
+                        .filter(|c| !crate::util::is_loopback_uri(&c.uri))
                         .map(|c| PlexServerConnection {
                             uri: c.uri,
                             local: c.local.unwrap_or(false),
