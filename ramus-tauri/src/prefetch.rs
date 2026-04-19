@@ -551,6 +551,23 @@ async fn run_cycle(
         .read()
         .disable_spectrum;
     let include_current = !spectrum_disabled;
+
+    // Ensure the current + lookahead tracks that are already on disk
+    // (from a previous user download or prefetch) get spectrum analysed.
+    // Without this, a user who downloaded an album and pressed play sees
+    // no visualiser — the prefetch worker's "download then analyse" path
+    // is skipped entirely when every track is already cached, so nothing
+    // else would trigger the FFT. Playing-after-download was the case the
+    // user called out as still expected to analyse.
+    if !spectrum_disabled {
+        for (rating_key, audio_path) in player.cached_paths_in_lookahead(true) {
+            if spec_file_path(&audio_path).is_file() {
+                continue;
+            }
+            spawn_analyse_task_from_path(audio_path, rating_key, app.clone());
+        }
+    }
+
     log::debug!(
         "prefetch: serial downloads{}",
         if include_current { " (incl. current)" } else { "" },
