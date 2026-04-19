@@ -4786,7 +4786,7 @@ body.is-fullscreen .focus-body {
 .album-card-menu-wrap {
   position: absolute;
   top: 6px;
-  right: 6px;
+  left: 6px;
 }
 .album-card-dots {
   background: rgba(0, 0, 0, 0.45);
@@ -4810,7 +4810,7 @@ body.is-fullscreen .focus-body {
 .album-card-dropdown {
   position: absolute;
   top: calc(100% + 4px);
-  right: 0;
+  left: 0;
   background: var(--bg-elevated, #1a1a1a);
   border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
   border-radius: 6px;
