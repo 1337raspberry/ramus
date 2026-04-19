@@ -30,6 +30,29 @@ pub mod session_reporter;
 pub mod spectrum_analyzer;
 pub mod state;
 
+/// Cheap "is the internet reachable" probe. Races bare-TCP connects to
+/// well-known, always-on endpoints (Cloudflare 1.1.1.1 and Google 8.8.8.8).
+/// First success wins; if both time out within `per_host_timeout`, the
+/// machine is genuinely offline and there's no point grinding through a
+/// 30s Plex discovery. Much faster than HTTP since we skip TLS entirely.
+async fn internet_reachable(per_host_timeout: std::time::Duration) -> bool {
+    let candidates = ["1.1.1.1:443", "8.8.8.8:443"];
+    let mut set = tokio::task::JoinSet::new();
+    for addr in candidates {
+        set.spawn(async move {
+            tokio::time::timeout(per_host_timeout, tokio::net::TcpStream::connect(addr))
+                .await
+                .is_ok_and(|r| r.is_ok())
+        });
+    }
+    while let Some(res) = set.join_next().await {
+        if let Ok(true) = res {
+            return true;
+        }
+    }
+    false
+}
+
 use std::sync::Arc;
 
 use tauri::AppHandle;
@@ -709,6 +732,30 @@ pub fn run() {
                                 let bg_reachable = state.server_reachable.clone();
                                 let bg_app = app_handle.clone();
                                 tauri::async_runtime::spawn(async move {
+                                    // Internet sense check before any Plex
+                                    // probing. Saves ~35s on a genuinely
+                                    // offline boot (airplane mode, dead
+                                    // router) since we'd otherwise sit
+                                    // through local + stored + cached +
+                                    // plex.tv timeouts back-to-back.
+                                    if !internet_reachable(std::time::Duration::from_secs(1)).await {
+                                        log::info!(
+                                            "startup probe: internet unreachable, skipping plex probes"
+                                        );
+                                        bg_reachable
+                                            .store(false, std::sync::atomic::Ordering::Release);
+                                        let offline_manual = bg_settings.read().offline_mode;
+                                        crate::events::emit_connection_status(
+                                            &bg_app,
+                                            crate::events::ConnectionStatusPayload {
+                                                online: false,
+                                                offline_mode_manual: offline_manual,
+                                                effective_offline: true,
+                                            },
+                                        );
+                                        return;
+                                    }
+
                                     let allow_http = !bg_settings.read().refuse_http;
 
                                     let apply_connection =
@@ -837,7 +884,15 @@ pub fn run() {
                                         return;
                                     }
                                     log::info!("no cached alternatives, re-discovering from plex.tv");
-                                    if let Ok(servers) = bg_client.discover_servers(&bg_auth_token).await {
+                                    // Cap re-discovery at 5s. The reqwest
+                                    // default is ~30s which felt glacial
+                                    // on a boot where plex.tv is slow.
+                                    let rediscover = tokio::time::timeout(
+                                        std::time::Duration::from_secs(5),
+                                        bg_client.discover_servers(&bg_auth_token),
+                                    )
+                                    .await;
+                                    if let Ok(Ok(servers)) = rediscover {
                                         if let Some(found) = servers
                                             .iter()
                                             .find(|s| s.machine_identifier == plex_server.machine_identifier)
