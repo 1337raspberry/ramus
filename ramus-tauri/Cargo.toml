@@ -7,16 +7,23 @@ authors.workspace = true
 repository.workspace = true
 
 # Cargo's default target is a binary on desktop (src/main.rs). Tauri mobile
-# builds link the crate as a static library into the generated Xcode project,
-# so the lib target needs to produce `libapp.a` — Xcode resolves transitive
-# xcframework deps (MPVKit → libmpv) at the final app-link step. "rlib" is
-# kept so local unit tests and downstream crates can still depend on the
-# library normally. `cdylib` is intentionally *not* included: it would
-# force cargo to link the dylib itself, which then fails with unresolved
-# mpv symbols because MPVKit's xcframeworks are only visible to Xcode.
+# builds link the crate as a lib: iOS wants a static archive (Xcode resolves
+# transitive xcframework deps for MPVKit → libmpv at the final app-link step),
+# Android wants a shared object (`.so`) loaded via `System.loadLibrary`. "rlib"
+# is kept so local unit tests and downstream crates can still depend on the
+# library normally.
+#
+# Including `cdylib` globally used to blow up iOS builds because cargo would
+# try to link a `.dylib` against MPVKit symbols that are only visible to Xcode.
+# With the Swift plugin bindings now going through `tauri::ios_plugin_binding!`
+# (extern C, resolved by Xcode at app link), the iOS staticlib path is the one
+# `cargo tauri ios` actually uses — the extra cdylib attempt still builds fine
+# on Apple because rustc's default iOS linker doesn't require unresolved
+# symbols to be defined. If iOS linking ever starts complaining about
+# MPVKit/libmpv symbols, gate `cdylib` to Android only via a rustflags trick.
 [lib]
 name = "ramus_tauri"
-crate-type = ["staticlib", "rlib"]
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
 ramus-core = { path = "../ramus-core" }
@@ -58,16 +65,22 @@ symphonia = { version = "0.5", default-features = false, features = [
     "pcm",
 ] }
 
-[target.'cfg(not(target_os = "ios"))'.dependencies]
+# NB: cargo target-spec cfgs only understand standard `target_*` keys —
+# Tauri's `cfg(desktop)` / `cfg(mobile)` are set at Rust compile time by
+# `tauri-build` and are NOT visible here, so we spell desktop out
+# explicitly. (Changed from `cfg(not(target_os = "ios"))` after Android
+# compile support was added; on Android these deps either don't build
+# or aren't meaningful.)
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 # libmpv is loaded at runtime via `libloading` on desktop so the app
-# compiles on any platform without headers or import libs. iOS forbids
-# `dlopen` of arbitrary dylibs — the iOS target uses a different mpv
-# backend (see Phase 2 of the iOS plan), so libloading is desktop-only.
+# compiles on any platform without headers or import libs. Mobile uses
+# a different mpv backend (iOS: MPVKit via Swift plugin; Android: TBD),
+# so libloading is desktop-only.
 libloading = "0.8"
 # souvlaki wraps MPRIS2 / SMTC / MPRemoteCommandCenter for desktop.
-# iOS replaces it with a Swift-plugin path to MPNowPlayingInfoCenter.
+# Mobile platforms replace it with platform-native now-playing surfaces.
 souvlaki = "0.8"
-# Window state persistence is meaningless on iOS (no resizable window).
+# Window state persistence is meaningless on mobile (no resizable window).
 tauri-plugin-window-state = "2"
 
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -19,9 +19,12 @@ use tauri::{
 pub use error::{Error, Result};
 pub use models::*;
 
-#[cfg(desktop)]
+// Android has no Kotlin-side `MpvBridgePlugin` yet, so it reuses the
+// desktop no-op stub — the plugin compiles but every call is a no-op.
+// When the Android port gets a real bridge, swap this back to `cfg(mobile)`.
+#[cfg(any(desktop, target_os = "android"))]
 mod desktop;
-#[cfg(mobile)]
+#[cfg(target_os = "ios")]
 mod mobile;
 
 mod error;
@@ -29,9 +32,9 @@ mod models;
 
 // Re-exported so consumers can type `tauri_plugin_ramus_ios_bridge::RamusIosBridge<R>`
 // without caring which backend they're resolving against.
-#[cfg(desktop)]
+#[cfg(any(desktop, target_os = "android"))]
 pub use desktop::RamusIosBridge;
-#[cfg(mobile)]
+#[cfg(target_os = "ios")]
 pub use mobile::RamusIosBridge;
 
 /// Extension trait for grabbing the bridge from any `Manager`.
@@ -49,9 +52,9 @@ impl<R: Runtime, T: Manager<R>> crate::RamusIosBridgeExt<R> for T {
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("ramus-ios-bridge")
         .setup(|app, api| {
-            #[cfg(mobile)]
+            #[cfg(target_os = "ios")]
             let bridge = mobile::init(app, api)?;
-            #[cfg(desktop)]
+            #[cfg(any(desktop, target_os = "android"))]
             let bridge = desktop::init(app, api)?;
             app.manage(bridge);
             Ok(())

@@ -16,7 +16,8 @@ use rand::RngCore;
 use sha2::{Digest, Sha256};
 
 #[cfg(target_os = "ios")]
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKey {
@@ -232,7 +233,25 @@ impl TokenStore {
     }
 }
 
+/// Runtime override for the config directory. Populated by the host app
+/// on platforms where the `directories` crate can't resolve a sensible
+/// path on its own (Android, where `ProjectDirs::from` returns `None`
+/// because there's no XDG-equivalent — apps live in per-package sandboxes
+/// reached through the Java `Context.getFilesDir()` API). The host reads
+/// the right path via Tauri's `PathResolver` and calls `set_config_dir`
+/// once at startup before any `TokenStore::new()` or `config_dir()` call.
+static CONFIG_DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Install the config-dir override. Call exactly once, before any code
+/// reads `config_dir()`. Subsequent calls are ignored (`OnceLock`).
+pub fn set_config_dir(path: PathBuf) {
+    let _ = CONFIG_DIR_OVERRIDE.set(path);
+}
+
 fn default_config_dir() -> Result<PathBuf, TokenStoreError> {
+    if let Some(path) = CONFIG_DIR_OVERRIDE.get() {
+        return Ok(path.clone());
+    }
     directories::ProjectDirs::from("com", "raspsoft", "ramus")
         .map(|d| d.data_dir().to_path_buf())
         .ok_or(TokenStoreError::NoConfigDir)
@@ -351,7 +370,40 @@ fn hardware_uuid() -> Result<String, TokenStoreError> {
 // iOS doesn't get a `hardware_uuid` — the iOS TokenStore is keychain-backed
 // and bypasses the AES layer entirely.
 
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux", target_os = "ios")))]
+// Android doesn't expose a stable hardware UUID the way desktop OSes do
+// (Settings.Secure.ANDROID_ID requires going through the Java SDK), so we
+// persist a random UUID in the app's sandboxed config dir on first run and
+// read it back thereafter. Same guarantee as Linux's `/etc/machine-id`:
+// stable per install, invalidated if the app's data is wiped.
+#[cfg(target_os = "android")]
+fn hardware_uuid() -> Result<String, TokenStoreError> {
+    let dir = default_config_dir()?;
+    let path = dir.join("machine-id");
+    if let Ok(existing) = fs::read_to_string(&path) {
+        let s = existing.trim().to_string();
+        if !s.is_empty() {
+            return Ok(s);
+        }
+    }
+    fs::create_dir_all(&dir)?;
+    let mut bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    let id = bytes.iter().fold(String::with_capacity(32), |mut acc, b| {
+        use std::fmt::Write;
+        let _ = write!(acc, "{b:02x}");
+        acc
+    });
+    fs::write(&path, &id)?;
+    Ok(id)
+}
+
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "ios",
+    target_os = "android"
+)))]
 fn hardware_uuid() -> Result<String, TokenStoreError> {
     Err(TokenStoreError::NoHardwareUUID)
 }
