@@ -875,6 +875,36 @@ async fn run_user_download(
     player.register_persistent_download(job.rating_key.clone(), file_path.clone());
     ios_backup::exclude_from_backup(&file_path);
 
+    // Warm the ancillary caches so offline playback has everything the UI
+    // needs: waveform sidecar for the seek bar, and album art pre-fetched
+    // at every display size. Fire-and-forget — if the network drops
+    // between audio download and these best-effort fetches, we just degrade
+    // gracefully at render time.
+    {
+        let app_warm = app.clone();
+        let rk = job.rating_key.clone();
+        let thumb = job.thumb.clone();
+        let file_path_warm = file_path.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = app_warm.state::<crate::state::AppState>();
+            crate::commands::downloads::warm_waveform_sidecar(
+                &state.client,
+                &rk,
+                &file_path_warm,
+            )
+            .await;
+            if let Some(thumb) = thumb {
+                crate::commands::downloads::warm_art_cache(
+                    &state.image_cache,
+                    &state.client,
+                    &state.http_client,
+                    &thumb,
+                )
+                .await;
+            }
+        });
+    }
+
     // If the downloaded track sits in the current playback queue, swap its
     // mpv playlist entry to the local file so the next time we hit that
     // track we read from disk. swap_playlist_entry_to_cached will kick

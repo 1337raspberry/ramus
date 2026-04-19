@@ -373,7 +373,30 @@ pub async fn get_art_url(
         }
     }
 
-    // Cache miss: download from Plex.
+    // Cache miss: try to download from Plex. On failure (offline, server
+    // down, etc), fall back to any smaller size already in the cache —
+    // better to render a slightly-fuzzy image than show a placeholder.
+    let fetch_result = try_fetch_art(&state, &thumb, size).await;
+    match fetch_result {
+        Ok(path) => Ok(path),
+        Err(e) => {
+            if let Some(path) = smaller_cached_size(&state, &thumb, size) {
+                log::debug!(
+                    "get_art_url: fetch at {size} failed ({e}); serving smaller cached size"
+                );
+                Ok(path)
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+async fn try_fetch_art(
+    state: &State<'_, AppState>,
+    thumb: &str,
+    size: u32,
+) -> Result<String, String> {
     let server_url = state.client.server_url().ok_or("Not connected")?;
     let token = state.client.token().ok_or("Not authenticated")?;
     let url = format!(
@@ -381,9 +404,8 @@ pub async fn get_art_url(
         server_url.as_str().trim_end_matches('/'),
         size,
         size,
-        urlencoding::encode(&thumb),
+        urlencoding::encode(thumb),
     );
-
     let response = state
         .http_client
         .get(&url)
@@ -391,20 +413,37 @@ pub async fn get_art_url(
         .send()
         .await
         .map_err(|_| "Image download failed".to_string())?;
-
     if !response.status().is_success() {
         return Err(format!("Image download HTTP {}", response.status()));
     }
-
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
-
-    // Insert handles concurrent download races internally.
     let path = {
         let mut cache = state.image_cache.lock();
-        cache.insert(&thumb, size, &bytes).map_err(|e| e.to_string())?
+        cache.insert(thumb, size, &bytes).map_err(|e| e.to_string())?
     };
-
     Ok(path.to_string_lossy().to_string())
+}
+
+/// Walk the canonical art sizes smaller than `requested` and return the
+/// first one that's already on disk. Used as an offline-grace fallback
+/// so a now-playing panel with no 1200 cached can still render the 300.
+fn smaller_cached_size(
+    state: &State<'_, AppState>,
+    thumb: &str,
+    requested: u32,
+) -> Option<String> {
+    // Canonical tiers from `ART_SIZE` in ui/src/lib/commands.ts — keep in sync.
+    const CANONICAL_SIZES: [u32; 3] = [1200, 300, 72];
+    let mut cache = state.image_cache.lock();
+    for size in CANONICAL_SIZES {
+        if size >= requested {
+            continue;
+        }
+        if let Some(path) = cache.get(thumb, size) {
+            return Some(path.to_string_lossy().to_string());
+        }
+    }
+    None
 }
 
 #[tauri::command]

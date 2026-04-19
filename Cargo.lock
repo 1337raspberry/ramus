@@ -3602,6 +3602,7 @@ dependencies = [
  "objc2",
  "objc2-core-foundation",
  "parking_lot",
+ "postcard",
  "ramus-core",
  "rand 0.8.5",
  "reqwest 0.12.28",

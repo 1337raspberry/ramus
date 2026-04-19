@@ -231,7 +231,23 @@ pub async fn get_waveform(
     state: State<'_, AppState>,
     rating_key: String,
 ) -> CmdResult<Option<Vec<f32>>> {
-    // Fetch audio stream to get the stream ID for the levels endpoint.
+    // 1. Local sidecar next to the persistent download, if we have one.
+    //    Populated at download time so offline playback still has the
+    //    seek bar; also avoids a Plex round-trip every track change.
+    if let Some(audio_path) = state
+        .player
+        .persistent_download_paths()
+        .get(&rating_key)
+        .cloned()
+    {
+        if let Some(levels) =
+            crate::commands::downloads::read_waveform_sidecar(&audio_path).await
+        {
+            return Ok(Some(levels));
+        }
+    }
+
+    // 2. Fall back to a live Plex fetch.
     let stream = match state.client.fetch_audio_stream(&rating_key).await {
         Ok(Some(s)) => s,
         _ => return Ok(None),

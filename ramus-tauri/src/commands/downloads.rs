@@ -4,19 +4,116 @@
 //! download worker (see `prefetch.rs`). Actual HTTP work happens in the
 //! worker; the commands just translate rating keys into enqueued jobs.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
+use parking_lot::Mutex;
+use std::sync::Arc;
 use tauri::{AppHandle, State};
 
+use ramus_core::cache::image_cache::ImageCache;
 use ramus_core::models::Track;
 use ramus_core::playback::transcode;
+use ramus_core::playback::waveform;
+use ramus_core::plex::client::PlexClient;
 
 use crate::events::{emit_downloads_changed, ConnectionStatusPayload};
 use crate::prefetch::{DownloadManagerSnapshot, UserDownloadJob};
 use crate::state::AppState;
 
 use super::CmdResult;
+
+/// Sidecar path for a pre-computed waveform: `audio.flac.wave`. Same
+/// pattern as `.spec` files — postcard-serialised `Vec<f32>` next to
+/// the audio file.
+pub fn waveform_sidecar_path(audio_path: &Path) -> PathBuf {
+    let mut s = audio_path.as_os_str().to_os_string();
+    s.push(".wave");
+    PathBuf::from(s)
+}
+
+/// Fetch a track's waveform from Plex and write it next to the audio
+/// file. Best-effort — silent failures are fine because the frontend's
+/// seek bar degrades gracefully to "no waveform".
+pub async fn warm_waveform_sidecar(
+    client: &Arc<PlexClient>,
+    rating_key: &str,
+    audio_path: &Path,
+) {
+    let wave_path = waveform_sidecar_path(audio_path);
+    if wave_path.is_file() {
+        return;
+    }
+    let Ok(Some(stream)) = client.fetch_audio_stream(rating_key).await else {
+        return;
+    };
+    let Some(stream_id) = stream.id else {
+        return;
+    };
+    let Ok(levels) = client.fetch_levels(stream_id, None).await else {
+        return;
+    };
+    if levels.is_empty() {
+        return;
+    }
+    let normalized = waveform::normalize_db_levels(&levels);
+    let Ok(bytes) = postcard::to_stdvec(&normalized) else {
+        return;
+    };
+    let _ = tokio::fs::write(&wave_path, bytes).await;
+}
+
+/// Read a cached waveform sidecar, returning `None` on any kind of miss
+/// or corruption. Callers fall back to a live Plex fetch.
+pub async fn read_waveform_sidecar(audio_path: &Path) -> Option<Vec<f32>> {
+    let bytes = tokio::fs::read(waveform_sidecar_path(audio_path)).await.ok()?;
+    postcard::from_bytes::<Vec<f32>>(&bytes).ok()
+}
+
+/// Pre-fetch album art at all 3 display sizes into the on-disk image
+/// cache. Used at user-download time so offline playback has art ready
+/// for every surface that shows it (now playing 1200, grid 300, queue 72).
+/// Best-effort — a single size failing doesn't abort the others.
+pub async fn warm_art_cache(
+    image_cache: &Arc<Mutex<ImageCache>>,
+    client: &Arc<PlexClient>,
+    http: &reqwest::Client,
+    thumb: &str,
+) {
+    for size in [72u32, 300, 1200] {
+        let already_cached = {
+            let mut cache = image_cache.lock();
+            cache.get(thumb, size).is_some()
+        };
+        if already_cached {
+            continue;
+        }
+        let Some(server_url) = client.server_url() else {
+            return;
+        };
+        let Some(token) = client.token() else {
+            return;
+        };
+        let url = format!(
+            "{}/photo/:/transcode?width={}&height={}&minSize=1&upscale=1&url={}",
+            server_url.as_str().trim_end_matches('/'),
+            size,
+            size,
+            urlencoding::encode(thumb),
+        );
+        let Ok(response) = http.get(&url).header("X-Plex-Token", &token).send().await else {
+            continue;
+        };
+        if !response.status().is_success() {
+            continue;
+        }
+        let Ok(bytes) = response.bytes().await else {
+            continue;
+        };
+        let mut cache = image_cache.lock();
+        let _ = cache.insert(thumb, size, &bytes);
+    }
+}
 
 /// Summary of the downloaded album for the Downloads panel. "Partial"
 /// albums (some tracks downloaded, some not) still appear here with

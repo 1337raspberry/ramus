@@ -5095,6 +5095,17 @@ body.is-fullscreen .focus-body {
   color: var(--text-secondary) !important;
 }
 
+/* Offline-mode: fade unplayable tracks in the album detail list. */
+.adv-track-row-unavailable,
+.mobile-track-row-unavailable {
+  opacity: 0.35;
+  cursor: default;
+}
+.adv-track-row-unavailable:hover,
+.mobile-track-row-unavailable:hover {
+  background: transparent !important;
+}
+
 /* Offline pill — shown in chrome when effectiveOffline. */
 .offline-pill {
   position: fixed;

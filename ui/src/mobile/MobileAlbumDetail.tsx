@@ -15,6 +15,8 @@ import {
 import FlowLayout from "../components/FlowLayout";
 import MarqueeText from "../components/MarqueeText";
 import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "../components/DownloadMenuItems";
+import { useDownloadsStore } from "../stores/downloadsStore";
+import { useConnectionStatus } from "../lib/useConnectionStatus";
 
 /**
  * Album detail: hero art + artist/year/genres, then track list. Reuses the
@@ -35,6 +37,9 @@ export default function MobileAlbumDetail() {
   const { artSrc, artErr, setArtErr } = useArtUrl(album?.thumb, ART_SIZE.MEDIUM);
   const [genres, setGenres] = useState<string[]>([]);
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
+
+  const { effectiveOffline } = useConnectionStatus();
+  const downloadedIds = useDownloadsStore((s) => s.downloadedTrackIds);
 
   useEffect(() => {
     if (!openMenuKey) return;
@@ -192,9 +197,17 @@ export default function MobileAlbumDetail() {
                 <div
                   role="button"
                   tabIndex={0}
-                  className="mobile-track-row"
-                  onClick={() => playAlbum(album, i)}
+                  className={`mobile-track-row${
+                    effectiveOffline && !downloadedIds.has(t.ratingKey)
+                      ? " mobile-track-row-unavailable"
+                      : ""
+                  }`}
+                  onClick={() => {
+                    if (effectiveOffline && !downloadedIds.has(t.ratingKey)) return;
+                    playAlbum(album, i);
+                  }}
                   onKeyDown={(e) => {
+                    if (effectiveOffline && !downloadedIds.has(t.ratingKey)) return;
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       playAlbum(album, i);
