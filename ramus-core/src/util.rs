@@ -34,6 +34,20 @@ pub fn escape_like(input: &str) -> String {
     out
 }
 
+/// Build the Plex photo transcode URL for a given thumb path at a given
+/// pixel size. Used by every art-fetching site (the on-disk image cache
+/// warmer, the art command, and the OS media-control panel). Keeping the
+/// format in one place means future query-param tweaks are a single edit.
+pub fn plex_art_url(server_url: &url::Url, thumb: &str, size: u32) -> String {
+    format!(
+        "{}/photo/:/transcode?width={}&height={}&minSize=1&upscale=1&url={}",
+        server_url.as_str().trim_end_matches('/'),
+        size,
+        size,
+        percent_encode(thumb),
+    )
+}
+
 /// RFC 3986 percent-encode a string (unreserved chars pass through).
 pub fn percent_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());

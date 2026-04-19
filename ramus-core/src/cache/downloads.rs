@@ -188,22 +188,6 @@ impl CacheDatabase {
         Ok(rows.into_iter().map(|(k, n, s)| (k, (n, s))).collect())
     }
 
-    /// Total track count for an album (from the tracks table).
-    pub fn album_total_track_count(
-        &self,
-        album_rating_key: &str,
-    ) -> Result<u32, CacheError> {
-        let conn = self.conn.lock();
-        let n: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM tracks t
-             JOIN albums a ON a.id = t.albumId
-             WHERE a.sourceId = ?1",
-            params![album_rating_key],
-            |r| r.get(0),
-        )?;
-        Ok(n as u32)
-    }
-
     /// Bulk lookup of total track counts for a set of album rating keys.
     /// Returns a map so the caller avoids N+1 queries when rendering the
     /// downloads panel's album list.

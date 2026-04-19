@@ -3,16 +3,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type AlbumSortOrder } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import type { Album } from "../lib/types";
-import {
-  ART_SIZE,
-  appendToQueue,
-  getArtUrl,
-  getFavouriteTracks,
-  getQueue,
-  getTracksForAlbum,
-  insertNext,
-  playTracks,
-} from "../lib/commands";
+import { ART_SIZE, getArtUrl, getFavouriteTracks, getQueue, playTracks } from "../lib/commands";
+import { useQueueAlbum } from "../lib/useQueueAlbum";
 import {
   IconPlay,
   IconStarFilled,
@@ -71,16 +63,7 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
 
-  const queueTracks = useCallback(
-    async (mode: "next" | "append") => {
-      const tracks = await getTracksForAlbum(album.ratingKey);
-      const fn = mode === "next" ? insertNext : appendToQueue;
-      await fn(tracks);
-      const q = await getQueue();
-      usePlaybackStore.setState({ queue: q });
-    },
-    [album.ratingKey],
-  );
+  const queueTracks = useQueueAlbum(album.ratingKey);
 
   return (
     <div className="album-card" onClick={() => openAlbumDetail(album)}>

@@ -199,19 +199,27 @@ export default function DownloadsPanel({ onDismiss }: Props) {
   );
 }
 
-function InProgressSection({
-  inProgress,
-  liveProgress,
-  queueLen,
-  onCancelAll,
-}: {
+interface InProgressProps {
   inProgress: InProgressDownload | null;
   liveProgress: { bytesWritten: number; totalBytes: number | null } | null;
   queueLen: number;
   onCancelAll: () => Promise<void>;
-}) {
-  if (!inProgress && queueLen === 0) return null;
+}
 
+function InProgressSection(props: InProgressProps) {
+  // Early-return must happen before any hooks to satisfy rules-of-hooks.
+  // Wrapping the hook-bearing body in a separate component keeps the hook
+  // call count stable once the section mounts.
+  if (!props.inProgress && props.queueLen === 0) return null;
+  return <InProgressSectionBody {...props} />;
+}
+
+function InProgressSectionBody({
+  inProgress,
+  liveProgress,
+  queueLen,
+  onCancelAll,
+}: InProgressProps) {
   // Prefer the live-progress bytes from the event stream over the overview
   // snapshot, which only updates on downloads-changed.
   const bytes = liveProgress?.bytesWritten ?? inProgress?.bytesWritten ?? 0;

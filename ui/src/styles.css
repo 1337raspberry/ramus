@@ -5018,7 +5018,6 @@ body.is-fullscreen .focus-body {
   padding: 4px 8px;
   font-size: 14px;
   border-radius: 4px;
-  grid-area: action;
 }
 .downloads-row-action:hover {
   color: var(--text-primary);
@@ -5064,27 +5063,6 @@ body.is-fullscreen .focus-body {
     transform: translateY(0);
   }
 }
-.mobile-action-sheet-header {
-  padding: 14px 20px 10px;
-  text-align: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-.mobile-action-sheet-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mobile-action-sheet-subtitle {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .mobile-action-sheet-group,
 .mobile-action-sheet-cancel {
   background: rgba(32, 32, 36, 0.92);
@@ -5092,9 +5070,6 @@ body.is-fullscreen .focus-body {
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   border-radius: 14px;
   overflow: hidden;
-}
-.mobile-action-sheet-group .mobile-action-sheet-header {
-  padding: 14px 20px 10px;
 }
 .mobile-action-sheet-group button {
   display: block;
@@ -5109,8 +5084,7 @@ body.is-fullscreen .focus-body {
   text-align: center;
   position: relative;
 }
-.mobile-action-sheet-group button + button::before,
-.mobile-action-sheet-header + button::before {
+.mobile-action-sheet-group button + button::before {
   content: "";
   position: absolute;
   left: 16px;

@@ -14,10 +14,7 @@ pub async fn dismiss_keyboard(app: tauri::AppHandle) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub async fn show_native_search_bar(
-    app: tauri::AppHandle,
-    initial_query: String,
-) -> CmdResult<()> {
+pub async fn show_native_search_bar(app: tauri::AppHandle, initial_query: String) -> CmdResult<()> {
     #[cfg(target_os = "ios")]
     {
         use tauri_plugin_ramus_ios_bridge::RamusIosBridgeExt;

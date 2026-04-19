@@ -64,7 +64,10 @@ async fn auto_sync_loop(
         };
 
         // Skip if a manual sync is already running.
-        if sync_in_progress.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
+        if sync_in_progress
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
             log::info!("auto-sync: skipping, sync already in progress");
             continue;
         }

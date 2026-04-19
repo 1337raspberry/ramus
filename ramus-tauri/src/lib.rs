@@ -15,14 +15,14 @@ pub mod media_controls;
 // libmpv is loaded at runtime via `libloading` on desktop (see mpv_ffi.rs).
 // iOS uses `mpv_ios.rs` instead, which delegates to the Swift plugin's
 // MPVKit handle via Tauri IPC.
+#[cfg(target_os = "ios")]
+pub mod keychain_ios;
 #[cfg(not(target_os = "ios"))]
 pub mod mpv_controller;
 #[cfg(not(target_os = "ios"))]
 pub mod mpv_ffi;
 #[cfg(target_os = "ios")]
 pub mod mpv_ios;
-#[cfg(target_os = "ios")]
-pub mod keychain_ios;
 
 pub mod ios_backup;
 pub mod prefetch;
@@ -102,8 +102,9 @@ pub fn create_mpv_player(
 
     // The player is needed inside callbacks but owns the MpvController. A
     // shared Arc populated after construction breaks the cycle.
-    let player_ref: Arc<parking_lot::Mutex<Option<Arc<ramus_core::playback::player::AudioPlayer>>>> =
-        Arc::new(parking_lot::Mutex::new(None));
+    let player_ref: Arc<
+        parking_lot::Mutex<Option<Arc<ramus_core::playback::player::AudioPlayer>>>,
+    > = Arc::new(parking_lot::Mutex::new(None));
     let pr1 = player_ref.clone();
     let pr2 = player_ref.clone();
     let pr3 = player_ref.clone();
@@ -296,13 +297,17 @@ pub fn create_mpv_player(
         // it tried; surface that verbatim if it fails.
         let mpv_lib = Arc::new(MpvLib::load().unwrap_or_else(|e| panic!("{e}")));
         let mpv = MpvController::new(mpv_lib, callbacks).expect("Failed to initialize libmpv");
-        Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(mpv)))
+        Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(
+            mpv,
+        )))
     };
     #[cfg(target_os = "ios")]
     let player = {
         let ios_mpv = crate::mpv_ios::IosMpvPlayer::new(app_handle.clone(), callbacks)
             .expect("failed to initialise iOS mpv bridge");
-        Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(ios_mpv)))
+        Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(
+            ios_mpv,
+        )))
     };
 
     *player_ref.lock() = Some(player.clone());
@@ -732,30 +737,6 @@ pub fn run() {
                                 let bg_reachable = state.server_reachable.clone();
                                 let bg_app = app_handle.clone();
                                 tauri::async_runtime::spawn(async move {
-                                    // Internet sense check before any Plex
-                                    // probing. Saves ~35s on a genuinely
-                                    // offline boot (airplane mode, dead
-                                    // router) since we'd otherwise sit
-                                    // through local + stored + cached +
-                                    // plex.tv timeouts back-to-back.
-                                    if !internet_reachable(std::time::Duration::from_secs(1)).await {
-                                        log::info!(
-                                            "startup probe: internet unreachable, skipping plex probes"
-                                        );
-                                        bg_reachable
-                                            .store(false, std::sync::atomic::Ordering::Release);
-                                        let offline_manual = bg_settings.read().offline_mode;
-                                        crate::events::emit_connection_status(
-                                            &bg_app,
-                                            crate::events::ConnectionStatusPayload {
-                                                online: false,
-                                                offline_mode_manual: offline_manual,
-                                                effective_offline: true,
-                                            },
-                                        );
-                                        return;
-                                    }
-
                                     let allow_http = !bg_settings.read().refuse_http;
 
                                     let apply_connection =
@@ -873,26 +854,42 @@ pub fn run() {
                                             .find_best_connection(&filtered_server, allow_http, true)
                                             .await;
                                         if let Some(conn) = best {
-                                            apply_connection(&conn);
-                                            return;
+                                            if apply_connection(&conn) {
+                                                return;
+                                            }
                                         }
                                     }
 
-                                    // 4. Re-discover from plex.tv.
-                                    if bg_auth_token.is_empty() {
+                                    // 4. Re-discover from plex.tv. Skipped if
+                                    // we can't reach it — no stored auth
+                                    // token, or a cheap internet probe fails
+                                    // (airplane mode, dead router). Either
+                                    // way we fall through to the offline
+                                    // emit at the end. LAN-only Plex setups
+                                    // with no internet still got through
+                                    // steps 1–3 above.
+                                    let can_rediscover = if bg_auth_token.is_empty() {
                                         log::warn!("cannot re-discover from plex.tv — no auth token stored");
-                                        return;
-                                    }
-                                    log::info!("no cached alternatives, re-discovering from plex.tv");
-                                    // Cap re-discovery at 5s. The reqwest
-                                    // default is ~30s which felt glacial
-                                    // on a boot where plex.tv is slow.
-                                    let rediscover = tokio::time::timeout(
-                                        std::time::Duration::from_secs(5),
-                                        bg_client.discover_servers(&bg_auth_token),
-                                    )
-                                    .await;
-                                    if let Ok(Ok(servers)) = rediscover {
+                                        false
+                                    } else if !internet_reachable(std::time::Duration::from_secs(1)).await {
+                                        log::info!(
+                                            "startup probe: internet unreachable, skipping plex.tv re-discovery"
+                                        );
+                                        false
+                                    } else {
+                                        true
+                                    };
+                                    if can_rediscover {
+                                        log::info!("no cached alternatives, re-discovering from plex.tv");
+                                        // Cap re-discovery at 5s. The reqwest
+                                        // default is ~30s which felt glacial
+                                        // on a boot where plex.tv is slow.
+                                        let rediscover = tokio::time::timeout(
+                                            std::time::Duration::from_secs(5),
+                                            bg_client.discover_servers(&bg_auth_token),
+                                        )
+                                        .await;
+                                        if let Ok(Ok(servers)) = rediscover {
                                         if let Some(found) = servers
                                             .iter()
                                             .find(|s| s.machine_identifier == plex_server.machine_identifier)
@@ -911,6 +908,9 @@ pub fn run() {
                                                         Some(&found.connections),
                                                         None,
                                                     );
+                                                    // Connected via plex.tv — skip the
+                                                    // fall-through offline emit below.
+                                                    return;
                                                 }
                                             } else {
                                                 log::warn!(
@@ -928,6 +928,7 @@ pub fn run() {
                                     } else {
                                         log::warn!("plex.tv re-discovery failed");
                                     }
+                                    } // end if can_rediscover
 
                                     // Fall-through: none of the four probe
                                     // paths connected. Flip the reachability

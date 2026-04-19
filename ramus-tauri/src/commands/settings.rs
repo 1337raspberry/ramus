@@ -42,9 +42,13 @@ pub async fn update_settings(
     let config = settings.to_playback_config();
     state.player.update_config(config);
 
-    state.player.apply_equalizer(settings.eq_enabled, &settings.eq_bands);
+    state
+        .player
+        .apply_equalizer(settings.eq_enabled, &settings.eq_bands);
 
-    state.connection_monitor.set_allow_http(!settings.refuse_http);
+    state
+        .connection_monitor
+        .set_allow_http(!settings.refuse_http);
 
     state
         .image_cache
@@ -165,7 +169,9 @@ pub async fn clear_audio_cache(state: State<'_, AppState>) -> CmdResult<()> {
 
 #[tauri::command]
 pub async fn get_audio_cache_stats(state: State<'_, AppState>) -> CmdResult<AudioCacheStats> {
-    let (count, size) = state.player.with_cache(|cache| (cache.len(), cache.total_size()));
+    let (count, size) = state
+        .player
+        .with_cache(|cache| (cache.len(), cache.total_size()));
     Ok(AudioCacheStats {
         entry_count: count,
         total_size_bytes: size,

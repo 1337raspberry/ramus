@@ -2,8 +2,8 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { Album } from "../lib/types";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useLibraryStore } from "../stores/libraryStore";
-import { usePlaybackStore } from "../stores/playbackStore";
-import { ART_SIZE, appendToQueue, getQueue, getTracksForAlbum, insertNext } from "../lib/commands";
+import { ART_SIZE } from "../lib/commands";
+import { useQueueAlbum } from "../lib/useQueueAlbum";
 import { IconMusicNote, IconStarFilled } from "../components/Icons";
 import { AlbumDownloadMenuItem } from "../components/DownloadMenuItems";
 
@@ -53,16 +53,7 @@ export default memo(function MobileAlbumCard({ album }: Props) {
     openAlbumDetail(album);
   }, [album, openAlbumDetail]);
 
-  const queueTracks = useCallback(
-    async (mode: "next" | "append") => {
-      const tracks = await getTracksForAlbum(album.ratingKey);
-      const fn = mode === "next" ? insertNext : appendToQueue;
-      await fn(tracks);
-      const q = await getQueue();
-      usePlaybackStore.setState({ queue: q });
-    },
-    [album.ratingKey],
-  );
+  const queueTracks = useQueueAlbum(album.ratingKey);
 
   return (
     <>

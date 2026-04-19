@@ -87,8 +87,7 @@ pub async fn seek(state: State<'_, AppState>, position: f64) -> CmdResult<()> {
     state.session_reporter.playback_seeked(position);
     // Report new position to OS media controls so the scrubber jumps.
     if let Some(ref mc) = *state.media_controls.lock() {
-        let is_playing =
-            state.player.state().status == ramus_core::models::PlaybackStatus::Playing;
+        let is_playing = state.player.state().status == ramus_core::models::PlaybackStatus::Playing;
         mc.update_playback_state(is_playing, position);
     }
     Ok(())
@@ -106,37 +105,25 @@ pub async fn get_volume(state: State<'_, AppState>) -> CmdResult<f64> {
 }
 
 #[tauri::command]
-pub async fn append_to_queue(
-    state: State<'_, AppState>,
-    tracks: Vec<Track>,
-) -> CmdResult<()> {
+pub async fn append_to_queue(state: State<'_, AppState>, tracks: Vec<Track>) -> CmdResult<()> {
     state.player.append_to_queue(tracks);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn insert_next(
-    state: State<'_, AppState>,
-    tracks: Vec<Track>,
-) -> CmdResult<()> {
+pub async fn insert_next(state: State<'_, AppState>, tracks: Vec<Track>) -> CmdResult<()> {
     state.player.insert_next(tracks);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn remove_from_queue(
-    state: State<'_, AppState>,
-    index: usize,
-) -> CmdResult<()> {
+pub async fn remove_from_queue(state: State<'_, AppState>, index: usize) -> CmdResult<()> {
     state.player.remove_from_queue(index);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn jump_to_queue_index(
-    state: State<'_, AppState>,
-    index: usize,
-) -> CmdResult<()> {
+pub async fn jump_to_queue_index(state: State<'_, AppState>, index: usize) -> CmdResult<()> {
     state.prefetch_handle.notify_skip();
     state.player.jump_to_index(index);
     Ok(())
@@ -240,9 +227,7 @@ pub async fn get_waveform(
         .get(&rating_key)
         .cloned()
     {
-        if let Some(levels) =
-            crate::commands::downloads::read_waveform_sidecar(&audio_path).await
-        {
+        if let Some(levels) = crate::commands::downloads::read_waveform_sidecar(&audio_path).await {
             return Ok(Some(levels));
         }
     }

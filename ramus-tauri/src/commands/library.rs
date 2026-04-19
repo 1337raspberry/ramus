@@ -4,26 +4,19 @@ use ramus_core::cache::db::CacheStats;
 use ramus_core::genre::node::GenreNode;
 use ramus_core::models::{Album, AlbumColorInfo, ArtistInfo, Track, VibrantPalette};
 use ramus_core::search::engine::GenreExpander;
+use ramus_core::util::plex_art_url;
+use rand::seq::SliceRandom;
 use serde::Serialize;
 
 use crate::state::AppState;
 
-use super::CmdResult;
+use super::{with_cache, CmdResult};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenreTreeResponse {
     pub tree: Vec<GenreNode>,
     pub total_album_count: usize,
-}
-
-fn with_cache<F, T>(state: &AppState, f: F) -> CmdResult<T>
-where
-    F: FnOnce(&ramus_core::cache::db::CacheDatabase) -> Result<T, ramus_core::cache::db::CacheError>,
-{
-    let lock = state.cache.lock();
-    let db = lock.as_ref().ok_or("Cache not initialized")?;
-    f(db).map_err(|e| e.to_string())
 }
 
 /// When effective-offline mode is active, returns the set of album rating
@@ -40,10 +33,16 @@ fn offline_album_source_ids(
     Ok(Some(ids))
 }
 
-fn filter_albums(albums: Vec<Album>, allowed: Option<std::collections::HashSet<String>>) -> Vec<Album> {
+fn filter_albums(
+    albums: Vec<Album>,
+    allowed: Option<std::collections::HashSet<String>>,
+) -> Vec<Album> {
     match allowed {
         None => albums,
-        Some(set) => albums.into_iter().filter(|a| set.contains(&a.rating_key)).collect(),
+        Some(set) => albums
+            .into_iter()
+            .filter(|a| set.contains(&a.rating_key))
+            .collect(),
     }
 }
 
@@ -99,7 +98,10 @@ pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeRe
         nodes
     };
 
-    Ok(GenreTreeResponse { tree, total_album_count })
+    Ok(GenreTreeResponse {
+        tree,
+        total_album_count,
+    })
 }
 
 #[tauri::command]
@@ -191,10 +193,7 @@ pub async fn get_albums_for_artist_name(
 }
 
 #[tauri::command]
-pub async fn get_albums_for_year(
-    state: State<'_, AppState>,
-    year: i32,
-) -> CmdResult<Vec<Album>> {
+pub async fn get_albums_for_year(state: State<'_, AppState>, year: i32) -> CmdResult<Vec<Album>> {
     let albums = with_cache(&state, |db| db.albums_for_year(year))?;
     Ok(filter_albums(albums, offline_album_source_ids(&state)?))
 }
@@ -208,10 +207,7 @@ pub async fn get_tracks_for_album(
 }
 
 #[tauri::command]
-pub async fn get_track(
-    state: State<'_, AppState>,
-    source_id: String,
-) -> CmdResult<Option<Track>> {
+pub async fn get_track(state: State<'_, AppState>, source_id: String) -> CmdResult<Option<Track>> {
     with_cache(&state, |db| db.track_by_source_id(&source_id))
 }
 
@@ -285,7 +281,10 @@ pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<G
         nodes
     };
 
-    Ok(GenreTreeResponse { tree, total_album_count })
+    Ok(GenreTreeResponse {
+        tree,
+        total_album_count,
+    })
 }
 
 #[tauri::command]
@@ -331,29 +330,25 @@ pub async fn get_album_genres(
 }
 
 #[tauri::command]
-pub async fn get_album(
-    state: State<'_, AppState>,
-    source_id: String,
-) -> CmdResult<Option<Album>> {
+pub async fn get_album(state: State<'_, AppState>, source_id: String) -> CmdResult<Option<Album>> {
     with_cache(&state, |db| db.album_by_source_id(&source_id))
 }
 
 #[tauri::command]
 pub async fn get_random_album(state: State<'_, AppState>) -> CmdResult<Option<Album>> {
     if state.effective_offline() {
-        // Avoid returning a non-playable random album in offline mode.
-        let albums = with_cache(&state, |db| db.all_albums())?;
-        let downloaded = with_cache(&state, |db| db.downloaded_album_source_ids())?;
-        let playable: Vec<Album> = albums
-            .into_iter()
-            .filter(|a| downloaded.contains(&a.rating_key))
-            .collect();
-        if playable.is_empty() {
+        // Avoid returning a non-playable random album in offline mode. Run
+        // the usual offline filter over the full album list, then pick at
+        // random among what's actually on disk.
+        let albums = filter_albums(
+            with_cache(&state, |db| db.all_albums())?,
+            offline_album_source_ids(&state)?,
+        );
+        if albums.is_empty() {
             return Ok(None);
         }
-        use rand::seq::SliceRandom;
         let mut rng = rand::thread_rng();
-        return Ok(playable.choose(&mut rng).cloned());
+        return Ok(albums.choose(&mut rng).cloned());
     }
     with_cache(&state, |db| db.random_album())
 }
@@ -380,9 +375,9 @@ pub async fn get_art_url(
     match fetch_result {
         Ok(path) => Ok(path),
         Err(e) => {
-            if let Some(path) = smaller_cached_size(&state, &thumb, size) {
+            if let Some(path) = any_cached_size(&state, &thumb, size) {
                 log::debug!(
-                    "get_art_url: fetch at {size} failed ({e}); serving smaller cached size"
+                    "get_art_url: fetch at {size} failed ({e}); serving alternate cached size"
                 );
                 Ok(path)
             } else {
@@ -399,13 +394,7 @@ async fn try_fetch_art(
 ) -> Result<String, String> {
     let server_url = state.client.server_url().ok_or("Not connected")?;
     let token = state.client.token().ok_or("Not authenticated")?;
-    let url = format!(
-        "{}/photo/:/transcode?width={}&height={}&minSize=1&upscale=1&url={}",
-        server_url.as_str().trim_end_matches('/'),
-        size,
-        size,
-        urlencoding::encode(thumb),
-    );
+    let url = plex_art_url(&server_url, thumb, size);
     let response = state
         .http_client
         .get(&url)
@@ -419,24 +408,34 @@ async fn try_fetch_art(
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
     let path = {
         let mut cache = state.image_cache.lock();
-        cache.insert(thumb, size, &bytes).map_err(|e| e.to_string())?
+        cache
+            .insert(thumb, size, &bytes)
+            .map_err(|e| e.to_string())?
     };
     Ok(path.to_string_lossy().to_string())
 }
 
-/// Walk the canonical art sizes smaller than `requested` and return the
-/// first one that's already on disk. Used as an offline-grace fallback
-/// so a now-playing panel with no 1200 cached can still render the 300.
-fn smaller_cached_size(
-    state: &State<'_, AppState>,
-    thumb: &str,
-    requested: u32,
-) -> Option<String> {
+/// Walk the canonical art sizes (smaller first, then larger) and return the
+/// first one that's already on disk. Used as an offline-grace fallback: a
+/// slightly-fuzzy or oversized cached image is always better than rendering
+/// a placeholder. Prefers smaller sizes to avoid pushing a 1200px image
+/// through a 72px widget, but a larger size still beats nothing.
+fn any_cached_size(state: &State<'_, AppState>, thumb: &str, requested: u32) -> Option<String> {
     // Canonical tiers from `ART_SIZE` in ui/src/lib/commands.ts — keep in sync.
     const CANONICAL_SIZES: [u32; 3] = [1200, 300, 72];
     let mut cache = state.image_cache.lock();
+    // Smaller first (strictly less than requested).
     for size in CANONICAL_SIZES {
         if size >= requested {
+            continue;
+        }
+        if let Some(path) = cache.get(thumb, size) {
+            return Some(path.to_string_lossy().to_string());
+        }
+    }
+    // Nothing smaller — fall back to any larger cached size.
+    for size in CANONICAL_SIZES {
+        if size <= requested {
             continue;
         }
         if let Some(path) = cache.get(thumb, size) {

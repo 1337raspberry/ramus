@@ -72,6 +72,31 @@ const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(250);
 
 // --- Public types ---
 
+/// Build a `DownloadProgressPayload` by cloning the identity fields from a
+/// `UserDownloadJob`. Keeps the four progress-emit sites inside
+/// `run_user_download` short and makes changes to the payload shape a
+/// single edit.
+fn progress_payload(
+    job: &UserDownloadJob,
+    phase: &'static str,
+    bytes_written: u64,
+    total_bytes: Option<u64>,
+    error: Option<String>,
+) -> DownloadProgressPayload {
+    DownloadProgressPayload {
+        rating_key: job.rating_key.clone(),
+        album_rating_key: job.album_rating_key.clone(),
+        title: job.title.clone(),
+        artist_name: job.artist_name.clone(),
+        album_title: job.album_title.clone(),
+        thumb: job.thumb.clone(),
+        phase,
+        bytes_written,
+        total_bytes,
+        error,
+    }
+}
+
 /// Queued user-initiated download. Built by the download commands after
 /// looking up track metadata and a live server URL.
 #[derive(Debug, Clone)]
@@ -189,7 +214,9 @@ impl PrefetchHandle {
     /// Signal that mpv has naturally advanced to a new track.
     pub fn notify_natural_advance(&self) {
         let gen = self.generation.load(Ordering::SeqCst);
-        let _ = self.tx.send(PrefetchCmd::NaturalAdvance { generation: gen });
+        let _ = self
+            .tx
+            .send(PrefetchCmd::NaturalAdvance { generation: gen });
     }
 
     /// Signal that the user skipped to a different track. Aborts in-flight
@@ -216,10 +243,7 @@ impl PrefetchHandle {
         {
             let mut s = self.shared.lock();
             for job in jobs {
-                let already_queued = s
-                    .user_queue
-                    .iter()
-                    .any(|q| q.rating_key == job.rating_key);
+                let already_queued = s.user_queue.iter().any(|q| q.rating_key == job.rating_key);
                 let in_flight = s
                     .in_progress
                     .as_ref()
@@ -257,19 +281,19 @@ impl PrefetchHandle {
         }
     }
 
-    /// Cancel every queued and in-flight user download.
+    /// Cancel every queued and in-flight user download. Always bumps the
+    /// generation and sends a cancel command: even without an in-flight
+    /// user download, a prefetch cycle may be mid-run and the worker needs
+    /// to restart so no stale downloads-changed emission is missed.
     pub fn cancel_all_user_downloads(&self) {
-        let had_in_flight = {
+        {
             let mut s = self.shared.lock();
             s.user_queue.clear();
-            s.in_progress.is_some()
-        };
-        if had_in_flight {
-            let gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
-            let _ = self
-                .tx
-                .send(PrefetchCmd::CancelUserDownload { generation: gen });
         }
+        let gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = self
+            .tx
+            .send(PrefetchCmd::CancelUserDownload { generation: gen });
     }
 
     /// Snapshot of the queue + in-flight state. Cheap — just clones a
@@ -570,7 +594,11 @@ async fn run_cycle(
 
     log::debug!(
         "prefetch: serial downloads{}",
-        if include_current { " (incl. current)" } else { "" },
+        if include_current {
+            " (incl. current)"
+        } else {
+            ""
+        },
     );
     run_serial_downloads(
         &player,
@@ -627,24 +655,27 @@ async fn run_serial_downloads(
         };
 
         if let Some(job) = user_job {
-            match run_user_download(player, http, app, shared, shared_gen, my_gen, downloads_dir, &job).await {
+            match run_user_download(
+                player,
+                http,
+                app,
+                shared,
+                shared_gen,
+                my_gen,
+                downloads_dir,
+                &job,
+            )
+            .await
+            {
                 Ok(()) => {}
                 Err(e) => {
-                    log::warn!("downloads: user download failed for {}: {e}", job.rating_key);
+                    log::warn!(
+                        "downloads: user download failed for {}: {e}",
+                        job.rating_key
+                    );
                     emit_download_progress(
                         app,
-                        DownloadProgressPayload {
-                            rating_key: job.rating_key.clone(),
-                            album_rating_key: job.album_rating_key.clone(),
-                            title: job.title.clone(),
-                            artist_name: job.artist_name.clone(),
-                            album_title: job.album_title.clone(),
-                            thumb: job.thumb.clone(),
-                            phase: "failed",
-                            bytes_written: 0,
-                            total_bytes: job.expected_size_bytes,
-                            error: Some(e),
-                        },
+                        progress_payload(&job, "failed", 0, job.expected_size_bytes, Some(e)),
                     );
                     user_failed.insert(job.rating_key);
                 }
@@ -654,7 +685,8 @@ async fn run_serial_downloads(
         }
 
         // No user work — fall back to prefetch.
-        let Some((track_id, url)) = player.next_uncached_target_in_lookahead(include_current) else {
+        let Some((track_id, url)) = player.next_uncached_target_in_lookahead(include_current)
+        else {
             log::debug!("prefetch: lookahead window exhausted, idle");
             return;
         };
@@ -696,12 +728,7 @@ async fn run_prefetch_download(
     }
 
     let ext = extension_from_url(url);
-    let filename = format!(
-        "{}_{}.{}",
-        sanitize_filename(track_id),
-        track_id.len(),
-        ext
-    );
+    let filename = format!("{}_{}.{}", sanitize_filename(track_id), track_id.len(), ext);
     let file_path = cache_dir.join(&filename);
 
     let size = download_http_to_file(client, url, &file_path, |_bytes, _total| {}).await?;
@@ -738,18 +765,13 @@ async fn run_user_download(
         // Already done — still emit a terminal event so the UI clears the row.
         emit_download_progress(
             app,
-            DownloadProgressPayload {
-                rating_key: job.rating_key.clone(),
-                album_rating_key: job.album_rating_key.clone(),
-                title: job.title.clone(),
-                artist_name: job.artist_name.clone(),
-                album_title: job.album_title.clone(),
-                thumb: job.thumb.clone(),
-                phase: "done",
-                bytes_written: job.expected_size_bytes.unwrap_or(0),
-                total_bytes: job.expected_size_bytes,
-                error: None,
-            },
+            progress_payload(
+                job,
+                "done",
+                job.expected_size_bytes.unwrap_or(0),
+                job.expected_size_bytes,
+                None,
+            ),
         );
         emit_downloads_changed(app);
         return Ok(());
@@ -779,62 +801,37 @@ async fn run_user_download(
     });
     emit_download_progress(
         app,
-        DownloadProgressPayload {
-            rating_key: job.rating_key.clone(),
-            album_rating_key: job.album_rating_key.clone(),
-            title: job.title.clone(),
-            artist_name: job.artist_name.clone(),
-            album_title: job.album_title.clone(),
-            thumb: job.thumb.clone(),
-            phase: "downloading",
-            bytes_written: 0,
-            total_bytes: job.expected_size_bytes,
-            error: None,
-        },
+        progress_payload(job, "downloading", 0, job.expected_size_bytes, None),
     );
 
     let rk = job.rating_key.clone();
-    let alb = job.album_rating_key.clone();
-    let title = job.title.clone();
-    let artist = job.artist_name.clone();
-    let album_title = job.album_title.clone();
-    let thumb = job.thumb.clone();
+    let job_for_cb = job.clone();
     let app_for_cb = app.clone();
     let shared_for_cb = shared.clone();
     let expected = job.expected_size_bytes;
     let mut last_emit = Instant::now();
 
-    let download_result = download_http_to_file(client, &job.url, &file_path, move |bytes, total| {
-        let total = total.or(expected);
-        {
-            let mut s = shared_for_cb.lock();
-            if let Some(ip) = s.in_progress.as_mut() {
-                if ip.rating_key == rk {
-                    ip.bytes_written = bytes;
-                    ip.total_bytes = total;
+    let download_result =
+        download_http_to_file(client, &job.url, &file_path, move |bytes, total| {
+            let total = total.or(expected);
+            {
+                let mut s = shared_for_cb.lock();
+                if let Some(ip) = s.in_progress.as_mut() {
+                    if ip.rating_key == rk {
+                        ip.bytes_written = bytes;
+                        ip.total_bytes = total;
+                    }
                 }
             }
-        }
-        if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL {
-            last_emit = Instant::now();
-            emit_download_progress(
-                &app_for_cb,
-                DownloadProgressPayload {
-                    rating_key: rk.clone(),
-                    album_rating_key: alb.clone(),
-                    title: title.clone(),
-                    artist_name: artist.clone(),
-                    album_title: album_title.clone(),
-                    thumb: thumb.clone(),
-                    phase: "downloading",
-                    bytes_written: bytes,
-                    total_bytes: total,
-                    error: None,
-                },
-            );
-        }
-    })
-    .await;
+            if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL {
+                last_emit = Instant::now();
+                emit_download_progress(
+                    &app_for_cb,
+                    progress_payload(&job_for_cb, "downloading", bytes, total, None),
+                );
+            }
+        })
+        .await;
 
     // Regardless of outcome, clear the in-flight slot.
     shared.lock().in_progress = None;
@@ -887,12 +884,8 @@ async fn run_user_download(
         let file_path_warm = file_path.clone();
         tauri::async_runtime::spawn(async move {
             let state = app_warm.state::<crate::state::AppState>();
-            crate::commands::downloads::warm_waveform_sidecar(
-                &state.client,
-                &rk,
-                &file_path_warm,
-            )
-            .await;
+            crate::commands::downloads::warm_waveform_sidecar(&state.client, &rk, &file_path_warm)
+                .await;
             if let Some(thumb) = thumb {
                 crate::commands::downloads::warm_art_cache(
                     &state.image_cache,
@@ -915,21 +908,7 @@ async fn run_user_download(
 
     player.swap_playlist_entry_to_cached(&job.rating_key);
 
-    emit_download_progress(
-        app,
-        DownloadProgressPayload {
-            rating_key: job.rating_key.clone(),
-            album_rating_key: job.album_rating_key.clone(),
-            title: job.title.clone(),
-            artist_name: job.artist_name.clone(),
-            album_title: job.album_title.clone(),
-            thumb: job.thumb.clone(),
-            phase: "done",
-            bytes_written: size,
-            total_bytes: Some(size),
-            error: None,
-        },
-    );
+    emit_download_progress(app, progress_payload(job, "done", size, Some(size), None));
     emit_downloads_changed(app);
 
     log::info!("downloads: stored {} ({size} bytes)", job.rating_key);
