@@ -4456,6 +4456,7 @@ body.is-fullscreen .focus-body {
   /* Lock to a square. Explicit height alongside aspect-ratio because
      inside a vertical flex column the flex-shrink default (1) can
      collapse the aspect-ratio-derived height when space is tight. */
+  position: relative;
   width: min(80vw, 360px);
   height: min(80vw, 360px);
   aspect-ratio: 1 / 1;
@@ -4509,9 +4510,9 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-sheet-lyrics {
-  margin-top: 6px;
+  margin-top: 8px;
   width: 44px;
-  height: 26px;
+  height: 24px;
   border-radius: 14px;
   border: none;
   background: rgba(255, 255, 255, 0.12);
@@ -4521,6 +4522,14 @@ body.is-fullscreen .focus-body {
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.mobile-sheet-lyrics.active {
+  background: var(--accent-20);
+  color: var(--accent);
 }
 
 .mobile-sheet-wave {

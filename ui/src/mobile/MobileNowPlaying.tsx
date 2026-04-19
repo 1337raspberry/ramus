@@ -17,6 +17,7 @@ import WaveformSeekBar from "../components/WaveformSeekBar";
 import FlowLayout from "../components/FlowLayout";
 import UltraBlurBackground from "../components/UltraBlurBackground";
 import MarqueeText from "../components/MarqueeText";
+import LyricsOverlay from "../components/LyricsOverlay";
 
 import {
   IconPlay,
@@ -158,8 +159,8 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     [thumb, track?.albumKey],
   );
 
-  // Closed-captions-style lyrics button (not yet wired to anything on mobile).
   const toggleLyrics = usePlaybackStore((s) => s.toggleLyrics);
+  const showLyrics = usePlaybackStore((s) => s.showLyrics);
 
   // --- Swipe gestures ---
   // Mini-player: swipe up to expand. Sheet header: swipe down to collapse.
@@ -264,6 +265,10 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
       if (startY == null) return;
       const y = e.touches[0].clientY;
       if (!claimed) {
+        // Defer to the lyrics overlay when it's mounted — it owns its own
+        // internal scroll + tap-to-seek and we don't want preventDefault
+        // on the outer art container eating those gestures.
+        if (usePlaybackStore.getState().showLyrics) return;
         const dy = y - startY;
         const atTop = (sheetBodyRef.current?.scrollTop ?? 0) <= 0;
         if (dy > 3 && atTop) {
@@ -490,6 +495,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                   <IconMusicNote size={64} />
                 </div>
               )}
+              <LyricsOverlay />
             </div>
 
             <div
@@ -524,14 +530,10 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
             )}
 
             <button
-              className="mobile-sheet-lyrics"
+              className={`mobile-sheet-lyrics${showLyrics ? " active" : ""}`}
               onClick={toggleLyrics}
-              aria-label="Toggle lyrics"
-              style={{
-                width: 40,
-                height: 18,
-                marginTop: 8,
-              }}
+              aria-label={showLyrics ? "Hide lyrics" : "Show lyrics"}
+              aria-pressed={showLyrics}
             >
               <IconQuote />
             </button>
