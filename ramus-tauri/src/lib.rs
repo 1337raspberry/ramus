@@ -554,17 +554,40 @@ pub fn run() {
             // task verifies connectivity and tests alternative connections.
             if let Ok(token_store) = TokenStore::new() {
                 if let Some(config) = auth::stored_server_config(&token_store) {
-                    if let Some(url_str) = config.active_uri.clone() {
-                        if let Ok(url) = url::Url::parse(&url_str) {
-                            let settings = state.settings.read().clone();
+                    // Pick a usable starting URL. Prefer the stored activeUri
+                    // when it passes the refuse_http gate, otherwise fall back
+                    // to the highest-priority connection in the stored list
+                    // that does. Falling back (instead of skipping the whole
+                    // restore) matters: the probe has added stale / per-boot
+                    // URIs to activeUri in the past (loopback ports, relay
+                    // URIs that expired), and a bogus activeUri shouldn't
+                    // lock the user out of their own library when the
+                    // connection list still has a valid HTTPS entry.
+                    let settings_snapshot = state.settings.read().clone();
+                    let allow_http = !settings_snapshot.refuse_http;
+                    let usable = |u: &str| {
+                        url::Url::parse(u)
+                            .ok()
+                            .filter(|p| allow_http || p.scheme() == "https")
+                    };
+                    let chosen_url = config
+                        .active_uri
+                        .as_deref()
+                        .and_then(usable)
+                        .or_else(|| {
+                            // activeUri unusable — take the highest-priority
+                            // connection that passes. `sorted_connections`
+                            // already prefers local/https.
+                            ramus_core::models::PlexServer::from(&config)
+                                .sorted_connections()
+                                .iter()
+                                .find_map(|c| usable(&c.uri))
+                        });
 
-                            // Skip restoration if the stored URL is HTTP and refuse_http is enabled.
-                            if settings.refuse_http && url.scheme() == "http" {
-                                log::warn!(
-                                    "stored server URL is HTTP but refuse_http is enabled — skipping session restore"
-                                );
-                            } else {
-                                let token = config.access_token.clone();
+                    if let Some(url) = chosen_url {
+                        let url_str = url.as_str().trim_end_matches('/').to_string();
+                        let settings = settings_snapshot;
+                        let token = config.access_token.clone();
                                 let client_id = client.client_identifier.clone();
 
                                 client.set_server_url(Some(url.clone()));
@@ -867,8 +890,6 @@ pub fn run() {
                                         },
                                     );
                                 });
-                            }
-                        }
                     }
                 }
             }
