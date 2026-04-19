@@ -94,11 +94,16 @@ textarea {
   background: var(--accent-35);
 }
 
-/* Prevent text selection and drag highlighting globally */
+/* Prevent text selection, drag highlighting, and iOS long-press image
+   callouts globally. `-webkit-touch-callout: none` is the incantation
+   that stops WKWebView's native "Share / Save to Photos / Copy / …"
+   sheet from popping up on long-press of any <img> or <a> — `oncontextmenu
+   preventDefault` alone is not enough on iOS. */
 * {
   -webkit-user-select: none;
   user-select: none;
   -webkit-user-drag: none;
+  -webkit-touch-callout: none;
 }
 
 /* Allow selection in text inputs */

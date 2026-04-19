@@ -139,9 +139,6 @@ export default memo(function MobileAlbumCard({ album }: Props) {
               albumRatingKey={album.ratingKey}
               onDone={() => setSheetOpen(false)}
             />
-            <button className="mobile-action-sheet-cancel" onClick={() => setSheetOpen(false)}>
-              Cancel
-            </button>
           </div>
         </div>
       )}
