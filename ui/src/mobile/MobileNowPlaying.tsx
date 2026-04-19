@@ -237,6 +237,78 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     }
   }, []);
 
+  // Drag-to-dismiss on the album art. We let native touch-scrolling handle
+  // upward drags and downward drags while the body is scrolled (so momentum
+  // and inertial flick work as the user expects). We only intercept the
+  // gesture (preventDefault) once we observe a downward drag while the body
+  // is at scrollTop=0 — at which point the gesture transitions seamlessly
+  // into a sheet-dismiss preview, even if it started as a body scroll-back.
+  const sheetDragYRef = useRef(0);
+  const artRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const art = artRef.current;
+    if (!art) return;
+
+    let startY: number | null = null;
+    let claimY = 0;
+    let claimed = false;
+
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      startY = e.touches[0].clientY;
+      claimed = false;
+    };
+
+    const onMove = (e: TouchEvent) => {
+      if (startY == null) return;
+      const y = e.touches[0].clientY;
+      if (!claimed) {
+        const dy = y - startY;
+        const atTop = (sheetBodyRef.current?.scrollTop ?? 0) <= 0;
+        if (dy > 3 && atTop) {
+          claimed = true;
+          claimY = y;
+        } else {
+          return;
+        }
+      }
+      // Only safe because the listener is registered as { passive: false }.
+      e.preventDefault();
+      const dragY = Math.max(0, y - claimY);
+      if (sheetDragYRef.current !== dragY) {
+        sheetDragYRef.current = dragY;
+        setSheetDragY(dragY);
+      }
+    };
+
+    const onEnd = () => {
+      if (claimed) {
+        const finalDragY = sheetDragYRef.current;
+        sheetDragYRef.current = 0;
+        if (finalDragY > SWIPE_THRESHOLD) {
+          setSheetDragY(0);
+          setDismissing(true);
+        } else {
+          setSheetDragY(0);
+        }
+      }
+      startY = null;
+      claimed = false;
+    };
+
+    art.addEventListener("touchstart", onStart, { passive: true });
+    art.addEventListener("touchmove", onMove, { passive: false });
+    art.addEventListener("touchend", onEnd, { passive: true });
+    art.addEventListener("touchcancel", onEnd, { passive: true });
+    return () => {
+      art.removeEventListener("touchstart", onStart);
+      art.removeEventListener("touchmove", onMove);
+      art.removeEventListener("touchend", onEnd);
+      art.removeEventListener("touchcancel", onEnd);
+    };
+  }, []);
+
   const onSheetTransitionEnd = useCallback(
     (e: React.TransitionEvent) => {
       if (e.propertyName === "transform" && dismissing) {
@@ -403,7 +475,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
             className="mobile-sheet-main"
             style={mainMinHeight ? { minHeight: mainMinHeight } : undefined}
           >
-            <div className="mobile-sheet-art" style={{ marginBottom: 12 }}>
+            <div ref={artRef} className="mobile-sheet-art" style={{ marginBottom: 12 }}>
               {artSrc && !artErr ? (
                 <img
                   src={artSrc}
@@ -411,6 +483,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                   crossOrigin="anonymous"
                   onLoad={handleArtLoad}
                   onError={() => setArtErr(true)}
+                  draggable={false}
                 />
               ) : (
                 <div className="mobile-sheet-art-ph">
