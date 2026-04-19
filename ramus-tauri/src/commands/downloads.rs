@@ -11,10 +11,11 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 use ramus_core::cache::image_cache::ImageCache;
-use ramus_core::models::Track;
+use ramus_core::models::{Album, Track};
 use ramus_core::playback::transcode;
 use ramus_core::playback::waveform;
 use ramus_core::plex::client::PlexClient;
+use ramus_core::search::parser::QueryParser;
 use ramus_core::util::plex_art_url;
 
 use crate::events::{emit_downloads_changed, ConnectionStatusPayload};
@@ -217,6 +218,29 @@ pub async fn download_all_starred_albums(state: State<'_, AppState>) -> CmdResul
     Ok(n)
 }
 
+/// Enqueue every direct-play track for albums matching a saved-search query.
+/// Mirrors the starred-albums pipeline: resolve query → album IDs → tracks,
+/// then one job per track. Returns the number of jobs enqueued.
+#[tauri::command]
+pub async fn download_search_results(
+    state: State<'_, AppState>,
+    query: String,
+) -> CmdResult<usize> {
+    let albums = resolve_search_albums(&state, &query)?;
+    let mut jobs: Vec<UserDownloadJob> = Vec::new();
+    for album in &albums {
+        let tracks = lookup_album_tracks(&state, &album.rating_key)?;
+        for t in &tracks {
+            if let Ok(job) = build_job(&state, t) {
+                jobs.push(job);
+            }
+        }
+    }
+    let n = jobs.len();
+    state.prefetch_handle.queue_user_downloads(jobs);
+    Ok(n)
+}
+
 // --- Cancel ---
 
 #[tauri::command]
@@ -398,6 +422,37 @@ pub async fn estimate_starred_albums_size(state: State<'_, AppState>) -> CmdResu
     Ok(total)
 }
 
+/// Estimated bytes + track count for a saved-search query without hitting
+/// the network. Same estimation rules as the starred helpers: real
+/// `fileSizeBytes` where known, otherwise bitrate × duration.
+#[tauri::command]
+pub async fn estimate_search_size(
+    state: State<'_, AppState>,
+    query: String,
+) -> CmdResult<SearchDownloadEstimate> {
+    let albums = resolve_search_albums(&state, &query)?;
+    let mut total_bytes: i64 = 0;
+    let mut track_count: usize = 0;
+    for album in &albums {
+        let tracks = lookup_album_tracks(&state, &album.rating_key)?;
+        track_count += tracks.len();
+        total_bytes += estimate_total_bytes(&tracks);
+    }
+    Ok(SearchDownloadEstimate {
+        total_bytes,
+        track_count,
+        album_count: albums.len(),
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchDownloadEstimate {
+    pub total_bytes: i64,
+    pub track_count: usize,
+    pub album_count: usize,
+}
+
 // --- Connection status ---
 
 /// Current reachability snapshot for the frontend. Called once on mount to
@@ -474,6 +529,22 @@ fn build_job(state: &State<'_, AppState>, track: &Track) -> Result<UserDownloadJ
         url: url.to_string(),
         expected_size_bytes: track.file_size_bytes.map(|b| b as u64),
     })
+}
+
+/// Run a saved-search-style query through the search engine and return the
+/// matching albums. Mirrors `commands::search::search_albums_for_grid` but
+/// used from downloads where we need both album metadata and the full
+/// track list per album.
+fn resolve_search_albums(state: &State<'_, AppState>, query: &str) -> Result<Vec<Album>, String> {
+    let parsed = QueryParser::parse(query);
+    let ids = {
+        let engine = state.search_engine.read();
+        let engine = engine.as_ref().ok_or("Search engine not initialized")?;
+        engine
+            .search_album_ids(&parsed)
+            .map_err(|e| e.to_string())?
+    };
+    with_cache(state, |cache| cache.albums_by_internal_ids(&ids))
 }
 
 fn estimate_total_bytes(tracks: &[Track]) -> i64 {

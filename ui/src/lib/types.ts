@@ -88,6 +88,14 @@ export interface SearchResult {
   score: number;
 }
 
+export interface SavedSearch {
+  id: string;
+  name: string;
+  query: string;
+}
+
+export const MAX_SAVED_SEARCHES = 20;
+
 export interface Settings {
   playbackMode: "directPlay" | "transcodeLosslessRemote" | "transcodeLossless";
   lookaheadDepth: number;
@@ -102,7 +110,7 @@ export interface Settings {
   flatGenres: boolean;
   eqEnabled: boolean;
   eqBands: number[];
-  savedSearch: string | null;
+  savedSearches: SavedSearch[];
   offlineMode: boolean;
 }
 
@@ -265,6 +273,12 @@ export interface DownloadsOverview {
   /// Every downloaded track's rating key, for O(1) lookups from the
   /// "is this track playable offline" fade check.
   downloadedRatingKeys: string[];
+}
+
+export interface SearchDownloadEstimate {
+  totalBytes: number;
+  trackCount: number;
+  albumCount: number;
 }
 
 // --- Connection / offline mode ---

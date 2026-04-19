@@ -421,6 +421,19 @@ pub enum GenreSource {
 
 // --- Settings ---
 
+/// A named search query the user has saved for one-tap recall. Uses the
+/// same operator syntax as the live search overlay (see `search::parser`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedSearch {
+    pub id: String,
+    pub name: String,
+    pub query: String,
+}
+
+/// Maximum number of saved searches. Enforced in `update_settings`.
+pub const MAX_SAVED_SEARCHES: usize = 20;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -437,7 +450,7 @@ pub struct Settings {
     pub flat_genres: bool,
     pub eq_enabled: bool,
     pub eq_bands: [f32; 10],
-    pub saved_search: Option<String>,
+    pub saved_searches: Vec<SavedSearch>,
     /// User manual "Work Offline" toggle. When `true`, the app ignores
     /// live server reachability and shows only downloaded content.
     pub offline_mode: bool,
@@ -459,9 +472,39 @@ impl Default for Settings {
             flat_genres: false,
             eq_enabled: false,
             eq_bands: [0.0; 10],
-            saved_search: None,
+            saved_searches: Vec::new(),
             offline_mode: false,
         }
+    }
+}
+
+impl SavedSearch {
+    /// Validate a batch of saved searches: cap at `MAX_SAVED_SEARCHES`,
+    /// names must be non-empty + case-insensitive unique, queries must be
+    /// non-empty. Returns an explanation string suitable for surfacing to
+    /// the user on `update_settings` rejection.
+    pub fn validate_batch(items: &[SavedSearch]) -> Result<(), String> {
+        if items.len() > MAX_SAVED_SEARCHES {
+            return Err(format!(
+                "too many saved searches ({} > {})",
+                items.len(),
+                MAX_SAVED_SEARCHES
+            ));
+        }
+        let mut seen = std::collections::HashSet::new();
+        for s in items {
+            let name = s.name.trim();
+            if name.is_empty() {
+                return Err("saved search name cannot be empty".into());
+            }
+            if s.query.trim().is_empty() {
+                return Err("saved search query cannot be empty".into());
+            }
+            if !seen.insert(name.to_lowercase()) {
+                return Err(format!("duplicate saved search name: {name}"));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -782,5 +825,53 @@ mod tests {
         assert_eq!(RangeOp::LessThan.sql_literal(), "<");
         assert_eq!(RangeOp::GreaterOrEqual.sql_literal(), ">=");
         assert_eq!(RangeOp::LessOrEqual.sql_literal(), "<=");
+    }
+
+    fn saved(id: &str, name: &str, query: &str) -> SavedSearch {
+        SavedSearch {
+            id: id.into(),
+            name: name.into(),
+            query: query.into(),
+        }
+    }
+
+    #[test]
+    fn test_saved_search_validate_ok() {
+        let batch = vec![
+            saved("a", "Metal", "/metal"),
+            saved("b", "Chill", "%chill"),
+        ];
+        assert!(SavedSearch::validate_batch(&batch).is_ok());
+    }
+
+    #[test]
+    fn test_saved_search_rejects_duplicate_names_case_insensitive() {
+        let batch = vec![saved("a", "Metal", "/metal"), saved("b", "metal", "/metal2")];
+        assert!(SavedSearch::validate_batch(&batch).is_err());
+    }
+
+    #[test]
+    fn test_saved_search_rejects_blank_name_and_query() {
+        assert!(SavedSearch::validate_batch(&[saved("a", "", "/metal")]).is_err());
+        assert!(SavedSearch::validate_batch(&[saved("a", "Metal", "   ")]).is_err());
+    }
+
+    #[test]
+    fn test_saved_search_rejects_over_cap() {
+        let batch: Vec<SavedSearch> = (0..(MAX_SAVED_SEARCHES + 1))
+            .map(|i| saved(&i.to_string(), &format!("name{i}"), "/metal"))
+            .collect();
+        assert!(SavedSearch::validate_batch(&batch).is_err());
+    }
+
+    #[test]
+    fn test_settings_ignores_legacy_saved_search_field() {
+        // Simulate upgrading from the single-string schema: the old
+        // `savedSearch` JSON key should be silently dropped because the
+        // top-level `#[serde(default)]` means unknown fields are not
+        // surfaced as errors. `saved_searches` defaults to empty.
+        let legacy = r#"{"savedSearch":"/metal"}"#;
+        let settings: Settings = serde_json::from_str(legacy).unwrap();
+        assert!(settings.saved_searches.is_empty());
     }
 }

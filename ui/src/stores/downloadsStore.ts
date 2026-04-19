@@ -7,7 +7,9 @@ import {
   downloadAlbum,
   downloadAllStarredAlbums,
   downloadAllStarredTracks,
+  downloadSearchResults,
   downloadTrack,
+  estimateSearchSize,
   estimateStarredAlbumsSize,
   estimateStarredTracksSize,
   getDownloadsOverview,
@@ -15,7 +17,11 @@ import {
   removeAllDownloads,
   removeDownload,
 } from "../lib/commands";
-import type { DownloadProgressPayload, DownloadsOverview } from "../lib/types";
+import type {
+  DownloadProgressPayload,
+  DownloadsOverview,
+  SearchDownloadEstimate,
+} from "../lib/types";
 
 /// Live per-track byte progress. Kept for the currently-in-flight item
 /// only — once a track finishes (`done` / `failed`) we drop it from this
@@ -52,6 +58,8 @@ interface DownloadsState {
   startAlbumDownload: (albumRatingKey: string) => Promise<void>;
   startStarredTracks: () => Promise<number>;
   startStarredAlbums: () => Promise<number>;
+  startSavedSearchDownload: (query: string) => Promise<number>;
+  estimateSavedSearch: (query: string) => Promise<SearchDownloadEstimate>;
   cancel: (ratingKey: string) => Promise<void>;
   cancelAll: () => Promise<void>;
   remove: (ratingKey: string) => Promise<void>;
@@ -159,6 +167,16 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
     const n = await downloadAllStarredAlbums();
     get().scheduleRefresh();
     return n;
+  },
+
+  startSavedSearchDownload: async (query) => {
+    const n = await downloadSearchResults(query);
+    get().scheduleRefresh();
+    return n;
+  },
+
+  estimateSavedSearch: async (query) => {
+    return await estimateSearchSize(query);
   },
 
   cancel: async (ratingKey) => {
