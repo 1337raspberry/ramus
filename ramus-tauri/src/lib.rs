@@ -355,6 +355,11 @@ pub fn run() {
             #[cfg(target_os = "ios")]
             crate::keychain_ios::register(&app_handle);
 
+            // Register the iOS backup-exclusion backend so downloaded audio
+            // files stay out of iCloud / iTunes backups. Desktop is a no-op.
+            #[cfg(target_os = "ios")]
+            crate::ios_backup::register_ios(&app_handle);
+
             // Force-fit the UIWindow to the full screen on iOS. The shared
             // `tauri.conf.json` sets `width: 1200, height: 800` for desktop,
             // which tao's iOS window constructor respects verbatim, leaving

@@ -18,7 +18,7 @@ static BACKEND: OnceLock<Box<dyn BackupExcluder>> = OnceLock::new();
 
 /// Register the platform backup backend. Called once at startup on iOS.
 /// Desktop never calls this — `exclude_from_backup` becomes a silent no-op.
-#[allow(dead_code)] // wired up on iOS; desktop compile doesn't call this yet.
+#[allow(dead_code)] // used on iOS; unused on desktop is expected.
 pub fn register_backend(backend: Box<dyn BackupExcluder>) {
     let _ = BACKEND.set(backend);
 }
@@ -34,3 +34,44 @@ pub fn exclude_from_backup(path: &Path) {
         log::warn!("ios_backup: failed to exclude {}: {e}", path.display());
     }
 }
+
+#[cfg(target_os = "ios")]
+mod ios {
+    use super::{BackupExcluder, Path};
+    use tauri::{AppHandle, Runtime};
+    use tauri_plugin_ramus_ios_bridge::RamusIosBridgeExt;
+
+    pub struct IosBackup<R: Runtime> {
+        app: AppHandle<R>,
+    }
+
+    impl<R: Runtime> IosBackup<R> {
+        pub fn new(app: AppHandle<R>) -> Self {
+            Self { app }
+        }
+    }
+
+    impl<R: Runtime> BackupExcluder for IosBackup<R> {
+        fn exclude(&self, path: &Path) -> Result<(), String> {
+            let p = path.to_string_lossy();
+            self.app
+                .ramus_ios_bridge()
+                .exclude_from_backup(&p)
+                .map_err(|e| e.to_string())
+                .and_then(|ok| {
+                    if ok {
+                        Ok(())
+                    } else {
+                        Err("plugin returned ok=false".into())
+                    }
+                })
+        }
+    }
+
+    pub fn register<R: Runtime>(app: &AppHandle<R>) {
+        super::register_backend(Box::new(IosBackup::new(app.clone())));
+    }
+}
+
+#[cfg(target_os = "ios")]
+pub use ios::register as register_ios;
