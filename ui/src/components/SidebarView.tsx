@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type SidebarMode } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { updateSettings } from "../lib/commands";
 import GenreTreeView from "./GenreTreeView";
 import { useGenreDebugStore } from "./GenreDebugPanel";
-import SavedSearchModal from "../mobile/SavedSearchModal";
+import SavedSearchEditor from "./SavedSearchEditor";
+import SavedSearchPicker from "./SavedSearchPicker";
+import type { SavedSearch } from "../lib/types";
 
 const TABS: { mode: SidebarMode; label: string }[] = [
   { mode: "genres", label: "Genres" },
@@ -98,8 +99,9 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
   const artists = useLibraryStore((s) => s.artists);
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
   const selectArtist = useLibraryStore((s) => s.selectArtist);
-  const savedSearch = useSettingsStore((s) => s.savedSearch);
-  const [showSavedModal, setShowSavedModal] = useState(false);
+  const savedSearches = useSettingsStore((s) => s.savedSearches);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   useEffect(() => {
     const store = useLibraryStore.getState();
@@ -108,27 +110,18 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
     useLibraryStore.setState({ selectedGenreId: "__all__" });
   }, []);
 
+  const loadEntry = useCallback((entry: SavedSearch) => {
+    useLibraryStore.getState().loadSavedSearch(entry.query, entry.name);
+  }, []);
+
   const handleSavedClick = () => {
-    if (savedSearch) {
-      useLibraryStore.getState().loadSavedSearch(savedSearch);
+    if (savedSearches.length === 0) {
+      setEditorOpen(true);
+    } else if (savedSearches.length === 1) {
+      loadEntry(savedSearches[0]);
     } else {
-      setShowSavedModal(true);
+      setPickerOpen((v) => !v);
     }
-  };
-
-  const handleSave = async (query: string) => {
-    const next = { ...useSettingsStore.getState(), savedSearch: query };
-    useSettingsStore.setState({ savedSearch: query });
-    await updateSettings(next).catch(() => {});
-    setShowSavedModal(false);
-    useLibraryStore.getState().loadSavedSearch(query);
-  };
-
-  const handleClear = async () => {
-    const next = { ...useSettingsStore.getState(), savedSearch: null };
-    useSettingsStore.setState({ savedSearch: null });
-    await updateSettings(next).catch(() => {});
-    setShowSavedModal(false);
   };
 
   return (
@@ -166,26 +159,31 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
         >
           Suggest
         </button>
-        <button
-          className="sidebar-bottom-btn"
-          onClick={handleSavedClick}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setShowSavedModal(true);
-          }}
-        >
-          Saved
-        </button>
+        <div className="sidebar-saved-anchor">
+          <button
+            className="sidebar-bottom-btn"
+            onClick={handleSavedClick}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setPickerOpen(false);
+              setEditorOpen(true);
+            }}
+          >
+            Saved
+          </button>
+          {pickerOpen && (
+            <SavedSearchPicker
+              variant="popover"
+              entries={savedSearches}
+              onSelect={loadEntry}
+              onManage={() => setEditorOpen(true)}
+              onDismiss={() => setPickerOpen(false)}
+            />
+          )}
+        </div>
       </div>
 
-      {showSavedModal && (
-        <SavedSearchModal
-          initialQuery={savedSearch ?? ""}
-          onSave={handleSave}
-          onClear={savedSearch ? handleClear : undefined}
-          onDismiss={() => setShowSavedModal(false)}
-        />
-      )}
+      {editorOpen && <SavedSearchEditor onDismiss={() => setEditorOpen(false)} />}
     </div>
   );
 }

@@ -1,9 +1,11 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { getFavouriteTracks, playTracks, updateSettings } from "../lib/commands";
-import SavedSearchModal from "./SavedSearchModal";
+import { getFavouriteTracks, playTracks } from "../lib/commands";
+import SavedSearchEditor from "../components/SavedSearchEditor";
+import SavedSearchPicker from "../components/SavedSearchPicker";
+import type { SavedSearch } from "../lib/types";
 
 export type MobileView =
   | "genres"
@@ -142,8 +144,9 @@ async function shuffleFavourites() {
 export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props) {
   const setSidebarMode = useLibraryStore((s) => s.setSidebarMode);
   const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
-  const savedSearch = useSettingsStore((s) => s.savedSearch);
-  const [showSavedSearchModal, setShowSavedSearchModal] = useState(false);
+  const savedSearches = useSettingsStore((s) => s.savedSearches);
+  const [showEditor, setShowEditor] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
 
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggered = useRef(false);
@@ -168,12 +171,32 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
     },
   });
 
+  const loadSavedEntry = useCallback(
+    (entry: SavedSearch) => {
+      useLibraryStore.setState({
+        detailAlbum: null,
+        detailTracks: [],
+        suggestion: null,
+        searchQuery: null,
+        browseArtistName: null,
+        browseYear: null,
+        selectedGenreId: null,
+        selectedArtistId: null,
+      });
+      usePlaybackStore.setState({ isFocusMode: false });
+      useLibraryStore.getState().loadSavedSearch(entry.query, entry.name);
+      onSelect("savedSearch");
+    },
+    [onSelect],
+  );
+
   const pick = (v: MobileView) => {
     useLibraryStore.setState({
       detailAlbum: null,
       detailTracks: [],
       suggestion: null,
       searchQuery: null,
+      activeSavedSearchName: null,
       browseArtistName: null,
       browseYear: null,
       selectedGenreId: null,
@@ -193,36 +216,18 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
       loadSuggestion();
     } else if (v === "search") {
       useLibraryStore.setState({ searchQuery: "" });
-    } else if (v === "savedSearch") {
-      const q = useSettingsStore.getState().savedSearch;
-      if (q) {
-        useLibraryStore.getState().loadSavedSearch(q);
-      }
     }
     onSelect(v);
   };
 
   const handleBrainTap = () => {
-    if (savedSearch) {
-      pick("savedSearch");
+    if (savedSearches.length === 0) {
+      setShowEditor(true);
+    } else if (savedSearches.length === 1) {
+      loadSavedEntry(savedSearches[0]);
     } else {
-      setShowSavedSearchModal(true);
+      setShowPicker(true);
     }
-  };
-
-  const handleSavedSearchSave = async (query: string) => {
-    const next = { ...useSettingsStore.getState(), savedSearch: query };
-    useSettingsStore.setState({ savedSearch: query });
-    await updateSettings(next).catch(() => {});
-    setShowSavedSearchModal(false);
-    pick("savedSearch");
-  };
-
-  const handleSavedSearchClear = async () => {
-    const next = { ...useSettingsStore.getState(), savedSearch: null };
-    useSettingsStore.setState({ savedSearch: null });
-    await updateSettings(next).catch(() => {});
-    setShowSavedSearchModal(false);
   };
 
   return (
@@ -259,7 +264,7 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
         <button
           className={`mobile-toolbar-btn${view === "savedSearch" ? " active" : ""}`}
           aria-label="Saved search"
-          {...makeLongPress(handleBrainTap, () => setShowSavedSearchModal(true))}
+          {...makeLongPress(handleBrainTap, () => setShowEditor(true))}
         >
           <IconBrain />
         </button>
@@ -279,14 +284,17 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
         </button>
       </nav>
 
-      {showSavedSearchModal && (
-        <SavedSearchModal
-          initialQuery={savedSearch ?? ""}
-          onSave={handleSavedSearchSave}
-          onClear={savedSearch ? handleSavedSearchClear : undefined}
-          onDismiss={() => setShowSavedSearchModal(false)}
+      {showPicker && (
+        <SavedSearchPicker
+          variant="sheet"
+          entries={savedSearches}
+          onSelect={loadSavedEntry}
+          onManage={() => setShowEditor(true)}
+          onDismiss={() => setShowPicker(false)}
         />
       )}
+
+      {showEditor && <SavedSearchEditor onDismiss={() => setShowEditor(false)} />}
     </>
   );
 }

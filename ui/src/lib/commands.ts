@@ -12,6 +12,7 @@ import type {
   LibrarySection,
   LyricsResult,
   PlexServer,
+  SearchDownloadEstimate,
   SearchResult,
   Settings,
   SpectrumState,
@@ -245,6 +246,12 @@ export const getDownloadsOverview = () => invoke<DownloadsOverview>("get_downloa
 export const estimateStarredTracksSize = () => invoke<number>("estimate_starred_tracks_size");
 
 export const estimateStarredAlbumsSize = () => invoke<number>("estimate_starred_albums_size");
+
+export const downloadSearchResults = (query: string) =>
+  invoke<number>("download_search_results", { query });
+
+export const estimateSearchSize = (query: string) =>
+  invoke<SearchDownloadEstimate>("estimate_search_size", { query });
 
 // --- Connection status / offline mode ---
 

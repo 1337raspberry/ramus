@@ -84,8 +84,12 @@ interface LibraryState {
 
   // --- Search Results ---
   searchQuery: string | null;
+  /// Display name of the saved search currently driving the album grid,
+  /// or `null` if the results came from live search / genre / etc. Used
+  /// by the mobile saved-search header and by offline badges.
+  activeSavedSearchName: string | null;
   loadSearchResults: (query: string) => Promise<void>;
-  loadSavedSearch: (query: string) => Promise<void>;
+  loadSavedSearch: (query: string, name?: string) => Promise<void>;
   clearSearchResults: () => void;
 
   // --- Actions ---
@@ -160,6 +164,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       browseArtistName: null,
       browseYear: null,
       searchQuery: null,
+      activeSavedSearchName: null,
     });
     if (mode === "genres") {
       get().loadGenreTree();
@@ -227,6 +232,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         browseArtistName: null,
         browseYear: null,
         searchQuery: null,
+        activeSavedSearchName: null,
       };
     });
     // Synthetic parents like "Other" aren't known to expand_genre, so
@@ -282,6 +288,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         browseArtistName: null,
         browseYear: null,
         searchQuery: null,
+        activeSavedSearchName: null,
         detailAlbum: null,
         suggestion: null,
       });
@@ -308,6 +315,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       browseArtistName: null,
       browseYear: null,
       searchQuery: null,
+      activeSavedSearchName: null,
     });
     get().loadAlbumsForArtist(sourceId);
   },
@@ -360,6 +368,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         browseArtistName: name,
         browseYear: null,
         searchQuery: null,
+        activeSavedSearchName: null,
         detailAlbum: null,
         suggestion: null,
       }));
@@ -374,6 +383,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         browseYear: year,
         browseArtistName: null,
         searchQuery: null,
+        activeSavedSearchName: null,
         detailAlbum: null,
         suggestion: null,
       }));
@@ -388,6 +398,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   // --- Search Results ---
   searchQuery: null,
+  activeSavedSearchName: null,
 
   loadSearchResults: async (query) => {
     try {
@@ -395,6 +406,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       set((state) => ({
         albums: sortAlbums(albums, state.albumSortOrder),
         searchQuery: query,
+        activeSavedSearchName: null,
         browseArtistName: null,
         browseYear: null,
         detailAlbum: null,
@@ -404,6 +416,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       set({
         albums: [],
         searchQuery: query,
+        activeSavedSearchName: null,
         browseArtistName: null,
         browseYear: null,
         detailAlbum: null,
@@ -412,11 +425,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
   },
 
-  loadSavedSearch: async (query) => {
+  loadSavedSearch: async (query, name) => {
     try {
       const albums = await searchAlbumsForGrid(query);
       set((state) => ({
         albums: sortAlbums(albums, state.albumSortOrder),
+        activeSavedSearchName: name ?? query,
         browseArtistName: null,
         browseYear: null,
         detailAlbum: null,
@@ -425,6 +439,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     } catch {
       set({
         albums: [],
+        activeSavedSearchName: name ?? query,
         browseArtistName: null,
         browseYear: null,
         detailAlbum: null,
@@ -436,7 +451,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   clearSearchResults: () => {
     // Capture browse context before clearing to pick a fallback view.
     const { sidebarMode, selectedGenreId, selectedArtistId, browseArtistName, browseYear } = get();
-    set({ searchQuery: null, browseArtistName: null, browseYear: null });
+    set({
+      searchQuery: null,
+      activeSavedSearchName: null,
+      browseArtistName: null,
+      browseYear: null,
+    });
 
     if (browseArtistName || browseYear) {
       if (sidebarMode === "favourites") get().loadFavouriteAlbums();

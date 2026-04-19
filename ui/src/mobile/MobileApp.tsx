@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
-import { useSettingsStore } from "../stores/settingsStore";
 import { useEdgeSwipeBack } from "./useEdgeSwipeBack";
 import MobileToolbar, { type MobileView } from "./MobileToolbar";
 import MobileGenreTree from "./MobileGenreTree";
@@ -159,7 +158,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
 
     if (view === "search") return <MobileSearch onBack={() => setView("genres")} />;
     if (view === "savedSearch") {
-      const label = useSettingsStore.getState().savedSearch ?? "Saved Search";
+      const label = useLibraryStore.getState().activeSavedSearchName ?? "Saved search";
       return <MobileAlbumGrid contextLabel={label} onBack={() => setView("genres")} />;
     }
     if (view === "suggestion")

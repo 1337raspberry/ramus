@@ -1118,6 +1118,8 @@ pub fn run() {
             commands::downloads::get_downloads_overview,
             commands::downloads::estimate_starred_tracks_size,
             commands::downloads::estimate_starred_albums_size,
+            commands::downloads::download_search_results,
+            commands::downloads::estimate_search_size,
             commands::downloads::get_connection_status,
         ])
         .build(tauri::generate_context!())

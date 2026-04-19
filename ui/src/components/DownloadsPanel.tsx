@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useDownloadsStore } from "../stores/downloadsStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { formatBytes } from "../lib/format";
 import type {
   DownloadedAlbumSummary,
   DownloadedTrackSummary,
   InProgressDownload,
+  SavedSearch,
+  SearchDownloadEstimate,
 } from "../lib/types";
 import { useArtUrl } from "../lib/useArtUrl";
 import { ART_SIZE } from "../lib/commands";
@@ -164,6 +167,8 @@ export default function DownloadsPanel({ onDismiss }: Props) {
             </button>
           </section>
 
+          <SavedSearchDownloadSection onError={setError} />
+
           <section className="downloads-section">
             <h3 className="downloads-section-title">
               Cached albums {albumsCount > 0 && <span>({albumsCount})</span>}
@@ -298,6 +303,105 @@ function AlbumRow({ album, onRemove }: { album: DownloadedAlbumSummary; onRemove
         x
       </button>
     </li>
+  );
+}
+
+function SavedSearchDownloadSection({ onError }: { onError: (msg: string | null) => void }) {
+  const savedSearches = useSettingsStore((s) => s.savedSearches);
+  const startSavedSearchDownload = useDownloadsStore((s) => s.startSavedSearchDownload);
+  const estimateSavedSearch = useDownloadsStore((s) => s.estimateSavedSearch);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [estimate, setEstimate] = useState<SearchDownloadEstimate | null>(null);
+  const [estimating, setEstimating] = useState(false);
+
+  const selected: SavedSearch | undefined = savedSearches.find((s) => s.id === selectedId);
+
+  // Auto-pick the first entry when the list changes so the dropdown
+  // never holds a stale selection after an entry is renamed or removed
+  // from the editor.
+  useEffect(() => {
+    if (savedSearches.length === 0) {
+      setSelectedId(null);
+      return;
+    }
+    if (!selectedId || !savedSearches.some((s) => s.id === selectedId)) {
+      setSelectedId(savedSearches[0].id);
+    }
+  }, [savedSearches, selectedId]);
+
+  useEffect(() => {
+    if (!selected) {
+      setEstimate(null);
+      return;
+    }
+    let cancelled = false;
+    setEstimating(true);
+    setEstimate(null);
+    estimateSavedSearch(selected.query)
+      .then((e) => {
+        if (!cancelled) setEstimate(e);
+      })
+      .catch(() => {
+        if (!cancelled) setEstimate(null);
+      })
+      .finally(() => {
+        if (!cancelled) setEstimating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, estimateSavedSearch]);
+
+  const handleDownload = useCallback(async () => {
+    if (!selected) return;
+    try {
+      const n = await startSavedSearchDownload(selected.query);
+      if (n === 0) onError("No downloadable tracks for that saved search.");
+    } catch (e) {
+      onError(String(e));
+    }
+  }, [selected, startSavedSearchDownload, onError]);
+
+  if (savedSearches.length === 0) {
+    return (
+      <section className="downloads-section">
+        <h3 className="downloads-section-title">Saved searches</h3>
+        <div className="downloads-empty">
+          No saved searches yet — create one from the sidebar's Saved button.
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="downloads-section">
+      <h3 className="downloads-section-title">Saved searches</h3>
+      <div className="saved-search-download-row">
+        <select
+          className="sort-select saved-search-download-select"
+          value={selectedId ?? ""}
+          onChange={(e) => setSelectedId(e.target.value)}
+        >
+          {savedSearches.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <button className="settings-btn" onClick={handleDownload} disabled={!selected}>
+          Download
+          {estimate && (
+            <span className="downloads-btn-detail">
+              {" "}
+              ({estimate.trackCount} track{estimate.trackCount === 1 ? "" : "s"}, ~
+              {formatBytes(estimate.totalBytes)})
+            </span>
+          )}
+          {estimating && <span className="downloads-btn-detail"> (estimating…)</span>}
+        </button>
+      </div>
+      {selected && <div className="saved-search-download-query">{selected.query}</div>}
+    </section>
   );
 }
 
