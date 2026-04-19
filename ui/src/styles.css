@@ -4692,8 +4692,12 @@ body.is-fullscreen .focus-body {
 }
 
 /* --- Settings panel on mobile: full-screen sheet --- */
+/* `pointer: coarse` matches touch-primary devices (iOS / Android), which
+   is what we want here — a desktop user shrinking their window shouldn't
+   flip into the full-screen mobile settings sheet. Mirrors the runtime
+   `useIsMobile` check. */
 
-@media (max-width: 820px) {
+@media (pointer: coarse) {
   .settings-panel {
     width: 100% \!important;
     height: 100% \!important;
