@@ -24,6 +24,7 @@ pub mod mpv_ios;
 #[cfg(target_os = "ios")]
 pub mod keychain_ios;
 
+pub mod ios_backup;
 pub mod prefetch;
 pub mod session_reporter;
 pub mod spectrum_analyzer;
@@ -957,6 +958,19 @@ pub fn run() {
             commands::platform::hide_native_search_bar,
             // acknowledgements / licenses
             commands::acknowledgements::get_acknowledgements_text,
+            // downloads
+            commands::downloads::download_track,
+            commands::downloads::download_album,
+            commands::downloads::download_all_starred_tracks,
+            commands::downloads::download_all_starred_albums,
+            commands::downloads::cancel_download,
+            commands::downloads::cancel_all_downloads,
+            commands::downloads::remove_download,
+            commands::downloads::remove_album_downloads,
+            commands::downloads::remove_all_downloads,
+            commands::downloads::get_downloads_overview,
+            commands::downloads::estimate_starred_tracks_size,
+            commands::downloads::estimate_starred_albums_size,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")

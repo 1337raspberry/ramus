@@ -1,0 +1,419 @@
+//! User-initiated download commands.
+//!
+//! These commands build `UserDownloadJob` records and hand them to the
+//! download worker (see `prefetch.rs`). Actual HTTP work happens in the
+//! worker; the commands just translate rating keys into enqueued jobs.
+
+use std::path::PathBuf;
+
+use tauri::{AppHandle, State};
+
+use ramus_core::models::Track;
+use ramus_core::playback::transcode;
+
+use crate::events::emit_downloads_changed;
+use crate::prefetch::{DownloadManagerSnapshot, UserDownloadJob};
+use crate::state::AppState;
+
+use super::CmdResult;
+
+/// Summary of the downloaded album for the Downloads panel. "Partial"
+/// albums (some tracks downloaded, some not) still appear here with
+/// `downloaded < total`.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadedAlbumSummary {
+    pub rating_key: String,
+    pub downloaded: u32,
+    pub total: u32,
+    pub size_bytes: i64,
+}
+
+/// Orphan track: a downloaded track whose parent album has only that one
+/// track downloaded. Shown in the Downloads panel's "Individual Tracks"
+/// section so partial-album rows don't duplicate into the tracks list.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadedTrackSummary {
+    pub rating_key: String,
+    pub album_rating_key: String,
+    pub size_bytes: i64,
+    pub codec: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadsOverview {
+    pub in_progress: Option<crate::prefetch::InProgressDownload>,
+    pub queue: Vec<String>,
+    pub total_bytes: i64,
+    pub albums: Vec<DownloadedAlbumSummary>,
+    pub orphan_tracks: Vec<DownloadedTrackSummary>,
+}
+
+// --- Start downloads ---
+
+/// Enqueue a single track for download. Silently skipped if already
+/// downloaded or if the track needs transcoding (user setting).
+#[tauri::command]
+pub async fn download_track(
+    state: State<'_, AppState>,
+    rating_key: String,
+) -> CmdResult<()> {
+    let track = lookup_track(&state, &rating_key)?;
+    let job = build_job(&state, &track)?;
+    state.prefetch_handle.queue_user_downloads(vec![job]);
+    Ok(())
+}
+
+/// Enqueue every direct-play track on an album.
+#[tauri::command]
+pub async fn download_album(
+    state: State<'_, AppState>,
+    album_rating_key: String,
+) -> CmdResult<usize> {
+    let tracks = lookup_album_tracks(&state, &album_rating_key)?;
+    let jobs: Vec<UserDownloadJob> = tracks
+        .iter()
+        .filter_map(|t| build_job(&state, t).ok())
+        .collect();
+    let n = jobs.len();
+    state.prefetch_handle.queue_user_downloads(jobs);
+    Ok(n)
+}
+
+/// Enqueue every favourited track.
+#[tauri::command]
+pub async fn download_all_starred_tracks(
+    state: State<'_, AppState>,
+) -> CmdResult<usize> {
+    let tracks = {
+        let cache_guard = state.cache.lock();
+        let Some(cache) = cache_guard.as_ref() else {
+            return Err("Cache not initialized".into());
+        };
+        cache.favourite_tracks().map_err(|e| e.to_string())?
+    };
+    let jobs: Vec<UserDownloadJob> = tracks
+        .iter()
+        .filter_map(|t| build_job(&state, t).ok())
+        .collect();
+    let n = jobs.len();
+    state.prefetch_handle.queue_user_downloads(jobs);
+    Ok(n)
+}
+
+/// Enqueue every track on every favourited album.
+#[tauri::command]
+pub async fn download_all_starred_albums(
+    state: State<'_, AppState>,
+) -> CmdResult<usize> {
+    let albums = {
+        let cache_guard = state.cache.lock();
+        let Some(cache) = cache_guard.as_ref() else {
+            return Err("Cache not initialized".into());
+        };
+        cache.favourite_albums().map_err(|e| e.to_string())?
+    };
+
+    let mut jobs: Vec<UserDownloadJob> = Vec::new();
+    for album in &albums {
+        let tracks = lookup_album_tracks(&state, &album.rating_key)?;
+        for t in &tracks {
+            if let Ok(job) = build_job(&state, t) {
+                jobs.push(job);
+            }
+        }
+    }
+    let n = jobs.len();
+    state.prefetch_handle.queue_user_downloads(jobs);
+    Ok(n)
+}
+
+// --- Cancel ---
+
+#[tauri::command]
+pub async fn cancel_download(
+    state: State<'_, AppState>,
+    rating_key: String,
+) -> CmdResult<()> {
+    state.prefetch_handle.cancel_user_download(&rating_key);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn cancel_all_downloads(state: State<'_, AppState>) -> CmdResult<()> {
+    state.prefetch_handle.cancel_all_user_downloads();
+    Ok(())
+}
+
+// --- Remove ---
+
+#[tauri::command]
+pub async fn remove_download(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    rating_key: String,
+) -> CmdResult<()> {
+    let path = {
+        let cache_guard = state.cache.lock();
+        let Some(cache) = cache_guard.as_ref() else {
+            return Err("Cache not initialized".into());
+        };
+        cache.remove_download(&rating_key).map_err(|e| e.to_string())?
+    };
+    state.player.unregister_persistent_download(&rating_key);
+    if let Some(p) = path {
+        let _ = tokio::fs::remove_file(PathBuf::from(&p)).await;
+        let spec = ramus_core::playback::spectrum::spec_file_path(std::path::Path::new(&p));
+        let _ = tokio::fs::remove_file(spec).await;
+    }
+    emit_downloads_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remove_album_downloads(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    album_rating_key: String,
+) -> CmdResult<usize> {
+    let paths = {
+        let cache_guard = state.cache.lock();
+        let Some(cache) = cache_guard.as_ref() else {
+            return Err("Cache not initialized".into());
+        };
+        cache
+            .remove_album_downloads(&album_rating_key)
+            .map_err(|e| e.to_string())?
+    };
+    // Unregister each — we don't have the rating keys directly; re-query the
+    // player map and drop anything whose file path was just deleted.
+    let persistent = state.player.persistent_download_paths();
+    let path_set: std::collections::HashSet<String> =
+        paths.iter().cloned().collect();
+    for (rk, p) in persistent {
+        if path_set.contains(&p.to_string_lossy().to_string()) {
+            state.player.unregister_persistent_download(&rk);
+        }
+    }
+    for p in &paths {
+        let _ = tokio::fs::remove_file(PathBuf::from(p)).await;
+        let spec = ramus_core::playback::spectrum::spec_file_path(std::path::Path::new(p));
+        let _ = tokio::fs::remove_file(spec).await;
+    }
+    emit_downloads_changed(&app);
+    Ok(paths.len())
+}
+
+#[tauri::command]
+pub async fn remove_all_downloads(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CmdResult<usize> {
+    let paths = {
+        let cache_guard = state.cache.lock();
+        let Some(cache) = cache_guard.as_ref() else {
+            return Err("Cache not initialized".into());
+        };
+        cache.clear_all_downloads().map_err(|e| e.to_string())?
+    };
+    state
+        .player
+        .rehydrate_persistent_cache(std::collections::HashMap::new());
+    for p in &paths {
+        let _ = tokio::fs::remove_file(PathBuf::from(p)).await;
+        let spec = ramus_core::playback::spectrum::spec_file_path(std::path::Path::new(p));
+        let _ = tokio::fs::remove_file(spec).await;
+    }
+    emit_downloads_changed(&app);
+    Ok(paths.len())
+}
+
+// --- Read state ---
+
+#[tauri::command]
+pub async fn get_downloads_overview(
+    state: State<'_, AppState>,
+) -> CmdResult<DownloadsOverview> {
+    let snapshot: DownloadManagerSnapshot = state.prefetch_handle.snapshot();
+
+    let (total_bytes, album_counts, orphan_rows) = {
+        let cache_guard = state.cache.lock();
+        let Some(cache) = cache_guard.as_ref() else {
+            return Err("Cache not initialized".into());
+        };
+        let total = cache.total_download_bytes().map_err(|e| e.to_string())?;
+        let counts = cache.downloaded_counts_by_album().map_err(|e| e.to_string())?;
+        let orphans = cache.orphan_downloaded_tracks().map_err(|e| e.to_string())?;
+        (total, counts, orphans)
+    };
+
+    let album_keys: Vec<String> = album_counts.keys().cloned().collect();
+    let totals = {
+        let cache_guard = state.cache.lock();
+        let cache = cache_guard.as_ref().unwrap();
+        cache
+            .album_total_track_counts(&album_keys)
+            .map_err(|e| e.to_string())?
+    };
+
+    let orphan_album_keys: std::collections::HashSet<String> = orphan_rows
+        .iter()
+        .map(|r| r.album_rating_key.clone())
+        .collect();
+    let mut albums: Vec<DownloadedAlbumSummary> = album_counts
+        .iter()
+        .filter(|(k, _)| !orphan_album_keys.contains(k.as_str()))
+        .map(|(k, (downloaded, size_bytes))| DownloadedAlbumSummary {
+            rating_key: k.clone(),
+            downloaded: *downloaded,
+            total: totals.get(k).copied().unwrap_or(*downloaded),
+            size_bytes: *size_bytes,
+        })
+        .collect();
+    albums.sort_by(|a, b| a.rating_key.cmp(&b.rating_key));
+
+    let orphan_tracks: Vec<DownloadedTrackSummary> = orphan_rows
+        .into_iter()
+        .map(|r| DownloadedTrackSummary {
+            rating_key: r.rating_key,
+            album_rating_key: r.album_rating_key,
+            size_bytes: r.size_bytes,
+            codec: r.codec,
+        })
+        .collect();
+
+    Ok(DownloadsOverview {
+        in_progress: snapshot.in_progress,
+        queue: snapshot.queued,
+        total_bytes,
+        albums,
+        orphan_tracks,
+    })
+}
+
+/// Estimated bytes for downloading every favourited track. Uses actual
+/// `fileSizeBytes` when known, otherwise `bitrate_kbps × duration_sec / 8`.
+#[tauri::command]
+pub async fn estimate_starred_tracks_size(
+    state: State<'_, AppState>,
+) -> CmdResult<i64> {
+    let tracks = {
+        let cache_guard = state.cache.lock();
+        let Some(cache) = cache_guard.as_ref() else {
+            return Err("Cache not initialized".into());
+        };
+        cache.favourite_tracks().map_err(|e| e.to_string())?
+    };
+    Ok(estimate_total_bytes(&tracks))
+}
+
+#[tauri::command]
+pub async fn estimate_starred_albums_size(
+    state: State<'_, AppState>,
+) -> CmdResult<i64> {
+    let albums = {
+        let cache_guard = state.cache.lock();
+        let Some(cache) = cache_guard.as_ref() else {
+            return Err("Cache not initialized".into());
+        };
+        cache.favourite_albums().map_err(|e| e.to_string())?
+    };
+    let mut total: i64 = 0;
+    for album in &albums {
+        let tracks = lookup_album_tracks(&state, &album.rating_key)?;
+        total += estimate_total_bytes(&tracks);
+    }
+    Ok(total)
+}
+
+// --- Helpers ---
+
+fn lookup_track(state: &State<'_, AppState>, rating_key: &str) -> Result<Track, String> {
+    let cache_guard = state.cache.lock();
+    let cache = cache_guard
+        .as_ref()
+        .ok_or_else(|| "Cache not initialized".to_string())?;
+    cache
+        .track_by_source_id(rating_key)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Track {rating_key} not found"))
+}
+
+fn lookup_album_tracks(
+    state: &State<'_, AppState>,
+    album_rating_key: &str,
+) -> Result<Vec<Track>, String> {
+    let cache_guard = state.cache.lock();
+    let cache = cache_guard
+        .as_ref()
+        .ok_or_else(|| "Cache not initialized".to_string())?;
+    cache
+        .tracks_for_album(album_rating_key)
+        .map_err(|e| e.to_string())
+}
+
+/// Build a direct-play download URL for a track. Returns `Err` for any
+/// track that can't be downloaded (no part_key, codec-only-transcodable,
+/// no server URL). User downloads always use direct play regardless of
+/// the user's PlaybackMode setting — the whole point is local-first
+/// playback offline.
+fn build_job(
+    state: &State<'_, AppState>,
+    track: &Track,
+) -> Result<UserDownloadJob, String> {
+    let part_key = track
+        .part_key
+        .as_ref()
+        .ok_or_else(|| "track has no part_key".to_string())?;
+    let codec = track
+        .codec
+        .clone()
+        .ok_or_else(|| "track has no codec".to_string())?;
+    let server_url = state
+        .client
+        .server_url()
+        .ok_or_else(|| "no server url".to_string())?;
+    let token = state
+        .client
+        .token()
+        .ok_or_else(|| "no token".to_string())?;
+    let url = transcode::build_direct_play_url(&server_url, part_key, &token)
+        .ok_or_else(|| "could not build direct-play url".to_string())?;
+
+    // Album key falls back to the track's rating key so an orphan track
+    // still gets a stable grouping. `tracks_for_album` always populates
+    // album_key.
+    let album_rating_key = track
+        .album_key
+        .clone()
+        .unwrap_or_else(|| track.rating_key.clone());
+
+    Ok(UserDownloadJob {
+        rating_key: track.rating_key.clone(),
+        album_rating_key,
+        codec,
+        url: url.to_string(),
+        expected_size_bytes: track.file_size_bytes.map(|b| b as u64),
+    })
+}
+
+fn estimate_total_bytes(tracks: &[Track]) -> i64 {
+    tracks
+        .iter()
+        .map(|t| {
+            if let Some(bytes) = t.file_size_bytes {
+                bytes
+            } else {
+                match t.bitrate {
+                    // bitrate is in kbps, duration is seconds.
+                    Some(kbps) if kbps > 0 => {
+                        ((kbps as f64 * 1000.0 * t.duration) / 8.0) as i64
+                    }
+                    _ => 0,
+                }
+            }
+        })
+        .sum()
+}

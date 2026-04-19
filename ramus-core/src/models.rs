@@ -438,6 +438,9 @@ pub struct Settings {
     pub eq_enabled: bool,
     pub eq_bands: [f32; 10],
     pub saved_search: Option<String>,
+    /// User manual "Work Offline" toggle. When `true`, the app ignores
+    /// live server reachability and shows only downloaded content.
+    pub offline_mode: bool,
 }
 
 impl Default for Settings {
@@ -457,6 +460,7 @@ impl Default for Settings {
             eq_enabled: false,
             eq_bands: [0.0; 10],
             saved_search: None,
+            offline_mode: false,
         }
     }
 }

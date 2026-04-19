@@ -60,3 +60,44 @@ pub fn emit_spectrum_ready(app: &AppHandle, rating_key: impl Into<String>) {
     };
     let _ = app.emit("spectrum-ready", payload);
 }
+
+/// Per-track progress for the Downloads panel. `done` and `failed` are
+/// terminal; the frontend uses them to remove the row from the "in progress"
+/// list. `bytesWritten` / `totalBytes` update on chunk boundaries.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadProgressPayload {
+    pub rating_key: String,
+    pub album_rating_key: String,
+    pub phase: &'static str,
+    pub bytes_written: u64,
+    pub total_bytes: Option<u64>,
+    pub error: Option<String>,
+}
+
+pub fn emit_download_progress(app: &AppHandle, payload: DownloadProgressPayload) {
+    let _ = app.emit("download-progress", payload);
+}
+
+/// Coarse signal that the downloads set changed — the frontend refetches
+/// the full overview when it sees one. Separate from `download-progress`
+/// (which fires per chunk) so the frontend doesn't rebuild the list 20
+/// times a second.
+pub fn emit_downloads_changed(app: &AppHandle) {
+    let _ = app.emit("downloads-changed", ());
+}
+
+/// Server reachability state. Fires on startup and when the `ConnectionMonitor`
+/// reports loss or recovery. `effectiveOffline` combines the live
+/// reachability check with the user's manual `offlineMode` setting.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionStatusPayload {
+    pub online: bool,
+    pub offline_mode_manual: bool,
+    pub effective_offline: bool,
+}
+
+pub fn emit_connection_status(app: &AppHandle, payload: ConnectionStatusPayload) {
+    let _ = app.emit("connection-status", payload);
+}
