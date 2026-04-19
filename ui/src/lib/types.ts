@@ -262,6 +262,9 @@ export interface DownloadsOverview {
   totalBytes: number;
   albums: DownloadedAlbumSummary[];
   orphanTracks: DownloadedTrackSummary[];
+  /// Every downloaded track's rating key, for O(1) lookups from the
+  /// "is this track playable offline" fade check.
+  downloadedRatingKeys: string[];
 }
 
 // --- Connection / offline mode ---

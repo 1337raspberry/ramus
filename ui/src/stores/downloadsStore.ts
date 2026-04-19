@@ -78,12 +78,14 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
     try {
       const overview = await getDownloadsOverview();
       const downloadedAlbumIds = new Set<string>();
-      const downloadedTrackIds = new Set<string>();
       for (const a of overview.albums) downloadedAlbumIds.add(a.ratingKey);
       for (const t of overview.orphanTracks) {
         downloadedAlbumIds.add(t.albumRatingKey);
-        downloadedTrackIds.add(t.ratingKey);
       }
+      // Use the flat rating-key list from the backend — orphanTracks
+      // only covers tracks whose album has exactly one download, which
+      // misses every track on a multi-track-downloaded album.
+      const downloadedTrackIds = new Set<string>(overview.downloadedRatingKeys);
       // Strip optimistic phases for items no longer pending (either
       // finished or cancelled — neither is in overview.queue / inProgress).
       const prev = get().trackPhase;

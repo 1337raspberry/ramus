@@ -154,6 +154,11 @@ pub struct DownloadsOverview {
     pub total_bytes: i64,
     pub albums: Vec<DownloadedAlbumSummary>,
     pub orphan_tracks: Vec<DownloadedTrackSummary>,
+    /// Every downloaded track's rating key. Album-level summaries only
+    /// expose counts, not individual track IDs — the frontend needs the
+    /// full flat list to know whether a specific track is playable
+    /// offline (e.g. to fade non-downloaded rows in album detail view).
+    pub downloaded_rating_keys: Vec<String>,
 }
 
 // --- Start downloads ---
@@ -431,12 +436,25 @@ pub async fn get_downloads_overview(
         }
     }
 
+    // Flat list of every downloaded track ratingKey so the frontend can
+    // answer "is this specific track playable offline?" in O(1).
+    let downloaded_rating_keys: Vec<String> = {
+        let cache_guard = state.cache.lock();
+        let cache = cache_guard.as_ref().unwrap();
+        cache
+            .downloaded_rating_keys()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .collect()
+    };
+
     Ok(DownloadsOverview {
         in_progress: snapshot.in_progress,
         queue: snapshot.queued,
         total_bytes,
         albums,
         orphan_tracks,
+        downloaded_rating_keys,
     })
 }
 
