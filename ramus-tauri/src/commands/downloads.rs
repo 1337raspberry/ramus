@@ -25,6 +25,9 @@ use super::CmdResult;
 #[serde(rename_all = "camelCase")]
 pub struct DownloadedAlbumSummary {
     pub rating_key: String,
+    pub title: String,
+    pub artist_name: String,
+    pub thumb: Option<String>,
     pub downloaded: u32,
     pub total: u32,
     pub size_bytes: i64,
@@ -38,6 +41,10 @@ pub struct DownloadedAlbumSummary {
 pub struct DownloadedTrackSummary {
     pub rating_key: String,
     pub album_rating_key: String,
+    pub title: String,
+    pub artist_name: String,
+    pub album_title: String,
+    pub thumb: Option<String>,
     pub size_bytes: i64,
     pub codec: String,
 }
@@ -263,27 +270,69 @@ pub async fn get_downloads_overview(
         .iter()
         .map(|r| r.album_rating_key.clone())
         .collect();
-    let mut albums: Vec<DownloadedAlbumSummary> = album_counts
-        .iter()
-        .filter(|(k, _)| !orphan_album_keys.contains(k.as_str()))
-        .map(|(k, (downloaded, size_bytes))| DownloadedAlbumSummary {
-            rating_key: k.clone(),
-            downloaded: *downloaded,
-            total: totals.get(k).copied().unwrap_or(*downloaded),
-            size_bytes: *size_bytes,
-        })
-        .collect();
-    albums.sort_by(|a, b| a.rating_key.cmp(&b.rating_key));
 
-    let orphan_tracks: Vec<DownloadedTrackSummary> = orphan_rows
-        .into_iter()
-        .map(|r| DownloadedTrackSummary {
-            rating_key: r.rating_key,
-            album_rating_key: r.album_rating_key,
-            size_bytes: r.size_bytes,
-            codec: r.codec,
-        })
-        .collect();
+    // Hydrate album display metadata via single-item lookups. N+1 is
+    // acceptable — the typical downloaded-albums list is small (<1000).
+    let mut albums: Vec<DownloadedAlbumSummary> = Vec::new();
+    {
+        let cache_guard = state.cache.lock();
+        let cache = cache_guard.as_ref().unwrap();
+        for (k, (downloaded, size_bytes)) in &album_counts {
+            if orphan_album_keys.contains(k.as_str()) {
+                continue;
+            }
+            let album = cache.album_by_source_id(k).map_err(|e| e.to_string())?;
+            let (title, artist_name, thumb) = match album {
+                Some(a) => (a.title, a.artist_name, a.thumb),
+                None => (k.clone(), String::new(), None),
+            };
+            albums.push(DownloadedAlbumSummary {
+                rating_key: k.clone(),
+                title,
+                artist_name,
+                thumb,
+                downloaded: *downloaded,
+                total: totals.get(k).copied().unwrap_or(*downloaded),
+                size_bytes: *size_bytes,
+            });
+        }
+    }
+    albums.sort_by(|a, b| {
+        a.artist_name
+            .to_lowercase()
+            .cmp(&b.artist_name.to_lowercase())
+            .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+    });
+
+    let mut orphan_tracks: Vec<DownloadedTrackSummary> = Vec::new();
+    {
+        let cache_guard = state.cache.lock();
+        let cache = cache_guard.as_ref().unwrap();
+        for r in orphan_rows {
+            let t = cache
+                .track_by_source_id(&r.rating_key)
+                .map_err(|e| e.to_string())?;
+            let (title, artist_name, album_title, thumb) = match t {
+                Some(t) => (t.title, t.artist_name, t.album_title, t.thumb),
+                None => (
+                    r.rating_key.clone(),
+                    String::new(),
+                    String::new(),
+                    None,
+                ),
+            };
+            orphan_tracks.push(DownloadedTrackSummary {
+                rating_key: r.rating_key,
+                album_rating_key: r.album_rating_key,
+                title,
+                artist_name,
+                album_title,
+                thumb,
+                size_bytes: r.size_bytes,
+                codec: r.codec,
+            });
+        }
+    }
 
     Ok(DownloadsOverview {
         in_progress: snapshot.in_progress,

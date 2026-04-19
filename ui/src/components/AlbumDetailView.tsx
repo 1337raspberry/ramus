@@ -9,6 +9,7 @@ import {
   getAlbumGenres,
 } from "../lib/commands";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "./DownloadMenuItems";
 import { formatDuration, formatCodec } from "../lib/format";
 import {
   IconChevronLeft,
@@ -189,6 +190,10 @@ export default function AlbumDetailView() {
               >
                 Add to Queue
               </button>
+              <AlbumDownloadMenuItem
+                albumRatingKey={album.ratingKey}
+                onDone={() => setOpenMenuKey(null)}
+              />
             </div>
           )}
         </div>
@@ -265,6 +270,10 @@ export default function AlbumDetailView() {
                       >
                         Add to Queue
                       </button>
+                      <TrackDownloadMenuItem
+                        ratingKey={track.ratingKey}
+                        onDone={() => setOpenMenuKey(null)}
+                      />
                     </div>
                   )}
                 </div>

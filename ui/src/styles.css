@@ -4775,3 +4775,328 @@ body.is-fullscreen .focus-body {
     height: 100dvh;
   }
 }
+
+/* ---- Downloads feature ---- */
+
+/* Desktop album-card overflow menu (hover-reveal, same pattern as .album-fav). */
+.album-card-menu-wrap {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+.album-card-dots {
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--text-primary);
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+  padding: 0;
+}
+.album-card:hover .album-card-dots,
+.album-card-dots.visible {
+  opacity: 1;
+}
+.album-card-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--bg-elevated, #1a1a1a);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  padding: 4px 0;
+  min-width: 160px;
+  z-index: 20;
+}
+.album-card-dropdown button {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.album-card-dropdown button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* DownloadsPanel body. */
+.downloads-panel .downloads-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.downloads-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.downloads-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin: 0 0 4px 0;
+}
+.downloads-section-title span {
+  font-weight: 400;
+  opacity: 0.7;
+}
+.downloads-empty {
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 8px 0;
+}
+.downloads-storage-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.downloads-storage-primary {
+  font-size: 15px;
+  color: var(--text-primary);
+}
+.downloads-storage-secondary {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.downloads-confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.downloads-btn-detail {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.settings-btn-danger {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.35) !important;
+}
+.settings-btn-danger:hover {
+  background: rgba(248, 113, 113, 0.12);
+}
+.downloads-inprogress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.downloads-text-link {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.downloads-text-link:hover {
+  color: var(--text-primary);
+}
+.downloads-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.downloads-inflight-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "title meta action"
+    "bar bar action";
+  gap: 2px 8px;
+  align-items: center;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+}
+.downloads-inflight-title {
+  grid-area: title;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.downloads-inflight-meta {
+  grid-area: meta;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.downloads-inflight-row .sync-progress-bar-bg {
+  grid-area: bar;
+  height: 4px;
+  margin-top: 4px;
+}
+.downloads-queued {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+.downloads-item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.downloads-item-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.downloads-item-art {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+.downloads-item-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.downloads-item-text {
+  flex: 1;
+  min-width: 0;
+}
+.downloads-item-title {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.downloads-item-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.downloads-partial {
+  color: #fbbf24;
+}
+.downloads-row-action {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 14px;
+  border-radius: 4px;
+  grid-area: action;
+}
+.downloads-row-action:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Mobile long-press action sheet. */
+.mobile-action-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  animation: mobile-sheet-fade-in 150ms ease;
+}
+@keyframes mobile-sheet-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.mobile-action-sheet {
+  width: 100%;
+  background: var(--bg-elevated, #1a1a1a);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: mobile-sheet-slide-up 180ms ease;
+}
+@keyframes mobile-sheet-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.mobile-action-sheet-title {
+  font-size: 14px;
+  color: var(--text-primary);
+  text-align: center;
+  padding: 8px 12px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-action-sheet-subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 0 12px 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 8px;
+}
+.mobile-action-sheet button {
+  background: rgba(255, 255, 255, 0.04);
+  border: none;
+  color: var(--text-primary);
+  padding: 14px;
+  font-size: 15px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: center;
+}
+.mobile-action-sheet button:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+.mobile-action-sheet-cancel {
+  margin-top: 8px;
+  color: var(--text-secondary) !important;
+}
+
+/* Offline pill — shown in chrome when effectiveOffline. */
+.offline-pill {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 148, 77, 0.9);
+  color: #1a1a1a;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  z-index: 100;
+  pointer-events: none;
+}

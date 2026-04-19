@@ -23,9 +23,10 @@ import { useIsMobile } from "../lib/useIsMobile";
 interface Props {
   onDismiss: () => void;
   onSignOut: () => void;
+  onOpenDownloads: () => void;
 }
 
-export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
+export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownloads }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [stats, setStats] = useState<CacheStats | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
@@ -354,6 +355,21 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
               {stats.genreCount} genres
             </div>
           )}
+
+          <div className="settings-section-header">DOWNLOADS</div>
+
+          <button className="settings-btn" onClick={onOpenDownloads}>
+            Manage downloads
+          </button>
+
+          <label className="settings-row">
+            <span>Work offline</span>
+            <input
+              type="checkbox"
+              checked={settings.offlineMode}
+              onChange={(e) => save({ offlineMode: e.target.checked })}
+            />
+          </label>
 
           <div className="settings-section-header">GENRES</div>
 

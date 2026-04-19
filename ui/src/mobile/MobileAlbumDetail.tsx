@@ -14,6 +14,7 @@ import {
 } from "../components/Icons";
 import FlowLayout from "../components/FlowLayout";
 import MarqueeText from "../components/MarqueeText";
+import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "../components/DownloadMenuItems";
 
 /**
  * Album detail: hero art + artist/year/genres, then track list. Reuses the
@@ -161,6 +162,10 @@ export default function MobileAlbumDetail() {
                   <div className="mobile-dropdown">
                     <button onClick={() => queueAction(insertNext, tracks)}>Play Next</button>
                     <button onClick={() => queueAction(appendToQueue, tracks)}>Add to Queue</button>
+                    <AlbumDownloadMenuItem
+                      albumRatingKey={album.ratingKey}
+                      onDone={() => setOpenMenuKey(null)}
+                    />
                   </div>
                 )}
               </div>
@@ -241,6 +246,10 @@ export default function MobileAlbumDetail() {
                         >
                           Add to Queue
                         </button>
+                        <TrackDownloadMenuItem
+                          ratingKey={t.ratingKey}
+                          onDone={() => setOpenMenuKey(null)}
+                        />
                       </div>
                     )}
                   </div>

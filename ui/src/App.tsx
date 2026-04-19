@@ -8,6 +8,8 @@ import { useIsMobile } from "./lib/useIsMobile";
 import { usePlaybackStore } from "./stores/playbackStore";
 import { useLibraryStore } from "./stores/libraryStore";
 import { useSettingsStore } from "./stores/settingsStore";
+import { useDownloadsStore } from "./stores/downloadsStore";
+import { useConnectionStatus } from "./lib/useConnectionStatus";
 import TrafficLights from "./components/TrafficLights";
 import ThreeColumnLayout from "./components/ThreeColumnLayout";
 import SidebarView from "./components/SidebarView";
@@ -19,6 +21,7 @@ import FocusNowPlayingView from "./components/FocusNowPlayingView";
 import SearchOverlay from "./components/SearchOverlay";
 import EqualizerPanel from "./components/EqualizerPanel";
 import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
+import DownloadsPanel from "./components/DownloadsPanel";
 import OnboardingFlow, { clearOnboardingStorage } from "./components/onboarding/OnboardingFlow";
 import { clearPin } from "./components/onboarding/OAuthSignIn";
 import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackground";
@@ -39,6 +42,7 @@ export default function App() {
   const [searchInitial, setSearchInitial] = useState<string | undefined>();
   const [showEQ, setShowEQ] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDownloads, setShowDownloads] = useState(false);
   const [showBreadcrumbDebug, setShowBreadcrumbDebug] = useState(false);
   const suggestion = useLibraryStore((s) => s.suggestion);
   const detailAlbum = useLibraryStore((s) => s.detailAlbum);
@@ -51,13 +55,28 @@ export default function App() {
     isAuthenticated()
       .then((ok) => {
         setAuthed(ok);
-        if (ok) useSettingsStore.getState().loadSettings();
+        if (ok) {
+          useSettingsStore.getState().loadSettings();
+          useDownloadsStore.getState().ensureListeners();
+          useDownloadsStore.getState().refresh();
+        }
       })
       .catch(() => setAuthed(false));
   }, []);
 
   usePlaybackEvents();
   useWindowTitle();
+
+  // When effective-offline flips (either manually or because the server
+  // became reachable / went away), reload the library so filtered vs full
+  // results take effect without the user having to navigate.
+  const connection = useConnectionStatus();
+  useEffect(() => {
+    if (authed !== true) return;
+    const lib = useLibraryStore.getState();
+    lib.loadAllAlbums?.();
+    lib.loadGenreTree?.();
+  }, [authed, connection.effectiveOffline]);
 
   // Toggle a body class rather than conditionally rendering: the compact
   // NowPlayingView must stay mounted because its image onLoad handler extracts
@@ -104,6 +123,7 @@ export default function App() {
     return (
       <>
         <UltraBlurBackground colors={blurColors} />
+        {connection.effectiveOffline && <div className="offline-pill">Offline</div>}
         <MobileApp onOpenSettings={() => setShowSettings(true)} />
         {showSettings && (
           <LibrarySettingsPanel
@@ -115,8 +135,13 @@ export default function App() {
               clearPin();
               setAuthed(false);
             }}
+            onOpenDownloads={() => {
+              setShowSettings(false);
+              setShowDownloads(true);
+            }}
           />
         )}
+        {showDownloads && <DownloadsPanel onDismiss={() => setShowDownloads(false)} />}
       </>
     );
   }
@@ -124,6 +149,7 @@ export default function App() {
   return (
     <>
       <UltraBlurBackground colors={blurColors} />
+      {connection.effectiveOffline && <div className="offline-pill">Offline</div>}
       <TrafficLights />
       <ThreeColumnLayout
         sidebar={<SidebarView onOpenSettings={() => setShowSettings(true)} />}
@@ -153,8 +179,13 @@ export default function App() {
             clearPin();
             setAuthed(false);
           }}
+          onOpenDownloads={() => {
+            setShowSettings(false);
+            setShowDownloads(true);
+          }}
         />
       )}
+      {showDownloads && <DownloadsPanel onDismiss={() => setShowDownloads(false)} />}
       {showBreadcrumbDebug && <BreadcrumbDebugPanel />}
     </>
   );

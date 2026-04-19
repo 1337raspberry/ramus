@@ -6,6 +6,8 @@ import type {
   Album,
   ArtistInfo,
   CacheStats,
+  ConnectionStatusPayload,
+  DownloadsOverview,
   GenreTreeResponse,
   LibrarySection,
   LyricsResult,
@@ -215,3 +217,35 @@ export const showNativeSearchBar = (initialQuery: string) =>
   invoke<void>("show_native_search_bar", { initialQuery });
 
 export const hideNativeSearchBar = () => invoke<void>("hide_native_search_bar");
+
+// --- Downloads ---
+
+export const downloadTrack = (ratingKey: string) => invoke<void>("download_track", { ratingKey });
+
+export const downloadAlbum = (albumRatingKey: string) =>
+  invoke<number>("download_album", { albumRatingKey });
+
+export const downloadAllStarredTracks = () => invoke<number>("download_all_starred_tracks");
+
+export const downloadAllStarredAlbums = () => invoke<number>("download_all_starred_albums");
+
+export const cancelDownload = (ratingKey: string) => invoke<void>("cancel_download", { ratingKey });
+
+export const cancelAllDownloads = () => invoke<void>("cancel_all_downloads");
+
+export const removeDownload = (ratingKey: string) => invoke<void>("remove_download", { ratingKey });
+
+export const removeAlbumDownloads = (albumRatingKey: string) =>
+  invoke<number>("remove_album_downloads", { albumRatingKey });
+
+export const removeAllDownloads = () => invoke<number>("remove_all_downloads");
+
+export const getDownloadsOverview = () => invoke<DownloadsOverview>("get_downloads_overview");
+
+export const estimateStarredTracksSize = () => invoke<number>("estimate_starred_tracks_size");
+
+export const estimateStarredAlbumsSize = () => invoke<number>("estimate_starred_albums_size");
+
+// --- Connection status / offline mode ---
+
+export const getConnectionStatus = () => invoke<ConnectionStatusPayload>("get_connection_status");
