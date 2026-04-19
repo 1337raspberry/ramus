@@ -23,6 +23,7 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
   const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
   const clearSuggestion = useLibraryStore((s) => s.clearSuggestion);
   const selectGenreByName = useLibraryStore((s) => s.selectGenreByName);
+  const loadAlbumsForArtistName = useLibraryStore((s) => s.loadAlbumsForArtistName);
 
   const [artSrc, setArtSrc] = useState<string | null>(null);
   const [artErr, setArtErr] = useState(false);
@@ -166,13 +167,27 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
             </div>
           )}
         </button>
-        <div className="mobile-suggestion-title">{album.title}</div>
-        <div className="mobile-suggestion-artist">{album.artistName}</div>
+        <div className="mobile-suggestion-title">
+          {album.title}
+          {album.year ? <span className="mobile-suggestion-year"> · {album.year}</span> : null}
+        </div>
+        <button
+          type="button"
+          className="mobile-suggestion-artist"
+          onClick={() => {
+            onClose();
+            clearSuggestion();
+            loadAlbumsForArtistName(album.artistName);
+          }}
+        >
+          {album.artistName}
+        </button>
         {genres.length > 0 && (
           <div className="mobile-suggestion-genres">
             <FlowLayout
               genres={genres}
               onGenreClick={(g) => {
+                onClose();
                 clearSuggestion();
                 selectGenreByName(g);
               }}

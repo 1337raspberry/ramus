@@ -3892,6 +3892,16 @@ body.is-fullscreen .focus-body {
 .mobile-suggestion-artist {
   font-size: 15px;
   color: rgba(255, 255, 255, 0.75);
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.mobile-suggestion-year {
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .mobile-suggestion-genres {
