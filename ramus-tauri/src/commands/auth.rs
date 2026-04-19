@@ -43,10 +43,7 @@ pub async fn start_oauth(app: AppHandle, state: State<'_, AppState>) -> CmdResul
 }
 
 #[tauri::command]
-pub async fn poll_oauth(
-    state: State<'_, AppState>,
-    pin_id: i64,
-) -> CmdResult<bool> {
+pub async fn poll_oauth(state: State<'_, AppState>, pin_id: i64) -> CmdResult<bool> {
     let auth = PlexAuth::default();
     let token_store = TokenStore::new().map_err(|e| e.to_string())?;
 
@@ -67,12 +64,8 @@ pub async fn poll_oauth(
         // Terminal states: the frontend surfaces these and restarts the flow.
         // PollingTimeout with max_attempts=1 shouldn't happen in practice; treat
         // as terminal defensively.
-        Err(PlexAuthError::PinExpired) => {
-            Err("Sign-in code expired — please try again".into())
-        }
-        Err(PlexAuthError::PollingTimeout) => {
-            Err("Sign-in timed out — please try again".into())
-        }
+        Err(PlexAuthError::PinExpired) => Err("Sign-in code expired — please try again".into()),
+        Err(PlexAuthError::PollingTimeout) => Err("Sign-in timed out — please try again".into()),
         // Transient: keep polling.
         Err(_) => Ok(false),
     }
@@ -108,7 +101,10 @@ pub async fn test_server(
         .ok_or("Server not found — run discover first")?;
 
     let allow_http = !state.settings.read().refuse_http;
-    let (best_conn, is_http) = state.client.find_best_connection(&server, allow_http, false).await;
+    let (best_conn, is_http) = state
+        .client
+        .find_best_connection(&server, allow_http, false)
+        .await;
     match best_conn {
         Some(conn) => Ok(serde_json::json!({
             "connected": true,
@@ -121,10 +117,7 @@ pub async fn test_server(
 }
 
 #[tauri::command]
-pub async fn connect_manual_url(
-    state: State<'_, AppState>,
-    url: String,
-) -> CmdResult<bool> {
+pub async fn connect_manual_url(state: State<'_, AppState>, url: String) -> CmdResult<bool> {
     let token = state.client.token().ok_or("Not authenticated")?;
     let parsed = Url::parse(&url).map_err(|e| e.to_string())?;
 
@@ -187,9 +180,7 @@ pub async fn finalize_onboarding(
     };
 
     // plex.tv auth token for connection monitor re-discovery.
-    let auth_token = token_store
-        .read(TokenKey::AuthToken)
-        .unwrap_or_default();
+    let auth_token = token_store.read(TokenKey::AuthToken).unwrap_or_default();
 
     let url = Url::parse(&server_url).map_err(|e| e.to_string())?;
     match url.scheme() {
@@ -220,8 +211,7 @@ pub async fn finalize_onboarding(
         .await
         .map_err(|e| e.to_string())?;
 
-    let cache_dir = ramus_core::plex::token_store::config_dir()
-        .map_err(|e| e.to_string())?;
+    let cache_dir = ramus_core::plex::token_store::config_dir().map_err(|e| e.to_string())?;
     let db_path = cache_dir.join("library_cache.db");
     let db = CacheDatabase::open(&db_path).map_err(|e| e.to_string())?;
     let db_arc = Arc::new(db);
@@ -236,13 +226,15 @@ pub async fn finalize_onboarding(
     let search = SearchEngine::new(db_arc.clone(), None);
     *state.search_engine.write() = Some(search);
 
+    crate::prefetch::rehydrate_persistent_downloads(&state.player, &db2);
     *state.cache.lock() = Some(db2);
 
     // url::Url::parse adds a trailing slash that Plex connection URIs don't have.
     let server_url_norm = server_url.trim_end_matches('/');
-    let is_local = server.connections.iter().any(|c| {
-        c.uri.trim_end_matches('/') == server_url_norm && c.local
-    });
+    let is_local = server
+        .connections
+        .iter()
+        .any(|c| c.uri.trim_end_matches('/') == server_url_norm && c.local);
     state.player.configure(
         url.clone(),
         server_token.clone(),
@@ -259,13 +251,18 @@ pub async fn finalize_onboarding(
     let allow_http = !state.settings.read().refuse_http;
     state.connection_monitor.set_allow_http(allow_http);
     let monitor_player = state.player.clone();
-    state.connection_monitor.set_on_connection_changed(
-        std::sync::Arc::new(move |url, token, is_local, _is_http| {
-            let is_remote = !is_local;
-            monitor_player.update_server_connection(url, token, is_remote);
-            log::info!("monitor: updated player connection (is_remote={})", is_remote);
-        }),
-    );
+    state
+        .connection_monitor
+        .set_on_connection_changed(std::sync::Arc::new(
+            move |url, token, is_local, _is_http| {
+                let is_remote = !is_local;
+                monitor_player.update_server_connection(url, token, is_remote);
+                log::info!(
+                    "monitor: updated player connection (is_remote={})",
+                    is_remote
+                );
+            },
+        ));
     state
         .connection_monitor
         .start(PlexServer::from(&config), server_url, auth_token);

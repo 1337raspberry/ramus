@@ -194,6 +194,19 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(response.ok)
     }
 
+    /// Set `NSURLIsExcludedFromBackupKey` on the given filesystem path so
+    /// iCloud / iTunes backups skip the file. Called after a user download
+    /// lands to keep tens of GB of music out of backups.
+    pub fn exclude_from_backup(&self, path: &str) -> crate::Result<bool> {
+        let response: KeychainBoolResponse = self.0.run_mobile_plugin(
+            "excludeFromBackup",
+            crate::models::ExcludeBackupArgs {
+                path: path.to_string(),
+            },
+        )?;
+        Ok(response.ok)
+    }
+
     /// Attach a `Channel` to an event name that the Swift plugin emits
     /// via `trigger(_:data:)`. The channel's callback is invoked on
     /// every matching event with the JSON-serialised data. Used by the

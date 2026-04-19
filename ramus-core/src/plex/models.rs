@@ -52,6 +52,9 @@ pub struct MediaInfo {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PartInfo {
     pub key: Option<String>,
+    /// File size in bytes. Always present for music tracks; used for
+    /// accurate download size estimates instead of `bitrate × duration`.
+    pub size: Option<i64>,
     #[serde(rename = "Stream")]
     pub streams: Option<Vec<StreamInfo>>,
 }

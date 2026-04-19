@@ -9,6 +9,9 @@ import {
   getAlbumGenres,
 } from "../lib/commands";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { useDownloadsStore } from "../stores/downloadsStore";
+import { useConnectionStatus } from "../lib/useConnectionStatus";
+import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "./DownloadMenuItems";
 import { formatDuration, formatCodec } from "../lib/format";
 import {
   IconChevronLeft,
@@ -111,6 +114,13 @@ export default function AlbumDetailView() {
 
   const hasMultipleDiscs = tracks.some((t) => (t.discNumber ?? 1) > 1);
 
+  // Offline-mode gate: tracks the user doesn't have locally can't be
+  // played. Subscribe to the relevant selectors up here instead of inside
+  // the render map so the component only re-subscribes when the sets
+  // actually change.
+  const { effectiveOffline } = useConnectionStatus();
+  const downloadedIds = useDownloadsStore((s) => s.downloadedTrackIds);
+
   return (
     <div className="adv-root">
       <div className="adv-header">
@@ -189,6 +199,10 @@ export default function AlbumDetailView() {
               >
                 Add to Queue
               </button>
+              <AlbumDownloadMenuItem
+                albumRatingKey={album.ratingKey}
+                onDone={() => setOpenMenuKey(null)}
+              />
             </div>
           )}
         </div>
@@ -207,13 +221,21 @@ export default function AlbumDetailView() {
             track.trackArtist && track.trackArtist.toLowerCase() !== album.artistName.toLowerCase();
           const isMenuOpen = openMenuKey === track.ratingKey;
           const isNearBottom = i >= tracks.length - 3;
+          const unavailable = effectiveOffline && !downloadedIds.has(track.ratingKey);
 
           return (
             <div key={track.ratingKey}>
               {showDiscHeader && (
                 <div className="adv-disc-header">Disc {track.discNumber ?? 1}</div>
               )}
-              <div className="adv-track-row" onClick={() => playAlbum(album, i)}>
+              <div
+                className={`adv-track-row${unavailable ? " adv-track-row-unavailable" : ""}`}
+                onClick={() => {
+                  if (unavailable) return;
+                  playAlbum(album, i);
+                }}
+                title={unavailable ? "Not downloaded — unavailable offline" : undefined}
+              >
                 <span className="adv-track-num">{track.index ?? i + 1}</span>
                 <div className="adv-track-info">
                   <div className="adv-track-title">{track.title}</div>
@@ -265,6 +287,10 @@ export default function AlbumDetailView() {
                       >
                         Add to Queue
                       </button>
+                      <TrackDownloadMenuItem
+                        ratingKey={track.ratingKey}
+                        onDone={() => setOpenMenuKey(null)}
+                      />
                     </div>
                   )}
                 </div>

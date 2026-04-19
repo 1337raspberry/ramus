@@ -14,6 +14,7 @@ import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import type { SearchResult, Track } from "../lib/types";
 import { IconMusicNote, IconPlay, IconStarFilled, IconMoreDots, IconSearch } from "./Icons";
+import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "./DownloadMenuItems";
 
 interface Props {
   onDismiss: () => void;
@@ -287,6 +288,17 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
               >
                 Add to Queue
               </button>
+              {result.kind === "track" && result.trackSourceId ? (
+                <TrackDownloadMenuItem
+                  ratingKey={result.trackSourceId}
+                  onDone={() => setOpenMenuId(null)}
+                />
+              ) : (
+                <AlbumDownloadMenuItem
+                  albumRatingKey={result.albumSourceId}
+                  onDone={() => setOpenMenuId(null)}
+                />
+              )}
             </div>
           )}
         </div>

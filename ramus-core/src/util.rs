@@ -34,6 +34,20 @@ pub fn escape_like(input: &str) -> String {
     out
 }
 
+/// Build the Plex photo transcode URL for a given thumb path at a given
+/// pixel size. Used by every art-fetching site (the on-disk image cache
+/// warmer, the art command, and the OS media-control panel). Keeping the
+/// format in one place means future query-param tweaks are a single edit.
+pub fn plex_art_url(server_url: &url::Url, thumb: &str, size: u32) -> String {
+    format!(
+        "{}/photo/:/transcode?width={}&height={}&minSize=1&upscale=1&url={}",
+        server_url.as_str().trim_end_matches('/'),
+        size,
+        size,
+        percent_encode(thumb),
+    )
+}
+
 /// RFC 3986 percent-encode a string (unreserved chars pass through).
 pub fn percent_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -69,9 +83,70 @@ pub fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&result).into_owned()
 }
 
+/// Whether a URI's host resolves to the loopback interface. Used at the
+/// plex.tv resources boundary to drop stale loopback connections that can
+/// only be reached from the advertising device, never from us.
+///
+/// Matches IPv4 `127.x.x.x`, IPv6 `::1` (in bracket syntax), and the
+/// `localhost` hostname. Malformed URIs return `false` (the downstream
+/// probe will fail them anyway).
+pub fn is_loopback_uri(uri: &str) -> bool {
+    let Ok(url) = url::Url::parse(uri) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let lower = host.to_ascii_lowercase();
+    if lower == "localhost" {
+        return true;
+    }
+    if let Some(stripped) = lower.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        // Bracketed IPv6 literal.
+        if let Ok(addr) = stripped.parse::<std::net::Ipv6Addr>() {
+            return addr.is_loopback();
+        }
+    }
+    if let Ok(addr) = lower.parse::<std::net::Ipv4Addr>() {
+        return addr.is_loopback();
+    }
+    if let Ok(addr) = lower.parse::<std::net::Ipv6Addr>() {
+        return addr.is_loopback();
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_is_loopback_uri_ipv4() {
+        assert!(is_loopback_uri("http://127.0.0.1:56393"));
+        assert!(is_loopback_uri("https://127.0.0.1:32400"));
+        assert!(is_loopback_uri("http://127.7.7.7/"));
+        assert!(!is_loopback_uri("https://192-168-0-1.xxx.plex.direct:32400"));
+        assert!(!is_loopback_uri("https://10.0.0.5:32400"));
+        assert!(!is_loopback_uri("http://192.168.1.100/"));
+    }
+
+    #[test]
+    fn test_is_loopback_uri_localhost() {
+        assert!(is_loopback_uri("http://localhost:8080"));
+        assert!(is_loopback_uri("https://LOCALHOST/"));
+    }
+
+    #[test]
+    fn test_is_loopback_uri_ipv6() {
+        assert!(is_loopback_uri("http://[::1]:8080"));
+        assert!(!is_loopback_uri("http://[2001:db8::1]:8080"));
+    }
+
+    #[test]
+    fn test_is_loopback_uri_malformed() {
+        assert!(!is_loopback_uri("not a url"));
+        assert!(!is_loopback_uri(""));
+    }
 
     #[test]
     fn test_lossless_codec_detection() {

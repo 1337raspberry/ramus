@@ -169,7 +169,11 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
         return Err(AnalyseError::DecodeFailed("empty decoded stream".into()));
     }
 
-    Ok(analyse_samples(&mono, sample_rate, &SpectrumConfig::default()))
+    Ok(analyse_samples(
+        &mono,
+        sample_rate,
+        &SpectrumConfig::default(),
+    ))
 }
 
 /// Average all channels of an `AudioBufferRef` into mono f32 samples in
@@ -226,11 +230,15 @@ fn mix_to_mono(audio_buf: &AudioBufferRef<'_>, out: &mut Vec<f32>) {
         AudioBufferRef::F64(b) => mix_typed!(b, |s: f64| s as f32),
         AudioBufferRef::U8(b) => mix_typed!(b, |s: u8| (s as f32 - U8_MID) / U8_MID),
         AudioBufferRef::U16(b) => mix_typed!(b, |s: u16| (s as f32 - U16_MID) / U16_MID),
-        AudioBufferRef::U24(b) => mix_typed!(b, |s: symphonia::core::sample::u24| (s.inner() as f32 - U24_MID) / U24_MID),
+        AudioBufferRef::U24(b) => mix_typed!(b, |s: symphonia::core::sample::u24| (s.inner()
+            as f32
+            - U24_MID)
+            / U24_MID),
         AudioBufferRef::U32(b) => mix_typed!(b, |s: u32| (s as f32 - U32_MID) / U32_MID),
         AudioBufferRef::S8(b) => mix_typed!(b, |s: i8| s as f32 * S8_SCALE),
         AudioBufferRef::S16(b) => mix_typed!(b, |s: i16| s as f32 * S16_SCALE),
-        AudioBufferRef::S24(b) => mix_typed!(b, |s: symphonia::core::sample::i24| s.inner() as f32 / S24_MID),
+        AudioBufferRef::S24(b) => mix_typed!(b, |s: symphonia::core::sample::i24| s.inner() as f32
+            / S24_MID),
         AudioBufferRef::S32(b) => mix_typed!(b, |s: i32| s as f32 * S32_SCALE),
     }
 }

@@ -104,8 +104,7 @@ type FnSetPropertyString =
     unsafe extern "C" fn(*mut mpv_handle, *const c_char, *const c_char) -> c_int;
 type FnGetProperty =
     unsafe extern "C" fn(*mut mpv_handle, *const c_char, c_int, *mut c_void) -> c_int;
-type FnObserveProperty =
-    unsafe extern "C" fn(*mut mpv_handle, u64, *const c_char, c_int) -> c_int;
+type FnObserveProperty = unsafe extern "C" fn(*mut mpv_handle, u64, *const c_char, c_int) -> c_int;
 type FnWaitEvent = unsafe extern "C" fn(*mut mpv_handle, f64) -> *mut mpv_event;
 type FnErrorString = unsafe extern "C" fn(c_int) -> *const c_char;
 

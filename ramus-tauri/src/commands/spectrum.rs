@@ -42,10 +42,19 @@ pub async fn get_spectrum(
     }
 
     // 1. Cached file → trust whatever the .spec says (Analysing if the
-    //    analyser hasn't written one yet).
+    //    analyser hasn't written one yet). Check the persistent downloads
+    //    map first so downloaded tracks resolve to their permanent .spec,
+    //    then fall back to the LRU prefetch cache.
     let audio_path = state
         .player
-        .with_cache(|cache| cache.get(&rating_key).map(|p| p.to_path_buf()));
+        .persistent_download_paths()
+        .get(&rating_key)
+        .cloned()
+        .or_else(|| {
+            state
+                .player
+                .with_cache(|cache| cache.get(&rating_key).map(|p| p.to_path_buf()))
+        });
     if let Some(audio_path) = audio_path {
         return Ok(read_spec_file(&audio_path).unwrap_or(SpectrumState::Analysing));
     }

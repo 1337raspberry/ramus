@@ -42,6 +42,8 @@ export interface Track {
   isFavourite: boolean;
   bitrate: number | null;
   discNumber: number | null;
+  /// Bytes. Populated at sync time from the Plex Part response.
+  fileSizeBytes: number | null;
 }
 
 export interface ArtistInfo {
@@ -101,6 +103,7 @@ export interface Settings {
   eqEnabled: boolean;
   eqBands: number[];
   savedSearch: string | null;
+  offlineMode: boolean;
 }
 
 export interface CacheStats {
@@ -199,4 +202,75 @@ export interface AcknowledgementsText {
   thirdParty: string;
   lgpl: string;
   mpl: string;
+}
+
+// --- Downloads ---
+
+export type DownloadPhase = "queued" | "downloading" | "done" | "failed";
+
+export interface DownloadProgressPayload {
+  ratingKey: string;
+  albumRatingKey: string;
+  title: string;
+  artistName: string;
+  albumTitle: string;
+  thumb: string | null;
+  phase: DownloadPhase;
+  bytesWritten: number;
+  totalBytes: number | null;
+  error: string | null;
+}
+
+export interface InProgressDownload {
+  ratingKey: string;
+  albumRatingKey: string;
+  title: string;
+  artistName: string;
+  albumTitle: string;
+  thumb: string | null;
+  bytesWritten: number;
+  totalBytes: number | null;
+}
+
+export interface DownloadedAlbumSummary {
+  ratingKey: string;
+  title: string;
+  artistName: string;
+  thumb: string | null;
+  downloaded: number;
+  total: number;
+  sizeBytes: number;
+}
+
+export interface DownloadedTrackSummary {
+  ratingKey: string;
+  albumRatingKey: string;
+  title: string;
+  artistName: string;
+  albumTitle: string;
+  thumb: string | null;
+  sizeBytes: number;
+  codec: string;
+}
+
+export interface DownloadsOverview {
+  inProgress: InProgressDownload | null;
+  /// Preview slice of the backend user_queue (first 64 items). The full
+  /// count lives in `queueLen`.
+  queue: string[];
+  queueLen: number;
+  totalBytes: number;
+  albums: DownloadedAlbumSummary[];
+  orphanTracks: DownloadedTrackSummary[];
+  /// Every downloaded track's rating key, for O(1) lookups from the
+  /// "is this track playable offline" fade check.
+  downloadedRatingKeys: string[];
+}
+
+// --- Connection / offline mode ---
+
+export interface ConnectionStatusPayload {
+  online: boolean;
+  offlineModeManual: boolean;
+  effectiveOffline: boolean;
 }

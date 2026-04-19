@@ -1,11 +1,12 @@
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use ramus_core::genre::mapper::GenreMapper;
 use ramus_core::genre::parser::CustomGenreParser;
 use ramus_core::models::Settings;
 use ramus_core::playback::spectrum::spec_file_path;
 
+use crate::events::{emit_connection_status, ConnectionStatusPayload};
 use crate::state::AppState;
 
 use super::CmdResult;
@@ -31,22 +32,44 @@ pub async fn get_settings(state: State<'_, AppState>) -> CmdResult<Settings> {
 
 #[tauri::command]
 pub async fn update_settings(
+    app: AppHandle,
     state: State<'_, AppState>,
     settings: Settings,
 ) -> CmdResult<()> {
     let prev_genre_source = state.settings.read().genre_source;
+    let prev_offline_mode = state.settings.read().offline_mode;
 
     let config = settings.to_playback_config();
     state.player.update_config(config);
 
-    state.player.apply_equalizer(settings.eq_enabled, &settings.eq_bands);
+    state
+        .player
+        .apply_equalizer(settings.eq_enabled, &settings.eq_bands);
 
-    state.connection_monitor.set_allow_http(!settings.refuse_http);
+    state
+        .connection_monitor
+        .set_allow_http(!settings.refuse_http);
 
     state
         .image_cache
         .lock()
         .set_limit(settings.image_cache_limit_bytes as u64);
+
+    // Re-emit connection-status if the user toggled Work Offline — same
+    // online state, but `effective_offline` flips with the manual flag.
+    if settings.offline_mode != prev_offline_mode {
+        let online = state
+            .server_reachable
+            .load(std::sync::atomic::Ordering::Acquire);
+        emit_connection_status(
+            &app,
+            ConnectionStatusPayload {
+                online,
+                offline_mode_manual: settings.offline_mode,
+                effective_offline: settings.offline_mode || !online,
+            },
+        );
+    }
 
     // Reload genre mapper if source changed.
     if settings.genre_source != prev_genre_source {
@@ -146,7 +169,9 @@ pub async fn clear_audio_cache(state: State<'_, AppState>) -> CmdResult<()> {
 
 #[tauri::command]
 pub async fn get_audio_cache_stats(state: State<'_, AppState>) -> CmdResult<AudioCacheStats> {
-    let (count, size) = state.player.with_cache(|cache| (cache.len(), cache.total_size()));
+    let (count, size) = state
+        .player
+        .with_cache(|cache| (cache.len(), cache.total_size()));
     Ok(AudioCacheStats {
         entry_count: count,
         total_size_bytes: size,

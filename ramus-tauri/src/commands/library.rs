@@ -4,11 +4,13 @@ use ramus_core::cache::db::CacheStats;
 use ramus_core::genre::node::GenreNode;
 use ramus_core::models::{Album, AlbumColorInfo, ArtistInfo, Track, VibrantPalette};
 use ramus_core::search::engine::GenreExpander;
+use ramus_core::util::plex_art_url;
+use rand::seq::SliceRandom;
 use serde::Serialize;
 
 use crate::state::AppState;
 
-use super::CmdResult;
+use super::{with_cache, CmdResult};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,18 +19,55 @@ pub struct GenreTreeResponse {
     pub total_album_count: usize,
 }
 
-fn with_cache<F, T>(state: &AppState, f: F) -> CmdResult<T>
-where
-    F: FnOnce(&ramus_core::cache::db::CacheDatabase) -> Result<T, ramus_core::cache::db::CacheError>,
-{
-    let lock = state.cache.lock();
-    let db = lock.as_ref().ok_or("Cache not initialized")?;
-    f(db).map_err(|e| e.to_string())
+/// When effective-offline mode is active, returns the set of album rating
+/// keys that have at least one downloaded track. `None` means "no filter —
+/// return everything". Callers use this to restrict library views to what
+/// the user can actually play without a server.
+fn offline_album_source_ids(
+    state: &State<'_, AppState>,
+) -> CmdResult<Option<std::collections::HashSet<String>>> {
+    if !state.effective_offline() {
+        return Ok(None);
+    }
+    let ids = with_cache(state, |db| db.downloaded_album_source_ids())?;
+    Ok(Some(ids))
+}
+
+fn filter_albums(
+    albums: Vec<Album>,
+    allowed: Option<std::collections::HashSet<String>>,
+) -> Vec<Album> {
+    match allowed {
+        None => albums,
+        Some(set) => albums
+            .into_iter()
+            .filter(|a| set.contains(&a.rating_key))
+            .collect(),
+    }
 }
 
 #[tauri::command]
 pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeResponse> {
-    let genre_album_sets = with_cache(&state, |db| db.genre_album_sets())?;
+    let mut genre_album_sets = with_cache(&state, |db| db.genre_album_sets())?;
+
+    // Offline mode: intersect every per-genre album set with the set of
+    // albums that have at least one downloaded track, and drop any
+    // genres that end up empty.
+    if state.effective_offline() {
+        let downloaded = with_cache(&state, |db| db.downloaded_album_internal_ids())?;
+        genre_album_sets = genre_album_sets
+            .into_iter()
+            .filter_map(|(name, ids)| {
+                let kept: std::collections::HashSet<i64> =
+                    ids.intersection(&downloaded).copied().collect();
+                if kept.is_empty() {
+                    None
+                } else {
+                    Some((name, kept))
+                }
+            })
+            .collect();
+    }
 
     // Deduplicated total: union of all album IDs across genres.
     let total_album_count = {
@@ -59,7 +98,10 @@ pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeRe
         nodes
     };
 
-    Ok(GenreTreeResponse { tree, total_album_count })
+    Ok(GenreTreeResponse {
+        tree,
+        total_album_count,
+    })
 }
 
 #[tauri::command]
@@ -89,7 +131,8 @@ pub async fn get_albums_for_genre(
     drop(mapper);
 
     let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
-    with_cache(&state, |db| db.albums_for_genres(&name_refs))
+    let albums = with_cache(&state, |db| db.albums_for_genres(&name_refs))?;
+    Ok(filter_albums(albums, offline_album_source_ids(&state)?))
 }
 
 /// Fetch albums for an explicit list of genre names (no expansion). Used by
@@ -101,22 +144,34 @@ pub async fn get_albums_for_genre_names(
     genres: Vec<String>,
 ) -> CmdResult<Vec<Album>> {
     let name_refs: Vec<&str> = genres.iter().map(|s| s.as_str()).collect();
-    with_cache(&state, |db| db.albums_for_genres(&name_refs))
+    let albums = with_cache(&state, |db| db.albums_for_genres(&name_refs))?;
+    Ok(filter_albums(albums, offline_album_source_ids(&state)?))
 }
 
 #[tauri::command]
 pub async fn get_all_albums(state: State<'_, AppState>) -> CmdResult<Vec<Album>> {
-    with_cache(&state, |db| db.all_albums())
+    let albums = with_cache(&state, |db| db.all_albums())?;
+    Ok(filter_albums(albums, offline_album_source_ids(&state)?))
 }
 
 #[tauri::command]
 pub async fn get_favourite_albums(state: State<'_, AppState>) -> CmdResult<Vec<Album>> {
-    with_cache(&state, |db| db.favourite_albums())
+    let albums = with_cache(&state, |db| db.favourite_albums())?;
+    Ok(filter_albums(albums, offline_album_source_ids(&state)?))
 }
 
 #[tauri::command]
 pub async fn get_favourite_tracks(state: State<'_, AppState>) -> CmdResult<Vec<Track>> {
-    with_cache(&state, |db| db.favourite_tracks())
+    let tracks = with_cache(&state, |db| db.favourite_tracks())?;
+    if state.effective_offline() {
+        let downloaded = with_cache(&state, |db| db.downloaded_rating_keys())?;
+        Ok(tracks
+            .into_iter()
+            .filter(|t| downloaded.contains(&t.rating_key))
+            .collect())
+    } else {
+        Ok(tracks)
+    }
 }
 
 #[tauri::command]
@@ -124,7 +179,8 @@ pub async fn get_albums_for_artist(
     state: State<'_, AppState>,
     source_id: String,
 ) -> CmdResult<Vec<Album>> {
-    with_cache(&state, |db| db.albums_for_artist(&source_id))
+    let albums = with_cache(&state, |db| db.albums_for_artist(&source_id))?;
+    Ok(filter_albums(albums, offline_album_source_ids(&state)?))
 }
 
 #[tauri::command]
@@ -132,15 +188,14 @@ pub async fn get_albums_for_artist_name(
     state: State<'_, AppState>,
     name: String,
 ) -> CmdResult<Vec<Album>> {
-    with_cache(&state, |db| db.albums_for_artist_name(&name))
+    let albums = with_cache(&state, |db| db.albums_for_artist_name(&name))?;
+    Ok(filter_albums(albums, offline_album_source_ids(&state)?))
 }
 
 #[tauri::command]
-pub async fn get_albums_for_year(
-    state: State<'_, AppState>,
-    year: i32,
-) -> CmdResult<Vec<Album>> {
-    with_cache(&state, |db| db.albums_for_year(year))
+pub async fn get_albums_for_year(state: State<'_, AppState>, year: i32) -> CmdResult<Vec<Album>> {
+    let albums = with_cache(&state, |db| db.albums_for_year(year))?;
+    Ok(filter_albums(albums, offline_album_source_ids(&state)?))
 }
 
 #[tauri::command]
@@ -152,17 +207,14 @@ pub async fn get_tracks_for_album(
 }
 
 #[tauri::command]
-pub async fn get_track(
-    state: State<'_, AppState>,
-    source_id: String,
-) -> CmdResult<Option<Track>> {
+pub async fn get_track(state: State<'_, AppState>, source_id: String) -> CmdResult<Option<Track>> {
     with_cache(&state, |db| db.track_by_source_id(&source_id))
 }
 
 #[tauri::command]
 pub async fn get_all_artists(state: State<'_, AppState>) -> CmdResult<Vec<ArtistInfo>> {
     let rows = with_cache(&state, |db| db.all_artists())?;
-    Ok(rows
+    let mut artists: Vec<ArtistInfo> = rows
         .into_iter()
         .map(|(id, name, source_id, art_url)| ArtistInfo {
             id,
@@ -170,12 +222,21 @@ pub async fn get_all_artists(state: State<'_, AppState>) -> CmdResult<Vec<Artist
             source_id,
             art_url,
         })
-        .collect())
+        .collect();
+    if state.effective_offline() {
+        let allowed = with_cache(&state, |db| db.downloaded_artist_names())?;
+        artists.retain(|a| allowed.contains(&a.name));
+    }
+    Ok(artists)
 }
 
 #[tauri::command]
 pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeResponse> {
-    let fav_ids = with_cache(&state, |db| db.album_ids_for_favourites())?;
+    let mut fav_ids = with_cache(&state, |db| db.album_ids_for_favourites())?;
+    if state.effective_offline() {
+        let downloaded = with_cache(&state, |db| db.downloaded_album_internal_ids())?;
+        fav_ids = fav_ids.intersection(&downloaded).copied().collect();
+    }
     let all_sets = with_cache(&state, |db| db.genre_album_sets())?;
 
     // Intersect genre album sets with favourite IDs.
@@ -220,7 +281,10 @@ pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<G
         nodes
     };
 
-    Ok(GenreTreeResponse { tree, total_album_count })
+    Ok(GenreTreeResponse {
+        tree,
+        total_album_count,
+    })
 }
 
 #[tauri::command]
@@ -266,15 +330,26 @@ pub async fn get_album_genres(
 }
 
 #[tauri::command]
-pub async fn get_album(
-    state: State<'_, AppState>,
-    source_id: String,
-) -> CmdResult<Option<Album>> {
+pub async fn get_album(state: State<'_, AppState>, source_id: String) -> CmdResult<Option<Album>> {
     with_cache(&state, |db| db.album_by_source_id(&source_id))
 }
 
 #[tauri::command]
 pub async fn get_random_album(state: State<'_, AppState>) -> CmdResult<Option<Album>> {
+    if state.effective_offline() {
+        // Avoid returning a non-playable random album in offline mode. Run
+        // the usual offline filter over the full album list, then pick at
+        // random among what's actually on disk.
+        let albums = filter_albums(
+            with_cache(&state, |db| db.all_albums())?,
+            offline_album_source_ids(&state)?,
+        );
+        if albums.is_empty() {
+            return Ok(None);
+        }
+        let mut rng = rand::thread_rng();
+        return Ok(albums.choose(&mut rng).cloned());
+    }
     with_cache(&state, |db| db.random_album())
 }
 
@@ -293,17 +368,33 @@ pub async fn get_art_url(
         }
     }
 
-    // Cache miss: download from Plex.
+    // Cache miss: try to download from Plex. On failure (offline, server
+    // down, etc), fall back to any smaller size already in the cache —
+    // better to render a slightly-fuzzy image than show a placeholder.
+    let fetch_result = try_fetch_art(&state, &thumb, size).await;
+    match fetch_result {
+        Ok(path) => Ok(path),
+        Err(e) => {
+            if let Some(path) = any_cached_size(&state, &thumb, size) {
+                log::debug!(
+                    "get_art_url: fetch at {size} failed ({e}); serving alternate cached size"
+                );
+                Ok(path)
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+async fn try_fetch_art(
+    state: &State<'_, AppState>,
+    thumb: &str,
+    size: u32,
+) -> Result<String, String> {
     let server_url = state.client.server_url().ok_or("Not connected")?;
     let token = state.client.token().ok_or("Not authenticated")?;
-    let url = format!(
-        "{}/photo/:/transcode?width={}&height={}&minSize=1&upscale=1&url={}",
-        server_url.as_str().trim_end_matches('/'),
-        size,
-        size,
-        urlencoding::encode(&thumb),
-    );
-
+    let url = plex_art_url(&server_url, thumb, size);
     let response = state
         .http_client
         .get(&url)
@@ -311,20 +402,47 @@ pub async fn get_art_url(
         .send()
         .await
         .map_err(|_| "Image download failed".to_string())?;
-
     if !response.status().is_success() {
         return Err(format!("Image download HTTP {}", response.status()));
     }
-
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
-
-    // Insert handles concurrent download races internally.
     let path = {
         let mut cache = state.image_cache.lock();
-        cache.insert(&thumb, size, &bytes).map_err(|e| e.to_string())?
+        cache
+            .insert(thumb, size, &bytes)
+            .map_err(|e| e.to_string())?
     };
-
     Ok(path.to_string_lossy().to_string())
+}
+
+/// Walk the canonical art sizes (smaller first, then larger) and return the
+/// first one that's already on disk. Used as an offline-grace fallback: a
+/// slightly-fuzzy or oversized cached image is always better than rendering
+/// a placeholder. Prefers smaller sizes to avoid pushing a 1200px image
+/// through a 72px widget, but a larger size still beats nothing.
+fn any_cached_size(state: &State<'_, AppState>, thumb: &str, requested: u32) -> Option<String> {
+    // Canonical tiers from `ART_SIZE` in ui/src/lib/commands.ts — keep in sync.
+    const CANONICAL_SIZES: [u32; 3] = [1200, 300, 72];
+    let mut cache = state.image_cache.lock();
+    // Smaller first (strictly less than requested).
+    for size in CANONICAL_SIZES {
+        if size >= requested {
+            continue;
+        }
+        if let Some(path) = cache.get(thumb, size) {
+            return Some(path.to_string_lossy().to_string());
+        }
+    }
+    // Nothing smaller — fall back to any larger cached size.
+    for size in CANONICAL_SIZES {
+        if size <= requested {
+            continue;
+        }
+        if let Some(path) = cache.get(thumb, size) {
+            return Some(path.to_string_lossy().to_string());
+        }
+    }
+    None
 }
 
 #[tauri::command]

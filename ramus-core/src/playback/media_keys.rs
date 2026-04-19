@@ -86,6 +86,7 @@ mod tests {
             is_favourite: false,
             bitrate: None,
             disc_number: Some(1),
+            file_size_bytes: None,
         }
     }
 

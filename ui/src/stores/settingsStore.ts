@@ -21,6 +21,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   eqEnabled: false,
   eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   savedSearch: null,
+  offlineMode: false,
 
   loadSettings: async () => {
     try {

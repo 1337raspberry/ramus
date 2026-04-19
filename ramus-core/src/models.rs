@@ -148,6 +148,11 @@ pub struct Track {
     pub is_favourite: bool,
     pub bitrate: Option<i32>,
     pub disc_number: Option<i32>,
+    /// File size in bytes. Populated at sync time from the Plex Part
+    /// response. Missing on tracks that haven't been resynced since the
+    /// column was added; downstream size estimates fall back to
+    /// `bitrate × duration` in that case.
+    pub file_size_bytes: Option<i64>,
 }
 
 impl Track {
@@ -433,6 +438,9 @@ pub struct Settings {
     pub eq_enabled: bool,
     pub eq_bands: [f32; 10],
     pub saved_search: Option<String>,
+    /// User manual "Work Offline" toggle. When `true`, the app ignores
+    /// live server reachability and shows only downloaded content.
+    pub offline_mode: bool,
 }
 
 impl Default for Settings {
@@ -452,6 +460,7 @@ impl Default for Settings {
             eq_enabled: false,
             eq_bands: [0.0; 10],
             saved_search: None,
+            offline_mode: false,
         }
     }
 }
@@ -500,6 +509,7 @@ mod tests {
             is_favourite: false,
             bitrate: None,
             disc_number: None,
+            file_size_bytes: None,
         }
     }
 

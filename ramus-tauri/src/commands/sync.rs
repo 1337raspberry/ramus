@@ -39,7 +39,9 @@ fn acquire_sync_guard(flag: &Arc<AtomicBool>) -> CmdResult<SyncGuard> {
 fn get_library_key() -> CmdResult<String> {
     let token_store = TokenStore::new().map_err(|e| e.to_string())?;
     let config = auth::stored_server_config(&token_store).ok_or("No server config")?;
-    config.selected_library_key.ok_or_else(|| "No library selected".into())
+    config
+        .selected_library_key
+        .ok_or_else(|| "No library selected".into())
 }
 
 fn update_last_sync_time(settings: &Arc<RwLock<Settings>>) {
@@ -53,10 +55,7 @@ fn update_last_sync_time(settings: &Arc<RwLock<Settings>>) {
 }
 
 #[tauri::command]
-pub async fn start_full_sync(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> CmdResult<()> {
+pub async fn start_full_sync(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     let guard = acquire_sync_guard(&state.sync_in_progress)?;
 
     let library_key = get_library_key()?;
@@ -92,10 +91,7 @@ pub async fn start_full_sync(
 }
 
 #[tauri::command]
-pub async fn start_incremental_sync(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> CmdResult<()> {
+pub async fn start_incremental_sync(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     let guard = acquire_sync_guard(&state.sync_in_progress)?;
 
     let library_key = get_library_key()?;
@@ -129,10 +125,7 @@ pub async fn start_incremental_sync(
 }
 
 #[tauri::command]
-pub async fn start_genre_sync(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> CmdResult<()> {
+pub async fn start_genre_sync(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     let guard = acquire_sync_guard(&state.sync_in_progress)?;
 
     let engine_lock = state.sync_engine.lock();
