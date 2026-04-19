@@ -294,14 +294,26 @@ impl SearchEngine {
         if !genres.is_empty() {
             let mut expanded_names = HashSet::new();
             for genre in &genres {
-                if let Some(ref expander) = self.genre_expander {
-                    if let Some(descendants) = expander.expand_genre(genre) {
+                let expansion = self
+                    .genre_expander
+                    .as_ref()
+                    .and_then(|expander| expander.expand_genre(genre));
+                // Guard against bad fuzzy matches: if the expansion doesn't
+                // contain the original name (case-insensitive), the mapper
+                // fuzzy-matched to a different family (e.g. "blackgaze" →
+                // Black Metal). Fall back to the raw DB name so "Other"
+                // genres still resolve. Mirrors the guard in
+                // `commands::library::get_albums_for_genre`.
+                let genre_lower = genre.to_lowercase();
+                match expansion {
+                    Some(descendants)
+                        if descendants.iter().any(|n| n.to_lowercase() == genre_lower) =>
+                    {
                         expanded_names.extend(descendants);
-                    } else {
+                    }
+                    _ => {
                         expanded_names.insert(genre.to_string());
                     }
-                } else {
-                    expanded_names.insert(genre.to_string());
                 }
             }
             let genre_album_ids = self
@@ -708,6 +720,69 @@ mod tests {
         assert!(titles.contains("OK Computer"), "Should include Rock-tagged album");
         assert!(titles.contains("Kid A"), "Should include Electronic-tagged album (child of Rock)");
         assert!(!titles.contains("Reign in Blood"), "Should not include Metal-tagged album");
+    }
+
+    #[test]
+    fn test_genre_filter_bad_fuzzy_match_falls_back_to_raw_name() {
+        // Simulates a genre the user has tagged in Plex (e.g. "Blackgaze")
+        // that isn't in the curated tree. The mapper's fuzzy match
+        // returns a nearby tree family (Black Metal) that doesn't include
+        // the original name. The engine must fall back to a direct DB
+        // lookup on the raw name so the user's actual tagged albums
+        // surface instead of the wrong-family neighbour.
+        let db = Arc::new(CacheDatabase::open_in_memory().unwrap());
+        seed_test_data(&db);
+
+        // Add a Blackgaze-tagged album next to the existing Metal one.
+        let artist_map = db
+            .batch_upsert_artists(&[("Deafheaven".into(), None, "artist-3".into(), None, None, None)])
+            .unwrap();
+        let deafheaven_id = *artist_map.get("artist-3").unwrap();
+        let album_map = db
+            .batch_upsert_albums(&[AlbumUpsertRow {
+                title: "Sunbather".into(),
+                artist_id: deafheaven_id,
+                year: Some(2013),
+                source_id: "album-4".into(),
+                art_url: None,
+                updated_at: None,
+                added_at: None,
+                last_viewed_at: None,
+                first_genre: None,
+                first_collection: None,
+            }])
+            .unwrap();
+        let sunbather_id = *album_map.get("album-4").unwrap();
+        let blackgaze_id = db.upsert_genre("Blackgaze").unwrap();
+        db.set_album_genres(sunbather_id, &[blackgaze_id]).unwrap();
+
+        // Mapper fuzzy-matches "blackgaze" to Black Metal's family — which
+        // does NOT contain "Blackgaze" — reproducing the real bug.
+        struct BadMatchExpander;
+        impl GenreExpander for BadMatchExpander {
+            fn expand_genre(&self, name: &str) -> Option<HashSet<String>> {
+                if name.eq_ignore_ascii_case("blackgaze") {
+                    let mut set = HashSet::new();
+                    set.insert("Metal".to_string());
+                    Some(set)
+                } else {
+                    None
+                }
+            }
+        }
+
+        let engine = SearchEngine::new(db, Some(Arc::new(BadMatchExpander)));
+        let q = QueryParser::parse("/blackgaze");
+        let results = engine.search(&q, 100).unwrap();
+        let titles: HashSet<_> = results.iter().map(|r| r.album_title.as_str()).collect();
+        assert!(
+            titles.contains("Sunbather"),
+            "Blackgaze-tagged album must surface despite the mapper fuzzy-matching to Metal"
+        );
+        assert!(
+            !titles.contains("Reign in Blood"),
+            "The fuzzy-matched Metal family must not pollute results for an exact-tagged genre"
+        );
     }
 
     #[test]
