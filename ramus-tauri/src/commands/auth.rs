@@ -61,12 +61,11 @@ pub async fn poll_oauth(state: State<'_, AppState>, pin_id: i64) -> CmdResult<bo
             state.client.set_token(Some(token));
             Ok(true)
         }
-        // Terminal states: the frontend surfaces these and restarts the flow.
-        // PollingTimeout with max_attempts=1 shouldn't happen in practice; treat
-        // as terminal defensively.
+        // Terminal: the frontend surfaces this and restarts the flow.
         Err(PlexAuthError::PinExpired) => Err("Sign-in code expired — please try again".into()),
-        Err(PlexAuthError::PollingTimeout) => Err("Sign-in timed out — please try again".into()),
-        // Transient: keep polling.
+        // Transient: no token yet (PollingTimeout here just means the single
+        // attempt didn't find a token — the frontend drives the polling
+        // cadence), or a network blip. Keep polling.
         Err(_) => Ok(false),
     }
 }
