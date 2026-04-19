@@ -15,33 +15,39 @@ import {
   removeAllDownloads,
   removeDownload,
 } from "../lib/commands";
-import type { DownloadPhase, DownloadProgressPayload, DownloadsOverview } from "../lib/types";
+import type { DownloadProgressPayload, DownloadsOverview } from "../lib/types";
 
-/// Per-track state surfaced to components. Separate from the backend
-/// `DownloadsOverview` so (...) menus can subscribe to individual rating
-/// keys without thrashing.
-export interface TrackDownloadState {
-  phase: DownloadPhase;
+/// Live per-track byte progress. Kept for the currently-in-flight item
+/// only — once a track finishes (`done` / `failed`) we drop it from this
+/// map so the rest of the UI reads from `overview` instead.
+interface LiveProgress {
   bytesWritten: number;
   totalBytes: number | null;
-  error: string | null;
 }
 
 interface DownloadsState {
   overview: DownloadsOverview | null;
-  /// Live per-track state for in-progress + recently-failed items. Completed
-  /// items get pruned on the next overview refresh so the map doesn't grow
-  /// unbounded. Keyed by rating key.
-  trackState: Record<string, TrackDownloadState>;
+  /// Currently-downloading byte progress, updated by the download-progress
+  /// event stream. Separate from `overview.inProgress` because the backend
+  /// only snapshots that at overview time — this map stays live between
+  /// overview refreshes.
+  liveProgress: LiveProgress | null;
+  /// Per-track status optimistically set by user actions. Used by the
+  /// (...) menus to flip "Download" → "Downloading…" / "Remove Download"
+  /// without waiting for an event round-trip.
+  trackPhase: Record<string, "queued" | "downloading">;
   /// Source IDs of albums with ≥1 downloaded track, mirrored from
   /// `overview.albums` / `orphanTracks` for O(1) lookups from menus.
   downloadedAlbumIds: Set<string>;
   /// Rating keys of every downloaded track.
   downloadedTrackIds: Set<string>;
-  /// Listener teardown set on first subscription.
+  /// Listener teardown guard.
   _listenersInstalled: boolean;
+  /// Pending refresh handle so we coalesce bursts of downloads-changed.
+  _refreshTimer: ReturnType<typeof setTimeout> | null;
 
   refresh: () => Promise<void>;
+  scheduleRefresh: () => void;
   startTrackDownload: (ratingKey: string) => Promise<void>;
   startAlbumDownload: (albumRatingKey: string) => Promise<void>;
   startStarredTracks: () => Promise<number>;
@@ -56,12 +62,17 @@ interface DownloadsState {
   ensureListeners: () => void;
 }
 
+/// Refresh no more than once every 400ms under event bursts.
+const REFRESH_DEBOUNCE_MS = 400;
+
 export const useDownloadsStore = create<DownloadsState>((set, get) => ({
   overview: null,
-  trackState: {},
+  liveProgress: null,
+  trackPhase: {},
   downloadedAlbumIds: new Set(),
   downloadedTrackIds: new Set(),
   _listenersInstalled: false,
+  _refreshTimer: null,
 
   refresh: async () => {
     try {
@@ -73,65 +84,59 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
         downloadedAlbumIds.add(t.albumRatingKey);
         downloadedTrackIds.add(t.ratingKey);
       }
-      // Clear stale completed entries from trackState whenever we refresh.
-      const prev = get().trackState;
-      const next: Record<string, TrackDownloadState> = {};
+      // Strip optimistic phases for items no longer pending (either
+      // finished or cancelled — neither is in overview.queue / inProgress).
+      const prev = get().trackPhase;
       const activeQueue = new Set(overview.queue);
-      const inProgress = overview.inProgress?.ratingKey;
-      for (const [rk, st] of Object.entries(prev)) {
-        if (st.phase === "done" || st.phase === "failed") continue;
-        if (activeQueue.has(rk) || rk === inProgress) next[rk] = st;
+      const inFlight = overview.inProgress?.ratingKey;
+      const nextPhase: Record<string, "queued" | "downloading"> = {};
+      for (const [rk, p] of Object.entries(prev)) {
+        if (activeQueue.has(rk) || rk === inFlight) nextPhase[rk] = p;
       }
-      if (overview.inProgress) {
-        next[overview.inProgress.ratingKey] = {
-          phase: "downloading",
-          bytesWritten: overview.inProgress.bytesWritten,
-          totalBytes: overview.inProgress.totalBytes,
-          error: null,
-        };
-      }
-      for (const rk of overview.queue) {
-        if (!next[rk]) {
-          next[rk] = {
-            phase: "queued",
-            bytesWritten: 0,
-            totalBytes: null,
-            error: null,
-          };
-        }
-      }
+      // If the backend says something's in-flight, trust it over any
+      // stale optimistic "queued" we might be holding.
+      if (inFlight) nextPhase[inFlight] = "downloading";
       set({
         overview,
-        trackState: next,
+        trackPhase: nextPhase,
         downloadedAlbumIds,
         downloadedTrackIds,
+        // Sync liveProgress with the backend snapshot on refresh. Between
+        // refreshes, the download-progress listener keeps it current.
+        liveProgress: overview.inProgress
+          ? {
+              bytesWritten: overview.inProgress.bytesWritten,
+              totalBytes: overview.inProgress.totalBytes,
+            }
+          : null,
       });
     } catch (e) {
       console.warn("downloadsStore.refresh failed", e);
     }
   },
 
+  scheduleRefresh: () => {
+    const existing = get()._refreshTimer;
+    if (existing) return;
+    const t = setTimeout(() => {
+      set({ _refreshTimer: null });
+      void get().refresh();
+    }, REFRESH_DEBOUNCE_MS);
+    set({ _refreshTimer: t });
+  },
+
   startTrackDownload: async (ratingKey) => {
-    // Optimistic: mark queued immediately so the (...) menu flips state
-    // without waiting for the roundtrip + events.
     set((s) => ({
-      trackState: {
-        ...s.trackState,
-        [ratingKey]: {
-          phase: "queued",
-          bytesWritten: 0,
-          totalBytes: null,
-          error: null,
-        },
-      },
+      trackPhase: { ...s.trackPhase, [ratingKey]: "queued" },
     }));
     try {
       await downloadTrack(ratingKey);
+      get().scheduleRefresh();
     } catch (e) {
       set((s) => {
-        const next = { ...s.trackState };
+        const next = { ...s.trackPhase };
         delete next[ratingKey];
-        return { trackState: next };
+        return { trackPhase: next };
       });
       throw e;
     }
@@ -139,51 +144,51 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
 
   startAlbumDownload: async (albumRatingKey) => {
     await downloadAlbum(albumRatingKey);
-    await get().refresh();
+    get().scheduleRefresh();
   },
 
   startStarredTracks: async () => {
     const n = await downloadAllStarredTracks();
-    await get().refresh();
+    get().scheduleRefresh();
     return n;
   },
 
   startStarredAlbums: async () => {
     const n = await downloadAllStarredAlbums();
-    await get().refresh();
+    get().scheduleRefresh();
     return n;
   },
 
   cancel: async (ratingKey) => {
     await cancelDownload(ratingKey);
     set((s) => {
-      const next = { ...s.trackState };
+      const next = { ...s.trackPhase };
       delete next[ratingKey];
-      return { trackState: next };
+      return { trackPhase: next };
     });
-    await get().refresh();
+    get().scheduleRefresh();
   },
 
   cancelAll: async () => {
     await cancelAllDownloads();
-    set({ trackState: {} });
-    await get().refresh();
+    set({ trackPhase: {}, liveProgress: null });
+    get().scheduleRefresh();
   },
 
   remove: async (ratingKey) => {
     await removeDownload(ratingKey);
-    await get().refresh();
+    get().scheduleRefresh();
   },
 
   removeAlbum: async (albumRatingKey) => {
     await removeAlbumDownloads(albumRatingKey);
-    await get().refresh();
+    get().scheduleRefresh();
   },
 
   clearAll: async () => {
     await removeAllDownloads();
-    set({ trackState: {} });
-    await get().refresh();
+    set({ trackPhase: {}, liveProgress: null });
+    get().scheduleRefresh();
   },
 
   estimateStarredTracks: async () => {
@@ -200,22 +205,26 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
 
     listen<DownloadProgressPayload>("download-progress", (event) => {
       const p = event.payload;
-      set((s) => ({
-        trackState: {
-          ...s.trackState,
-          [p.ratingKey]: {
-            phase: p.phase,
+      if (p.phase === "downloading") {
+        set({
+          liveProgress: {
             bytesWritten: p.bytesWritten,
             totalBytes: p.totalBytes,
-            error: p.error,
           },
-        },
-      }));
+        });
+      } else if (p.phase === "done" || p.phase === "failed") {
+        // Terminal — drop any optimistic phase and clear live progress
+        // (the next start will set it again).
+        set((s) => {
+          const next = { ...s.trackPhase };
+          delete next[p.ratingKey];
+          return { trackPhase: next, liveProgress: null };
+        });
+      }
     });
 
     listen("downloads-changed", () => {
-      // Small debounce via microtask — multiple emits in a tick coalesce.
-      Promise.resolve().then(() => get().refresh());
+      get().scheduleRefresh();
     });
   },
 }));
@@ -224,8 +233,13 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
 export const selectIsDownloaded = (ratingKey: string) => (s: DownloadsState) =>
   s.downloadedTrackIds.has(ratingKey);
 
-export const selectTrackDownloadState = (ratingKey: string) => (s: DownloadsState) =>
-  s.trackState[ratingKey];
-
 export const selectIsAlbumDownloaded = (albumRatingKey: string) => (s: DownloadsState) =>
   s.downloadedAlbumIds.has(albumRatingKey);
+
+/// Returns `null` when the track isn't currently queued or downloading.
+/// Consumers use this to flip menu labels without re-subscribing to the
+/// full track map on every progress event.
+export const selectTrackPhase =
+  (ratingKey: string) =>
+  (s: DownloadsState): "queued" | "downloading" | null =>
+    s.trackPhase[ratingKey] ?? null;

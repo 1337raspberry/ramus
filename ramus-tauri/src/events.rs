@@ -64,11 +64,19 @@ pub fn emit_spectrum_ready(app: &AppHandle, rating_key: impl Into<String>) {
 /// Per-track progress for the Downloads panel. `done` and `failed` are
 /// terminal; the frontend uses them to remove the row from the "in progress"
 /// list. `bytesWritten` / `totalBytes` update on chunk boundaries.
+///
+/// `title` / `artistName` / `albumTitle` / `thumb` are denormalised onto
+/// the event so the panel doesn't need to call `get_track` 1000 times to
+/// render a bulk-download queue.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadProgressPayload {
     pub rating_key: String,
     pub album_rating_key: String,
+    pub title: String,
+    pub artist_name: String,
+    pub album_title: String,
+    pub thumb: Option<String>,
     pub phase: &'static str,
     pub bytes_written: u64,
     pub total_bytes: Option<u64>,

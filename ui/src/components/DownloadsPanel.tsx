@@ -2,7 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useDownloadsStore } from "../stores/downloadsStore";
 import { formatBytes } from "../lib/format";
-import type { DownloadedAlbumSummary, DownloadedTrackSummary } from "../lib/types";
+import type {
+  DownloadedAlbumSummary,
+  DownloadedTrackSummary,
+  InProgressDownload,
+} from "../lib/types";
 import { useArtUrl } from "../lib/useArtUrl";
 import { ART_SIZE } from "../lib/commands";
 
@@ -12,9 +16,8 @@ interface Props {
 
 export default function DownloadsPanel({ onDismiss }: Props) {
   const overview = useDownloadsStore((s) => s.overview);
-  const trackState = useDownloadsStore((s) => s.trackState);
+  const liveProgress = useDownloadsStore((s) => s.liveProgress);
   const refresh = useDownloadsStore((s) => s.refresh);
-  const cancel = useDownloadsStore((s) => s.cancel);
   const cancelAll = useDownloadsStore((s) => s.cancelAll);
   const remove = useDownloadsStore((s) => s.remove);
   const removeAlbum = useDownloadsStore((s) => s.removeAlbum);
@@ -88,6 +91,8 @@ export default function DownloadsPanel({ onDismiss }: Props) {
   const albumsCount = overview?.albums.length ?? 0;
   const tracksCount = overview?.orphanTracks.length ?? 0;
   const totalBytes = overview?.totalBytes ?? 0;
+  const queueLen = overview?.queueLen ?? 0;
+  const inProgress = overview?.inProgress ?? null;
 
   return (
     <div className="settings-backdrop" onClick={handleBackdrop}>
@@ -107,9 +112,9 @@ export default function DownloadsPanel({ onDismiss }: Props) {
           )}
 
           <InProgressSection
-            trackState={trackState}
-            queue={overview?.queue ?? []}
-            onCancel={cancel}
+            inProgress={inProgress}
+            liveProgress={liveProgress}
+            queueLen={queueLen}
             onCancelAll={cancelAll}
           />
 
@@ -195,79 +200,67 @@ export default function DownloadsPanel({ onDismiss }: Props) {
 }
 
 function InProgressSection({
-  trackState,
-  queue,
-  onCancel,
+  inProgress,
+  liveProgress,
+  queueLen,
   onCancelAll,
 }: {
-  trackState: Record<
-    string,
-    { phase: string; bytesWritten: number; totalBytes: number | null; error: string | null }
-  >;
-  queue: string[];
-  onCancel: (ratingKey: string) => Promise<void>;
+  inProgress: InProgressDownload | null;
+  liveProgress: { bytesWritten: number; totalBytes: number | null } | null;
+  queueLen: number;
   onCancelAll: () => Promise<void>;
 }) {
-  const entries = Object.entries(trackState).filter(
-    ([, s]) => s.phase === "downloading" || s.phase === "queued",
-  );
-  if (entries.length === 0) return null;
+  if (!inProgress && queueLen === 0) return null;
+
+  // Prefer the live-progress bytes from the event stream over the overview
+  // snapshot, which only updates on downloads-changed.
+  const bytes = liveProgress?.bytesWritten ?? inProgress?.bytesWritten ?? 0;
+  const total = liveProgress?.totalBytes ?? inProgress?.totalBytes ?? null;
+
+  const art = useArtUrl(inProgress?.thumb ?? null, ART_SIZE.SMALL);
+
+  const pct = total && total > 0 ? Math.min(100, Math.round((bytes / total) * 100)) : null;
 
   return (
     <section className="downloads-section">
       <div className="downloads-inprogress-header">
-        <h3 className="downloads-section-title">In progress ({entries.length})</h3>
+        <h3 className="downloads-section-title">
+          In progress{queueLen > 0 && <span> ({queueLen} queued)</span>}
+        </h3>
         <button className="downloads-text-link" onClick={onCancelAll}>
           Cancel all
         </button>
       </div>
-      <ul className="downloads-list">
-        {entries
-          .sort(([a], [b]) => {
-            // In-flight first, then queue order.
-            const ai = queue.indexOf(a);
-            const bi = queue.indexOf(b);
-            if (ai < 0 && bi < 0) return 0;
-            if (ai < 0) return -1;
-            if (bi < 0) return 1;
-            return ai - bi;
-          })
-          .map(([ratingKey, st]) => (
-            <li key={ratingKey} className="downloads-inflight-row">
-              <div className="downloads-inflight-title">{ratingKey}</div>
-              <div className="downloads-inflight-meta">
-                {st.phase === "downloading" ? (
-                  <>
-                    {formatBytes(st.bytesWritten)}
-                    {st.totalBytes ? ` / ${formatBytes(st.totalBytes)}` : ""}
-                  </>
-                ) : (
-                  <span className="downloads-queued">Queued</span>
-                )}
-              </div>
-              <div className="sync-progress-bar-bg">
-                <div
-                  className="sync-progress-bar-fill"
-                  style={{
-                    width:
-                      st.totalBytes && st.totalBytes > 0
-                        ? `${Math.min(100, Math.round((st.bytesWritten / st.totalBytes) * 100))}%`
-                        : st.phase === "downloading"
-                          ? "5%"
-                          : "0%",
-                  }}
-                />
-              </div>
-              <button
-                className="downloads-row-action"
-                onClick={() => onCancel(ratingKey)}
-                title="Cancel"
-              >
-                x
-              </button>
-            </li>
-          ))}
-      </ul>
+      {inProgress && (
+        <div className="downloads-inflight-card">
+          <div className="downloads-item-art downloads-inflight-art">
+            {art.artSrc && !art.artErr && <img src={art.artSrc} alt="" />}
+          </div>
+          <div className="downloads-inflight-text">
+            <div className="downloads-inflight-title">{inProgress.title}</div>
+            <div className="downloads-inflight-sub">
+              {inProgress.artistName}
+              {inProgress.albumTitle ? ` · ${inProgress.albumTitle}` : ""}
+            </div>
+            <div className="sync-progress-bar-bg">
+              <div
+                className="sync-progress-bar-fill"
+                style={{
+                  width: pct !== null ? `${pct}%` : "5%",
+                }}
+              />
+            </div>
+            <div className="downloads-inflight-meta">
+              {formatBytes(bytes)}
+              {total ? ` / ${formatBytes(total)}` : ""}
+              {pct !== null ? ` · ${pct}%` : ""}
+            </div>
+          </div>
+        </div>
+      )}
+      {queueLen > 0 && !inProgress && (
+        <div className="downloads-empty">Waiting for worker… ({queueLen} queued)</div>
+      )}
     </section>
   );
 }

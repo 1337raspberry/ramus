@@ -461,6 +461,10 @@ fn build_job(
     Ok(UserDownloadJob {
         rating_key: track.rating_key.clone(),
         album_rating_key,
+        title: track.title.clone(),
+        artist_name: track.display_artist().to_string(),
+        album_title: track.album_title.clone(),
+        thumb: track.thumb.clone(),
         codec,
         url: url.to_string(),
         expected_size_bytes: track.file_size_bytes.map(|b| b as u64),

@@ -78,6 +78,10 @@ const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(250);
 pub struct UserDownloadJob {
     pub rating_key: String,
     pub album_rating_key: String,
+    pub title: String,
+    pub artist_name: String,
+    pub album_title: String,
+    pub thumb: Option<String>,
     pub codec: String,
     pub url: String,
     /// Expected bytes, from `tracks.fileSizeBytes`. Used to show accurate
@@ -92,6 +96,9 @@ pub struct DownloadManagerSnapshot {
     pub in_progress: Option<InProgressDownload>,
     /// Queued rating keys in FIFO order.
     pub queued: Vec<String>,
+    /// Total items in the user queue — cheaper than `queued.len()` for
+    /// callers that only care about the count.
+    pub queue_len: usize,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -99,6 +106,10 @@ pub struct DownloadManagerSnapshot {
 pub struct InProgressDownload {
     pub rating_key: String,
     pub album_rating_key: String,
+    pub title: String,
+    pub artist_name: String,
+    pub album_title: String,
+    pub thumb: Option<String>,
     pub bytes_written: u64,
     pub total_bytes: Option<u64>,
 }
@@ -145,13 +156,19 @@ impl Shared {
     }
 
     fn snapshot(&self) -> DownloadManagerSnapshot {
+        // Cap the returned queue list — a bulk "download all starred" run
+        // can have 1000+ items and the UI only needs to show a small
+        // preview. `queue_len` keeps the total count available.
+        const PREVIEW_LIMIT: usize = 64;
         DownloadManagerSnapshot {
             in_progress: self.in_progress.clone(),
             queued: self
                 .user_queue
                 .iter()
+                .take(PREVIEW_LIMIT)
                 .map(|j| j.rating_key.clone())
                 .collect(),
+            queue_len: self.user_queue.len(),
         }
     }
 }
@@ -602,6 +619,10 @@ async fn run_serial_downloads(
                         DownloadProgressPayload {
                             rating_key: job.rating_key.clone(),
                             album_rating_key: job.album_rating_key.clone(),
+                            title: job.title.clone(),
+                            artist_name: job.artist_name.clone(),
+                            album_title: job.album_title.clone(),
+                            thumb: job.thumb.clone(),
                             phase: "failed",
                             bytes_written: 0,
                             total_bytes: job.expected_size_bytes,
@@ -703,6 +724,10 @@ async fn run_user_download(
             DownloadProgressPayload {
                 rating_key: job.rating_key.clone(),
                 album_rating_key: job.album_rating_key.clone(),
+                title: job.title.clone(),
+                artist_name: job.artist_name.clone(),
+                album_title: job.album_title.clone(),
+                thumb: job.thumb.clone(),
                 phase: "done",
                 bytes_written: job.expected_size_bytes.unwrap_or(0),
                 total_bytes: job.expected_size_bytes,
@@ -728,6 +753,10 @@ async fn run_user_download(
     shared.lock().in_progress = Some(InProgressDownload {
         rating_key: job.rating_key.clone(),
         album_rating_key: job.album_rating_key.clone(),
+        title: job.title.clone(),
+        artist_name: job.artist_name.clone(),
+        album_title: job.album_title.clone(),
+        thumb: job.thumb.clone(),
         bytes_written: 0,
         total_bytes: job.expected_size_bytes,
     });
@@ -736,6 +765,10 @@ async fn run_user_download(
         DownloadProgressPayload {
             rating_key: job.rating_key.clone(),
             album_rating_key: job.album_rating_key.clone(),
+            title: job.title.clone(),
+            artist_name: job.artist_name.clone(),
+            album_title: job.album_title.clone(),
+            thumb: job.thumb.clone(),
             phase: "downloading",
             bytes_written: 0,
             total_bytes: job.expected_size_bytes,
@@ -745,12 +778,17 @@ async fn run_user_download(
 
     let rk = job.rating_key.clone();
     let alb = job.album_rating_key.clone();
+    let title = job.title.clone();
+    let artist = job.artist_name.clone();
+    let album_title = job.album_title.clone();
+    let thumb = job.thumb.clone();
     let app_for_cb = app.clone();
     let shared_for_cb = shared.clone();
+    let expected = job.expected_size_bytes;
     let mut last_emit = Instant::now();
 
     let download_result = download_http_to_file(client, &job.url, &file_path, move |bytes, total| {
-        let total = total.or(job.expected_size_bytes);
+        let total = total.or(expected);
         {
             let mut s = shared_for_cb.lock();
             if let Some(ip) = s.in_progress.as_mut() {
@@ -767,6 +805,10 @@ async fn run_user_download(
                 DownloadProgressPayload {
                     rating_key: rk.clone(),
                     album_rating_key: alb.clone(),
+                    title: title.clone(),
+                    artist_name: artist.clone(),
+                    album_title: album_title.clone(),
+                    thumb: thumb.clone(),
                     phase: "downloading",
                     bytes_written: bytes,
                     total_bytes: total,
@@ -818,17 +860,23 @@ async fn run_user_download(
 
     // If the downloaded track sits in the current playback queue, swap its
     // mpv playlist entry to the local file so the next time we hit that
-    // track we read from disk.
-    player.swap_playlist_entry_to_cached(&job.rating_key);
+    // track we read from disk. swap_playlist_entry_to_cached will kick
+    // off spectrum analysis for the track when it becomes the next
+    // prefetch candidate — we intentionally DON'T analyse at download
+    // time because bulk starred-downloads would then FFT hundreds of
+    // tracks the user isn't about to play.
 
-    // Spectrum analysis so focus-mode visualiser works for downloaded tracks.
-    spawn_analyse_task_from_path(file_path.clone(), job.rating_key.clone(), app.clone());
+    player.swap_playlist_entry_to_cached(&job.rating_key);
 
     emit_download_progress(
         app,
         DownloadProgressPayload {
             rating_key: job.rating_key.clone(),
             album_rating_key: job.album_rating_key.clone(),
+            title: job.title.clone(),
+            artist_name: job.artist_name.clone(),
+            album_title: job.album_title.clone(),
+            thumb: job.thumb.clone(),
             phase: "done",
             bytes_written: size,
             total_bytes: Some(size),

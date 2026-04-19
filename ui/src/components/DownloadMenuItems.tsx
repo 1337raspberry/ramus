@@ -1,14 +1,14 @@
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 
 import {
   useDownloadsStore,
   selectIsAlbumDownloaded,
   selectIsDownloaded,
-  selectTrackDownloadState,
+  selectTrackPhase,
 } from "../stores/downloadsStore";
 
-/// "Download" / "Downloading 42%…" / "Remove Download" item for a single
-/// track's (...) menu. Keep in sync with `AlbumDownloadMenuItem`.
+/// "Download" / "Downloading…" / "Queued" / "Remove Download" item for a
+/// single track's (...) menu.
 export function TrackDownloadMenuItem({
   ratingKey,
   onDone,
@@ -17,24 +17,19 @@ export function TrackDownloadMenuItem({
   onDone?: () => void;
 }) {
   const isDownloaded = useDownloadsStore(selectIsDownloaded(ratingKey));
-  const state = useDownloadsStore(selectTrackDownloadState(ratingKey));
+  const phase = useDownloadsStore(selectTrackPhase(ratingKey));
   const start = useDownloadsStore((s) => s.startTrackDownload);
   const cancel = useDownloadsStore((s) => s.cancel);
   const remove = useDownloadsStore((s) => s.remove);
 
-  const phase = state?.phase;
-  const label = useMemo(() => {
-    if (phase === "downloading") {
-      if (state?.totalBytes && state.totalBytes > 0) {
-        const pct = Math.min(100, Math.round((state.bytesWritten / state.totalBytes) * 100));
-        return `Downloading ${pct}%…`;
-      }
-      return "Downloading…";
-    }
-    if (phase === "queued") return "Queued";
-    if (isDownloaded) return "Remove Download";
-    return "Download";
-  }, [phase, state?.bytesWritten, state?.totalBytes, isDownloaded]);
+  const label =
+    phase === "downloading"
+      ? "Downloading…"
+      : phase === "queued"
+        ? "Queued"
+        : isDownloaded
+          ? "Remove Download"
+          : "Download";
 
   const handleClick = useCallback(
     async (e: React.MouseEvent) => {
@@ -62,9 +57,7 @@ export function TrackDownloadMenuItem({
   );
 }
 
-/// "Download" / "Remove Download" item for an album's (...) menu. Kicks
-/// off per-track enqueuing on the backend; cancellation / progress are
-/// tracked per-track.
+/// "Download" / "Remove Download" item for an album's (...) menu.
 export function AlbumDownloadMenuItem({
   albumRatingKey,
   onDone,

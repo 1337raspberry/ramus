@@ -211,6 +211,10 @@ export type DownloadPhase = "queued" | "downloading" | "done" | "failed";
 export interface DownloadProgressPayload {
   ratingKey: string;
   albumRatingKey: string;
+  title: string;
+  artistName: string;
+  albumTitle: string;
+  thumb: string | null;
   phase: DownloadPhase;
   bytesWritten: number;
   totalBytes: number | null;
@@ -220,6 +224,10 @@ export interface DownloadProgressPayload {
 export interface InProgressDownload {
   ratingKey: string;
   albumRatingKey: string;
+  title: string;
+  artistName: string;
+  albumTitle: string;
+  thumb: string | null;
   bytesWritten: number;
   totalBytes: number | null;
 }
@@ -247,7 +255,10 @@ export interface DownloadedTrackSummary {
 
 export interface DownloadsOverview {
   inProgress: InProgressDownload | null;
+  /// Preview slice of the backend user_queue (first 64 items). The full
+  /// count lives in `queueLen`.
   queue: string[];
+  queueLen: number;
   totalBytes: number;
   albums: DownloadedAlbumSummary[];
   orphanTracks: DownloadedTrackSummary[];
