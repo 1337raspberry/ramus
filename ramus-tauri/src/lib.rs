@@ -570,7 +570,10 @@ pub fn run() {
             // Load saved settings and apply playback config (defaults to DirectPlay).
             #[allow(unused_mut)]
             let mut saved_settings = ramus_core::settings::load();
-            #[cfg(target_os = "ios")]
+            // Force-disable the spectrum analyser on mobile. The symphonia
+            // decode + FFT pipeline isn't worth the battery / thermal cost on
+            // phones, and the UI already hides the toggle on touch devices.
+            #[cfg(mobile)]
             {
                 saved_settings.disable_spectrum = true;
             }

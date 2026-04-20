@@ -33,9 +33,10 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
 
     // Media3 / ExoPlayer — Android playback engine.
-    // `media3-exoplayer` is the core player; `media3-session` gives us
-    // a `MediaSession` for free, which the OS uses for lock-screen,
-    // Bluetooth, and Android Auto controls without further glue.
+    // `media3-exoplayer` is the core player. `media3-session` is declared
+    // ahead of the foreground-service work so the dep graph is stable when
+    // we wire MediaSession + lock-screen / Bluetooth / Android Auto
+    // controls; nothing currently consumes it (placeholder for Phase 4).
     val media3 = "1.5.1"
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-session:$media3")

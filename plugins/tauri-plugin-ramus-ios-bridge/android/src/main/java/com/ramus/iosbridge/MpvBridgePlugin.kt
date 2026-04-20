@@ -81,12 +81,22 @@ internal class AudioFiltersArgs {
 class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var player: ExoPlayer? = null
+    private val playerListener = PlayerListener()
     private var lastReportedDuration: Long = C.TIME_UNSET
     private var lastReportedIndex: Int = -1
+    // mpv `file-loaded` is one-shot per loadfile; ExoPlayer re-enters
+    // STATE_READY after every seek + buffer recovery. Gate the bridged
+    // event so the Rust callback only fires on genuine track loads.
+    private var fileLoadedEmitted = false
 
     @Command
     fun mpvInit(invoke: Invoke) {
-        runOnMain {
+        // Always post (never inline-execute via `runOnMain`) — Tauri can
+        // dispatch this command on a background IPC thread, and an inline
+        // path here followed by a queued path for the next command would
+        // let `mpvLoadFile` race ahead of `mpvInit`. Posting unconditionally
+        // serialises init + first load on the main looper FIFO.
+        mainHandler.post {
             if (player == null) {
                 val audioAttrs = AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -99,7 +109,7 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                     .setHandleAudioBecomingNoisy(true)
                     .build()
                     .apply {
-                        addListener(PlayerListener())
+                        addListener(playerListener)
                     }
                 mainHandler.post(positionPoller)
                 Log.i(TAG, "ExoPlayer initialised")
@@ -276,7 +286,10 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                         lastReportedDuration = dur
                         trigger("mpvDurationChange", JSObject().put("duration", dur / 1000.0))
                     }
-                    trigger("mpvFileLoaded", JSObject())
+                    if (!fileLoadedEmitted) {
+                        fileLoadedEmitted = true
+                        trigger("mpvFileLoaded", JSObject())
+                    }
                 }
                 Player.STATE_ENDED -> {
                     trigger("mpvFileEnded", JSObject().put("reason", "eof"))
@@ -295,8 +308,10 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                 lastReportedIndex = idx
                 trigger("mpvPlaylistPosChange", JSObject().put("index", idx.toLong()))
             }
-            // Fresh item → reset duration so the next STATE_READY emits.
+            // Fresh item → reset duration + file-loaded latch so the next
+            // STATE_READY re-emits both for the new track.
             lastReportedDuration = C.TIME_UNSET
+            fileLoadedEmitted = false
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -306,11 +321,18 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     override fun onDestroy() {
-        runOnMain {
-            mainHandler.removeCallbacks(positionPoller)
-            player?.release()
-            player = null
-        }
+        // Tauri delivers `onDestroy` on the main thread (TauriActivity.onDestroy
+        // runs synchronously), so no `runOnMain` wrapper. Order matters: cancel
+        // the poller, null the player BEFORE release() so any in-flight poller
+        // body or listener callback that wins the race sees `player == null`
+        // and bails instead of touching a released ExoPlayer. Removing the
+        // listener also drops the `inner class` reference back to this plugin
+        // (and the Activity it holds), which would otherwise leak until GC.
+        mainHandler.removeCallbacks(positionPoller)
+        val p = player
+        player = null
+        p?.removeListener(playerListener)
+        p?.release()
     }
 
     private fun runOnMain(block: () -> Unit) {

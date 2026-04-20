@@ -393,7 +393,14 @@ fn hardware_uuid() -> Result<String, TokenStoreError> {
         let _ = write!(acc, "{b:02x}");
         acc
     });
-    fs::write(&path, &id)?;
+    // Atomic write: a torn `fs::write` (process killed mid-write, disk
+    // full) would leave an empty file, the read-back guard above would
+    // miss it, and the next boot would generate a fresh UUID — silently
+    // rotating the AES key and logging the user out. Stage to a tmp file
+    // then rename so the final path either has the full id or nothing.
+    let tmp = dir.join("machine-id.tmp");
+    fs::write(&tmp, &id)?;
+    fs::rename(&tmp, &path)?;
     Ok(id)
 }
 

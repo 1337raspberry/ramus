@@ -19,3 +19,15 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Tauri plugin IPC argument classes are deserialised by reflection via
+# Plugin.parseArgs. R8/ProGuard will otherwise strip the fields and every
+# @Command handler will fail at runtime with empty / defaulted args.
+-keep @app.tauri.annotation.InvokeArg class * { *; }
+-keepclassmembers @app.tauri.annotation.InvokeArg class * { *; }
+
+# Media3/ExoPlayer uses SPI-style reflection to discover Renderers and
+# Extractors. Without these keep rules the release APK builds but audio
+# playback fails silently with "no suitable media source".
+-keep class androidx.media3.** { *; }
+-dontwarn androidx.media3.**

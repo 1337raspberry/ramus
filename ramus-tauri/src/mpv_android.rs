@@ -1,11 +1,13 @@
 //! Android `MpvPlayer` implementation that delegates to the Kotlin
 //! `MpvBridgePlugin` via Tauri mobile IPC.
 //!
-//! The Kotlin side owns the libmpv handle (loaded from `libmpv.so` +
-//! `libplayer.so` JNI shim) and forwards property-change events through
-//! `Plugin.trigger`. `crate::mpv_mobile::register_mpv_listeners` wires
-//! those events back into `MpvCallbacks` — same plumbing as iOS, just a
-//! different native backend behind the bridge.
+//! The Kotlin side owns a Media3/ExoPlayer instance (Android's native
+//! audio engine — there is no libmpv in this path despite the `mpv*`
+//! method names) and forwards player events through `Plugin.trigger`.
+//! `crate::mpv_mobile::register_mpv_listeners` wires those events back
+//! into `MpvCallbacks` — same plumbing as iOS, different native backend.
+//! The `mpv*` IPC names are kept for cross-platform parity with the
+//! `MpvPlayer` trait the desktop and iOS paths share.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
