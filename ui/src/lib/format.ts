@@ -4,12 +4,32 @@ export function formatDuration(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-export function formatCodec(codec: string | null, bitrate: number | null): string | null {
+const LOSSLESS = ["flac", "alac", "wav", "aiff", "aif", "pcm"];
+const CBR_BITRATES = new Set([96, 128, 192, 256, 320]);
+
+export interface CodecParts {
+  label: string;
+  detail: string | null;
+}
+
+export function formatCodecParts(codec: string | null, bitrate: number | null): CodecParts | null {
   if (!codec) return null;
-  const lossless = ["flac", "alac", "wav", "aiff", "aif", "pcm"];
-  if (lossless.includes(codec.toLowerCase())) return codec.toUpperCase();
-  if (bitrate) return `${codec.toUpperCase()} ${bitrate}`;
-  return codec.toUpperCase();
+  const upper = codec.toUpperCase();
+  if (LOSSLESS.includes(codec.toLowerCase())) {
+    return { label: upper, detail: null };
+  }
+  if (bitrate) {
+    const tag = CBR_BITRATES.has(bitrate) ? "CBR" : "VBR";
+    return { label: upper, detail: `${bitrate} ${tag}` };
+  }
+  return { label: upper, detail: null };
+}
+
+export function formatCodec(codec: string | null, bitrate: number | null): string | null {
+  const parts = formatCodecParts(codec, bitrate);
+  if (!parts) return null;
+  if (parts.detail) return `${parts.label} ${parts.detail}`;
+  return parts.label;
 }
 
 /// Byte-count display — "512 KB", "3.4 GB", "42 B". Uses binary prefixes

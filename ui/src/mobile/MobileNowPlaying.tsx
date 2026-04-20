@@ -115,7 +115,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     nowPlayingAlbum,
     hasTrackArtist,
     year,
-    codec,
+    codecParts,
     albumFav,
     trackFav,
     handleAlbumFavToggle,
@@ -656,7 +656,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
             )}
 
             <div className="mobile-sheet-foot">
-              {codec && <span>{codec}</span>}
+              {codecParts && <span>{codecParts.label}</span>}
               <span
                 className={`mobile-sheet-track-fav${trackFav ? " active" : ""}`}
                 onClick={handleTrackFavToggle}
@@ -666,6 +666,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
               >
                 {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
               </span>
+              {codecParts?.detail && <span>{codecParts.detail}</span>}
             </div>
             {queue.length > queueIndex + 1 && (
               <div className="mobile-sheet-scroll-hint" style={{ paddingTop: 44 }}>
