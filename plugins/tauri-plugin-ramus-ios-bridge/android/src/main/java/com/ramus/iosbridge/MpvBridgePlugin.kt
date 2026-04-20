@@ -146,6 +146,15 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     private var lastAlbum: String? = null
     private var lastCoverUrl: String? = null
     private var lastCoverBytes: ByteArray? = null
+    // Monotonic counter bumped on every `nowPlayingUpdate` that enters
+    // the cover-loading path. The background IO callback compares its
+    // captured gen against the live value on apply — if anything newer
+    // has landed (another update, or `nowPlayingClear`), the stale
+    // bytes are dropped. Fixes a first-call bug where the original
+    // guard compared against `lastCoverUrl` (still null on first load),
+    // silently skipping every first `applyMetadata` when the art cache
+    // was warm and the IO branch was taken.
+    private var coverRequestGen: Int = 0
     // Worker for off-main artwork reads. The file IO is small (~30KB
     // jpeg from the local image cache) but main-thread reads stack up
     // when nowPlayingUpdate fires several times per track.
@@ -414,6 +423,10 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             val albumChanged = args.album != lastAlbum
             val coverChanged = args.coverUrl != lastCoverUrl
             if (!titleChanged && !artistChanged && !albumChanged && !coverChanged) return@post
+            Log.i(
+                TAG,
+                "nowPlayingUpdate: title='${args.title}' artist='${args.artist}' album='${args.album}' cover=${args.coverUrl != null} coverChanged=$coverChanged",
+            )
 
             lastTitle = args.title
             lastArtist = args.artist
@@ -423,14 +436,29 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             // lock-screen widget to refresh from. Skip the whole
             // replaceMediaItem dance — it'd just churn the player
             // without changing anything observable.
-            if (mediaSession == null) return@post
+            if (mediaSession == null) {
+                Log.w(TAG, "nowPlayingUpdate: mediaSession null, skipping apply")
+                return@post
+            }
 
             if (coverChanged) {
                 val coverUrl = args.coverUrl
+                // Bump the generation so any already-in-flight cover
+                // load's result is dropped on arrival — only the most
+                // recent request's bytes get applied. Set this BEFORE
+                // dispatching to the IO thread so a racing second call
+                // sees the new gen before its own IO returns.
+                val myGen = ++coverRequestGen
                 ioHandler.post {
                     val bytes = loadArtworkBytes(coverUrl)
                     mainHandler.post {
-                        if (coverUrl != lastCoverUrl && coverUrl != null) return@post
+                        // Drop stale result if a newer cover request has
+                        // landed, OR if everything was cleared via
+                        // `nowPlayingClear` while we were loading.
+                        if (myGen != coverRequestGen) {
+                            Log.i(TAG, "applyMetadata: cover gen stale ($myGen != $coverRequestGen), dropping")
+                            return@post
+                        }
                         lastCoverUrl = coverUrl
                         lastCoverBytes = bytes
                         applyMetadata()
@@ -443,11 +471,29 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private fun applyMetadata() {
-        val p = player ?: return
-        if (p.mediaItemCount == 0) return
-        val current = p.currentMediaItem ?: return
-        val currentUri = current.localConfiguration?.uri ?: return
-        Log.i(TAG, "applyMetadata: idx=${p.currentMediaItemIndex} title=$lastTitle hasCover=${lastCoverBytes != null}")
+        val p = player
+        if (p == null) {
+            Log.w(TAG, "applyMetadata: player null")
+            return
+        }
+        if (p.mediaItemCount == 0) {
+            Log.w(TAG, "applyMetadata: mediaItemCount=0 (player not loaded yet)")
+            return
+        }
+        val current = p.currentMediaItem
+        if (current == null) {
+            Log.w(TAG, "applyMetadata: currentMediaItem null")
+            return
+        }
+        val currentUri = current.localConfiguration?.uri
+        if (currentUri == null) {
+            Log.w(TAG, "applyMetadata: currentUri null")
+            return
+        }
+        Log.i(
+            TAG,
+            "applyMetadata: idx=${p.currentMediaItemIndex} title='$lastTitle' artist='$lastArtist' album='$lastAlbum' hasCover=${lastCoverBytes != null}",
+        )
 
         val builder = MediaMetadata.Builder()
             .setTitle(lastTitle)
@@ -514,6 +560,10 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun nowPlayingClear(invoke: Invoke) {
         runOnMain {
+            // Bump the cover generation so an in-flight background
+            // artwork load doesn't overwrite the cleared state when it
+            // finally lands on main.
+            coverRequestGen++
             lastTitle = null
             lastArtist = null
             lastAlbum = null
