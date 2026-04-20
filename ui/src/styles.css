@@ -296,6 +296,16 @@ textarea {
   flex-shrink: 0;
 }
 
+.column-divider::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  right: -5px;
+  cursor: col-resize;
+}
+
 .column-divider:hover,
 .column-divider.dragging {
   background: transparent;

@@ -35,6 +35,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
   const browseArtistName = useLibraryStore((s) => s.browseArtistName);
   const browseYear = useLibraryStore((s) => s.browseYear);
+  const activeSavedSearchName = useLibraryStore((s) => s.activeSavedSearchName);
   const hasTrack = usePlaybackStore((s) => !!s.currentTrack);
   const [sheetExpanded, setSheetExpanded] = useState(false);
 
@@ -158,7 +159,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
 
     if (view === "search") return <MobileSearch onBack={() => setView("genres")} />;
     if (view === "savedSearch") {
-      const label = useLibraryStore.getState().activeSavedSearchName ?? "Saved search";
+      const label = activeSavedSearchName ?? "Saved search";
       return <MobileAlbumGrid contextLabel={label} onBack={() => setView("genres")} />;
     }
     if (view === "suggestion")
