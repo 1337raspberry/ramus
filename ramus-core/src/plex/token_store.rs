@@ -400,6 +400,11 @@ fn hardware_uuid() -> Result<String, TokenStoreError> {
     // then rename so the final path either has the full id or nothing.
     let tmp = dir.join("machine-id.tmp");
     fs::write(&tmp, &id)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
+    }
     fs::rename(&tmp, &path)?;
     Ok(id)
 }

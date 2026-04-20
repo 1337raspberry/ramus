@@ -22,15 +22,16 @@ let lastB = -1;
  * don't spam the Kotlin bridge with identical updates.
  */
 export function applyAccent(r: number, g: number, b: number): void {
+  if (r === lastR && g === lastG && b === lastB) return;
+  lastR = r;
+  lastG = g;
+  lastB = b;
+
   const root = document.documentElement;
   root.style.setProperty("--accent-r", String(r));
   root.style.setProperty("--accent-g", String(g));
   root.style.setProperty("--accent-b", String(b));
 
-  if (r === lastR && g === lastG && b === lastB) return;
-  lastR = r;
-  lastG = g;
-  lastB = b;
   setMediaAccent(r, g, b).catch(() => {
     // Best-effort cosmetic IPC; swallow so palette extraction never
     // produces an uncaught rejection in the console.

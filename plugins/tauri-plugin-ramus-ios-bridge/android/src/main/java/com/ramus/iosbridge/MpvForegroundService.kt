@@ -89,7 +89,7 @@ class MpvForegroundService : MediaSessionService() {
         // honour it as background playback.
         val session = attached
         val player = session?.player
-        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
+        if (player == null || !player.isPlaying || player.mediaItemCount == 0) {
             stopSelf()
         }
     }

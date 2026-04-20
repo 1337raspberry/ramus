@@ -4,7 +4,7 @@ pub mod events;
 
 // Desktop (macOS/Windows/Linux) uses souvlaki for system media controls;
 // iOS gets a Swift-plugin bridge to MPNowPlayingInfoCenter + MPRemoteCommandCenter.
-// Android currently has a no-op stub — Media3/MediaSession integration is TBD.
+// Android bridges to Kotlin MpvBridgePlugin (Media3/MediaSession + foreground service).
 #[cfg(desktop)]
 pub mod media_controls;
 #[cfg(target_os = "ios")]
@@ -403,10 +403,11 @@ pub fn run() {
             #[cfg(target_os = "android")]
             {
                 use tauri::Manager;
-                match app_handle.path().app_data_dir() {
-                    Ok(dir) => ramus_core::plex::token_store::set_config_dir(dir),
-                    Err(e) => log::error!("android: app_data_dir lookup failed: {e}"),
-                }
+                let dir = app_handle
+                    .path()
+                    .app_data_dir()
+                    .expect("android: app_data_dir() must succeed — without it auth, DB, and cache are all broken");
+                ramus_core::plex::token_store::set_config_dir(dir);
             }
 
             // Register the iOS keychain backend before any `TokenStore::new()`

@@ -314,7 +314,9 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         val args = invoke.parseArgs(PlaylistIndexArgs::class.java)
         runOnMain {
             val p = player ?: return@runOnMain invoke.reject("player not initialised")
-            p.seekTo(args.index.toInt(), 0L)
+            val idx = args.index.toInt()
+            if (idx < 0 || idx >= p.mediaItemCount) return@runOnMain invoke.resolve()
+            p.seekTo(idx, 0L)
             if (p.playbackState == Player.STATE_IDLE) p.prepare()
             p.play()
             invoke.resolve()
@@ -326,7 +328,9 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         val args = invoke.parseArgs(PlaylistIndexArgs::class.java)
         runOnMain {
             val p = player ?: return@runOnMain invoke.reject("player not initialised")
-            p.removeMediaItem(args.index.toInt())
+            val idx = args.index.toInt()
+            if (idx < 0 || idx >= p.mediaItemCount) return@runOnMain invoke.resolve()
+            p.removeMediaItem(idx)
             invoke.resolve()
         }
     }
@@ -346,6 +350,7 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         val args = invoke.parseArgs(SeekArgs::class.java)
         runOnMain {
             val p = player ?: return@runOnMain invoke.reject("player not initialised")
+            if (p.mediaItemCount == 0) return@runOnMain invoke.resolve()
             p.seekTo((args.position * 1000.0).toLong())
             invoke.resolve()
         }
@@ -400,6 +405,10 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             val p = player ?: return@runOnMain invoke.resolve()
             p.stop()
             p.clearMediaItems()
+            lastReportedIndex = -1
+            lastReportedDuration = C.TIME_UNSET
+            fileLoadedEmitted = false
+            foregroundServiceStarted = false
             invoke.resolve()
         }
     }
@@ -548,6 +557,7 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             // `fileLoaded` / session_reporter.
             val p = player ?: return@post
             if (p.mediaItemCount == 0) return@post
+            if (lastReportedIndex < 0) return@post
             val current = p.currentMediaItem ?: return@post
             try {
                 p.replaceMediaItem(p.currentMediaItemIndex, current)
@@ -581,6 +591,8 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             if (path.isNullOrEmpty()) return null
             val file = File(path)
             if (!file.exists()) return null
+            val appDataDir = activity.filesDir.canonicalPath
+            if (!file.canonicalPath.startsWith(appDataDir)) return null
             file.readBytes()
         } catch (e: Exception) {
             Log.w(TAG, "loadArtworkBytes failed for $coverUrl", e)
@@ -588,8 +600,11 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    private var pollerActive = true
+
     private val positionPoller = object : Runnable {
         override fun run() {
+            if (!pollerActive) return
             try {
                 val p = player
                 if (p != null && p.isPlaying) {
@@ -599,7 +614,7 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             } catch (e: Throwable) {
                 Log.e(TAG, "poller: threw", e)
             } finally {
-                mainHandler.postDelayed(this, POSITION_POLL_MS)
+                if (pollerActive) mainHandler.postDelayed(this, POSITION_POLL_MS)
             }
         }
     }
@@ -683,6 +698,7 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         // and bails instead of touching a released ExoPlayer. Removing the
         // listener also drops the `inner class` reference back to this plugin
         // (and the Activity it holds), which would otherwise leak until GC.
+        pollerActive = false
         mainHandler.removeCallbacks(positionPoller)
 
         // Tear the session down before the player so the foreground
@@ -690,13 +706,13 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         // focus and the service's `onTaskRemoved` hook stops itself
         // once `player == null || mediaItemCount == 0`.
         MpvForegroundService.detachSession()
-        mediaSession?.release()
-        mediaSession = null
         try {
             activity.stopService(Intent(activity, MpvForegroundService::class.java))
         } catch (e: Exception) {
             Log.w(TAG, "stopService failed", e)
         }
+        mediaSession?.release()
+        mediaSession = null
 
         val p = player
         player = null
@@ -704,6 +720,47 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         p?.release()
 
         ioHandler.looper.quitSafely()
+    }
+
+    // Stubs for iOS-specific commands that the Rust IPC surface declares
+    // in `mobile.rs`. These are gated to `cfg(target_os = "ios")` on the
+    // Rust call side, so they should never be invoked on Android — but
+    // having them present keeps the plugin contract complete and prevents
+    // a crash if the gate is ever removed.
+
+    @Command
+    fun keychainRead(invoke: Invoke) {
+        invoke.resolve(JSObject().put("value", ""))
+    }
+
+    @Command
+    fun keychainWrite(invoke: Invoke) {
+        invoke.resolve(JSObject().put("ok", true))
+    }
+
+    @Command
+    fun keychainDelete(invoke: Invoke) {
+        invoke.resolve(JSObject().put("ok", true))
+    }
+
+    @Command
+    fun excludeFromBackup(invoke: Invoke) {
+        invoke.resolve(JSObject().put("ok", true))
+    }
+
+    @Command
+    fun dismissKeyboard(invoke: Invoke) {
+        invoke.resolve()
+    }
+
+    @Command
+    fun showNativeSearchBar(invoke: Invoke) {
+        invoke.resolve()
+    }
+
+    @Command
+    fun hideNativeSearchBar(invoke: Invoke) {
+        invoke.resolve()
     }
 
     private fun runOnMain(block: () -> Unit) {
