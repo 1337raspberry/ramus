@@ -33,7 +33,7 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     #[cfg(target_os = "ios")]
     let handle = api.register_ios_plugin(init_plugin_ramus_ios_bridge)?;
     #[cfg(target_os = "android")]
-    let handle = api.register_android_plugin("", "MpvBridgePlugin")?;
+    let handle = api.register_android_plugin("com.ramus.iosbridge", "MpvBridgePlugin")?;
     Ok(RamusIosBridge(handle))
 }
 

@@ -15,9 +15,10 @@ pub mod media_controls;
 pub mod media_controls;
 
 // libmpv is loaded at runtime via `libloading` on desktop (see mpv_ffi.rs).
-// iOS uses `mpv_ios.rs` — delegates to the Swift plugin's MPVKit handle via
-// Tauri IPC. Android has a no-op player stub until mpv-android .so bundling
-// or a Media3-based backend lands.
+// Mobile (iOS + Android) delegates to a native `MpvBridgePlugin` (Swift
+// MPVKit on iOS, Kotlin JNI to libmpv.so on Android) via Tauri IPC. The
+// platform-specific `mpv_ios.rs` / `mpv_android.rs` modules share their
+// event-channel plumbing through `mpv_mobile.rs`.
 #[cfg(target_os = "ios")]
 pub mod keychain_ios;
 #[cfg(desktop)]
@@ -28,6 +29,8 @@ pub mod mpv_ffi;
 pub mod mpv_ios;
 #[cfg(target_os = "android")]
 pub mod mpv_android;
+#[cfg(mobile)]
+pub mod mpv_mobile;
 
 pub mod ios_backup;
 pub mod prefetch;
@@ -294,9 +297,9 @@ pub fn create_mpv_player(
     });
 
     // Platform split: desktop loads libmpv at runtime via `libloading`;
-    // iOS talks to the MPVKit-backed Swift plugin through Tauri IPC;
-    // Android currently uses a no-op stub player. The `AudioPlayer`
-    // surface is identical across all three.
+    // mobile (iOS + Android) delegates to a native `MpvBridgePlugin` that
+    // owns the libmpv handle. The `AudioPlayer` surface is identical
+    // across all three.
     #[cfg(desktop)]
     let player = {
         // `MpvLib::load()` returns a multi-line string listing every path
@@ -317,8 +320,8 @@ pub fn create_mpv_player(
     };
     #[cfg(target_os = "android")]
     let player = {
-        let _ = app_handle;
-        let android_mpv = crate::mpv_android::AndroidMpvPlayer::new(callbacks);
+        let android_mpv = crate::mpv_android::AndroidMpvPlayer::new(app_handle.clone(), callbacks)
+            .expect("failed to initialise Android mpv bridge");
         Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(
             android_mpv,
         )))
