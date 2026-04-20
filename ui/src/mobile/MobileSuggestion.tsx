@@ -9,6 +9,7 @@ import {
   setAlbumPalette,
 } from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
+import { applyAccent } from "../lib/accent";
 import { IconMusicNote, IconShuffle, IconChevronLeft } from "../components/Icons";
 import FlowLayout from "../components/FlowLayout";
 
@@ -83,17 +84,13 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);
-        document.documentElement.style.setProperty("--accent-r", String(r));
-        document.documentElement.style.setProperty("--accent-g", String(g));
-        document.documentElement.style.setProperty("--accent-b", String(b));
+        applyAccent(r, g, b);
         return;
       }
       extractPalette(e.currentTarget).then((palette) => {
         if (!palette || usePlaybackStore.getState().currentTrack) return;
         const [r, g, b] = accentFromPalette(palette);
-        document.documentElement.style.setProperty("--accent-r", String(r));
-        document.documentElement.style.setProperty("--accent-g", String(g));
-        document.documentElement.style.setProperty("--accent-b", String(b));
+        applyAccent(r, g, b);
         const blur = blurColorsFromPalette(palette);
         usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blur });
         if (album) setAlbumPalette(album.ratingKey, palette).catch(() => {});

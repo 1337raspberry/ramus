@@ -33,7 +33,7 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     #[cfg(target_os = "ios")]
     let handle = api.register_ios_plugin(init_plugin_ramus_ios_bridge)?;
     #[cfg(target_os = "android")]
-    let handle = api.register_android_plugin("", "MpvBridgePlugin")?;
+    let handle = api.register_android_plugin("com.ramus.iosbridge", "MpvBridgePlugin")?;
     Ok(RamusIosBridge(handle))
 }
 
@@ -153,6 +153,15 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn now_playing_clear(&self) -> crate::Result<()> {
         self.0
             .run_mobile_plugin::<Empty>("nowPlayingClear", Empty::default())?;
+        Ok(())
+    }
+
+    /// Push the current accent colour down to the OS media widget.
+    /// Android applies it to the MediaStyle notification background;
+    /// iOS ignores it (MPNowPlayingInfoCenter has no tint surface).
+    pub fn set_media_accent(&self, r: u8, g: u8, b: u8) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin::<Empty>("setMediaAccent", MediaAccentArgs { r, g, b })?;
         Ok(())
     }
 

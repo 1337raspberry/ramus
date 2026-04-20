@@ -9,6 +9,11 @@ package-lock.json
 yarn.lock
 
 /.tauri
+# Android stub's tauri-api + gradle build outputs are auto-copied/generated
+# the first time `cargo tauri android dev` runs. Regenerated per-contributor,
+# never tracked — same spirit as the iOS `.tauri` bundle above.
+/android/.tauri
+/android/build
 /target
 Cargo.lock
 node_modules/

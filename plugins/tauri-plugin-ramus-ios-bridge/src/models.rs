@@ -132,3 +132,15 @@ pub struct NowPlayingMetadata {
     pub is_playing: bool,
     pub cover_url: Option<String>,
 }
+
+/// Accent colour to apply to the OS media notification / lock-screen
+/// widget. Components are 0–255 sRGB. Android pipes this through a
+/// custom `MediaNotification.Provider` that calls
+/// `setColorized(true).setColor(...)`; other platforms ignore it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaAccentArgs {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}

@@ -4,6 +4,8 @@ use ramus_core::models::Track;
 use ramus_core::playback::lyrics::{self, LyricsResult};
 use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
 use ramus_core::playback::waveform;
+#[cfg(target_os = "android")]
+use tauri_plugin_ramus_ios_bridge::RamusIosBridgeExt;
 
 use crate::events::{emit_playback_state, PlaybackStatePayload};
 use crate::state::AppState;
@@ -247,4 +249,36 @@ pub async fn get_waveform(
         Ok(levels) if !levels.is_empty() => Ok(Some(waveform::normalize_db_levels(&levels))),
         _ => Ok(None),
     }
+}
+
+/// Push the current UI accent colour down to the OS media widget. The
+/// frontend extracts the palette from album art and calls this whenever
+/// the accent changes; on Android the Kotlin bridge paints the lock-screen
+/// notification with the colour. Desktop + iOS accept the call and no-op.
+#[tauri::command]
+pub async fn set_media_accent(
+    #[allow(unused_variables)] app: AppHandle,
+    r: u8,
+    g: u8,
+    b: u8,
+) -> CmdResult<()> {
+    // Android: dispatch to the Kotlin plugin off the Tauri IPC thread.
+    // `run_mobile_plugin` blocks until the Kotlin `@Command` resolves,
+    // so we shove it onto `spawn_blocking` — this path is called during
+    // normal UI work (not a Rust event-channel callback) so the strict
+    // re-entrancy deadlock doesn't apply here, but the pattern is cheap
+    // and matches `media_controls_android::dispatch_now_playing`.
+    #[cfg(target_os = "android")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Err(e) = app.ramus_ios_bridge().set_media_accent(r, g, b) {
+                log::warn!("setMediaAccent failed: {e}");
+            }
+        });
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (r, g, b);
+    }
+    Ok(())
 }

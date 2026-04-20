@@ -5,6 +5,12 @@ import { useSettingsStore } from "../stores/settingsStore";
 const BAND_LABELS = ["31", "62", "125", "250", "500", "1K", "2K", "4K", "8K", "16K"];
 const MAX_GAIN = 12;
 
+// EQ on Android currently no-ops in the native bridge — Media3/ExoPlayer
+// has no direct equivalent of mpv's lavfi `af` chain, and the Android
+// system Equalizer FX hasn't been wired yet. Gate the controls so users
+// don't toggle invisibly.
+const IS_ANDROID = /Android/.test(navigator.userAgent);
+
 interface Props {
   onDismiss: () => void;
 }
@@ -150,15 +156,28 @@ export default function EqualizerPanel({ onDismiss }: Props) {
         <div className="eq-header">
           <span className="eq-title">Equalizer</span>
           <label className="eq-toggle">
-            <input type="checkbox" checked={enabled} onChange={handleToggle} />
-            <span className="eq-toggle-label">{enabled ? "On" : "Off"}</span>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={handleToggle}
+              disabled={IS_ANDROID}
+            />
+            <span className="eq-toggle-label">
+              {IS_ANDROID ? "Unavailable" : enabled ? "On" : "Off"}
+            </span>
           </label>
           <button className="eq-close" onClick={onDismiss}>
             x
           </button>
         </div>
 
-        <div className={`eq-bands${!enabled ? " disabled" : ""}`}>
+        {IS_ANDROID && (
+          <div className="eq-unsupported-notice">
+            EQ isn't supported on Android yet.
+          </div>
+        )}
+
+        <div className={`eq-bands${!enabled || IS_ANDROID ? " disabled" : ""}`}>
           <div className="eq-db-scale">
             <span>+12</span>
             <span>0</span>
@@ -169,7 +188,7 @@ export default function EqualizerPanel({ onDismiss }: Props) {
               <VerticalEQSlider
                 value={value}
                 onChange={(v) => handleBandChange(i, v)}
-                disabled={!enabled}
+                disabled={!enabled || IS_ANDROID}
               />
               <span className="eq-band-label">{BAND_LABELS[i]}</span>
             </div>
@@ -177,7 +196,7 @@ export default function EqualizerPanel({ onDismiss }: Props) {
         </div>
 
         <div className="eq-footer">
-          <button className="eq-reset" onClick={handleReset}>
+          <button className="eq-reset" onClick={handleReset} disabled={IS_ANDROID}>
             Reset
           </button>
         </div>

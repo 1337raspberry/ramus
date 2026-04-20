@@ -3,26 +3,34 @@ pub mod commands;
 pub mod events;
 
 // Desktop (macOS/Windows/Linux) uses souvlaki for system media controls;
-// iOS gets a no-op shim that preserves the public type surface so the rest
-// of the crate compiles unchanged. Phase 2 replaces the iOS shim with a
-// Swift-plugin bridge to MPNowPlayingInfoCenter + MPRemoteCommandCenter.
-#[cfg(not(target_os = "ios"))]
+// iOS gets a Swift-plugin bridge to MPNowPlayingInfoCenter + MPRemoteCommandCenter.
+// Android bridges to Kotlin MpvBridgePlugin (Media3/MediaSession + foreground service).
+#[cfg(desktop)]
 pub mod media_controls;
 #[cfg(target_os = "ios")]
 #[path = "media_controls_ios.rs"]
 pub mod media_controls;
+#[cfg(target_os = "android")]
+#[path = "media_controls_android.rs"]
+pub mod media_controls;
 
 // libmpv is loaded at runtime via `libloading` on desktop (see mpv_ffi.rs).
-// iOS uses `mpv_ios.rs` instead, which delegates to the Swift plugin's
-// MPVKit handle via Tauri IPC.
+// Mobile (iOS + Android) delegates to a native `MpvBridgePlugin` (Swift
+// MPVKit on iOS, Kotlin JNI to libmpv.so on Android) via Tauri IPC. The
+// platform-specific `mpv_ios.rs` / `mpv_android.rs` modules share their
+// event-channel plumbing through `mpv_mobile.rs`.
 #[cfg(target_os = "ios")]
 pub mod keychain_ios;
-#[cfg(not(target_os = "ios"))]
+#[cfg(desktop)]
 pub mod mpv_controller;
-#[cfg(not(target_os = "ios"))]
+#[cfg(desktop)]
 pub mod mpv_ffi;
 #[cfg(target_os = "ios")]
 pub mod mpv_ios;
+#[cfg(target_os = "android")]
+pub mod mpv_android;
+#[cfg(mobile)]
+pub mod mpv_mobile;
 
 pub mod ios_backup;
 pub mod prefetch;
@@ -64,9 +72,9 @@ use crate::events::{
     emit_playback_position, emit_playback_state, PlaybackPositionPayload, PlaybackStatePayload,
 };
 use crate::media_controls::MediaControlsRef;
-#[cfg(not(target_os = "ios"))]
+#[cfg(desktop)]
 use crate::mpv_controller::MpvController;
-#[cfg(not(target_os = "ios"))]
+#[cfg(desktop)]
 use crate::mpv_ffi::MpvLib;
 use crate::prefetch::PrefetchHandle;
 use crate::session_reporter::ReporterRef;
@@ -289,9 +297,10 @@ pub fn create_mpv_player(
     });
 
     // Platform split: desktop loads libmpv at runtime via `libloading`;
-    // iOS talks to the MPVKit-backed Swift plugin through Tauri IPC.
-    // The `AudioPlayer` surface is identical either way.
-    #[cfg(not(target_os = "ios"))]
+    // mobile (iOS + Android) delegates to a native `MpvBridgePlugin` that
+    // owns the libmpv handle. The `AudioPlayer` surface is identical
+    // across all three.
+    #[cfg(desktop)]
     let player = {
         // `MpvLib::load()` returns a multi-line string listing every path
         // it tried; surface that verbatim if it fails.
@@ -307,6 +316,14 @@ pub fn create_mpv_player(
             .expect("failed to initialise iOS mpv bridge");
         Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(
             ios_mpv,
+        )))
+    };
+    #[cfg(target_os = "android")]
+    let player = {
+        let android_mpv = crate::mpv_android::AndroidMpvPlayer::new(app_handle.clone(), callbacks)
+            .expect("failed to initialise Android mpv bridge");
+        Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(
+            android_mpv,
         )))
     };
 
@@ -358,9 +375,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_ramus_ios_bridge::init());
 
-    // Window-state persistence is only meaningful on desktop — iOS has no
-    // resizable window, and the plugin crate isn't linked on iOS.
-    #[cfg(not(target_os = "ios"))]
+    // Window-state persistence is only meaningful on desktop — mobile has no
+    // resizable window, and the plugin crate isn't linked on mobile targets.
+    #[cfg(desktop)]
     let builder = builder.plugin(
         tauri_plugin_window_state::Builder::new()
             .with_state_flags(
@@ -376,6 +393,22 @@ pub fn run() {
     builder
         .setup(|app| {
             let app_handle = app.handle().clone();
+
+            // Android: seed the config-dir override before anything in
+            // ramus-core touches `config_dir()`. The `directories` crate
+            // returns `None` on Android, so `ProjectDirs::from` would
+            // otherwise fail with `NoConfigDir`. Tauri's `PathResolver`
+            // knows the right per-package sandbox path
+            // (`/data/user/0/<package>/files/`).
+            #[cfg(target_os = "android")]
+            {
+                use tauri::Manager;
+                let dir = app_handle
+                    .path()
+                    .app_data_dir()
+                    .expect("android: app_data_dir() must succeed — without it auth, DB, and cache are all broken");
+                ramus_core::plex::token_store::set_config_dir(dir);
+            }
 
             // Register the iOS keychain backend before any `TokenStore::new()`
             // call. On desktop this is a no-op — `TokenStore` uses the
@@ -538,7 +571,10 @@ pub fn run() {
             // Load saved settings and apply playback config (defaults to DirectPlay).
             #[allow(unused_mut)]
             let mut saved_settings = ramus_core::settings::load();
-            #[cfg(target_os = "ios")]
+            // Force-disable the spectrum analyser on mobile. The symphonia
+            // decode + FFT pipeline isn't worth the battery / thermal cost on
+            // phones, and the UI already hides the toggle on touch devices.
+            #[cfg(mobile)]
             {
                 saved_settings.disable_spectrum = true;
             }
@@ -994,8 +1030,9 @@ pub fn run() {
             // registers MPRemoteCommandCenter / SMTC / MPRIS listeners via
             // souvlaki; iOS subscribes to events emitted by the Swift plugin
             // and pushes metadata through `MPNowPlayingInfoCenter` via the
-            // plugin's `nowPlayingUpdate` method.
-            #[cfg(not(target_os = "ios"))]
+            // plugin's `nowPlayingUpdate` method; Android is a no-op stub
+            // pending a Media3/MediaSession integration.
+            #[cfg(desktop)]
             let mc_result = crate::media_controls::create_media_controls(
                 #[cfg(target_os = "windows")]
                 &app.get_webview_window("main").expect("main window must exist"),
@@ -1005,6 +1042,14 @@ pub fn run() {
                 http_client,
             );
             #[cfg(target_os = "ios")]
+            let mc_result = crate::media_controls::create_media_controls(
+                app_handle.clone(),
+                player.clone(),
+                image_cache_arc,
+                client.clone(),
+                http_client,
+            );
+            #[cfg(target_os = "android")]
             let mc_result = crate::media_controls::create_media_controls(
                 app_handle.clone(),
                 player.clone(),
@@ -1080,6 +1125,7 @@ pub fn run() {
             commands::playback::apply_equalizer,
             commands::playback::fetch_lyrics,
             commands::playback::get_waveform,
+            commands::playback::set_media_accent,
             // spectrum (focus-mode visualiser)
             commands::spectrum::get_spectrum,
             // search

@@ -11,6 +11,7 @@ import {
 } from "../lib/commands";
 import { formatDuration } from "../lib/format";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
+import { applyAccent } from "../lib/accent";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
 import WaveformSeekBar from "../components/WaveformSeekBar";
@@ -138,17 +139,13 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);
-        document.documentElement.style.setProperty("--accent-r", String(r));
-        document.documentElement.style.setProperty("--accent-g", String(g));
-        document.documentElement.style.setProperty("--accent-b", String(b));
+        applyAccent(r, g, b);
         return;
       }
       extractPalette(img).then((palette) => {
         if (!palette || lastAccentThumb.current !== capturedThumb) return;
         const [r, g, b] = accentFromPalette(palette);
-        document.documentElement.style.setProperty("--accent-r", String(r));
-        document.documentElement.style.setProperty("--accent-g", String(g));
-        document.documentElement.style.setProperty("--accent-b", String(b));
+        applyAccent(r, g, b);
         const blurColors = blurColorsFromPalette(palette);
         usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
         if (track?.albumKey) {
@@ -164,49 +161,89 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
 
   // --- Swipe gestures ---
   // Mini-player: swipe up to expand. Sheet header: swipe down to collapse.
-  // We track pointer delta-Y and commit on pointerup when it crosses a
-  // threshold. The sheet is always mounted — expand/collapse just toggles
-  // the .expanded CSS class which drives a transform transition.
+  // Both use the imperative non-passive touchmove pattern (same as the
+  // album-art drag below) instead of React pointer events. Android
+  // Chromium WebView cancels pointer events the moment it decides a
+  // vertical drag is a scroll gesture, so a React-pointer approach
+  // silently fails on Android even though it works on iOS WebKit.
   const SWIPE_THRESHOLD = 50;
-  const dragStartY = useRef<number | null>(null);
   const [dragDeltaY, setDragDeltaY] = useState(0);
+  const miniRef = useRef<HTMLDivElement>(null);
+  const miniDragYRef = useRef(0);
 
-  const onMiniPointerDown = useCallback((e: React.PointerEvent) => {
-    dragStartY.current = e.clientY;
-    setDragDeltaY(0);
-  }, []);
+  useEffect(() => {
+    const el = miniRef.current;
+    if (!el) return;
+    let startY: number | null = null;
+    let claimY = 0;
+    let claimed = false;
+    let skip = false;
 
-  const onMiniPointerMove = useCallback((e: React.PointerEvent) => {
-    if (dragStartY.current == null) return;
-    const delta = e.clientY - dragStartY.current;
-    if (delta < 0) setDragDeltaY(delta);
-  }, []);
-
-  const onMiniPointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      if (dragStartY.current == null) return;
-      const delta = e.clientY - dragStartY.current;
-      dragStartY.current = null;
-      setDragDeltaY(0);
-      if (delta < -SWIPE_THRESHOLD) {
-        onExpand();
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) {
+        skip = true;
+        return;
       }
-    },
-    [onExpand],
-  );
+      const target = e.target as HTMLElement | null;
+      // Skip drags that start on an interactive child (controls, waveform
+      // scrubber, art button) so taps and scrubs aren't intercepted.
+      skip = !!target?.closest(
+        'button, [role="button"], input, .mobile-miniplayer-wave, .mobile-miniplayer-controls',
+      );
+      startY = e.touches[0].clientY;
+      claimed = false;
+    };
 
-  // Stops a pointerdown inside a child (waveform, controls) from being
-  // seen by the outer drag tracker. Without this, a touch anywhere in
-  // the mini-player records dragStartY and the pointerup logic can't
-  // distinguish "scrub finished at same Y" from "tap anywhere".
-  const swallowPointerDown = useCallback((e: React.PointerEvent) => {
-    e.stopPropagation();
-  }, []);
+    const onMove = (e: TouchEvent) => {
+      if (startY == null || skip) return;
+      const y = e.touches[0].clientY;
+      const dy = y - startY;
+      if (!claimed) {
+        if (dy < -3) {
+          claimed = true;
+          claimY = y;
+        } else {
+          return;
+        }
+      }
+      e.preventDefault();
+      const dragY = Math.min(0, y - claimY);
+      if (miniDragYRef.current !== dragY) {
+        miniDragYRef.current = dragY;
+        setDragDeltaY(dragY);
+      }
+    };
+
+    const onEnd = () => {
+      if (claimed) {
+        const finalDragY = miniDragYRef.current;
+        miniDragYRef.current = 0;
+        setDragDeltaY(0);
+        if (finalDragY < -SWIPE_THRESHOLD) onExpand();
+      }
+      startY = null;
+      claimed = false;
+      skip = false;
+    };
+
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd, { passive: true });
+    el.addEventListener("touchcancel", onEnd, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, [onExpand]);
 
   const [sheetDragY, setSheetDragY] = useState(0);
   const [dismissing, setDismissing] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const sheetBodyRef = useRef<HTMLDivElement>(null);
+  const sheetHeaderRef = useRef<HTMLElement>(null);
+  const sheetDragYRef = useRef(0);
   const [mainMinHeight, setMainMinHeight] = useState<number | undefined>(undefined);
 
   useEffect(() => {
@@ -215,27 +252,73 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     if (el) setMainMinHeight(el.clientHeight);
   }, [expanded, track?.ratingKey]);
 
-  const onSheetHeaderPointerDown = useCallback((e: React.PointerEvent) => {
-    dragStartY.current = e.clientY;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, []);
+  useEffect(() => {
+    const el = sheetHeaderRef.current;
+    if (!el) return;
+    let startY: number | null = null;
+    let claimY = 0;
+    let claimed = false;
+    let skip = false;
 
-  const onSheetHeaderPointerMove = useCallback((e: React.PointerEvent) => {
-    if (dragStartY.current == null) return;
-    const delta = e.clientY - dragStartY.current;
-    if (delta > 0) setSheetDragY(delta);
-  }, []);
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) {
+        skip = true;
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      // Skip drags starting on the favourite button so the star tap
+      // doesn't get swallowed.
+      skip = !!target?.closest('button, [role="button"]');
+      startY = e.touches[0].clientY;
+      claimed = false;
+    };
 
-  const onSheetHeaderPointerUp = useCallback((e: React.PointerEvent) => {
-    if (dragStartY.current == null) return;
-    const delta = e.clientY - dragStartY.current;
-    dragStartY.current = null;
-    if (delta > SWIPE_THRESHOLD) {
-      setSheetDragY(0);
-      setDismissing(true);
-    } else {
-      setSheetDragY(0);
-    }
+    const onMove = (e: TouchEvent) => {
+      if (startY == null || skip) return;
+      const y = e.touches[0].clientY;
+      const dy = y - startY;
+      if (!claimed) {
+        if (dy > 3) {
+          claimed = true;
+          claimY = y;
+        } else {
+          return;
+        }
+      }
+      e.preventDefault();
+      const dragY = Math.max(0, y - claimY);
+      if (sheetDragYRef.current !== dragY) {
+        sheetDragYRef.current = dragY;
+        setSheetDragY(dragY);
+      }
+    };
+
+    const onEnd = () => {
+      if (claimed) {
+        const finalDragY = sheetDragYRef.current;
+        sheetDragYRef.current = 0;
+        if (finalDragY > SWIPE_THRESHOLD) {
+          setSheetDragY(0);
+          setDismissing(true);
+        } else {
+          setSheetDragY(0);
+        }
+      }
+      startY = null;
+      claimed = false;
+      skip = false;
+    };
+
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd, { passive: true });
+    el.addEventListener("touchcancel", onEnd, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
   }, []);
 
   // Drag-to-dismiss on the album art. We let native touch-scrolling handle
@@ -244,7 +327,6 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   // gesture (preventDefault) once we observe a downward drag while the body
   // is at scrollTop=0 — at which point the gesture transitions seamlessly
   // into a sheet-dismiss preview, even if it started as a body scroll-back.
-  const sheetDragYRef = useRef(0);
   const artRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -352,17 +434,11 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
       {/* Mini-player: always mounted to keep the waveform offscreen shape
           warm, hidden when expanded so taps hit the sheet. */}
       <div
+        ref={miniRef}
         className="mobile-miniplayer"
         style={{
           ...(dragDeltaY !== 0 ? { transform: `translateY(${dragDeltaY}px)` } : {}),
           paddingBottom: 40,
-        }}
-        onPointerDown={onMiniPointerDown}
-        onPointerMove={onMiniPointerMove}
-        onPointerUp={onMiniPointerUp}
-        onPointerCancel={() => {
-          dragStartY.current = null;
-          setDragDeltaY(0);
         }}
       >
         {sheetBlurColors && (
@@ -409,7 +485,6 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
         </div>
         <div
           className="mobile-miniplayer-wave"
-          onPointerDown={swallowPointerDown}
           style={{
             paddingTop: 0,
             paddingLeft: 64,
@@ -456,14 +531,8 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
           </div>
         )}
         <header
+          ref={sheetHeaderRef}
           className="mobile-sheet-header"
-          onPointerDown={onSheetHeaderPointerDown}
-          onPointerMove={onSheetHeaderPointerMove}
-          onPointerUp={onSheetHeaderPointerUp}
-          onPointerCancel={() => {
-            dragStartY.current = null;
-            setSheetDragY(0);
-          }}
         >
           <div className="mobile-sheet-hint-bar" />
           <button

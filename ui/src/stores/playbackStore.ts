@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Album, LyricsResult, SpectrumState, Track, UltraBlurColors } from "../lib/types";
 import { accentFromPalette, blurColorsFromPalette, type VibrantPalette } from "../lib/vibrantColor";
+import { applyAccent } from "../lib/accent";
 
 /**
  * Focus-mode visualiser rendering mode.
@@ -205,9 +206,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
               // did this, which left the accent stale when a track change
               // happened while only the mini-player was visible.
               const [r, g, b] = accentFromPalette(result.palette);
-              document.documentElement.style.setProperty("--accent-r", String(r));
-              document.documentElement.style.setProperty("--accent-g", String(g));
-              document.documentElement.style.setProperty("--accent-b", String(b));
+              applyAccent(r, g, b);
               set({
                 vibrantPalette: result.palette,
                 ultraBlurColors: blurColorsFromPalette(result.palette),

@@ -27,13 +27,12 @@ import { clearPin } from "./components/onboarding/OAuthSignIn";
 import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackground";
 import BreadcrumbDebugPanel from "./components/BreadcrumbDebugPanel";
 import MobileApp from "./mobile/MobileApp";
+import { applyAccent } from "./lib/accent";
 
 const initialPalette = randomPalette();
 const initialColors = initialPalette.colors;
 
-document.documentElement.style.setProperty("--accent-r", String(initialPalette.accent[0]));
-document.documentElement.style.setProperty("--accent-g", String(initialPalette.accent[1]));
-document.documentElement.style.setProperty("--accent-b", String(initialPalette.accent[2]));
+applyAccent(initialPalette.accent[0], initialPalette.accent[1], initialPalette.accent[2]);
 
 export default function App() {
   const isMobile = useIsMobile();

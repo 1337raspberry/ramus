@@ -19,6 +19,10 @@ use tauri::{
 pub use error::{Error, Result};
 pub use models::*;
 
+// Mobile (iOS + Android) routes through the real `mobile::` bridge, which
+// dispatches to the Swift `MpvBridgePlugin` on iOS and the Kotlin
+// `MpvBridgePlugin` on Android. Desktop keeps the no-op stub because libmpv
+// is loaded directly via libloading and souvlaki handles media keys.
 #[cfg(desktop)]
 mod desktop;
 #[cfg(mobile)]
