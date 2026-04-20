@@ -1124,6 +1124,7 @@ pub fn run() {
             commands::playback::apply_equalizer,
             commands::playback::fetch_lyrics,
             commands::playback::get_waveform,
+            commands::playback::set_media_accent,
             // spectrum (focus-mode visualiser)
             commands::spectrum::get_spectrum,
             // search

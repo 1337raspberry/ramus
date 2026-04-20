@@ -160,6 +160,12 @@ export const fetchLyrics = (ratingKey: string) =>
 export const getWaveform = (ratingKey: string) =>
   invoke<number[] | null>("get_waveform", { ratingKey });
 
+// Push the current UI accent colour (0–255 sRGB) down to the OS media
+// widget. Android tints the lock-screen notification with it; desktop
+// + iOS accept the call and no-op.
+export const setMediaAccent = (r: number, g: number, b: number) =>
+  invoke<void>("set_media_accent", { r, g, b });
+
 // Focus-mode spectrogram. Returns "analysing", { ready: … }, or
 // { unavailable: { reason } }. The backend never blocks on analysis;
 // callers should listen for `spectrum-ready` before re-invoking.

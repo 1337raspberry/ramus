@@ -10,6 +10,7 @@ import {
   setAlbumPalette,
 } from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
+import { applyAccent } from "../lib/accent";
 import { formatCodec } from "../lib/format";
 import FlowLayout from "./FlowLayout";
 import { IconMusicNote } from "./Icons";
@@ -115,17 +116,13 @@ export default function SuggestionView() {
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);
-        document.documentElement.style.setProperty("--accent-r", String(r));
-        document.documentElement.style.setProperty("--accent-g", String(g));
-        document.documentElement.style.setProperty("--accent-b", String(b));
+        applyAccent(r, g, b);
         return;
       }
       extractPalette(e.currentTarget).then((palette) => {
         if (!palette) return;
         const [r, g, b] = accentFromPalette(palette);
-        document.documentElement.style.setProperty("--accent-r", String(r));
-        document.documentElement.style.setProperty("--accent-g", String(g));
-        document.documentElement.style.setProperty("--accent-b", String(b));
+        applyAccent(r, g, b);
         const blurColors = blurColorsFromPalette(palette);
         usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
         if (album) {

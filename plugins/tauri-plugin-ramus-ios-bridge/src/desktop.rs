@@ -72,6 +72,9 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn now_playing_clear(&self) -> crate::Result<()> {
         Ok(())
     }
+    pub fn set_media_accent(&self, _r: u8, _g: u8, _b: u8) -> crate::Result<()> {
+        Ok(())
+    }
     pub fn keychain_read(&self, _account: &str) -> crate::Result<Option<String>> {
         Ok(None)
     }

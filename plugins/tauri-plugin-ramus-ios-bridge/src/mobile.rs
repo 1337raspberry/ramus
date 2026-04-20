@@ -156,6 +156,15 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
 
+    /// Push the current accent colour down to the OS media widget.
+    /// Android applies it to the MediaStyle notification background;
+    /// iOS ignores it (MPNowPlayingInfoCenter has no tint surface).
+    pub fn set_media_accent(&self, r: u8, g: u8, b: u8) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin::<Empty>("setMediaAccent", MediaAccentArgs { r, g, b })?;
+        Ok(())
+    }
+
     /// Read a keychain item. Returns `None` on miss (Swift side resolves
     /// missing items as an empty string, which we translate here so callers
     /// don't have to carry that convention).

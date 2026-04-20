@@ -4,6 +4,7 @@ import { useLibraryStore } from "../stores/libraryStore";
 import { ART_SIZE, setAlbumPalette, getAlbumGenres } from "../lib/commands";
 import { togglePlayPause, nextTrack, previousTrack } from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
+import { applyAccent } from "../lib/accent";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useQueuePanel } from "../lib/useQueuePanel";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
@@ -155,9 +156,7 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
       extractPalette(e.currentTarget).then((palette) => {
         if (!palette) return;
         const [r, g, b] = accentFromPalette(palette);
-        document.documentElement.style.setProperty("--accent-r", String(r));
-        document.documentElement.style.setProperty("--accent-g", String(g));
-        document.documentElement.style.setProperty("--accent-b", String(b));
+        applyAccent(r, g, b);
         const blurColors = blurColorsFromPalette(palette);
         usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
         if (suggestion) {

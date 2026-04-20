@@ -11,6 +11,7 @@ import {
 } from "../lib/commands";
 import { formatDuration } from "../lib/format";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
+import { applyAccent } from "../lib/accent";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
 import WaveformSeekBar from "../components/WaveformSeekBar";
@@ -138,17 +139,13 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);
-        document.documentElement.style.setProperty("--accent-r", String(r));
-        document.documentElement.style.setProperty("--accent-g", String(g));
-        document.documentElement.style.setProperty("--accent-b", String(b));
+        applyAccent(r, g, b);
         return;
       }
       extractPalette(img).then((palette) => {
         if (!palette || lastAccentThumb.current !== capturedThumb) return;
         const [r, g, b] = accentFromPalette(palette);
-        document.documentElement.style.setProperty("--accent-r", String(r));
-        document.documentElement.style.setProperty("--accent-g", String(g));
-        document.documentElement.style.setProperty("--accent-b", String(b));
+        applyAccent(r, g, b);
         const blurColors = blurColorsFromPalette(palette);
         usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
         if (track?.albumKey) {

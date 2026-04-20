@@ -7,6 +7,7 @@ import type {
   SpectrumReadyPayload,
 } from "./types";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { applyAccent } from "./accent";
 
 /**
  * Subscribe to Tauri playback events (accent-color, playback-state,
@@ -16,9 +17,7 @@ export function usePlaybackEvents(): void {
   useEffect(() => {
     const unlisten = listen<AccentColorPayload>("accent-color", (event) => {
       const { r, g, b } = event.payload;
-      document.documentElement.style.setProperty("--accent-r", String(r));
-      document.documentElement.style.setProperty("--accent-g", String(g));
-      document.documentElement.style.setProperty("--accent-b", String(b));
+      applyAccent(r, g, b);
     });
     return () => {
       unlisten.then((fn) => fn());

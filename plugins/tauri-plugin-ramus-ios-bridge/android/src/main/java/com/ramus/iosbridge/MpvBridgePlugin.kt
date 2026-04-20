@@ -93,6 +93,13 @@ internal class NowPlayingArgs {
     var coverUrl: String? = null
 }
 
+@InvokeArg
+internal class MediaAccentArgs {
+    var r: Int = 0
+    var g: Int = 0
+    var b: Int = 0
+}
+
 /**
  * Tauri plugin that owns the ExoPlayer instance on Android.
  *
@@ -466,6 +473,41 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             Log.i(TAG, "applyMetadata: replaceMediaItem ok")
         } catch (e: Exception) {
             Log.w(TAG, "replaceMediaItem failed", e)
+        }
+    }
+
+    @Command
+    fun setMediaAccent(invoke: Invoke) {
+        val args = invoke.parseArgs(MediaAccentArgs::class.java)
+        invoke.resolve()
+        mainHandler.post {
+            // Pack sRGB into ARGB with full alpha. Clamp each channel
+            // — Tauri deserialises `u8` as `Int` and an out-of-range
+            // value from a buggy caller would corrupt adjacent channels.
+            val r = args.r.coerceIn(0, 255)
+            val g = args.g.coerceIn(0, 255)
+            val b = args.b.coerceIn(0, 255)
+            val argb = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+            MpvForegroundService.setAccent(argb)
+
+            // Nudge Media3 to rebuild the notification: calling the
+            // provider's `setAccent` only stashes the new colour — the
+            // notification itself is only re-created on specific player
+            // events. Replacing the current media item with an identical
+            // one fires `onMediaItemTransition` with
+            // `MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED`, which the
+            // provider treats as a refresh trigger. Position is preserved
+            // because the URI is unchanged; the same-index guard in
+            // `onMediaItemTransition` prevents the cascade back into
+            // `fileLoaded` / session_reporter.
+            val p = player ?: return@post
+            if (p.mediaItemCount == 0) return@post
+            val current = p.currentMediaItem ?: return@post
+            try {
+                p.replaceMediaItem(p.currentMediaItemIndex, current)
+            } catch (e: Exception) {
+                Log.w(TAG, "accent nudge replaceMediaItem failed", e)
+            }
         }
     }
 
