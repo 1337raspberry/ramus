@@ -16,6 +16,18 @@ val tauriProperties = Properties().apply {
 android {
     compileSdk = 36
     namespace = "com.ramus.app"
+    signingConfigs {
+        create("release") {
+            val props = Properties().apply {
+                val f = file("signing.properties")
+                if (f.exists()) f.inputStream().use { load(it) }
+            }
+            storeFile = file(props.getProperty("storeFile", "release.keystore"))
+            storePassword = props.getProperty("storePassword", "ramusdev")
+            keyAlias = props.getProperty("keyAlias", "ramus")
+            keyPassword = props.getProperty("keyPassword", "ramusdev")
+        }
+    }
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "com.ramus.app"
@@ -37,6 +49,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }

@@ -31,3 +31,8 @@ CLAUDE.md
 # Personal TODO scratch pad — CI-verification steps to run once GH
 # Actions minutes return. Not meaningful to other contributors.
 CI-check-to-do.md
+
+# Android release signing — keystore + credentials never committed
+*.keystore
+*.jks
+signing.properties
