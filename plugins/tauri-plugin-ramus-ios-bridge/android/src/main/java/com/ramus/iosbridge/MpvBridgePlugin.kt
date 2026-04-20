@@ -648,6 +648,24 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                 trigger("mpvPlaylistPosChange", JSObject().put("index", idx.toLong()))
                 lastReportedDuration = C.TIME_UNSET
                 fileLoadedEmitted = false
+                // A prebuffered auto-advance doesn't re-enter `STATE_READY`
+                // (the player was already ready), so relying on
+                // `onPlaybackStateChanged` to emit `mpvDurationChange` +
+                // `mpvFileLoaded` misses every natural track change. The
+                // new track's duration is already known at this point
+                // (it was prepared as part of the queue), so emit
+                // straight from the transition. STATE_READY still covers
+                // the "needed to buffer first" case via the same dedupe
+                // guards.
+                val dur = p.duration
+                if (dur != C.TIME_UNSET && dur != lastReportedDuration) {
+                    lastReportedDuration = dur
+                    trigger("mpvDurationChange", JSObject().put("duration", dur / 1000.0))
+                }
+                if (!fileLoadedEmitted) {
+                    fileLoadedEmitted = true
+                    trigger("mpvFileLoaded", JSObject())
+                }
             }
         }
 

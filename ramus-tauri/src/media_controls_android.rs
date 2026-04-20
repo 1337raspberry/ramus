@@ -28,6 +28,7 @@ use ramus_core::cache::image_cache::ImageCache;
 use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
 use ramus_core::playback::player::AudioPlayer;
 use ramus_core::plex::client::PlexClient;
+use ramus_core::util::plex_art_url;
 
 pub type MediaControlsRef = Arc<parking_lot::Mutex<Option<MediaControlsHandle>>>;
 
@@ -53,28 +54,99 @@ fn media_controls_enabled() -> bool {
     })
 }
 
-/// Frontend art cache sizes, from `ui/src/lib/commands.ts::ART_SIZE`,
-/// in priority order: grid (300) → now-playing large (1200) → compact (72).
+/// Priority order when resolving cached art. High-quality first so the
+/// lock-screen widget gets a crisp image whenever the UI has already
+/// pulled the 300/1200 variant. 72px is the last-resort fallback used
+/// by tiny surfaces (search rows, queue thumbnails); it's technically
+/// a hit but visibly blurry on the widget, so we treat it as "low-res"
+/// and still kick off the 300 download in the background.
 const ART_SIZES_TO_TRY: &[u32] = &[300, 1200, 72];
+
+/// Size at which we self-download art when the cache miss is total or
+/// only held the 72px thumb. Matches the desktop value so the same art
+/// blob serves the album grid AND the lock-screen widget with one fetch.
+const ART_DOWNLOAD_SIZE: u32 = 300;
+
+/// Memoised art-resolution state. `thumb` is the stable Plex thumb key
+/// (e.g. `/library/metadata/123/thumb/456789`); `cover_url` is the
+/// `file://…` pointer we last handed the Kotlin bridge. A same-thumb
+/// repeat check returns the cached URL without re-hitting the image
+/// cache. A background download only overwrites this struct if the
+/// thumb it was started for still matches — rapid skipping can't paint
+/// the new track's widget with the old track's art.
+#[derive(Default)]
+struct CachedArt {
+    thumb: Option<String>,
+    cover_url: Option<String>,
+    /// True once we've resolved this thumb from a 300+ cache entry.
+    /// Gates the background download so a 72px-only thumb triggers one
+    /// fetch, not one per metadata refresh.
+    high_res: bool,
+}
 
 pub struct MediaControlsHandle {
     app: AppHandle,
     image_cache: Arc<parking_lot::Mutex<ImageCache>>,
+    client: Arc<PlexClient>,
+    http_client: reqwest::Client,
     /// Cached last full metadata. `update_playback_state` re-pushes the
     /// session with the new transport state but unchanged metadata; the
     /// Kotlin side checks the cover URL hasn't changed before reloading
     /// artwork bytes.
     last_metadata: parking_lot::Mutex<Option<NowPlayingMetadata>>,
+    cached_art: Arc<parking_lot::Mutex<CachedArt>>,
 }
 
 impl MediaControlsHandle {
-    fn resolve_cover_art(&self, thumb: Option<&str>) -> Option<String> {
-        let thumb = thumb?;
-        let mut cache = self.image_cache.lock();
-        ART_SIZES_TO_TRY
-            .iter()
-            .find_map(|&size| cache.get(thumb, size))
-            .map(|p| format!("file://{}", p.display()))
+    /// Resolve album art from the image cache. Returns `(url, high_res)`
+    /// — `high_res` is false when we only found the 72px thumb, which
+    /// tells `update_metadata` to kick off a background 300 download.
+    fn resolve_cover_art(&self, thumb: Option<&str>) -> (Option<String>, bool) {
+        let Some(thumb) = thumb else {
+            return (None, false);
+        };
+
+        // Fast path: same thumb as last time and we already committed
+        // a high-quality URL. Avoids re-locking the image cache on
+        // every position tick.
+        {
+            let cached = self.cached_art.lock();
+            if cached.thumb.as_deref() == Some(thumb)
+                && cached.high_res
+                && cached.cover_url.is_some()
+            {
+                return (cached.cover_url.clone(), true);
+            }
+        }
+
+        // Search the cache size-by-size; remember whether the hit was
+        // at a high-quality size so the caller can decide to queue a
+        // background fetch.
+        let hit = {
+            let mut cache = self.image_cache.lock();
+            ART_SIZES_TO_TRY.iter().find_map(|&size| {
+                cache
+                    .get(thumb, size)
+                    .map(|p| (p, size >= ART_DOWNLOAD_SIZE))
+            })
+        };
+
+        let (cover_url, high_res) = match hit {
+            Some((path, hi)) => (Some(format!("file://{}", path.display())), hi),
+            None => (None, false),
+        };
+
+        // Only commit a high-quality result to the fast path. A 72-only
+        // resolution leaves `high_res = false` so the next call retries
+        // the cache (the background download may have landed since).
+        {
+            let mut cached = self.cached_art.lock();
+            cached.thumb = Some(thumb.to_string());
+            cached.cover_url = cover_url.clone();
+            cached.high_res = high_res;
+        }
+
+        (cover_url, high_res)
     }
 }
 
@@ -105,7 +177,7 @@ impl MediaKeyHandler for MediaControlsHandle {
         if !media_controls_enabled() {
             return;
         }
-        let cover_url = self.resolve_cover_art(metadata.cover_url.as_deref());
+        let (cover_url, high_res) = self.resolve_cover_art(metadata.cover_url.as_deref());
         let payload = NowPlayingMetadata {
             title: metadata.title.clone(),
             artist: metadata.artist.clone(),
@@ -117,6 +189,25 @@ impl MediaKeyHandler for MediaControlsHandle {
         };
         *self.last_metadata.lock() = Some(payload.clone());
         self.dispatch_now_playing(payload);
+
+        // Either a total miss or a low-res-only hit (72px) — kick off a
+        // 300px download in the background so the next metadata push
+        // paints the widget at high quality. The download completion
+        // self-dispatches a fresh `now_playing_update`, which goes
+        // through Kotlin's coverChanged branch and reloads the bytes.
+        if !high_res {
+            if let Some(thumb) = metadata.cover_url.as_deref() {
+                spawn_art_download(
+                    thumb.to_string(),
+                    metadata.clone(),
+                    self.app.clone(),
+                    self.image_cache.clone(),
+                    self.client.clone(),
+                    self.http_client.clone(),
+                    self.cached_art.clone(),
+                );
+            }
+        }
     }
 
     fn update_playback_state(&self, is_playing: bool, position: f64) {
@@ -137,20 +228,110 @@ impl MediaKeyHandler for MediaControlsHandle {
             return;
         }
         *self.last_metadata.lock() = None;
+        *self.cached_art.lock() = CachedArt::default();
         self.dispatch_now_playing_clear();
     }
+}
+
+/// Download album art from Plex in the background, insert into the
+/// image cache, then re-dispatch `nowPlayingUpdate` so the lock-screen
+/// widget swaps its low-res (or missing) artwork for the 300px variant.
+///
+/// Stale-guard: if the track changes mid-flight (detected via
+/// `cached_art.thumb`), the result is discarded — rapid skipping
+/// through a queue would otherwise paint the newer track's widget
+/// with an older track's art.
+fn spawn_art_download(
+    thumb: String,
+    metadata: MediaMetadata,
+    app: AppHandle,
+    image_cache: Arc<parking_lot::Mutex<ImageCache>>,
+    client: Arc<PlexClient>,
+    http_client: reqwest::Client,
+    cached_art: Arc<parking_lot::Mutex<CachedArt>>,
+) {
+    tauri::async_runtime::spawn(async move {
+        let server_url = match client.server_url() {
+            Some(u) => u,
+            None => return,
+        };
+        let token = match client.token() {
+            Some(t) => t,
+            None => return,
+        };
+
+        let url = plex_art_url(&server_url, &thumb, ART_DOWNLOAD_SIZE);
+
+        let response = match http_client
+            .get(&url)
+            .header("X-Plex-Token", &token)
+            .send()
+            .await
+        {
+            Ok(r) if r.status().is_success() => r,
+            _ => return,
+        };
+
+        let bytes = match response.bytes().await {
+            Ok(b) => b,
+            Err(_) => return,
+        };
+
+        let cover_url = {
+            let mut cache = image_cache.lock();
+            cache
+                .insert(&thumb, ART_DOWNLOAD_SIZE, &bytes)
+                .ok()
+                .map(|p| format!("file://{}", p.display()))
+        };
+
+        // Guard against stale results: if another track has been
+        // requested since we started, drop this one. Matching thumb is
+        // the stable identifier across Plex rating-key changes.
+        let Some(url) = cover_url else { return };
+        {
+            let mut art = cached_art.lock();
+            if art.thumb.as_deref() != Some(&thumb) {
+                return;
+            }
+            art.cover_url = Some(url.clone());
+            art.high_res = true;
+        }
+
+        // Re-push via the bridge. Off the Tauri event-callback thread
+        // because we're already on a tokio worker (spawn_blocking would
+        // just wrap one worker in another); the bridge IPC is
+        // non-reentrant in this context.
+        let payload = NowPlayingMetadata {
+            title: metadata.title.clone(),
+            artist: metadata.artist.clone(),
+            album: metadata.album.clone(),
+            duration: metadata.duration,
+            position: metadata.position.max(0.0),
+            is_playing: metadata.is_playing,
+            cover_url: Some(url),
+        };
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Err(e) = app.ramus_ios_bridge().now_playing_update(payload) {
+                log::warn!("nowPlayingUpdate (art refresh) failed: {e}");
+            }
+        });
+    });
 }
 
 pub fn create_media_controls(
     app: AppHandle,
     _player: Arc<AudioPlayer>,
     image_cache: Arc<parking_lot::Mutex<ImageCache>>,
-    _client: Arc<PlexClient>,
-    _http_client: reqwest::Client,
+    client: Arc<PlexClient>,
+    http_client: reqwest::Client,
 ) -> Result<MediaControlsHandle, String> {
     Ok(MediaControlsHandle {
         app,
         image_cache,
+        client,
+        http_client,
         last_metadata: parking_lot::Mutex::new(None),
+        cached_art: Arc::new(parking_lot::Mutex::new(CachedArt::default())),
     })
 }
