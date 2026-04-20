@@ -530,10 +530,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
             <UltraBlurBackground colors={sheetBlurColors} />
           </div>
         )}
-        <header
-          ref={sheetHeaderRef}
-          className="mobile-sheet-header"
-        >
+        <header ref={sheetHeaderRef} className="mobile-sheet-header">
           <div className="mobile-sheet-hint-bar" />
           <button
             className={`mobile-sheet-fav${albumFav ? " active" : ""}`}
@@ -611,8 +608,6 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
               className="mobile-sheet-wave"
               style={
                 {
-                  height: 60,
-                  marginTop: 10,
                   "--sheet-wave-canvas": "50px",
                   "--sheet-time-font": "12px",
                   "--sheet-time-pad": "4px",
@@ -622,12 +617,11 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
               <WaveformSeekBar />
             </div>
 
-            <div className="mobile-sheet-transport" style={{ gap: 42 }}>
+            <div className="mobile-sheet-transport">
               <button
                 className="mobile-sheet-transport-btn"
                 onClick={() => previousTrack().catch(() => {})}
                 aria-label="Previous"
-                style={{ width: 48, height: 48 }}
               >
                 <IconPrevious size={34} />
               </button>
@@ -635,7 +629,6 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                 className="mobile-sheet-transport-btn primary"
                 onClick={() => togglePlayPause().catch(() => {})}
                 aria-label={isPlaying ? "Pause" : "Play"}
-                style={{ width: 48, height: 48 }}
               >
                 {isPlaying ? <IconPause size={56} /> : <IconPlay size={56} />}
               </button>
@@ -643,36 +636,37 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                 className="mobile-sheet-transport-btn"
                 onClick={() => nextTrack().catch(() => {})}
                 aria-label="Next"
-                style={{ width: 48, height: 48 }}
               >
                 <IconNext size={34} />
               </button>
             </div>
 
-            {currentGenres.length > 0 && (
-              <div className="mobile-sheet-genres">
-                <FlowLayout genres={currentGenres} onGenreClick={handleGenreClick} />
-              </div>
-            )}
+            <div className="mobile-sheet-bottom">
+              {currentGenres.length > 0 && (
+                <div className="mobile-sheet-genres">
+                  <FlowLayout genres={currentGenres} onGenreClick={handleGenreClick} />
+                </div>
+              )}
 
-            <div className="mobile-sheet-foot">
-              {codecParts && <span>{codecParts.label}</span>}
-              <span
-                className={`mobile-sheet-track-fav${trackFav ? " active" : ""}`}
-                onClick={handleTrackFavToggle}
-                role="button"
-                tabIndex={0}
-                aria-label={trackFav ? "Remove track favourite" : "Favourite track"}
-              >
-                {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
-              </span>
-              {codecParts?.detail && <span>{codecParts.detail}</span>}
-            </div>
-            {queue.length > queueIndex + 1 && (
-              <div className="mobile-sheet-scroll-hint" style={{ paddingTop: 44 }}>
-                <IconChevronDown size={20} />
+              <div className="mobile-sheet-foot">
+                <span>{codecParts?.label ?? ""}</span>
+                <span
+                  className={`mobile-sheet-track-fav${trackFav ? " active" : ""}`}
+                  onClick={handleTrackFavToggle}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={trackFav ? "Remove track favourite" : "Favourite track"}
+                >
+                  {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
+                </span>
+                <span>{codecParts?.detail ?? ""}</span>
               </div>
-            )}
+              {queue.length > queueIndex + 1 && (
+                <div className="mobile-sheet-scroll-hint" style={{ paddingTop: 24 }}>
+                  <IconChevronDown size={20} />
+                </div>
+              )}
+            </div>
           </div>
 
           {(() => {

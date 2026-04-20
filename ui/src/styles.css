@@ -4561,12 +4561,14 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-sheet-art {
-  /* Lock to a square. Explicit height alongside aspect-ratio because
-     inside a vertical flex column the flex-shrink default (1) can
-     collapse the aspect-ratio-derived height when space is tight. */
+  --_art-size: clamp(
+    160px,
+    calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 380px),
+    min(80vw, 360px)
+  );
   position: relative;
-  width: min(80vw, 360px);
-  height: min(80vw, 360px);
+  width: var(--_art-size);
+  height: var(--_art-size);
   aspect-ratio: 1 / 1;
   flex-shrink: 0;
   border-radius: 14px;
@@ -4642,8 +4644,8 @@ body.is-fullscreen .focus-body {
 
 .mobile-sheet-wave {
   width: 100%;
-  height: 70px;
-  margin-top: 12px;
+  height: 60px;
+  margin-top: 10px;
   flex-shrink: 0;
 }
 
@@ -4664,14 +4666,14 @@ body.is-fullscreen .focus-body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 40px;
+  gap: 42px;
   margin-top: 8px;
   flex-shrink: 0;
 }
 
 .mobile-sheet-transport-btn {
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   border: none;
   background: transparent;
@@ -4695,6 +4697,50 @@ body.is-fullscreen .focus-body {
   background: rgba(255, 255, 255, 0.08);
 }
 
+@media (max-height: 680px) {
+  .mobile-sheet-lyrics {
+    margin-top: 4px;
+    width: 36px;
+    height: 20px;
+  }
+  .mobile-sheet-lyrics svg {
+    width: 14px;
+    height: 14px;
+  }
+  .mobile-sheet-wave {
+    height: 48px;
+    margin-top: 6px;
+  }
+  .mobile-sheet-wave .waveform-container,
+  .mobile-sheet-wave .waveform-canvas-wrap {
+    height: 38px;
+  }
+  .mobile-sheet-transport {
+    gap: 32px;
+    margin-top: 4px;
+  }
+  .mobile-sheet-transport-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .mobile-sheet-transport-btn svg {
+    width: 28px;
+    height: 28px;
+  }
+  .mobile-sheet-transport-btn.primary svg {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+.mobile-sheet-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
 .mobile-sheet-genres {
   margin-top: 14px;
   display: flex;
@@ -4704,11 +4750,20 @@ body.is-fullscreen .focus-body {
 
 .mobile-sheet-foot {
   margin-top: 14px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
   color: rgba(255, 255, 255, 0.55);
   font-size: 13px;
+}
+
+.mobile-sheet-foot > :first-child {
+  text-align: right;
+}
+
+.mobile-sheet-foot > :last-child {
+  text-align: left;
 }
 
 .mobile-sheet-track-fav {
@@ -4722,7 +4777,6 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-sheet-scroll-hint {
-  margin-top: auto;
   padding-top: 12px;
   color: rgba(255, 255, 255, 0.3);
   animation: mobile-hint-bob 2s ease-in-out infinite;
