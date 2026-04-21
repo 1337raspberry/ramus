@@ -1,8 +1,10 @@
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import type { GenreNode } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 import { IconChevronRight, IconChevronDown } from "../components/Icons";
 import MobileSettingsRow from "./MobileSettingsRow";
+
+let savedScrollTop = 0;
 
 function countExpandable(nodes: GenreNode[]): number {
   let c = 0;
@@ -46,6 +48,29 @@ export default function MobileGenreTree({ onOpenSettings }: Props) {
   const loadAllAlbums = useLibraryStore((s) => s.loadAllAlbums);
   const loadFavouriteAlbums = useLibraryStore((s) => s.loadFavouriteAlbums);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const lastSelectedGenreId = useLibraryStore((s) => s.lastSelectedGenreId);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (lastSelectedGenreId) {
+      const target = el.querySelector(`[data-genre-id="${CSS.escape(lastSelectedGenreId)}"]`);
+      if (target) {
+        target.scrollIntoView({ block: "center" });
+        return;
+      }
+    }
+    if (savedScrollTop > 0) el.scrollTop = savedScrollTop;
+  }, [lastSelectedGenreId]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    return () => {
+      if (el) savedScrollTop = el.scrollTop;
+    };
+  }, []);
+
   const rows = useMemo(() => flatten(genreTree, expanded), [genreTree, expanded]);
   const allExpanded = useMemo(
     () => !!genreTree.length && expanded.size >= countExpandable(genreTree),
@@ -59,11 +84,17 @@ export default function MobileGenreTree({ onOpenSettings }: Props) {
   };
 
   if (!genreTree.length) {
-    return <div className="mobile-empty">No genres loaded</div>;
+    return (
+      <div className="mobile-empty">
+        {sidebarMode === "favourites"
+          ? "No favourites yet — star some albums to see them here!"
+          : "No genres loaded"}
+      </div>
+    );
   }
 
   return (
-    <div className="mobile-genre-tree">
+    <div ref={scrollRef} className="mobile-genre-tree">
       <div className="mobile-genre-row" onClick={handleAll}>
         <span className="mobile-genre-name">All</span>
         <span className="mobile-genre-count">{totalAlbumCount}</span>
@@ -83,6 +114,7 @@ export default function MobileGenreTree({ onOpenSettings }: Props) {
         return (
           <div
             key={row.node.id}
+            data-genre-id={row.node.id}
             className="mobile-genre-row"
             style={{ paddingLeft: 20 + row.depth * 24 }}
             onClick={() => selectGenre(row.node)}

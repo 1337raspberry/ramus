@@ -113,7 +113,13 @@ export default function GenreTreeView() {
   }, [selectedGenreId, rows, virtualizer]);
 
   if (!genreTree.length) {
-    return <div className="empty-state">No genres loaded</div>;
+    return (
+      <div className="empty-state">
+        {sidebarMode === "favourites"
+          ? "No favourites yet — star some albums to see them here!"
+          : "No genres loaded"}
+      </div>
+    );
   }
 
   const rowStyle = (depth: number): React.CSSProperties => ({

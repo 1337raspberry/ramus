@@ -35,6 +35,7 @@ interface LibraryState {
   totalAlbumCount: number;
   expandedGenreIds: Set<string>;
   selectedGenreId: string | null;
+  lastSelectedGenreId: string | null;
   loadGenreTree: () => Promise<void>;
   loadFavouriteGenreTree: () => Promise<void>;
   toggleGenreExpanded: (id: string) => void;
@@ -184,6 +185,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   totalAlbumCount: 0,
   expandedGenreIds: new Set(),
   selectedGenreId: null,
+  lastSelectedGenreId: null,
 
   loadGenreTree: async () => {
     try {
@@ -226,6 +228,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       ancestorIds.forEach((id) => nextExpanded.add(id));
       return {
         selectedGenreId: node.id,
+        lastSelectedGenreId: node.id,
         expandedGenreIds: nextExpanded,
         suggestion: null,
         detailAlbum: null,
@@ -270,6 +273,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   selectGenreByName: async (name) => {
+    set({
+      detailAlbum: null,
+      detailTracks: [],
+      searchQuery: null,
+      activeSavedSearchName: null,
+      suggestion: null,
+      browseArtistName: null,
+      browseYear: null,
+    });
     // Skip loadAllAlbums() on mode switch: genre-specific albums load
     // below and we must not race. Await the tree so
     // findDeepestNodeByName has data to search.
@@ -282,15 +294,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (node) {
       get().selectGenre(node);
     } else {
-      // No tree match (custom/flat genres or unmapped name).
       set({
         selectedGenreId: name.toLowerCase(),
-        browseArtistName: null,
-        browseYear: null,
-        searchQuery: null,
-        activeSavedSearchName: null,
-        detailAlbum: null,
-        suggestion: null,
       });
       get().loadAlbumsForGenre(name);
     }
@@ -361,32 +366,34 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   loadAlbumsForArtistName: async (name) => {
+    set({
+      detailAlbum: null,
+      detailTracks: [],
+      searchQuery: null,
+      activeSavedSearchName: null,
+      suggestion: null,
+      browseArtistName: name,
+      browseYear: null,
+    });
     try {
       const albums = await getAlbumsForArtistName(name);
-      set((state) => ({
-        albums: sortAlbums(albums, state.albumSortOrder),
-        browseArtistName: name,
-        browseYear: null,
-        searchQuery: null,
-        activeSavedSearchName: null,
-        detailAlbum: null,
-        suggestion: null,
-      }));
+      set((state) => ({ albums: sortAlbums(albums, state.albumSortOrder) }));
     } catch {}
   },
 
   loadAlbumsForYear: async (year) => {
+    set({
+      detailAlbum: null,
+      detailTracks: [],
+      searchQuery: null,
+      activeSavedSearchName: null,
+      suggestion: null,
+      browseYear: year,
+      browseArtistName: null,
+    });
     try {
       const albums = await getAlbumsForYear(year);
-      set((state) => ({
-        albums: sortAlbums(albums, state.albumSortOrder),
-        browseYear: year,
-        browseArtistName: null,
-        searchQuery: null,
-        activeSavedSearchName: null,
-        detailAlbum: null,
-        suggestion: null,
-      }));
+      set((state) => ({ albums: sortAlbums(albums, state.albumSortOrder) }));
     } catch {}
   },
 

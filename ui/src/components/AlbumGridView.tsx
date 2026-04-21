@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type AlbumSortOrder } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
@@ -15,6 +15,9 @@ import {
 } from "./Icons";
 import BreadcrumbBar from "./BreadcrumbBar";
 import { AlbumDownloadMenuItem } from "./DownloadMenuItems";
+
+let savedGridScroll = 0;
+let savedGridKey = "";
 
 const SORT_OPTIONS: { value: AlbumSortOrder; label: string }[] = [
   { value: "alphabetical", label: "A-Z" },
@@ -183,6 +186,11 @@ export default function AlbumGridView() {
   const [scrolled, setScrolled] = useState(false);
   const { cols, cardWidth, callbackRef } = useGridLayout();
 
+  const gridKey = `${albums.length}:${albums[0]?.ratingKey ?? ""}`;
+  const gridKeyRef = useRef(gridKey);
+  gridKeyRef.current = gridKey;
+  const restoreOffset = gridKey === savedGridKey ? savedGridScroll : 0;
+
   const setRef = useCallback(
     (el: HTMLDivElement | null) => {
       scrollRef.current = el;
@@ -190,6 +198,19 @@ export default function AlbumGridView() {
     },
     [callbackRef],
   );
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el && restoreOffset > 0) {
+      el.scrollTop = restoreOffset;
+    }
+    return () => {
+      if (el) {
+        savedGridScroll = el.scrollTop;
+        savedGridKey = gridKeyRef.current;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -209,6 +230,7 @@ export default function AlbumGridView() {
     getScrollElement: () => scrollRef.current,
     estimateSize,
     overscan: 3,
+    initialOffset: restoreOffset,
   });
 
   useEffect(() => {

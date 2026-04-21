@@ -81,10 +81,9 @@ export default function MobileAlbumDetail() {
 
   const handleGenreClick = useCallback(
     (g: string) => {
-      closeAlbumDetail();
       selectGenreByName(g);
     },
-    [closeAlbumDetail, selectGenreByName],
+    [selectGenreByName],
   );
 
   const queueAction = useCallback((fn: typeof insertNext, items: typeof tracks) => {

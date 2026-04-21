@@ -1,10 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Album, GenreNode } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 import { IconChevronLeft, IconChevronDown } from "../components/Icons";
 import type { AlbumSortOrder } from "../stores/libraryStore";
 import MobileAlbumCard from "./MobileAlbumCard";
+
+let savedGridScroll = 0;
+let savedGridKey = "";
 
 function SortIcon({ mode }: { mode: string }) {
   const s = 22;
@@ -265,12 +268,32 @@ const VirtualizedAlbumGrid = memo(function VirtualizedAlbumGrid({ albums }: { al
   const [scrolled, setScrolled] = useState(false);
   const rowCount = Math.ceil(albums.length / COLS);
   const estimate = useCallback(() => ROW_HEIGHT, []);
+
+  const gridKey = `${albums.length}:${albums[0]?.ratingKey ?? ""}`;
+  const gridKeyRef = useRef(gridKey);
+  gridKeyRef.current = gridKey;
+  const restoreOffset = gridKey === savedGridKey ? savedGridScroll : 0;
+
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
     estimateSize: estimate,
     overscan: 2,
+    initialOffset: restoreOffset,
   });
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el && restoreOffset > 0) {
+      el.scrollTop = restoreOffset;
+    }
+    return () => {
+      if (el) {
+        savedGridScroll = el.scrollTop;
+        savedGridKey = gridKeyRef.current;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const el = scrollRef.current;
