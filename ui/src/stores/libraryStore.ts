@@ -55,7 +55,7 @@ interface LibraryState {
   albums: Album[];
   albumSortOrder: AlbumSortOrder;
   setAlbumSortOrder: (order: AlbumSortOrder) => void;
-  loadAlbumsForGenre: (genre: string) => Promise<void>;
+  loadAlbumsForGenre: (genre: string) => void;
   loadAllAlbums: () => Promise<void>;
   loadFavouriteAlbums: () => Promise<void>;
   loadAlbumsForArtist: (sourceId: string) => Promise<void>;
@@ -145,6 +145,41 @@ function findDeepestNodeByName(nodes: GenreNode[], name: string): GenreNode | nu
   return best;
 }
 
+let genreFetchGen = 0;
+
+function genreSelectionState(node: GenreNode, currentExpanded: Set<string>): Partial<LibraryState> {
+  const segments = node.id.split("/");
+  const ancestorIds = segments.slice(0, -1).map((_, i) => segments.slice(0, i + 1).join("/"));
+  const nextExpanded = new Set(currentExpanded);
+  ancestorIds.forEach((id) => nextExpanded.add(id));
+  return {
+    selectedGenreId: node.id,
+    lastSelectedGenreId: node.id,
+    expandedGenreIds: nextExpanded,
+    suggestion: null,
+    detailAlbum: null,
+    browseArtistName: null,
+    browseYear: null,
+    searchQuery: null,
+    activeSavedSearchName: null,
+  };
+}
+
+function fetchGenreAlbums(
+  promise: Promise<Album[]>,
+  favourites: boolean,
+  set: (fn: (s: LibraryState) => Partial<LibraryState>) => void,
+) {
+  const gen = ++genreFetchGen;
+  promise
+    .then((albums) => {
+      if (genreFetchGen !== gen) return;
+      const result = favourites ? albums.filter((a) => a.isFavourite) : albums;
+      set((state) => ({ albums: sortAlbums(result, state.albumSortOrder) }));
+    })
+    .catch(() => {});
+}
+
 function collectAllIds(nodes: GenreNode[]): Set<string> {
   const ids = new Set<string>();
   const visit = (node: GenreNode) => {
@@ -219,91 +254,22 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   collapseAll: () => set({ expandedGenreIds: new Set() }),
 
   selectGenre: (node) => {
-    // Expand ancestors so the selected node is visible. For id
-    // "metal/black metal/blackgaze" this adds "metal" and
-    // "metal/black metal". No-op when ancestors are already expanded.
-    const segments = node.id.split("/");
-    const ancestorIds = segments.slice(0, -1).map((_, i) => segments.slice(0, i + 1).join("/"));
-    set((state) => {
-      const nextExpanded = new Set(state.expandedGenreIds);
-      ancestorIds.forEach((id) => nextExpanded.add(id));
-      return {
-        selectedGenreId: node.id,
-        lastSelectedGenreId: node.id,
-        expandedGenreIds: nextExpanded,
-        suggestion: null,
-        detailAlbum: null,
-        browseArtistName: null,
-        browseYear: null,
-        searchQuery: null,
-        activeSavedSearchName: null,
-      };
-    });
-    // Synthetic parents like "Other" aren't known to expand_genre, so
-    // collect descendant leaf names and query them directly.
+    set((state) => genreSelectionState(node, state.expandedGenreIds));
+    const favourites = get().sidebarMode === "favourites";
     const collectLeafNames = (n: GenreNode): string[] => {
       if (!n.children?.length) return [n.name];
       return n.children.flatMap(collectLeafNames);
     };
-    const useDirectNames = node.children?.length && node.id === "other";
-    if (useDirectNames) {
-      const names = collectLeafNames(node);
-      const fetch = getAlbumsForGenreNames(names);
-      if (get().sidebarMode === "favourites") {
-        fetch
-          .then((albums) => {
-            const favs = albums.filter((a) => a.isFavourite);
-            set((state) => ({ albums: sortAlbums(favs, state.albumSortOrder) }));
-          })
-          .catch(() => {});
-      } else {
-        fetch
-          .then((albums) => set((state) => ({ albums: sortAlbums(albums, state.albumSortOrder) })))
-          .catch(() => {});
-      }
-    } else if (get().sidebarMode === "favourites") {
-      getAlbumsForGenre(node.name)
-        .then((albums) => {
-          const favs = albums.filter((a) => a.isFavourite);
-          set((state) => ({ albums: sortAlbums(favs, state.albumSortOrder) }));
-        })
-        .catch(() => {});
+    if (node.children?.length && node.id === "other") {
+      fetchGenreAlbums(getAlbumsForGenreNames(collectLeafNames(node)), favourites, set);
     } else {
-      get().loadAlbumsForGenre(node.name);
+      fetchGenreAlbums(getAlbumsForGenre(node.name), favourites, set);
     }
   },
 
   selectGenreOnly: (node) => {
-    const segments = node.id.split("/");
-    const ancestorIds = segments.slice(0, -1).map((_, i) => segments.slice(0, i + 1).join("/"));
-    set((state) => {
-      const nextExpanded = new Set(state.expandedGenreIds);
-      ancestorIds.forEach((id) => nextExpanded.add(id));
-      return {
-        selectedGenreId: node.id,
-        lastSelectedGenreId: node.id,
-        expandedGenreIds: nextExpanded,
-        suggestion: null,
-        detailAlbum: null,
-        browseArtistName: null,
-        browseYear: null,
-        searchQuery: null,
-        activeSavedSearchName: null,
-      };
-    });
-    const fetch = getAlbumsForGenreNames([node.name]);
-    if (get().sidebarMode === "favourites") {
-      fetch
-        .then((albums) => {
-          const favs = albums.filter((a) => a.isFavourite);
-          set((state) => ({ albums: sortAlbums(favs, state.albumSortOrder) }));
-        })
-        .catch(() => {});
-    } else {
-      fetch
-        .then((albums) => set((state) => ({ albums: sortAlbums(albums, state.albumSortOrder) })))
-        .catch(() => {});
-    }
+    set((state) => genreSelectionState(node, state.expandedGenreIds));
+    fetchGenreAlbums(getAlbumsForGenreNames([node.name]), get().sidebarMode === "favourites", set);
   },
 
   selectGenreByName: async (name) => {
@@ -371,11 +337,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }));
   },
 
-  loadAlbumsForGenre: async (genre) => {
-    try {
-      const albums = await getAlbumsForGenre(genre);
-      set((state) => ({ albums: sortAlbums(albums, state.albumSortOrder) }));
-    } catch {}
+  loadAlbumsForGenre: (genre) => {
+    fetchGenreAlbums(getAlbumsForGenre(genre), get().sidebarMode === "favourites", set);
   },
 
   loadAllAlbums: async () => {
