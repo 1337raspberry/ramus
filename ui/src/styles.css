@@ -374,6 +374,14 @@ textarea {
   transform: rotate(90deg);
 }
 
+.genre-chevron-toggle {
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .genre-name {
   flex: 1;
   overflow: hidden;
@@ -386,6 +394,81 @@ textarea {
   font-size: 10px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+.genre-count-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+  text-underline-offset: 2px;
+  transition:
+    color 0.1s,
+    text-decoration-color 0.1s;
+}
+
+.genre-count-link:hover {
+  color: var(--text-primary);
+  text-decoration-color: var(--text-primary);
+}
+
+.genre-count-sep {
+  margin-left: 2px;
+  cursor: default;
+}
+
+/* Hierarchy guide lines.
+   Vertical lines use background-image (not ::before) so they fill
+   exactly the span's rendered area — no subpixel gaps between rows. */
+.genre-guide {
+  position: relative;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+/* Vertical line as a 1px gradient at 50% of the span width */
+.genre-guide.guide--continues:not(.guide--elbow),
+.genre-guide.guide--elbow.guide--continues {
+  background-image: linear-gradient(
+    to right,
+    transparent calc(50% - 0.5px),
+    rgba(255, 255, 255, 0.15) calc(50% - 0.5px),
+    rgba(255, 255, 255, 0.15) calc(50% + 0.5px),
+    transparent calc(50% + 0.5px)
+  );
+}
+
+/* Last child elbow (└──): L-shape with rounded corner */
+.genre-guide.guide--elbow:not(.guide--continues)::before {
+  content: "";
+  position: absolute;
+  left: calc(50% - 0.5px);
+  top: 0;
+  height: calc(50% + 0.5px);
+  width: calc(50% + 0.5px);
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  border-bottom-left-radius: 6px;
+}
+
+/* Leaf elbow: extend arm through the chevron spacer toward text */
+.genre-guide.guide--elbow.guide--leaf:not(.guide--continues)::before {
+  width: calc(50% + 16px);
+}
+
+/* Non-last child elbow (├──): horizontal stub (vertical via background above) */
+.genre-guide.guide--elbow.guide--continues::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  right: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Leaf non-last-child elbow: extend arm through the chevron spacer toward text */
+.genre-guide.guide--elbow.guide--leaf.guide--continues::after {
+  right: -16px;
 }
 
 /* --- Album Grid --- */
@@ -3438,13 +3521,13 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-genre-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
+  display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 20px;
+  min-height: 50px;
+  padding: 0 16px 0 6px;
   cursor: pointer;
   position: relative;
+  gap: 0;
 }
 
 .mobile-genre-row:active {
@@ -3452,14 +3535,18 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-genre-name {
+  flex: 1;
   font-size: 17px;
   color: #fff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .mobile-genre-count {
+  flex-shrink: 0;
+  margin-left: 8px;
   color: rgba(255, 255, 255, 0.45);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
@@ -3469,16 +3556,80 @@ body.is-fullscreen .focus-body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
+  width: 28px;
   height: 44px;
-  margin: -12px -12px -12px 0;
   color: rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
 }
 
-.mobile-genre-chev:empty {
-  width: 8px;
-  height: 20px;
-  margin: 0;
+.mobile-genre-chev-spacer {
+  width: 28px;
+  flex-shrink: 0;
+}
+
+/* Hierarchy guide lines (mobile) */
+.mobile-genre-guide {
+  position: relative;
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 28px;
+}
+
+.mobile-genre-guide.guide--continues:not(.guide--elbow),
+.mobile-genre-guide.guide--elbow.guide--continues {
+  background-image: linear-gradient(
+    to right,
+    transparent calc(50% - 0.5px),
+    rgba(255, 255, 255, 0.15) calc(50% - 0.5px),
+    rgba(255, 255, 255, 0.15) calc(50% + 0.5px),
+    transparent calc(50% + 0.5px)
+  );
+}
+
+.mobile-genre-guide.guide--elbow:not(.guide--continues)::before {
+  content: "";
+  position: absolute;
+  left: calc(50% - 0.5px);
+  top: 0;
+  height: calc(50% + 0.5px);
+  width: calc(50% + 0.5px);
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  border-bottom-left-radius: 6px;
+}
+
+.mobile-genre-guide.guide--elbow.guide--leaf:not(.guide--continues)::before {
+  width: calc(50% + 20px);
+}
+
+.mobile-genre-guide.guide--elbow.guide--continues::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  right: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.mobile-genre-guide.guide--elbow.guide--leaf.guide--continues::after {
+  right: -20px;
+}
+
+.mobile-genre-count-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+  text-underline-offset: 2px;
+}
+
+.mobile-genre-count-sep {
+  margin: 0 3px 0 3px;
+  flex-shrink: 0;
+}
+
+.mobile-genre-count-sep + .mobile-genre-count {
+  margin-left: 0;
 }
 
 /* --- Artist list --- */

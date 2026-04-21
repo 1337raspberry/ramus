@@ -14,7 +14,7 @@ export const useGenreDebugStore = create<{
   textSize: 12,
   padH: 6,
   rowHeight: 30,
-  indentDepth: 8,
+  indentDepth: 16,
 }));
 
 const SLIDERS = [

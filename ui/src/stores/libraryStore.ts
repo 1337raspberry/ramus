@@ -42,6 +42,7 @@ interface LibraryState {
   expandAll: () => void;
   collapseAll: () => void;
   selectGenre: (node: GenreNode) => void;
+  selectGenreOnly: (node: GenreNode) => void;
   selectGenreByName: (name: string) => Promise<void>;
 
   // --- Artists ---
@@ -269,6 +270,39 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         .catch(() => {});
     } else {
       get().loadAlbumsForGenre(node.name);
+    }
+  },
+
+  selectGenreOnly: (node) => {
+    const segments = node.id.split("/");
+    const ancestorIds = segments.slice(0, -1).map((_, i) => segments.slice(0, i + 1).join("/"));
+    set((state) => {
+      const nextExpanded = new Set(state.expandedGenreIds);
+      ancestorIds.forEach((id) => nextExpanded.add(id));
+      return {
+        selectedGenreId: node.id,
+        lastSelectedGenreId: node.id,
+        expandedGenreIds: nextExpanded,
+        suggestion: null,
+        detailAlbum: null,
+        browseArtistName: null,
+        browseYear: null,
+        searchQuery: null,
+        activeSavedSearchName: null,
+      };
+    });
+    const fetch = getAlbumsForGenreNames([node.name]);
+    if (get().sidebarMode === "favourites") {
+      fetch
+        .then((albums) => {
+          const favs = albums.filter((a) => a.isFavourite);
+          set((state) => ({ albums: sortAlbums(favs, state.albumSortOrder) }));
+        })
+        .catch(() => {});
+    } else {
+      fetch
+        .then((albums) => set((state) => ({ albums: sortAlbums(albums, state.albumSortOrder) })))
+        .catch(() => {});
     }
   },
 

@@ -4,27 +4,35 @@ import type { GenreNode } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useGenreDebugStore } from "./GenreDebugPanel";
-import { IconChevronRight } from "./Icons";
+import { IconTriangleFilled, IconChevronOpenDown } from "./Icons";
 
 interface FlatRow {
   node: GenreNode;
   depth: number;
   hasChildren: boolean;
+  isLastChild: boolean;
+  continuationMask: boolean[];
 }
 
-function flattenTree(nodes: GenreNode[], expanded: Set<string>, depth = 0): FlatRow[] {
+function flattenTree(
+  nodes: GenreNode[],
+  expanded: Set<string>,
+  depth = 0,
+  mask: boolean[] = [],
+): FlatRow[] {
   const rows: FlatRow[] = [];
-  for (const node of nodes) {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
     const hasChildren = !!node.children?.length;
-    rows.push({ node, depth, hasChildren });
+    const isLastChild = i === nodes.length - 1;
+    rows.push({ node, depth, hasChildren, isLastChild, continuationMask: mask });
     if (hasChildren && expanded.has(node.id)) {
-      rows.push(...flattenTree(node.children!, expanded, depth + 1));
+      rows.push(...flattenTree(node.children!, expanded, depth + 1, [...mask, !isLastChild]));
     }
   }
   return rows;
 }
 
-/** Flatten the tree into an A–Z list of every genre with albums. */
 function flattenToAZ(nodes: GenreNode[]): FlatRow[] {
   const byName = new Map<string, GenreNode>();
   const collect = (list: GenreNode[]) => {
@@ -42,7 +50,13 @@ function flattenToAZ(nodes: GenreNode[]): FlatRow[] {
   collect(nodes);
   return [...byName.values()]
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((node) => ({ node, depth: 0, hasChildren: false }));
+    .map((node) => ({
+      node,
+      depth: 0,
+      hasChildren: false,
+      isLastChild: true,
+      continuationMask: [],
+    }));
 }
 
 export default function GenreTreeView() {
@@ -56,6 +70,7 @@ export default function GenreTreeView() {
   const expandAll = useLibraryStore((s) => s.expandAll);
   const collapseAll = useLibraryStore((s) => s.collapseAll);
   const selectGenre = useLibraryStore((s) => s.selectGenre);
+  const selectGenreOnly = useLibraryStore((s) => s.selectGenreOnly);
   const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const loadAllAlbums = useLibraryStore((s) => s.loadAllAlbums);
   const loadFavouriteAlbums = useLibraryStore((s) => s.loadFavouriteAlbums);
@@ -97,13 +112,10 @@ export default function GenreTreeView() {
     virtualizer.measure();
   }, [effectiveRowHeight, virtualizer]);
 
-  // Reset scroll when switching between flat and hierarchical mode.
   useEffect(() => {
     if (parentRef.current) parentRef.current.scrollTop = 0;
   }, [flatGenres]);
 
-  // Scroll the selected genre into view when it changes. The "All" row
-  // is virtual index 0, so the data row's virtual index is `rowIdx + 1`.
   useEffect(() => {
     if (!selectedGenreId || selectedGenreId === "__all__") return;
     const rowIdx = rows.findIndex((r) => r.node.id === selectedGenreId);
@@ -122,20 +134,19 @@ export default function GenreTreeView() {
     );
   }
 
-  const rowStyle = (depth: number): React.CSSProperties => ({
+  const rowStyle: React.CSSProperties = {
     position: "absolute",
     left: 0,
     right: 0,
     height: effectiveRowHeight,
     display: "flex",
     alignItems: "center",
-    paddingLeft: padH + depth * indentDepth,
+    paddingLeft: padH,
     paddingRight: padH,
     fontSize: textSize,
     cursor: "pointer",
     whiteSpace: "nowrap",
-    overflow: "hidden",
-  });
+  };
 
   const chevronStyle: React.CSSProperties = {
     width: chevronWidth,
@@ -161,7 +172,7 @@ export default function GenreTreeView() {
               <div
                 key="__all__"
                 className={`genre-row${selectedGenreId === "__all__" ? " selected" : ""}`}
-                style={{ ...rowStyle(0), top: vItem.start }}
+                style={{ ...rowStyle, top: vItem.start }}
                 onClick={() => {
                   set({ selectedGenreId: "__all__" });
                   if (sidebarMode === "favourites") {
@@ -175,14 +186,14 @@ export default function GenreTreeView() {
                   <span style={{ width: chevronWidth, flexShrink: 0 }} />
                 ) : (
                   <span
-                    className={`genre-chevron${allExpanded ? " expanded" : ""}`}
+                    className="genre-chevron-toggle"
                     style={chevronStyle}
                     onClick={(e) => {
                       e.stopPropagation();
                       allExpanded ? collapseAll() : expandAll();
                     }}
                   >
-                    <IconChevronRight />
+                    {allExpanded ? <IconChevronOpenDown /> : <IconTriangleFilled />}
                   </span>
                 )}
                 <span className="genre-name" style={{ fontWeight: 600 }}>
@@ -196,33 +207,85 @@ export default function GenreTreeView() {
           const row = rows[vItem.index - 1];
           const isExpanded = expandedGenreIds.has(row.node.id);
           const isSelected = selectedGenreId === row.node.id;
+          const showDualCount =
+            !flatGenres &&
+            row.hasChildren &&
+            row.node.albumCount > 0 &&
+            row.node.deduplicatedTotalCount > 0 &&
+            row.node.albumCount !== row.node.deduplicatedTotalCount;
 
           return (
             <div
               key={row.node.id}
               className={`genre-row${isSelected ? " selected" : ""}`}
-              style={{ ...rowStyle(row.depth), top: vItem.start }}
+              style={{ ...rowStyle, top: vItem.start }}
               onClick={() => selectGenre(row.node)}
             >
+              {!flatGenres &&
+                row.depth > 0 &&
+                Array.from({ length: row.depth }, (_, i) => {
+                  const isElbow = i === row.depth - 1;
+                  const continues = isElbow ? !row.isLastChild : row.continuationMask[i + 1];
+                  return (
+                    <span
+                      key={i}
+                      className={[
+                        "genre-guide",
+                        isElbow ? "guide--elbow" : "",
+                        continues ? "guide--continues" : "",
+                        isElbow && !row.hasChildren ? "guide--leaf" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      style={{ width: indentDepth }}
+                    />
+                  );
+                })}
               {row.hasChildren ? (
                 <span
-                  className={`genre-chevron${isExpanded ? " expanded" : ""}`}
+                  className="genre-chevron-toggle"
                   style={chevronStyle}
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleGenreExpanded(row.node.id);
                   }}
                 >
-                  <IconChevronRight />
+                  {isExpanded ? <IconChevronOpenDown /> : <IconTriangleFilled />}
                 </span>
               ) : (
                 <span style={{ width: chevronWidth, flexShrink: 0 }} />
               )}
               <span className="genre-name">{row.node.name}</span>
-              {(flatGenres ? row.node.albumCount : row.node.deduplicatedTotalCount) > 0 && (
-                <span className="genre-count">
-                  {flatGenres ? row.node.albumCount : row.node.deduplicatedTotalCount}
-                </span>
+              {showDualCount ? (
+                <>
+                  <span
+                    className="genre-count genre-count-link"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selectGenreOnly(row.node);
+                    }}
+                    title={`${row.node.name} only`}
+                  >
+                    {row.node.albumCount}
+                  </span>
+                  <span className="genre-count genre-count-sep">/</span>
+                  <span
+                    className="genre-count genre-count-link"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selectGenre(row.node);
+                    }}
+                    title={`${row.node.name} and all children`}
+                  >
+                    {row.node.deduplicatedTotalCount}
+                  </span>
+                </>
+              ) : (
+                (flatGenres ? row.node.albumCount : row.node.deduplicatedTotalCount) > 0 && (
+                  <span className="genre-count">
+                    {flatGenres ? row.node.albumCount : row.node.deduplicatedTotalCount}
+                  </span>
+                )
               )}
             </div>
           );
