@@ -2,6 +2,7 @@ package com.ramus.iosbridge
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -240,22 +241,29 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private fun ensurePostNotificationsPermission() {
-        // Lock-screen / notification widget needs POST_NOTIFICATIONS on
-        // Android 13+. Audio still plays without it; the controls just
-        // won't render. The permission dialog is a one-shot system UI;
-        // we don't need the result back since the foreground service
-        // promotion doesn't depend on it.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (activity.isFinishing || activity.isDestroyed) return
         if (ContextCompat.checkSelfPermission(
                 activity,
                 Manifest.permission.POST_NOTIFICATIONS,
             ) == PackageManager.PERMISSION_GRANTED
         ) return
-        ActivityCompat.requestPermissions(
-            activity,
-            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-            POST_NOTIFICATIONS_REQUEST_CODE,
-        )
+
+        AlertDialog.Builder(activity)
+            .setTitle("Lock Screen Controls")
+            .setMessage(
+                "Ramus needs notification permission to show album art " +
+                    "and playback controls on your lock screen."
+            )
+            .setPositiveButton("Allow") { _, _ ->
+                ActivityCompat.requestPermissions(
+                    activity,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    POST_NOTIFICATIONS_REQUEST_CODE,
+                )
+            }
+            .setNegativeButton("Not Now", null)
+            .show()
     }
 
     @Command

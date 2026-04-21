@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { pushBackHandler } from "../lib/backHandler";
 import { useEdgeSwipeBack } from "./useEdgeSwipeBack";
 import MobileToolbar, { type MobileView } from "./MobileToolbar";
 import MobileGenreTree from "./MobileGenreTree";
@@ -57,6 +58,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
 
   useEffect(() => {
     if (searchQuery !== null) setView("search");
+    else setView((v) => (v === "search" ? "genres" : v));
   }, [searchQuery]);
 
   useEffect(() => {
@@ -147,6 +149,20 @@ export default function MobileApp({ onOpenSettings }: Props) {
     (view === "artists" && !!selectedArtistId) ||
     !!selectedGenreId;
 
+  useEffect(() => {
+    return pushBackHandler(() => {
+      if (sheetExpanded) {
+        setSheetExpanded(false);
+        return true;
+      }
+      if (canGoBack) {
+        handleBack();
+        return true;
+      }
+      return false;
+    });
+  }, [sheetExpanded, canGoBack, handleBack]);
+
   const { containerRef, swipeX } = useEdgeSwipeBack(handleBack, canGoBack && !sheetExpanded);
 
   const bodyStyle =
@@ -157,7 +173,8 @@ export default function MobileApp({ onOpenSettings }: Props) {
   const renderBody = () => {
     if (detailAlbum) return <MobileAlbumDetail />;
 
-    if (view === "search") return <MobileSearch onBack={() => setView("genres")} />;
+    if (view === "search" && searchQuery !== null)
+      return <MobileSearch onBack={() => setView("genres")} />;
     if (view === "savedSearch") {
       const label = activeSavedSearchName ?? "Saved search";
       return <MobileAlbumGrid contextLabel={label} onBack={() => setView("genres")} />;

@@ -28,6 +28,7 @@ import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackgr
 import BreadcrumbDebugPanel from "./components/BreadcrumbDebugPanel";
 import MobileApp from "./mobile/MobileApp";
 import { applyAccent } from "./lib/accent";
+import { handleAndroidBack, pushBackHandler } from "./lib/backHandler";
 
 const initialPalette = randomPalette();
 const initialColors = initialPalette.colors;
@@ -97,6 +98,31 @@ export default function App() {
     setShowBreadcrumbDebug,
     toggleFocusMode,
   });
+
+  useEffect(() => {
+    if (!isMobile) return;
+    const handler = (e: Event) => {
+      if (handleAndroidBack()) e.preventDefault();
+    };
+    window.addEventListener("android-back-button", handler);
+    return () => window.removeEventListener("android-back-button", handler);
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!showDownloads) return;
+    return pushBackHandler(() => {
+      setShowDownloads(false);
+      return true;
+    });
+  }, [showDownloads]);
+
+  useEffect(() => {
+    if (!showSettings) return;
+    return pushBackHandler(() => {
+      setShowSettings(false);
+      return true;
+    });
+  }, [showSettings]);
 
   if (authed === null) {
     return (

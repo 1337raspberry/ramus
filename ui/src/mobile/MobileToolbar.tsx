@@ -1,8 +1,9 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { getFavouriteTracks, playTracks } from "../lib/commands";
+import { pushBackHandler } from "../lib/backHandler";
 import SavedSearchEditor from "../components/SavedSearchEditor";
 import SavedSearchPicker from "../components/SavedSearchPicker";
 import type { SavedSearch } from "../lib/types";
@@ -235,6 +236,22 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
     }
     onSelect(v);
   };
+
+  useEffect(() => {
+    if (!showEditor) return;
+    return pushBackHandler(() => {
+      setShowEditor(false);
+      return true;
+    });
+  }, [showEditor]);
+
+  useEffect(() => {
+    if (!showPicker) return;
+    return pushBackHandler(() => {
+      setShowPicker(false);
+      return true;
+    });
+  }, [showPicker]);
 
   const handleBrainTap = () => {
     if (savedSearches.length === 0) {
