@@ -60,7 +60,7 @@ function IconPerson() {
   );
 }
 
-function IconQuestion() {
+function IconDice() {
   return (
     <svg
       width="22"
@@ -68,29 +68,40 @@ function IconQuestion() {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2.2"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M9 9a3 3 0 0 1 6 0c0 1.5-1 2-2 2.5s-1 1-1 2" />
-      <circle cx="12" cy="17" r="1.1" fill="currentColor" stroke="none" />
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <circle cx="8.5" cy="8.5" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="8.5" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="8.5" cy="15.5" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="15.5" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
     </svg>
   );
 }
 
-function IconBrain() {
+function IconSave() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24">
-      <path
-        transform="matrix(0.6484295845997974, 0, 0, 0.6484295845997974, 0.6398176291793314, 17.486322188449847)"
-        d="M8.64-2.39C11.48-2.39 13.23-4.29 13.23-6.75C13.23-7.52 12.90-8.40 12.45-8.85C11.92-9.35 11.58-9.49 11.58-10.08C11.58-10.56 11.94-10.89 12.49-10.89C12.89-10.89 13.15-10.77 13.57-10.41C13.93-10.09 14.25-9.69 14.47-9.22C16.28-9.64 16.96-10.75 16.96-12.52C16.96-13.03 17.39-13.46 17.91-13.46C18.42-13.46 18.84-13.03 18.84-12.52C18.86-9.93 17.66-8.12 15.04-7.45C15.06-7.22 15.08-6.97 15.08-6.71C15.08-4.52 14.13-2.75 12.48-1.64C13.65-0.91 15.15-0.50 16.69-0.50C16.98-0.50 17.31-0.53 17.93-0.55C17.80-1.14 17.73-1.69 17.73-2.21C17.73-9.18 27.60-8.41 27.60-15.04C27.60-17.79 24.93-19.68 22.32-19.68C22.09-19.68 21.76-19.63 21.43-19.56C20.50-20.72 19.00-21.42 17.59-21.42C15.11-21.42 13.45-19.80 13.37-17.57C13.35-16.97 12.95-16.63 12.43-16.63C11.89-16.63 11.48-17.04 11.51-17.65C11.54-18.49 11.72-19.27 12.02-19.95C11.47-20.10 10.92-20.17 10.37-20.17C7.54-20.17 5.41-18.38 5.41-16.18C5.41-14.72 6.50-13.51 8.09-13.51C8.60-13.51 9.02-13.08 9.02-12.57C9.02-12.06 8.60-11.63 8.09-11.63C6.04-11.63 4.54-12.57 3.84-14.06C2.74-12.79 2.10-11.10 2.10-9.35C2.10-5.33 4.69-2.39 8.64-2.39ZM27.53 4.50C30.46 4.50 31.89 0.94 31.89-2.53C31.89-3.06 31.86-3.55 31.85-4.01C30.82-3.48 29.57-3.25 28.13-3.34C27.60-3.38 27.18-3.75 27.18-4.28C27.18-4.79 27.60-5.26 28.13-5.21C31.01-4.99 32.94-6.61 32.94-9.25C32.94-11.59 31.68-13.51 29.64-14.48C28.15-6.77 19.72-7.80 19.46-2.55C19.38-0.79 20.73 0.61 22.65 0.61C23.33 0.61 23.67 0.59 23.98 0.57C24.25 2.57 25.50 4.50 27.53 4.50Z"
-        fill="currentColor"
-      />
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+      <polyline points="17 21 17 13 7 13 7 21" />
+      <polyline points="7 3 7 8 15 8 15 3" />
     </svg>
   );
 }
 
-function IconShuffle() {
+function IconShuffleStar() {
   return (
     <svg
       width="22"
@@ -103,10 +114,15 @@ function IconShuffle() {
       strokeLinejoin="round"
     >
       <path d="M16 3h5v5" />
-      <path d="M4 20L21 3" />
+      <path d="M11 13L21 3" />
       <path d="M21 16v5h-5" />
       <path d="M15 15l6 6" />
-      <path d="M4 4l5 5" />
+      <path d="M4 4l3.5 3.5" />
+      <path
+        d="M5.5 14L6.74 17.5 10.5 17.56 7.46 19.8 8.56 23.3 5.5 21.05 2.44 23.3 3.54 19.8 0.5 17.56 4.26 17.5Z"
+        fill="currentColor"
+        stroke="none"
+      />
     </svg>
   );
 }
@@ -259,21 +275,21 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
           aria-label="Feelin' lucky"
           onClick={() => pick("suggestion")}
         >
-          <IconQuestion />
+          <IconDice />
         </button>
         <button
           className={`mobile-toolbar-btn${view === "savedSearch" ? " active" : ""}`}
           aria-label="Saved search"
           {...makeLongPress(handleBrainTap, () => setShowEditor(true))}
         >
-          <IconBrain />
+          <IconSave />
         </button>
         <button
           className="mobile-toolbar-btn"
           aria-label="Shuffle favourite tracks"
           onClick={shuffleFavourites}
         >
-          <IconShuffle />
+          <IconShuffleStar />
         </button>
         <button
           className={`mobile-toolbar-btn${view === "search" ? " active" : ""}`}
