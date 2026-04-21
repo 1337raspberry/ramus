@@ -127,6 +127,8 @@ pub struct MediaContainerResponse {
 pub struct MediaContainerBody {
     #[serde(rename = "Metadata")]
     pub metadata: Option<Vec<MediaItem>>,
+    #[serde(rename = "totalSize")]
+    pub total_size: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]

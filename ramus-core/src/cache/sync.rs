@@ -158,28 +158,40 @@ impl SyncEngine {
             cached_tracks = HashMap::new();
         }
 
-        on_progress(SyncProgress {
-            phase: SyncPhase::Artists,
-            current: 0,
-            total: 0,
-            detail: "Fetching artists...".into(),
-        });
+        let p = on_progress.clone();
         let artist_items = self
             .client
-            .fetch_all_items(library_key, 8, 200)
+            .fetch_all_items_with_progress(library_key, 8, 200, move |fetched, total| {
+                p(SyncProgress {
+                    phase: SyncPhase::Artists,
+                    current: fetched,
+                    total,
+                    detail: if total > 0 {
+                        format!("Fetching artists: {}/{}", fetched, total)
+                    } else {
+                        format!("Fetching artists: {}...", fetched)
+                    },
+                });
+            })
             .await?;
         let artist_map =
             self.sync_artists(&artist_items, &cached_artists, incremental, on_progress.as_ref())?;
 
-        on_progress(SyncProgress {
-            phase: SyncPhase::Albums,
-            current: 0,
-            total: 0,
-            detail: "Fetching albums...".into(),
-        });
+        let p = on_progress.clone();
         let album_items = self
             .client
-            .fetch_all_items(library_key, 9, 200)
+            .fetch_all_items_with_progress(library_key, 9, 200, move |fetched, total| {
+                p(SyncProgress {
+                    phase: SyncPhase::Albums,
+                    current: fetched,
+                    total,
+                    detail: if total > 0 {
+                        format!("Fetching albums: {}/{}", fetched, total)
+                    } else {
+                        format!("Fetching albums: {}...", fetched)
+                    },
+                });
+            })
             .await?;
         let (album_map, changed_source_ids) = self.sync_albums(
             &album_items,
@@ -189,15 +201,21 @@ impl SyncEngine {
             on_progress.as_ref(),
         )?;
 
-        on_progress(SyncProgress {
-            phase: SyncPhase::Tracks,
-            current: 0,
-            total: 0,
-            detail: "Fetching tracks...".into(),
-        });
+        let p = on_progress.clone();
         let track_items = self
             .client
-            .fetch_all_items(library_key, 10, 200)
+            .fetch_all_items_with_progress(library_key, 10, 200, move |fetched, total| {
+                p(SyncProgress {
+                    phase: SyncPhase::Tracks,
+                    current: fetched,
+                    total,
+                    detail: if total > 0 {
+                        format!("Fetching tracks: {}/{}", fetched, total)
+                    } else {
+                        format!("Fetching tracks: {}...", fetched)
+                    },
+                });
+            })
             .await?;
         self.sync_tracks(
             &track_items,
@@ -285,7 +303,7 @@ impl SyncEngine {
                 phase: SyncPhase::Artists,
                 current: end,
                 total,
-                detail: format!("Artists: {}/{}", end, total),
+                detail: format!("Saving artists: {}/{}", end, total),
             });
         }
 
@@ -393,7 +411,7 @@ impl SyncEngine {
                 phase: SyncPhase::Albums,
                 current: end,
                 total,
-                detail: format!("Albums: {}/{}", end, total),
+                detail: format!("Saving albums: {}/{}", end, total),
             });
         }
 
@@ -521,7 +539,7 @@ impl SyncEngine {
                 phase: SyncPhase::Tracks,
                 current: end,
                 total,
-                detail: format!("Tracks: {}/{}", end, total),
+                detail: format!("Saving tracks: {}/{}", end, total),
             });
         }
 
@@ -550,6 +568,13 @@ impl SyncEngine {
         if total == 0 {
             return Ok(());
         }
+
+        on_progress(SyncProgress {
+            phase: SyncPhase::DeepGenres,
+            current: 0,
+            total,
+            detail: format!("Genre sync: 0/{}", total),
+        });
 
         let semaphore = Arc::new(Semaphore::new(DEEP_GENRE_CONCURRENCY));
         let completed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -581,7 +606,7 @@ impl SyncEngine {
                 let count = completed
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                     + 1;
-                if count.is_multiple_of(50) || count == total {
+                if count.is_multiple_of(10) || count == total {
                     on_progress(SyncProgress {
                         phase: SyncPhase::DeepGenres,
                         current: count,

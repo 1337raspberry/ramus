@@ -517,8 +517,22 @@ impl PlexClient {
         item_type: i32,
         page_size: usize,
     ) -> Result<Vec<MediaItem>, PlexClientError> {
+        self.fetch_all_items_with_progress(library_key, item_type, page_size, |_, _| {})
+            .await
+    }
+
+    /// Like [`fetch_all_items`] but calls `on_page(fetched_so_far, server_total)`
+    /// after each page so callers can report download progress.
+    pub async fn fetch_all_items_with_progress(
+        &self,
+        library_key: &str,
+        item_type: i32,
+        page_size: usize,
+        on_page: impl Fn(usize, usize),
+    ) -> Result<Vec<MediaItem>, PlexClientError> {
         let mut all_items = Vec::new();
         let mut offset: usize = 0;
+        let mut total_size: usize = 0;
         let max_pages = 5000;
         let page_size_str = page_size.to_string();
         let type_str = item_type.to_string();
@@ -535,12 +549,16 @@ impl PlexClient {
             let container: MediaContainerResponse =
                 serde_json::from_slice(&body).map_err(|_| PlexClientError::InvalidResponse)?;
 
+            if let Some(ts) = container.media_container.total_size {
+                total_size = ts;
+            }
             let items = container.media_container.metadata.unwrap_or_default();
             if items.is_empty() {
                 break;
             }
             let count = items.len();
             all_items.extend(items);
+            on_page(all_items.len(), total_size);
             if count < page_size {
                 break;
             }
