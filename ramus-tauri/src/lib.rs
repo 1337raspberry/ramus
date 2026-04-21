@@ -132,6 +132,7 @@ pub fn create_mpv_player(
     let mc1 = media_controls_ref.clone();
     let mc2 = media_controls_ref.clone();
     let mc3 = media_controls_ref.clone();
+    let mc4 = media_controls_ref.clone();
 
     let ph1 = prefetch_handle_ref.clone();
     let ph2 = prefetch_handle_ref.clone();
@@ -192,6 +193,18 @@ pub fn create_mpv_player(
                         queue_index: state.queue_index,
                     },
                 );
+
+                // Push metadata to lock screen immediately. With gapless
+                // prefetch, on_duration_change may have already fired (for
+                // the old current_track), and won't re-fire if the duration
+                // is unchanged — so this is the only chance to update.
+                if let Some(ref mc) = *mc4.lock() {
+                    if let Some(ref track) = state.current_track {
+                        let dur = p.duration();
+                        let meta = MediaMetadata::from_track(track, 0.0, dur, true);
+                        mc.update_metadata(&meta);
+                    }
+                }
 
                 // Nudge the prefetch worker: a natural advance shifts the
                 // lookahead window, potentially bringing a new uncached target
