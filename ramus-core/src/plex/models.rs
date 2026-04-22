@@ -29,6 +29,8 @@ pub struct MediaItem {
     pub grandparent_thumb: Option<String>,
     pub art: Option<String>,
     pub user_rating: Option<f64>,
+    pub rating_count: Option<i64>,
+    pub view_count: Option<i64>,
     pub studio: Option<String>,
     #[serde(rename = "Media")]
     pub media: Option<Vec<MediaInfo>>,
@@ -36,6 +38,10 @@ pub struct MediaItem {
     pub genre: Option<Vec<PlexTag>>,
     #[serde(rename = "Collection")]
     pub collection: Option<Vec<PlexTag>>,
+    #[serde(rename = "Country")]
+    pub country: Option<Vec<PlexTag>>,
+    #[serde(rename = "Format")]
+    pub format: Option<Vec<PlexTag>>,
     #[serde(rename = "UltraBlurColors")]
     pub ultra_blur_colors: Option<UltraBlurColors>,
 }

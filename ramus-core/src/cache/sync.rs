@@ -272,7 +272,7 @@ impl SyncEngine {
             }
         }
 
-        type ArtistTuple = (String, Option<String>, String, Option<String>, Option<String>, Option<i64>);
+        type ArtistTuple = (String, Option<String>, String, Option<String>, Option<String>, Option<String>, Option<i64>);
         let mut changed: Vec<ArtistTuple> = Vec::new();
 
         for item in items {
@@ -283,12 +283,18 @@ impl SyncEngine {
                     }
                 }
             }
+            let country = item
+                .country
+                .as_ref()
+                .map(|tags| tags.iter().map(|t| t.tag.as_str()).collect::<Vec<_>>().join(", "))
+                .filter(|s| !s.is_empty());
             changed.push((
                 item.title.clone(),
                 item.title_sort.clone(),
                 item.rating_key.clone(),
                 item.thumb.clone(),
                 item.summary.clone(),
+                country,
                 item.updated_at,
             ));
         }
@@ -384,6 +390,7 @@ impl SyncEngine {
                     last_viewed_at: item.last_viewed_at,
                     first_genre: api_genre.clone(),
                     first_collection: api_collection.clone(),
+                    view_count: item.view_count,
                 });
                 changed_ids.insert(item.rating_key.clone());
 
@@ -527,6 +534,7 @@ impl SyncEngine {
                 track_artist: item.original_title.clone(),
                 updated_at: item.updated_at,
                 file_size_bytes,
+                rating_count: item.rating_count,
             });
         }
 
@@ -650,6 +658,12 @@ async fn process_album_deep_sync(
         .as_ref()
         .and_then(|c| serde_json::to_string(c).ok());
 
+    let format = metadata
+        .format
+        .as_ref()
+        .and_then(|f| f.first())
+        .map(|f| f.tag.clone());
+
     cache.update_album_deep_metadata(
         album_id,
         &genre_names,
@@ -657,6 +671,7 @@ async fn process_album_deep_sync(
         metadata.user_rating,
         metadata.studio.as_deref(),
         colors_json.as_deref(),
+        format.as_deref(),
     )?;
 
     Ok(())

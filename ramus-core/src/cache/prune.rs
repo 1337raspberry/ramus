@@ -231,6 +231,7 @@ mod tests {
                 source_id.into(),
                 None,
                 None,
+                None,
                 Some(1000),
             )])
             .unwrap();
@@ -250,6 +251,7 @@ mod tests {
                 last_viewed_at: None,
                 first_genre: None,
                 first_collection: None,
+                view_count: None,
             }])
             .unwrap();
         *map.get(source_id).unwrap()
@@ -272,6 +274,7 @@ mod tests {
             track_artist: None,
             updated_at: Some(1000),
             file_size_bytes: None,
+            rating_count: None,
         }])
         .unwrap();
     }

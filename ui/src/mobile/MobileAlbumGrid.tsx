@@ -5,6 +5,7 @@ import { useLibraryStore } from "../stores/libraryStore";
 import { IconChevronLeft, IconChevronDown } from "../components/Icons";
 import type { AlbumSortOrder } from "../stores/libraryStore";
 import MobileAlbumCard from "./MobileAlbumCard";
+import { countryToFlag } from "../lib/countryFlag";
 
 let savedGridScroll = 0;
 let savedGridKey = "";
@@ -116,6 +117,18 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
     contextLabel,
   ]);
 
+  const artistCountryFlag = useMemo(() => {
+    if (browseArtistName) {
+      const match = artists.find((a) => a.name === browseArtistName);
+      return match?.country ? countryToFlag(match.country) : null;
+    }
+    if (sidebarMode === "artists" && selectedArtistId) {
+      const artist = artists.find((a) => a.sourceId === selectedArtistId);
+      return artist?.country ? countryToFlag(artist.country) : null;
+    }
+    return null;
+  }, [browseArtistName, sidebarMode, selectedArtistId, artists]);
+
   const isGenreContext =
     !searchQuery &&
     !browseArtistName &&
@@ -201,6 +214,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
             onClick={isGenreContext ? () => setShowBreadcrumb((s) => !s) : undefined}
           >
             <span>{title}</span>
+            {artistCountryFlag && <span className="adv-country-flag">{artistCountryFlag}</span>}
             {isGenreContext && (
               <span className={`mobile-breadcrumb-chevron${showBreadcrumb ? " open" : ""}`}>
                 <IconChevronDown size={14} />

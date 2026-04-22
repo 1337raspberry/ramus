@@ -6,6 +6,7 @@ import GenreTreeView from "./GenreTreeView";
 import { useGenreDebugStore } from "./GenreDebugPanel";
 import SavedSearchEditor from "./SavedSearchEditor";
 import SavedSearchPicker from "./SavedSearchPicker";
+import { countryToFlag } from "../lib/countryFlag";
 import type { SavedSearch } from "../lib/types";
 
 const TABS: { mode: SidebarMode; label: string }[] = [
@@ -23,7 +24,7 @@ function ArtistList({
   selectedArtistId,
   selectArtist,
 }: {
-  artists: { sourceId: string; name: string }[];
+  artists: { sourceId: string; name: string; country?: string | null }[];
   selectedArtistId: string | null;
   selectArtist: (id: string) => void;
 }) {
@@ -83,7 +84,16 @@ function ArtistList({
               }}
               onClick={() => selectArtist(artist.sourceId)}
             >
-              <span style={{ width: chevronWidth, flexShrink: 0 }} />
+              <span
+                style={{
+                  width: chevronWidth,
+                  flexShrink: 0,
+                  textAlign: "center",
+                  fontSize: textSize,
+                }}
+              >
+                {artist.country ? (countryToFlag(artist.country) ?? "") : ""}
+              </span>
               <span className="genre-name">{artist.name}</span>
             </div>
           );

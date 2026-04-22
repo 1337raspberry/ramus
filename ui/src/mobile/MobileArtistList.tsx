@@ -1,5 +1,6 @@
 import { useLibraryStore } from "../stores/libraryStore";
 import { IconChevronRight } from "../components/Icons";
+import { countryToFlag } from "../lib/countryFlag";
 import MobileSettingsRow from "./MobileSettingsRow";
 
 interface Props {
@@ -21,6 +22,9 @@ export default function MobileArtistList({ onOpenSettings }: Props) {
             className="mobile-artist-row"
             onClick={() => selectArtist(a.sourceId)}
           >
+            <span className="mobile-artist-flag">
+              {a.country ? (countryToFlag(a.country) ?? "") : ""}
+            </span>
             <span className="mobile-artist-name">{a.name}</span>
             <IconChevronRight />
           </button>

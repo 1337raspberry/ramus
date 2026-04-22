@@ -81,7 +81,7 @@ impl CacheDatabase {
             "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
                     al.title, al.sourceId, t.trackNumber, t.durationMs,
                     t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
-                    t.fileSizeBytes
+                    t.fileSizeBytes, t.ratingCount
              FROM tracks_fts fts
              JOIN tracks t ON t.id = fts.rowid
              JOIN albums al ON al.id = t.albumId
@@ -104,7 +104,8 @@ impl CacheDatabase {
         let pattern = format!("%{}%", escape_like(query));
         let mut stmt = conn.prepare(
             "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
-                    a.rating, a.studio, a.addedAt, a.lastViewedAt
+                    a.rating, a.studio, a.addedAt, a.lastViewedAt,
+                    a.viewCount, a.format, ar.country
              FROM albums a
              JOIN artists ar ON ar.id = a.artistId
              WHERE a.title LIKE ?1 ESCAPE '\\'

@@ -597,8 +597,8 @@ mod tests {
     fn seed_test_data(db: &CacheDatabase) {
         let artist_map = db
             .batch_upsert_artists(&[
-                ("Radiohead".into(), None, "artist-1".into(), None, None, None),
-                ("Slayer".into(), None, "artist-2".into(), None, None, None),
+                ("Radiohead".into(), None, "artist-1".into(), None, None, None, None),
+                ("Slayer".into(), None, "artist-2".into(), None, None, None, None),
             ])
             .unwrap();
         let radiohead_id = *artist_map.get("artist-1").unwrap();
@@ -617,6 +617,7 @@ mod tests {
                     last_viewed_at: None,
                     first_genre: None,
                     first_collection: None,
+                    view_count: None,
                 },
                 AlbumUpsertRow {
                     title: "Reign in Blood".into(),
@@ -629,6 +630,7 @@ mod tests {
                     last_viewed_at: None,
                     first_genre: None,
                     first_collection: None,
+                    view_count: None,
                 },
                 AlbumUpsertRow {
                     title: "Kid A".into(),
@@ -641,6 +643,7 @@ mod tests {
                     last_viewed_at: None,
                     first_genre: None,
                     first_collection: None,
+                    view_count: None,
                 },
             ])
             .unwrap();
@@ -665,6 +668,7 @@ mod tests {
                 track_artist: None,
                 updated_at: None,
                 file_size_bytes: None,
+                rating_count: None,
             },
             TrackUpsertRow {
                 title: "Karma Police".into(),
@@ -682,6 +686,7 @@ mod tests {
                 track_artist: None,
                 updated_at: None,
                 file_size_bytes: None,
+                rating_count: None,
             },
             TrackUpsertRow {
                 title: "Angel of Death".into(),
@@ -699,6 +704,7 @@ mod tests {
                 track_artist: None,
                 updated_at: None,
                 file_size_bytes: None,
+                rating_count: None,
             },
             TrackUpsertRow {
                 title: "Raining Blood".into(),
@@ -716,6 +722,7 @@ mod tests {
                 track_artist: None,
                 updated_at: None,
                 file_size_bytes: None,
+                rating_count: None,
             },
             TrackUpsertRow {
                 title: "Everything In Its Right Place".into(),
@@ -733,6 +740,7 @@ mod tests {
                 track_artist: None,
                 updated_at: None,
                 file_size_bytes: None,
+                rating_count: None,
             },
         ])
         .unwrap();
@@ -837,7 +845,7 @@ mod tests {
 
         // Add a Blackgaze-tagged album next to the existing Metal one.
         let artist_map = db
-            .batch_upsert_artists(&[("Deafheaven".into(), None, "artist-3".into(), None, None, None)])
+            .batch_upsert_artists(&[("Deafheaven".into(), None, "artist-3".into(), None, None, None, None)])
             .unwrap();
         let deafheaven_id = *artist_map.get("artist-3").unwrap();
         let album_map = db
@@ -852,6 +860,7 @@ mod tests {
                 last_viewed_at: None,
                 first_genre: None,
                 first_collection: None,
+                view_count: None,
             }])
             .unwrap();
         let sunbather_id = *album_map.get("album-4").unwrap();
@@ -1046,7 +1055,7 @@ mod tests {
     fn test_fuzzy_rejects_short_false_positives() {
         let (db, engine) = setup();
         let adults_artist_id = *db
-            .batch_upsert_artists(&[("Bomb the Music Industry!".into(), None, "artist-btmi".into(), None, None, None)])
+            .batch_upsert_artists(&[("Bomb the Music Industry!".into(), None, "artist-btmi".into(), None, None, None, None)])
             .unwrap()
             .get("artist-btmi")
             .unwrap();
@@ -1062,6 +1071,7 @@ mod tests {
                 last_viewed_at: None,
                 first_genre: None,
                 first_collection: None,
+                view_count: None,
             }])
             .unwrap()
             .get("album-adults")
@@ -1083,6 +1093,7 @@ mod tests {
                 track_artist: None,
                 updated_at: None,
                 file_size_bytes: None,
+                rating_count: None,
             },
             TrackUpsertRow {
                 title: "Salt".into(),
@@ -1100,6 +1111,7 @@ mod tests {
                 track_artist: None,
                 updated_at: None,
                 file_size_bytes: None,
+                rating_count: None,
             },
             TrackUpsertRow {
                 title: "Souls".into(),
@@ -1117,6 +1129,7 @@ mod tests {
                 track_artist: None,
                 updated_at: None,
                 file_size_bytes: None,
+                rating_count: None,
             },
         ])
         .unwrap();
@@ -1154,7 +1167,7 @@ mod tests {
     fn test_fuzzy_album_fallback_finds_typo() {
         let (db, engine) = setup();
         let artist_id = *db
-            .batch_upsert_artists(&[("Bomb the Music Industry!".into(), None, "artist-btmi".into(), None, None, None)])
+            .batch_upsert_artists(&[("Bomb the Music Industry!".into(), None, "artist-btmi".into(), None, None, None, None)])
             .unwrap()
             .get("artist-btmi")
             .unwrap();
@@ -1169,6 +1182,7 @@ mod tests {
             last_viewed_at: None,
             first_genre: None,
             first_collection: None,
+            view_count: None,
         }])
         .unwrap();
 
@@ -1208,7 +1222,7 @@ mod tests {
     fn test_fuzzy_cross_field_track_match() {
         let (db, engine) = setup();
         let artist_id = *db
-            .batch_upsert_artists(&[("Bomb the Music Industry!".into(), None, "artist-btmi".into(), None, None, None)])
+            .batch_upsert_artists(&[("Bomb the Music Industry!".into(), None, "artist-btmi".into(), None, None, None, None)])
             .unwrap()
             .get("artist-btmi")
             .unwrap();
@@ -1224,6 +1238,7 @@ mod tests {
                 last_viewed_at: None,
                 first_genre: None,
                 first_collection: None,
+                view_count: None,
             }])
             .unwrap()
             .get("album-adults")
@@ -1244,6 +1259,7 @@ mod tests {
             track_artist: None,
             updated_at: None,
             file_size_bytes: None,
+            rating_count: None,
         }])
         .unwrap();
 

@@ -4,18 +4,19 @@ use rusqlite::params;
 
 use super::db::{CacheDatabase, CacheError};
 
-/// `(name, sortName, sourceId, artUrl, summary, updatedAt)`
+/// `(name, sortName, sourceId, artUrl, summary, country, updatedAt)`
 pub type ArtistUpsertRow = (
     String,
     Option<String>,
     String,
     Option<String>,
     Option<String>,
+    Option<String>,
     Option<i64>,
 );
 
-/// `(id, name, sourceId, artUrl)`
-pub type ArtistRow = (i64, String, String, Option<String>);
+/// `(id, name, sourceId, artUrl, country)`
+pub type ArtistRow = (i64, String, String, Option<String>, Option<String>);
 
 #[derive(Debug, Clone)]
 pub struct AlbumUpsertRow {
@@ -38,6 +39,7 @@ pub struct AlbumUpsertRow {
     /// sentinel pattern as `first_genre` — detects collection-only edits
     /// that don't bump `updatedAt`.
     pub first_collection: Option<String>,
+    pub view_count: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -57,6 +59,7 @@ pub struct TrackUpsertRow {
     pub track_artist: Option<String>,
     pub updated_at: Option<i64>,
     pub file_size_bytes: Option<i64>,
+    pub rating_count: Option<i64>,
 }
 
 impl CacheDatabase {
@@ -71,20 +74,21 @@ impl CacheDatabase {
 
         {
             let mut stmt = tx.prepare_cached(
-                "INSERT INTO artists (name, sortName, sourceId, artUrl, summary, updatedAt)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO artists (name, sortName, sourceId, artUrl, summary, country, updatedAt)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(sourceId) DO UPDATE SET
                      name = excluded.name,
                      sortName = excluded.sortName,
                      artUrl = excluded.artUrl,
                      summary = excluded.summary,
+                     country = excluded.country,
                      updatedAt = excluded.updatedAt
                  RETURNING id, sourceId",
             )?;
 
-            for (name, sort_name, source_id, art_url, summary, updated_at) in items {
+            for (name, sort_name, source_id, art_url, summary, country, updated_at) in items {
                 let row = stmt.query_row(
-                    params![name, sort_name, source_id, art_url, summary, updated_at],
+                    params![name, sort_name, source_id, art_url, summary, country, updated_at],
                     |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
                 )?;
                 map.insert(row.1, row.0);
@@ -107,8 +111,8 @@ impl CacheDatabase {
 
         {
             let mut stmt = tx.prepare_cached(
-                "INSERT INTO albums (title, artistId, year, sourceId, artUrl, updatedAt, addedAt, lastViewedAt, firstGenre, firstCollection)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                "INSERT INTO albums (title, artistId, year, sourceId, artUrl, updatedAt, addedAt, lastViewedAt, firstGenre, firstCollection, viewCount)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                  ON CONFLICT(sourceId) DO UPDATE SET
                      title = excluded.title,
                      artistId = excluded.artistId,
@@ -120,7 +124,8 @@ impl CacheDatabase {
                      addedAt = COALESCE(excluded.addedAt, albums.addedAt),
                      lastViewedAt = COALESCE(excluded.lastViewedAt, albums.lastViewedAt),
                      firstGenre = COALESCE(excluded.firstGenre, albums.firstGenre),
-                     firstCollection = COALESCE(excluded.firstCollection, albums.firstCollection)
+                     firstCollection = COALESCE(excluded.firstCollection, albums.firstCollection),
+                     viewCount = excluded.viewCount
                  RETURNING id, sourceId",
             )?;
 
@@ -137,6 +142,7 @@ impl CacheDatabase {
                         row.last_viewed_at,
                         row.first_genre,
                         row.first_collection,
+                        row.view_count,
                     ],
                     |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
                 )?;
@@ -155,8 +161,8 @@ impl CacheDatabase {
 
         {
             let mut stmt = tx.prepare_cached(
-                "INSERT INTO tracks (title, albumId, artistId, trackNumber, discNumber, durationMs, sourceId, codec, partKey, streamId, userRating, bitrate, trackArtist, updatedAt, fileSizeBytes)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                "INSERT INTO tracks (title, albumId, artistId, trackNumber, discNumber, durationMs, sourceId, codec, partKey, streamId, userRating, bitrate, trackArtist, updatedAt, fileSizeBytes, ratingCount)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
                  ON CONFLICT(sourceId) DO UPDATE SET
                      title = excluded.title,
                      albumId = excluded.albumId,
@@ -171,7 +177,8 @@ impl CacheDatabase {
                      bitrate = excluded.bitrate,
                      trackArtist = excluded.trackArtist,
                      updatedAt = excluded.updatedAt,
-                     fileSizeBytes = COALESCE(excluded.fileSizeBytes, tracks.fileSizeBytes)
+                     fileSizeBytes = COALESCE(excluded.fileSizeBytes, tracks.fileSizeBytes),
+                     ratingCount = excluded.ratingCount
                  RETURNING id",
             )?;
 
@@ -197,6 +204,7 @@ impl CacheDatabase {
                         row.track_artist,
                         row.updated_at,
                         row.file_size_bytes,
+                        row.rating_count,
                     ],
                     |r| r.get(0),
                 )?;

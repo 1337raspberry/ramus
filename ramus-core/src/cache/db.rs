@@ -226,6 +226,42 @@ impl CacheDatabase {
             conn.execute("ALTER TABLE tracks ADD COLUMN fileSizeBytes INTEGER", [])?;
         }
 
+        let has_country: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('artists') WHERE name = 'country'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_country == 0 {
+            conn.execute("ALTER TABLE artists ADD COLUMN country TEXT", [])?;
+        }
+
+        let has_view_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('albums') WHERE name = 'viewCount'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_view_count == 0 {
+            conn.execute("ALTER TABLE albums ADD COLUMN viewCount INTEGER", [])?;
+        }
+
+        let has_format: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('albums') WHERE name = 'format'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_format == 0 {
+            conn.execute("ALTER TABLE albums ADD COLUMN format TEXT", [])?;
+        }
+
+        let has_rating_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name = 'ratingCount'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_rating_count == 0 {
+            conn.execute("ALTER TABLE tracks ADD COLUMN ratingCount INTEGER", [])?;
+        }
+
         Ok(())
     }
 
@@ -271,7 +307,8 @@ impl CacheDatabase {
         let placeholders: Vec<String> = (1..=genre_names.len()).map(|i| format!("?{i}")).collect();
         let sql = format!(
             "SELECT DISTINCT a.sourceId, a.title, ar.name, a.year, a.artUrl,
-                    a.rating, a.studio, a.addedAt, a.lastViewedAt
+                    a.rating, a.studio, a.addedAt, a.lastViewedAt,
+                    a.viewCount, a.format, ar.country
              FROM albums a
              JOIN artists ar ON ar.id = a.artistId
              JOIN album_genres ag ON ag.albumId = a.id
@@ -293,7 +330,8 @@ impl CacheDatabase {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
-                    a.rating, a.studio, a.addedAt, a.lastViewedAt
+                    a.rating, a.studio, a.addedAt, a.lastViewedAt,
+                    a.viewCount, a.format, ar.country
              FROM albums a
              JOIN artists ar ON ar.id = a.artistId
              WHERE a.sourceId = ?1",
@@ -307,7 +345,8 @@ impl CacheDatabase {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
-                    a.rating, a.studio, a.addedAt, a.lastViewedAt
+                    a.rating, a.studio, a.addedAt, a.lastViewedAt,
+                    a.viewCount, a.format, ar.country
              FROM albums a
              JOIN artists ar ON ar.id = a.artistId
              WHERE a.year = ?1
@@ -322,7 +361,8 @@ impl CacheDatabase {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
-                    a.rating, a.studio, a.addedAt, a.lastViewedAt
+                    a.rating, a.studio, a.addedAt, a.lastViewedAt,
+                    a.viewCount, a.format, ar.country
              FROM albums a
              JOIN artists ar ON ar.id = a.artistId
              WHERE ar.name = ?1 COLLATE NOCASE
@@ -337,7 +377,8 @@ impl CacheDatabase {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
-                    a.rating, a.studio, a.addedAt, a.lastViewedAt
+                    a.rating, a.studio, a.addedAt, a.lastViewedAt,
+                    a.viewCount, a.format, ar.country
              FROM albums a
              JOIN artists ar ON ar.id = a.artistId
              WHERE ar.sourceId = ?1
@@ -354,7 +395,7 @@ impl CacheDatabase {
             "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
                     al.title, al.sourceId, t.trackNumber, t.durationMs,
                     t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
-                    t.fileSizeBytes
+                    t.fileSizeBytes, t.ratingCount
              FROM tracks t
              JOIN albums al ON al.id = t.albumId
              JOIN artists ar ON ar.id = t.artistId
@@ -373,7 +414,7 @@ impl CacheDatabase {
             "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
                     al.title, al.sourceId, t.trackNumber, t.durationMs,
                     t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
-                    t.fileSizeBytes
+                    t.fileSizeBytes, t.ratingCount
              FROM tracks t
              JOIN albums al ON al.id = t.albumId
              JOIN artists ar ON ar.id = t.artistId
@@ -393,7 +434,7 @@ impl CacheDatabase {
             "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
                     al.title, al.sourceId, t.trackNumber, t.durationMs,
                     t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
-                    t.fileSizeBytes
+                    t.fileSizeBytes, t.ratingCount
              FROM tracks t
              JOIN albums al ON al.id = t.albumId
              JOIN artists ar ON ar.id = t.artistId
@@ -411,7 +452,8 @@ impl CacheDatabase {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
-                    a.rating, a.studio, a.addedAt, a.lastViewedAt
+                    a.rating, a.studio, a.addedAt, a.lastViewedAt,
+                    a.viewCount, a.format, ar.country
              FROM albums a
              JOIN artists ar ON ar.id = a.artistId
              WHERE a.rating >= 10.0
@@ -426,7 +468,8 @@ impl CacheDatabase {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
-                    a.rating, a.studio, a.addedAt, a.lastViewedAt
+                    a.rating, a.studio, a.addedAt, a.lastViewedAt,
+                    a.viewCount, a.format, ar.country
              FROM albums a
              JOIN artists ar ON ar.id = a.artistId
              ORDER BY ar.name COLLATE NOCASE, a.year",
@@ -439,7 +482,7 @@ impl CacheDatabase {
     pub fn all_artists(&self) -> Result<Vec<ArtistRow>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, name, sourceId, artUrl FROM artists ORDER BY name COLLATE NOCASE",
+            "SELECT id, name, sourceId, artUrl, country FROM artists ORDER BY name COLLATE NOCASE",
         )?;
         let rows = stmt
             .query_map([], |row| {
@@ -448,6 +491,7 @@ impl CacheDatabase {
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -459,7 +503,8 @@ impl CacheDatabase {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
-                    a.rating, a.studio, a.addedAt, a.lastViewedAt
+                    a.rating, a.studio, a.addedAt, a.lastViewedAt,
+                    a.viewCount, a.format, ar.country
              FROM albums a
              JOIN artists ar ON ar.id = a.artistId
              ORDER BY RANDOM() LIMIT 1",
@@ -483,7 +528,8 @@ impl CacheDatabase {
             let placeholders = (0..chunk.len()).map(|_| "?").collect::<Vec<_>>().join(",");
             let sql = format!(
                 "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
-                        a.rating, a.studio, a.addedAt, a.lastViewedAt
+                        a.rating, a.studio, a.addedAt, a.lastViewedAt,
+                    a.viewCount, a.format, ar.country
                  FROM albums a
                  JOIN artists ar ON ar.id = a.artistId
                  WHERE a.id IN ({})
@@ -573,13 +619,16 @@ impl CacheDatabase {
                     studio: row.get(6)?,
                     added_at: row.get(7)?,
                     last_viewed_at: row.get(8)?,
+                    view_count: row.get(9)?,
+                    format: row.get(10)?,
+                    artist_country: row.get(11)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(albums)
     }
 
-    /// Map a 15-column track row into a [`Track`].
+    /// Map a 16-column track row into a [`Track`].
     pub(super) fn map_track_row(row: &rusqlite::Row) -> rusqlite::Result<Track> {
         let rating: Option<f64> = row.get(11)?;
         Ok(Track {
@@ -601,6 +650,7 @@ impl CacheDatabase {
             bitrate: row.get(12)?,
             disc_number: row.get(13)?,
             file_size_bytes: row.get(14)?,
+            rating_count: row.get(15)?,
         })
     }
 }
@@ -621,6 +671,7 @@ mod tests {
                 name.into(),
                 None,
                 source_id.into(),
+                None,
                 None,
                 None,
                 Some(1000),
@@ -648,6 +699,7 @@ mod tests {
                 last_viewed_at: None,
                 first_genre: None,
                 first_collection: None,
+                view_count: None,
             }])
             .unwrap();
         *map.get(source_id).unwrap()
@@ -676,6 +728,7 @@ mod tests {
             track_artist: None,
             updated_at: Some(1000),
             file_size_bytes: None,
+            rating_count: None,
         }])
         .unwrap();
     }
@@ -694,6 +747,7 @@ mod tests {
                 "Radiohead (Updated)".into(),
                 None,
                 "ar1".into(),
+                None,
                 None,
                 None,
                 Some(2000),
@@ -727,6 +781,7 @@ mod tests {
                 last_viewed_at: None,
                 first_genre: None,
                 first_collection: None,
+                view_count: None,
             }])
             .unwrap();
 
@@ -788,6 +843,7 @@ mod tests {
                 format!("ar{}", i),
                 None,
                 None,
+                None,
                 Some(1000i64),
             ));
         }
@@ -808,6 +864,7 @@ mod tests {
                 last_viewed_at: None,
                 first_genre: None,
                 first_collection: None,
+                view_count: None,
             });
         }
         let album_map = db.batch_upsert_albums(&album_items).unwrap();
@@ -951,6 +1008,7 @@ mod tests {
             Some(8.0),
             Some("Parlophone"),
             Some(r##"{"topLeft":"#fff"}"##),
+            None,
         )
         .unwrap();
 
@@ -974,6 +1032,7 @@ mod tests {
             Some(8.0),
             Some("Parlophone"),
             None,
+            None,
         )
         .unwrap();
 
@@ -982,6 +1041,7 @@ mod tests {
             album_id,
             &["Rock".into()],
             &[],
+            None,
             None,
             None,
             None,
@@ -1069,6 +1129,7 @@ mod tests {
             Some(8.0),
             Some("Parlophone"),
             None,
+            None,
         )
         .unwrap();
 
@@ -1082,6 +1143,7 @@ mod tests {
             album_id,
             &["Rock".into()],
             &["Focus".into()],
+            None,
             None,
             None,
             None,

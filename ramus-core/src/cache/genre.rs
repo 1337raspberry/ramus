@@ -83,6 +83,7 @@ impl CacheDatabase {
 
     /// Atomically update album deep metadata (genres, collections, rating, studio, colors).
     /// `COALESCE` preserves existing values when new values are `NULL`.
+    #[allow(clippy::too_many_arguments)]
     pub fn update_album_deep_metadata(
         &self,
         album_id: i64,
@@ -91,6 +92,7 @@ impl CacheDatabase {
         rating: Option<f64>,
         studio: Option<&str>,
         colors_json: Option<&str>,
+        format: Option<&str>,
     ) -> Result<(), CacheError> {
         let conn = self.conn.lock();
         let tx = conn.unchecked_transaction()?;
@@ -99,9 +101,10 @@ impl CacheDatabase {
             "UPDATE albums SET
                 rating = COALESCE(?1, albums.rating),
                 studio = COALESCE(?2, albums.studio),
-                ultraBlurColors = COALESCE(?3, albums.ultraBlurColors)
-             WHERE id = ?4",
-            params![rating, studio, colors_json, album_id],
+                ultraBlurColors = COALESCE(?3, albums.ultraBlurColors),
+                format = COALESCE(?4, albums.format)
+             WHERE id = ?5",
+            params![rating, studio, colors_json, format, album_id],
         )?;
 
         tx.execute(

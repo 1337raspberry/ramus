@@ -25,6 +25,9 @@ export interface Album {
   studio: string | null;
   addedAt: number | null;
   lastViewedAt: number | null;
+  viewCount: number | null;
+  format: string | null;
+  artistCountry: string | null;
 }
 
 export interface Track {
@@ -44,6 +47,7 @@ export interface Track {
   discNumber: number | null;
   /// Bytes. Populated at sync time from the Plex Part response.
   fileSizeBytes: number | null;
+  ratingCount: number | null;
 }
 
 export interface ArtistInfo {
@@ -51,6 +55,7 @@ export interface ArtistInfo {
   name: string;
   sourceId: string;
   artUrl: string | null;
+  country: string | null;
 }
 
 export interface PlexServer {

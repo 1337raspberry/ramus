@@ -910,6 +910,7 @@ mod tests {
             bitrate: None,
             disc_number: None,
             file_size_bytes: None,
+            rating_count: None,
         }
     }
 

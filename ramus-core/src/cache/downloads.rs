@@ -271,6 +271,7 @@ mod tests {
                 "ar1".into(),
                 None,
                 None,
+                None,
                 Some(1000),
             )])
             .unwrap();
@@ -287,6 +288,7 @@ mod tests {
                 last_viewed_at: None,
                 first_genre: None,
                 first_collection: None,
+                view_count: None,
             }])
             .unwrap();
         let album_id = *album_map.get("al1").unwrap();
@@ -307,6 +309,7 @@ mod tests {
                 track_artist: None,
                 updated_at: Some(1000),
                 file_size_bytes: Some(42_000_000),
+                rating_count: None,
             },
             TrackUpsertRow {
                 title: "Karma Police".into(),
@@ -324,6 +327,7 @@ mod tests {
                 track_artist: None,
                 updated_at: Some(1000),
                 file_size_bytes: Some(30_000_000),
+                rating_count: None,
             },
         ])
         .unwrap();

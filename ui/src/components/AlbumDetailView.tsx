@@ -13,6 +13,7 @@ import { useDownloadsStore } from "../stores/downloadsStore";
 import { useConnectionStatus } from "../lib/useConnectionStatus";
 import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "./DownloadMenuItems";
 import { formatDuration, formatCodec } from "../lib/format";
+import { countryToFlag } from "../lib/countryFlag";
 import {
   IconChevronLeft,
   IconStarFilled,
@@ -152,6 +153,14 @@ export default function AlbumDetailView() {
             onClick={() => loadAlbumsForArtistName(album.artistName)}
           >
             {album.artistName}
+            {(() => {
+              const flag = album.artistCountry ? countryToFlag(album.artistCountry) : null;
+              return flag ? (
+                <span className="adv-country-flag" title={album.artistCountry!}>
+                  {flag}
+                </span>
+              ) : null;
+            })()}
           </div>
           {album.year && (
             <div className="adv-year adv-link" onClick={() => loadAlbumsForYear(album.year!)}>
@@ -162,6 +171,9 @@ export default function AlbumDetailView() {
             <div className="adv-genres">
               <FlowLayout genres={genres} onGenreClick={handleGenreClick} />
             </div>
+          )}
+          {album.format && album.format !== "Album" && (
+            <span className="adv-format-pill">{album.format}</span>
           )}
         </div>
         <button className="adv-hero-play" onClick={handlePlayAlbum} title="Play Album">

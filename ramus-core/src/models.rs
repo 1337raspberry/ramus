@@ -119,6 +119,9 @@ pub struct Album {
     pub studio: Option<String>,
     pub added_at: Option<i64>,
     pub last_viewed_at: Option<i64>,
+    pub view_count: Option<i64>,
+    pub format: Option<String>,
+    pub artist_country: Option<String>,
 }
 
 impl Album {
@@ -153,6 +156,7 @@ pub struct Track {
     /// column was added; downstream size estimates fall back to
     /// `bitrate × duration` in that case.
     pub file_size_bytes: Option<i64>,
+    pub rating_count: Option<i64>,
 }
 
 impl Track {
@@ -407,6 +411,7 @@ pub struct ArtistInfo {
     pub name: String,
     pub source_id: String,
     pub art_url: Option<String>,
+    pub country: Option<String>,
 }
 
 // --- GenreSource ---
@@ -553,6 +558,7 @@ mod tests {
             bitrate: None,
             disc_number: None,
             file_size_bytes: None,
+            rating_count: None,
         }
     }
 

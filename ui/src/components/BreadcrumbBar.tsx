@@ -2,10 +2,12 @@ import { useCallback, useMemo } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useBreadcrumbDebugStore } from "./BreadcrumbDebugPanel";
+import { countryToFlag } from "../lib/countryFlag";
 import type { GenreNode } from "../lib/types";
 
 interface Crumb {
   label: string;
+  flag?: string | null;
   onClick?: () => void;
 }
 
@@ -59,7 +61,9 @@ export default function BreadcrumbBar() {
     }
 
     if (browseArtistName) {
-      return [{ label: browseArtistName }];
+      const match = artists.find((a) => a.name === browseArtistName);
+      const flag = match?.country ? countryToFlag(match.country) : null;
+      return [{ label: browseArtistName, flag }];
     }
 
     if (browseYear) {
@@ -68,7 +72,8 @@ export default function BreadcrumbBar() {
 
     if (sidebarMode === "artists" && selectedArtistId) {
       const artist = artists.find((a) => a.sourceId === selectedArtistId);
-      return [{ label: artist?.name ?? "Artist" }];
+      const flag = artist?.country ? countryToFlag(artist.country) : null;
+      return [{ label: artist?.name ?? "Artist", flag }];
     }
 
     if (!selectedGenreId || selectedGenreId === "__all__") {
@@ -141,6 +146,7 @@ export default function BreadcrumbBar() {
                 onClick={crumb.onClick}
               >
                 {crumb.label}
+                {crumb.flag && <span className="crumb-flag">{crumb.flag}</span>}
               </span>
             </span>
           );

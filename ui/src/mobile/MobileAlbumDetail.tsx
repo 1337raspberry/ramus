@@ -4,6 +4,7 @@ import { usePlaybackStore } from "../stores/playbackStore";
 import { useArtUrl } from "../lib/useArtUrl";
 import { ART_SIZE, getAlbumGenres, insertNext, appendToQueue, getQueue } from "../lib/commands";
 import { formatDuration, formatCodec } from "../lib/format";
+import { countryToFlag } from "../lib/countryFlag";
 import {
   IconChevronLeft,
   IconStarFilled,
@@ -135,6 +136,14 @@ export default function MobileAlbumDetail() {
               onClick={() => loadAlbumsForArtistName(album.artistName)}
             >
               {album.artistName}
+              {(() => {
+                const flag = album.artistCountry ? countryToFlag(album.artistCountry) : null;
+                return flag ? (
+                  <span className="adv-country-flag" title={album.artistCountry!}>
+                    {flag}
+                  </span>
+                ) : null;
+              })()}
             </div>
             {album.year && (
               <div className="mobile-detail-year" onClick={() => loadAlbumsForYear(album.year!)}>
@@ -180,6 +189,11 @@ export default function MobileAlbumDetail() {
           <div className="mobile-detail-genres">
             <FlowLayout genres={genres} onGenreClick={handleGenreClick} />
           </div>
+        )}
+        {album.format && album.format !== "Album" && (
+          <span className="adv-format-pill" style={{ marginLeft: 16, marginBottom: 8 }}>
+            {album.format}
+          </span>
         )}
 
         <ul className="mobile-track-list">

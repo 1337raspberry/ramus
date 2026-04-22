@@ -216,11 +216,12 @@ pub async fn get_all_artists(state: State<'_, AppState>) -> CmdResult<Vec<Artist
     let rows = with_cache(&state, |db| db.all_artists())?;
     let mut artists: Vec<ArtistInfo> = rows
         .into_iter()
-        .map(|(id, name, source_id, art_url)| ArtistInfo {
+        .map(|(id, name, source_id, art_url, country)| ArtistInfo {
             id,
             name,
             source_id,
             art_url,
+            country,
         })
         .collect();
     if state.effective_offline() {
