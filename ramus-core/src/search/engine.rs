@@ -63,7 +63,18 @@ impl SearchEngine {
         if let Some(text) = query.free_text() {
             if !query.has_track_search() {
                 let track_results = self.search_tracks_by_text(text, album_ids.as_ref(), 10)?;
-                results.extend(track_results);
+
+                let best_album_score = results
+                    .iter()
+                    .filter(|r| r.kind == SearchResultKind::Album)
+                    .map(|r| r.score)
+                    .fold(f64::MAX, f64::min);
+
+                if best_album_score < 0.15 {
+                    results.extend(track_results.into_iter().filter(|r| r.score < 0.4));
+                } else {
+                    results.extend(track_results);
+                }
             }
         }
 
@@ -151,6 +162,15 @@ impl SearchEngine {
                     });
                 }
             }
+
+            if results.len() < 3 {
+                let fuzzy_albums = self.fuzzy_album_search(text, album_ids, &seen, limit)?;
+                for result in fuzzy_albums {
+                    if seen.insert(result.album_source_id.clone()) {
+                        results.push(result);
+                    }
+                }
+            }
         }
 
         // Filter-only query (genre/year/favourites): list matching albums.
@@ -221,10 +241,15 @@ impl SearchEngine {
             .join(" ");
 
         if !fts_tokens.is_empty() {
+            let query_lower = text.to_lowercase();
             let fts_results = self.db.search_tracks_enriched(&fts_tokens, album_ids, limit)?;
             for row in fts_results {
                 if seen.insert(row.id) {
-                    let score = match_score(&row.track_title, text);
+                    let score = if row.track_title.to_lowercase().contains(&query_lower) {
+                        match_score(&row.track_title, text)
+                    } else {
+                        0.4
+                    };
                     results.push(SearchResult {
                         id: format!("track-{}", row.id),
                         kind: SearchResultKind::Track,
@@ -281,6 +306,12 @@ impl SearchEngine {
 
         results.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
         results.truncate(limit);
+
+        if let Some(best_score) = results.first().map(|r| r.score) {
+            let max_acceptable = if best_score < 0.1 { 0.3 } else { 0.7 };
+            results.retain(|r| r.score <= max_acceptable);
+        }
+
         Ok(results)
     }
 
@@ -366,19 +397,18 @@ impl SearchEngine {
         let candidates = self.db.search_candidates(album_ids, 5000)?;
         let query_lower = text.to_lowercase();
 
-        let mut scored: Vec<(SearchResult, f64)> = Vec::new();
+        let mut scored: Vec<(SearchResult, f64, f64)> = Vec::new();
 
         for candidate in candidates {
             if excluding.contains(&candidate.id) {
                 continue;
             }
-            // Match only against track title — consistent with FTS5
-            // (which also only indexes titles). Matching short album
-            // names against longer queries inflates Jaro-Winkler scores
-            // and pulls in every track on that album as a false positive.
-            let similarity =
-                strsim::jaro_winkler(&candidate.track_title.to_lowercase(), &query_lower);
-            if similarity > 0.7 {
+            let title_sim = fuzzy_sim(&candidate.track_title.to_lowercase(), &query_lower);
+            let album_sim = fuzzy_sim(&candidate.album_title.to_lowercase(), &query_lower);
+            let artist_sim = fuzzy_sim(&candidate.artist_name.to_lowercase(), &query_lower);
+            let similarity = title_sim.max(album_sim).max(artist_sim);
+            if similarity > 0.75 {
+                let cross_field_penalty = if title_sim < similarity { 0.02 } else { 0.0 };
                 scored.push((
                     SearchResult {
                         id: format!("track-{}", candidate.id),
@@ -395,6 +425,7 @@ impl SearchEngine {
                         score: 0.0,
                     },
                     similarity,
+                    cross_field_penalty,
                 ));
             }
         }
@@ -404,8 +435,59 @@ impl SearchEngine {
         Ok(scored
             .into_iter()
             .take(50)
+            .map(|(mut result, similarity, penalty)| {
+                result.score = 0.5 + (1.0 - similarity) + penalty;
+                result
+            })
+            .collect())
+    }
+
+    fn fuzzy_album_search(
+        &self,
+        text: &str,
+        album_ids: Option<&HashSet<i64>>,
+        excluding: &HashSet<String>,
+        limit: usize,
+    ) -> Result<Vec<SearchResult>, crate::cache::db::CacheError> {
+        let candidates = self.db.search_album_candidates(album_ids, 2000)?;
+        let query_lower = text.to_lowercase();
+
+        let mut scored: Vec<(SearchResult, f64)> = Vec::new();
+
+        for candidate in candidates {
+            if excluding.contains(&candidate.album_source_id) {
+                continue;
+            }
+            let title_sim = fuzzy_sim(&candidate.album_title.to_lowercase(), &query_lower);
+            let artist_sim = fuzzy_sim(&candidate.artist_name.to_lowercase(), &query_lower);
+            let similarity = title_sim.max(artist_sim);
+            if similarity > 0.75 {
+                scored.push((
+                    SearchResult {
+                        id: format!("album-{}", candidate.album_source_id),
+                        kind: SearchResultKind::Album,
+                        album_source_id: candidate.album_source_id,
+                        album_title: candidate.album_title,
+                        artist_name: candidate.artist_name,
+                        year: candidate.year,
+                        album_art_path: candidate.art_url,
+                        track_source_id: None,
+                        track_title: None,
+                        track_artist: None,
+                        is_favourite: candidate.is_favourite,
+                        score: 0.0,
+                    },
+                    similarity,
+                ));
+            }
+        }
+
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+        Ok(scored
+            .into_iter()
+            .take(limit)
             .map(|(mut result, similarity)| {
-                // Offset by 0.5 so fuzzy scores rank below FTS5 results.
                 result.score = 0.5 + (1.0 - similarity);
                 result
             })
@@ -477,6 +559,26 @@ fn match_score(value: &str, query: &str) -> f64 {
     } else {
         0.05
     }
+}
+
+fn strip_punctuation(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect()
+}
+
+/// NDL similarity checking both the full string and individual words,
+/// with punctuation stripped. For multi-word values like "Paranoid Android",
+/// a query of "paranoyd" matches the word "Paranoid" rather than requiring
+/// similarity against the entire title.
+fn fuzzy_sim(value: &str, query: &str) -> f64 {
+    let clean = strip_punctuation(value);
+    let full = strsim::normalized_damerau_levenshtein(&clean, query);
+    let best_word = clean
+        .split_whitespace()
+        .map(|w| strsim::normalized_damerau_levenshtein(w, query))
+        .fold(0.0_f64, f64::max);
+    full.max(best_word)
 }
 
 #[cfg(test)]
@@ -938,5 +1040,222 @@ mod tests {
         let q = QueryParser::parse("col:Nonexistent");
         let results = engine.search(&q, 100).unwrap();
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_fuzzy_rejects_short_false_positives() {
+        let (db, engine) = setup();
+        let adults_artist_id = *db
+            .batch_upsert_artists(&[("Bomb the Music Industry!".into(), None, "artist-btmi".into(), None, None, None)])
+            .unwrap()
+            .get("artist-btmi")
+            .unwrap();
+        let adults_album_id = *db
+            .batch_upsert_albums(&[AlbumUpsertRow {
+                title: "Adults!!!".into(),
+                artist_id: adults_artist_id,
+                year: Some(2010),
+                source_id: "album-adults".into(),
+                art_url: None,
+                updated_at: None,
+                added_at: None,
+                last_viewed_at: None,
+                first_genre: None,
+                first_collection: None,
+            }])
+            .unwrap()
+            .get("album-adults")
+            .unwrap();
+        db.batch_upsert_tracks(&[
+            TrackUpsertRow {
+                title: "Fault".into(),
+                album_id: adults_album_id,
+                artist_id: adults_artist_id,
+                track_number: Some(1),
+                disc_number: Some(1),
+                duration_ms: Some(200000),
+                source_id: "track-fault".into(),
+                codec: None,
+                part_key: None,
+                stream_id: None,
+                user_rating: None,
+                bitrate: None,
+                track_artist: None,
+                updated_at: None,
+                file_size_bytes: None,
+            },
+            TrackUpsertRow {
+                title: "Salt".into(),
+                album_id: adults_album_id,
+                artist_id: adults_artist_id,
+                track_number: Some(2),
+                disc_number: Some(1),
+                duration_ms: Some(200000),
+                source_id: "track-salt".into(),
+                codec: None,
+                part_key: None,
+                stream_id: None,
+                user_rating: None,
+                bitrate: None,
+                track_artist: None,
+                updated_at: None,
+                file_size_bytes: None,
+            },
+            TrackUpsertRow {
+                title: "Souls".into(),
+                album_id: adults_album_id,
+                artist_id: adults_artist_id,
+                track_number: Some(3),
+                disc_number: Some(1),
+                duration_ms: Some(200000),
+                source_id: "track-souls".into(),
+                codec: None,
+                part_key: None,
+                stream_id: None,
+                user_rating: None,
+                bitrate: None,
+                track_artist: None,
+                updated_at: None,
+                file_size_bytes: None,
+            },
+        ])
+        .unwrap();
+
+        let q = QueryParser::parse("adults");
+        let results = engine.search(&q, 100).unwrap();
+        let track_titles: Vec<_> = results
+            .iter()
+            .filter(|r| r.kind == SearchResultKind::Track)
+            .filter_map(|r| r.track_title.as_deref())
+            .collect();
+        assert!(
+            !track_titles.contains(&"Fault"),
+            "Short false-positive 'Fault' should not appear for query 'adults'"
+        );
+        assert!(
+            !track_titles.contains(&"Salt"),
+            "Short false-positive 'Salt' should not appear for query 'adults'"
+        );
+        assert!(
+            !track_titles.contains(&"Souls"),
+            "Short false-positive 'Souls' should not appear for query 'adults'"
+        );
+        let albums: Vec<_> = results
+            .iter()
+            .filter(|r| r.kind == SearchResultKind::Album)
+            .collect();
+        assert!(
+            albums.iter().any(|r| r.album_title == "Adults!!!"),
+            "Album 'Adults!!!' should still appear"
+        );
+    }
+
+    #[test]
+    fn test_fuzzy_album_fallback_finds_typo() {
+        let (db, engine) = setup();
+        let artist_id = *db
+            .batch_upsert_artists(&[("Bomb the Music Industry!".into(), None, "artist-btmi".into(), None, None, None)])
+            .unwrap()
+            .get("artist-btmi")
+            .unwrap();
+        db.batch_upsert_albums(&[AlbumUpsertRow {
+            title: "Adults!!!".into(),
+            artist_id,
+            year: Some(2010),
+            source_id: "album-adults".into(),
+            art_url: None,
+            updated_at: None,
+            added_at: None,
+            last_viewed_at: None,
+            first_genre: None,
+            first_collection: None,
+        }])
+        .unwrap();
+
+        let q = QueryParser::parse("adluts");
+        let results = engine.search(&q, 100).unwrap();
+        let albums: Vec<_> = results
+            .iter()
+            .filter(|r| r.kind == SearchResultKind::Album)
+            .collect();
+        assert!(
+            albums.iter().any(|r| r.album_title == "Adults!!!"),
+            "Fuzzy album fallback should find 'Adults!!!' for typo 'adluts'"
+        );
+    }
+
+    #[test]
+    fn test_strong_album_suppresses_weak_tracks() {
+        let (_db, engine) = setup();
+        let q = QueryParser::parse("radiohead");
+        let results = engine.search(&q, 100).unwrap();
+        let albums: Vec<_> = results
+            .iter()
+            .filter(|r| r.kind == SearchResultKind::Album)
+            .collect();
+        assert!(!albums.is_empty(), "Should find Radiohead albums");
+        for track in results.iter().filter(|r| r.kind == SearchResultKind::Track) {
+            assert!(
+                track.score < 0.4,
+                "Track '{}' with score {} should be suppressed by strong album match",
+                track.track_title.as_deref().unwrap_or("?"),
+                track.score
+            );
+        }
+    }
+
+    #[test]
+    fn test_fuzzy_cross_field_track_match() {
+        let (db, engine) = setup();
+        let artist_id = *db
+            .batch_upsert_artists(&[("Bomb the Music Industry!".into(), None, "artist-btmi".into(), None, None, None)])
+            .unwrap()
+            .get("artist-btmi")
+            .unwrap();
+        let album_id = *db
+            .batch_upsert_albums(&[AlbumUpsertRow {
+                title: "Adults!!!".into(),
+                artist_id,
+                year: Some(2010),
+                source_id: "album-adults".into(),
+                art_url: None,
+                updated_at: None,
+                added_at: None,
+                last_viewed_at: None,
+                first_genre: None,
+                first_collection: None,
+            }])
+            .unwrap()
+            .get("album-adults")
+            .unwrap();
+        db.batch_upsert_tracks(&[TrackUpsertRow {
+            title: "It's Just Brains".into(),
+            album_id,
+            artist_id,
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration_ms: Some(200000),
+            source_id: "track-brains".into(),
+            codec: None,
+            part_key: None,
+            stream_id: None,
+            user_rating: None,
+            bitrate: None,
+            track_artist: None,
+            updated_at: None,
+            file_size_bytes: None,
+        }])
+        .unwrap();
+
+        let q = QueryParser::parse("!adluts");
+        let results = engine.search(&q, 100).unwrap();
+        let tracks: Vec<_> = results
+            .iter()
+            .filter(|r| r.kind == SearchResultKind::Track)
+            .collect();
+        assert!(
+            tracks.iter().any(|r| r.album_title == "Adults!!!"),
+            "Fuzzy cross-field should find tracks from album 'Adults!!!' for typo 'adluts'"
+        );
     }
 }

@@ -453,6 +453,43 @@ impl CacheDatabase {
         Ok(rows)
     }
 
+    /// Albums as fuzzy search candidates.
+    pub fn search_album_candidates(
+        &self,
+        album_ids: Option<&HashSet<i64>>,
+        limit: usize,
+    ) -> Result<Vec<AlbumSearchRow>, CacheError> {
+        if matches!(album_ids, Some(ids) if ids.is_empty()) {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock();
+        let (id_filter, id_vec) = build_id_filter(album_ids);
+        let where_clause = if id_filter.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE{}", &id_filter[4..])
+        };
+        let sql = format!(
+            "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl, a.rating
+             FROM albums a
+             JOIN artists ar ON ar.id = a.artistId{}
+             LIMIT ?",
+            where_clause
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        for id in &id_vec {
+            all_params.push(Box::new(*id));
+        }
+        all_params.push(Box::new(limit as i64));
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            all_params.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt
+            .query_map(param_refs.as_slice(), map_album_search_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// Internal album IDs matching album title (LIKE contains). Unlimited.
     pub fn album_ids_by_title(
         &self,
