@@ -117,6 +117,7 @@ export interface Settings {
   eqBands: number[];
   savedSearches: SavedSearch[];
   offlineMode: boolean;
+  popularityDisplay: "off" | "hot" | "chart";
 }
 
 export interface CacheStats {

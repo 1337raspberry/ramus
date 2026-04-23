@@ -9,6 +9,7 @@ import {
   getAlbumGenres,
 } from "../lib/commands";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { useDownloadsStore } from "../stores/downloadsStore";
 import { useConnectionStatus } from "../lib/useConnectionStatus";
 import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "./DownloadMenuItems";
@@ -21,6 +22,7 @@ import {
   IconMusicNote,
   IconPlay,
   IconMoreDots,
+  IconFire,
 } from "./Icons";
 import FlowLayout from "./FlowLayout";
 
@@ -34,6 +36,7 @@ export default function AlbumDetailView() {
   const loadAlbumsForArtistName = useLibraryStore((s) => s.loadAlbumsForArtistName);
   const loadAlbumsForYear = useLibraryStore((s) => s.loadAlbumsForYear);
   const selectGenreByName = useLibraryStore((s) => s.selectGenreByName);
+  const popularityDisplay = useSettingsStore((s) => s.popularityDisplay);
 
   const handleGenreClick = useCallback(
     (genre: string) => {
@@ -114,6 +117,29 @@ export default function AlbumDetailView() {
   const codec = tracks.length ? formatCodec(tracks[0].codec, tracks[0].bitrate) : null;
 
   const hasMultipleDiscs = tracks.some((t) => (t.discNumber ?? 1) > 1);
+
+  const hotTrackKeys = new Set<string>();
+  const chartWidths = new Map<string, number>();
+  {
+    const n = tracks.length;
+    if (popularityDisplay === "hot") {
+      const maxHot = n <= 2 ? 0 : n <= 3 ? 1 : n <= 4 ? 2 : n <= 8 ? 3 : n <= 12 ? 4 : 5;
+      if (maxHot > 0) {
+        const sorted = tracks
+          .filter((t) => (t.ratingCount ?? 0) >= 2000)
+          .sort((a, b) => (b.ratingCount ?? 0) - (a.ratingCount ?? 0))
+          .slice(0, maxHot);
+        for (const t of sorted) hotTrackKeys.add(t.ratingKey);
+      }
+    } else if (popularityDisplay === "chart") {
+      const max = tracks.reduce((m, t) => Math.max(m, t.ratingCount ?? 0), 0);
+      if (max > 0) {
+        for (const t of tracks) {
+          chartWidths.set(t.ratingKey, Math.max(1, ((t.ratingCount ?? 0) / max) * 100));
+        }
+      }
+    }
+  }
 
   // Offline-mode gate: tracks the user doesn't have locally can't be
   // played. Subscribe to the relevant selectors up here instead of inside
@@ -248,8 +274,19 @@ export default function AlbumDetailView() {
                 }}
                 title={unavailable ? "Not downloaded — unavailable offline" : undefined}
               >
-                <span className="adv-track-num">{track.index ?? i + 1}</span>
+                <span className="adv-track-num">
+                  {hotTrackKeys.has(track.ratingKey) && (
+                    <IconFire size={11} className="adv-hot-icon" />
+                  )}
+                  {track.index ?? i + 1}
+                </span>
                 <div className="adv-track-info">
+                  {chartWidths.has(track.ratingKey) && (
+                    <div
+                      className="adv-chart-bar"
+                      style={{ width: `${chartWidths.get(track.ratingKey)}%` }}
+                    />
+                  )}
                   <div className="adv-track-title">{track.title}</div>
                   {hasTrackArtist && <div className="adv-track-artist">{track.trackArtist}</div>}
                 </div>

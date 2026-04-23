@@ -316,6 +316,14 @@ export function IconTriangleFilled({ size = defaults.size, className }: IconProp
   );
 }
 
+export function IconFire({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="var(--accent)" className={className}>
+      <path d="M12 23c-4.97 0-8-3.03-8-7.5 0-3.82 2.86-7.6 4.5-9.5.38-.44 1.06-.36 1.3.16.6 1.28 1.56 2.6 2.7 3.34.1-1.8.6-4.24 2-6.5.3-.48.96-.56 1.34-.14C18.22 5.5 20 9.64 20 15.5c0 4.47-3.03 7.5-8 7.5z" />
+    </svg>
+  );
+}
+
 export function IconChevronOpenDown({ size = defaults.size, className }: IconProps) {
   return (
     <svg

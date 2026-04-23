@@ -947,11 +947,30 @@ textarea {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
   font-size: 12px;
+  position: relative;
+}
+
+.adv-hot-icon {
+  position: absolute;
+  right: calc(100% - 8px);
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .adv-track-info {
   flex: 1;
   min-width: 0;
+  position: relative;
+}
+
+.adv-chart-bar {
+  position: absolute;
+  left: -2px;
+  top: 0;
+  height: 1.3em;
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.12);
+  border-radius: 3px;
+  pointer-events: none;
 }
 
 .adv-track-title {

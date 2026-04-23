@@ -28,6 +28,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   savedSearches: [],
   offlineMode: false,
+  popularityDisplay: "hot",
 
   loadSettings: async () => {
     try {

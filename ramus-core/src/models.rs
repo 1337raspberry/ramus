@@ -436,6 +436,15 @@ pub struct SavedSearch {
     pub query: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PopularityDisplay {
+    Off,
+    #[default]
+    Hot,
+    Chart,
+}
+
 /// Maximum number of saved searches. Enforced in `update_settings`.
 pub const MAX_SAVED_SEARCHES: usize = 20;
 
@@ -459,6 +468,7 @@ pub struct Settings {
     /// User manual "Work Offline" toggle. When `true`, the app ignores
     /// live server reachability and shows only downloaded content.
     pub offline_mode: bool,
+    pub popularity_display: PopularityDisplay,
 }
 
 impl Default for Settings {
@@ -479,6 +489,7 @@ impl Default for Settings {
             eq_bands: [0.0; 10],
             saved_searches: Vec::new(),
             offline_mode: false,
+            popularity_display: PopularityDisplay::default(),
         }
     }
 }
