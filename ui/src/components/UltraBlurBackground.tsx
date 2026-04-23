@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { UltraBlurColors } from "../lib/types";
+import { isHDR } from "../lib/hdr";
 import { hexToRgb } from "../lib/vibrantColor";
 
 // Curated presets sampled from real album art: corner colours + matching accent.
@@ -81,8 +82,8 @@ export function randomPalette(): { colors: UltraBlurColors; accent: [number, num
  * perceptually uniform, but deterministic). Brightness is a scalar
  * multiply clamped to [0, 255]. Order: saturation then brightness.
  */
-const BRIGHTNESS = 0.9;
-const SATURATION = 1.2;
+const BRIGHTNESS = isHDR ? 0.9 : 1.0;
+const SATURATION = isHDR ? 1.2 : 1.5;
 
 function adjustedCSS(hex: string): string {
   const [r, g, b] = hexToRgb(hex);

@@ -21,16 +21,22 @@
   --accent-g: 90;
   --accent-b: 220;
   --accent: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
-  --accent-8: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.08);
-  --accent-20: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.2);
-  --accent-35: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.35);
+  --accent-8-a: 0.08;
+  --accent-20-a: 0.2;
+  --accent-35-a: 0.35;
+  --accent-8: rgba(var(--accent-r), var(--accent-g), var(--accent-b), var(--accent-8-a));
+  --accent-20: rgba(var(--accent-r), var(--accent-g), var(--accent-b), var(--accent-20-a));
+  --accent-35: rgba(var(--accent-r), var(--accent-g), var(--accent-b), var(--accent-35-a));
   --accent-85: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.85);
 
   --bg-primary: #1a1a1a;
   --bg-secondary: #222222;
   --bg-tertiary: #2a2a2a;
-  --bg-hover: rgba(255, 255, 255, 0.08);
+  --bg-hover-a: 0.08;
+  --bg-hover: rgba(255, 255, 255, var(--bg-hover-a));
   --bg-glass: rgba(30, 30, 30, 0.85);
+
+  --ultrablur-opacity: 0.8;
 
   --text-primary: #e0e0e0;
   --text-secondary: #aaaaaa;
@@ -178,7 +184,7 @@ textarea {
   /* Baked overall dim. Unlike CSS `filter:`, `opacity` does not go
    * through Chromium's filter graph, so it will not reintroduce
    * banding. */
-  opacity: 0.8;
+  opacity: var(--ultrablur-opacity);
   transition:
     --ultrablur-tl 0.8s ease-in-out,
     --ultrablur-tr 0.8s ease-in-out,
@@ -5562,4 +5568,63 @@ body.is-fullscreen .focus-body {
 .adv-track-row-unavailable:hover,
 .mobile-track-row-unavailable:hover {
   background: transparent !important;
+}
+
+/* --- Colour mode indicator --- */
+
+.settings-color-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 4px;
+}
+
+.settings-color-mode-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.settings-color-mode.hdr {
+  color: #a8e6cf;
+  background: rgba(168, 230, 207, 0.1);
+}
+.settings-color-mode.hdr .settings-color-mode-dot {
+  background: #a8e6cf;
+  box-shadow: 0 0 6px rgba(168, 230, 207, 0.6);
+}
+
+.settings-color-mode.sdr {
+  color: #ffd3a8;
+  background: rgba(255, 211, 168, 0.1);
+}
+.settings-color-mode.sdr .settings-color-mode-dot {
+  background: #ffd3a8;
+  box-shadow: 0 0 6px rgba(255, 211, 168, 0.6);
+}
+
+/* --- SDR display fallback ---
+ * On standard dynamic-range displays the stacked opacity layers,
+ * dark palette swatches and low-alpha accents compound into a
+ * washed-out appearance. These overrides restore contrast without
+ * touching the HDR path.
+ */
+@media not (dynamic-range: high) {
+  :root {
+    --accent-8-a: 0.14;
+    --accent-20-a: 0.3;
+    --accent-35-a: 0.45;
+
+    --bg-hover-a: 0.12;
+    --ultrablur-opacity: 0.95;
+
+    --text-primary: #eaeaea;
+    --text-secondary: #bbbbbb;
+    --text-muted: #999999;
+  }
 }

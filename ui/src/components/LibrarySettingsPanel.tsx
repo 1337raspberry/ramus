@@ -13,6 +13,7 @@ import {
 } from "../lib/commands";
 import type { Settings, CacheStats } from "../lib/types";
 import { listen } from "@tauri-apps/api/event";
+import { isHDR } from "../lib/hdr";
 import type { SyncProgress } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -455,6 +456,16 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
               ))}
             </div>
           )}
+
+          <div className="settings-section-header">DISPLAY</div>
+
+          <div className="settings-row">
+            <span>Colour mode</span>
+            <span className={`settings-color-mode ${isHDR ? "hdr" : "sdr"}`}>
+              <span className="settings-color-mode-dot" />
+              {isHDR ? "HDR" : "SDR"}
+            </span>
+          </div>
 
           <div className="settings-section-header">SECURITY</div>
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { spectrumKind, type SpectrumFrames, type SpectrumState } from "../lib/types";
+import { isHDR } from "../lib/hdr";
 import { accentFromPalette } from "../lib/vibrantColor";
 
 /**
@@ -46,8 +47,8 @@ const MIN_VISIBLE_HEIGHT_PX = 0.5;
 const EASE_ATTACK = 0.55;
 const EASE_DECAY = 0.35;
 const GRADIENT_TOP_OPACITY = 0.95;
-const GRADIENT_BOTTOM_OPACITY = 0.3;
-const GLOBAL_ALPHA = 0.3;
+const GRADIENT_BOTTOM_OPACITY = isHDR ? 0.3 : 0.45;
+const GLOBAL_ALPHA = isHDR ? 0.3 : 0.45;
 const BORDER_WIDTH_PX = 0;
 const BORDER_OPACITY = 0;
 const BASS_NOISE_AMOUNT = 0.08;

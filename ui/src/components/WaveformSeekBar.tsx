@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { isHDR } from "../lib/hdr";
 import { formatDuration } from "../lib/format";
+
+const UNPLAYED_ALPHA = isHDR ? 0.15 : 0.25;
 
 export default function WaveformSeekBar() {
   const levels = usePlaybackStore((s) => s.waveformLevels);
@@ -124,7 +127,7 @@ export default function WaveformSeekBar() {
 
     if (shape && levels && levels.length > 0) {
       // Unplayed silhouette.
-      ctx.globalAlpha = 0.15;
+      ctx.globalAlpha = UNPLAYED_ALPHA;
       ctx.globalCompositeOperation = "source-over";
       ctx.drawImage(shape, 0, 0, w, h);
 
