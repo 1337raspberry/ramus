@@ -314,22 +314,20 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
             </label>
           )}
 
-          {!isMobile && (
-            <label className="settings-row">
-              <span>Track popularity</span>
-              <select
-                className="sort-select"
-                value={settings.popularityDisplay}
-                onChange={(e) =>
-                  save({ popularityDisplay: e.target.value as Settings["popularityDisplay"] })
-                }
-              >
-                <option value="off">Off</option>
-                <option value="hot">Hot tracks</option>
-                <option value="chart">Popularity chart</option>
-              </select>
-            </label>
-          )}
+          <label className="settings-row">
+            <span>Track popularity</span>
+            <select
+              className="sort-select"
+              value={settings.popularityDisplay}
+              onChange={(e) =>
+                save({ popularityDisplay: e.target.value as Settings["popularityDisplay"] })
+              }
+            >
+              <option value="off">Off</option>
+              <option value="hot">Hot tracks</option>
+              <option value="chart">Popularity chart</option>
+            </select>
+          </label>
 
           <div className="settings-sync-buttons">
             <button

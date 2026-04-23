@@ -4012,11 +4012,30 @@ body.is-fullscreen .focus-body {
   font-size: 13px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  position: relative;
+}
+
+.mobile-hot-icon {
+  position: absolute;
+  right: calc(100% - 8px);
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .mobile-track-info {
   min-width: 0;
   overflow: hidden;
+  position: relative;
+}
+
+.mobile-chart-bar {
+  position: absolute;
+  left: -2px;
+  top: 0;
+  height: 1.3em;
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.12);
+  border-radius: 3px;
+  pointer-events: none;
 }
 
 .mobile-track-title {

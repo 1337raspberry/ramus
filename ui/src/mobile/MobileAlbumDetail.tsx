@@ -12,11 +12,13 @@ import {
   IconMusicNote,
   IconPlay,
   IconMoreDots,
+  IconFire,
 } from "../components/Icons";
 import FlowLayout from "../components/FlowLayout";
 import MarqueeText from "../components/MarqueeText";
 import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "../components/DownloadMenuItems";
 import { useDownloadsStore } from "../stores/downloadsStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { useConnectionStatus } from "../lib/useConnectionStatus";
 
 /**
@@ -34,6 +36,7 @@ export default function MobileAlbumDetail() {
   const loadAlbumsForArtistName = useLibraryStore((s) => s.loadAlbumsForArtistName);
   const loadAlbumsForYear = useLibraryStore((s) => s.loadAlbumsForYear);
   const selectGenreByName = useLibraryStore((s) => s.selectGenreByName);
+  const popularityDisplay = useSettingsStore((s) => s.popularityDisplay);
 
   const { artSrc, artErr, setArtErr } = useArtUrl(album?.thumb, ART_SIZE.MEDIUM);
   const [genres, setGenres] = useState<string[]>([]);
@@ -100,6 +103,29 @@ export default function MobileAlbumDetail() {
   const codec = tracks.length ? formatCodec(tracks[0].codec, tracks[0].bitrate) : null;
   const totalMinutes = Math.round(tracks.reduce((s, t) => s + t.duration, 0) / 60);
   const hasMultipleDiscs = tracks.some((t) => (t.discNumber ?? 1) > 1);
+
+  const hotTrackKeys = new Set<string>();
+  const chartWidths = new Map<string, number>();
+  {
+    const n = tracks.length;
+    if (popularityDisplay === "hot") {
+      const maxHot = n <= 2 ? 0 : n <= 3 ? 1 : n <= 4 ? 2 : n <= 8 ? 3 : n <= 12 ? 4 : 5;
+      if (maxHot > 0) {
+        const sorted = tracks
+          .filter((t) => (t.ratingCount ?? 0) >= 2000)
+          .sort((a, b) => (b.ratingCount ?? 0) - (a.ratingCount ?? 0))
+          .slice(0, maxHot);
+        for (const t of sorted) hotTrackKeys.add(t.ratingKey);
+      }
+    } else if (popularityDisplay === "chart") {
+      const max = tracks.reduce((m, t) => Math.max(m, t.ratingCount ?? 0), 0);
+      if (max > 0) {
+        for (const t of tracks) {
+          chartWidths.set(t.ratingKey, Math.max(1, ((t.ratingCount ?? 0) / max) * 100));
+        }
+      }
+    }
+  }
 
   return (
     <div className="mobile-screen">
@@ -227,8 +253,19 @@ export default function MobileAlbumDetail() {
                     }
                   }}
                 >
-                  <span className="mobile-track-num">{t.index ?? i + 1}</span>
+                  <span className="mobile-track-num">
+                    {hotTrackKeys.has(t.ratingKey) && (
+                      <IconFire size={11} className="mobile-hot-icon" />
+                    )}
+                    {t.index ?? i + 1}
+                  </span>
                   <div className="mobile-track-info">
+                    {chartWidths.has(t.ratingKey) && (
+                      <div
+                        className="mobile-chart-bar"
+                        style={{ width: `${chartWidths.get(t.ratingKey)}%` }}
+                      />
+                    )}
                     <div className="mobile-track-title">{t.title}</div>
                     {hasTrackArtist && <div className="mobile-track-artist">{t.trackArtist}</div>}
                   </div>
