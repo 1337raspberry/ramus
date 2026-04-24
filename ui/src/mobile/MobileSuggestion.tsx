@@ -10,6 +10,7 @@ import {
 } from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import { applyAccent } from "../lib/accent";
+import { countryToFlag } from "../lib/countryFlag";
 import { IconMusicNote, IconShuffle, IconChevronLeft } from "../components/Icons";
 import FlowLayout from "../components/FlowLayout";
 
@@ -178,6 +179,14 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
           }}
         >
           {album.artistName}
+          {(() => {
+            const flag = album.artistCountry ? countryToFlag(album.artistCountry) : null;
+            return flag ? (
+              <span className="adv-country-flag" title={album.artistCountry!}>
+                {flag}
+              </span>
+            ) : null;
+          })()}
         </button>
         {genres.length > 0 && (
           <div className="mobile-suggestion-genres">

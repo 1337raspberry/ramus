@@ -12,6 +12,7 @@ import {
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import { applyAccent } from "../lib/accent";
 import { formatCodec } from "../lib/format";
+import { countryToFlag } from "../lib/countryFlag";
 import FlowLayout from "./FlowLayout";
 import { IconMusicNote } from "./Icons";
 
@@ -169,7 +170,16 @@ export default function SuggestionView() {
         </div>
         <div className="suggestion-info">
           <div className="suggestion-title">
-            {album.artistName} &mdash; {album.title}
+            {album.artistName}
+            {(() => {
+              const flag = album.artistCountry ? countryToFlag(album.artistCountry) : null;
+              return flag ? (
+                <span className="adv-country-flag" title={album.artistCountry!}>
+                  {flag}
+                </span>
+              ) : null;
+            })()}{" "}
+            &mdash; {album.title}
             {yearStr}
           </div>
         </div>
