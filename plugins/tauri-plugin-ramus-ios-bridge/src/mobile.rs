@@ -107,8 +107,9 @@ impl<R: Runtime> RamusIosBridge<R> {
     }
 
     pub fn mpv_get_eq_config(&self) -> crate::Result<EqConfigResponse> {
-        self.0
-            .run_mobile_plugin("mpvGetEqConfig", Empty::default())
+        Ok(self
+            .0
+            .run_mobile_plugin("mpvGetEqConfig", Empty::default())?)
     }
 
     pub fn mpv_set_audio_filters(&self, value: &str) -> crate::Result<()> {
