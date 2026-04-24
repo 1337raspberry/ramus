@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyEqualizer, updateSettings } from "../lib/commands";
+import { applyEqualizer, updateSettings, getEqConfig, type EqConfig } from "../lib/commands";
 import { useSettingsStore } from "../stores/settingsStore";
 
-const BAND_LABELS = ["31", "62", "125", "250", "500", "1K", "2K", "4K", "8K", "16K"];
-const MAX_GAIN = 12;
+const DEFAULT_LABELS = ["31", "62", "125", "250", "500", "1K", "2K", "4K", "8K", "16K"];
+const DEFAULT_MAX_GAIN = 12;
 
-// EQ on Android currently no-ops in the native bridge — Media3/ExoPlayer
-// has no direct equivalent of mpv's lavfi `af` chain, and the Android
-// system Equalizer FX hasn't been wired yet. Gate the controls so users
-// don't toggle invisibly.
-const IS_ANDROID = /Android/.test(navigator.userAgent);
+function formatFreqLabel(hz: number): string {
+  return hz >= 1000 ? `${hz / 1000}K` : String(hz);
+}
 
 interface Props {
   onDismiss: () => void;
@@ -19,14 +17,16 @@ function VerticalEQSlider({
   value,
   onChange,
   disabled,
+  maxGain,
 }: {
   value: number;
   onChange: (v: number) => void;
   disabled: boolean;
+  maxGain: number;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
 
-  const fraction = (value - -MAX_GAIN) / (MAX_GAIN * 2);
+  const fraction = (value - -maxGain) / (maxGain * 2);
   const thumbPercent = (1 - fraction) * 100;
   const centerPercent = 50;
   const fillTop = Math.min(thumbPercent, centerPercent);
@@ -38,12 +38,11 @@ function VerticalEQSlider({
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const frac = 1 - Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
-      const raw = -MAX_GAIN + frac * MAX_GAIN * 2;
-      // Snap to 0 when within 0.8 dB; quantise to 0.5 dB otherwise.
+      const raw = -maxGain + frac * maxGain * 2;
       const snapped = Math.abs(raw) < 0.8 ? 0 : Math.round(raw * 2) / 2;
       onChange(snapped);
     },
-    [onChange],
+    [onChange, maxGain],
   );
 
   const onMouseDown = useCallback(
@@ -63,6 +62,33 @@ function VerticalEQSlider({
     [disabled, updateFromY],
   );
 
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el || disabled) return;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      e.preventDefault();
+      updateFromY(e.touches[0].clientY);
+
+      const onTouchMove = (ev: TouchEvent) => {
+        ev.preventDefault();
+        if (ev.touches.length === 1) updateFromY(ev.touches[0].clientY);
+      };
+      const onTouchEnd = () => {
+        window.removeEventListener("touchmove", onTouchMove);
+        window.removeEventListener("touchend", onTouchEnd);
+        window.removeEventListener("touchcancel", onTouchEnd);
+      };
+      window.addEventListener("touchmove", onTouchMove, { passive: false });
+      window.addEventListener("touchend", onTouchEnd);
+      window.addEventListener("touchcancel", onTouchEnd);
+    };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    return () => el.removeEventListener("touchstart", onTouchStart);
+  }, [disabled, updateFromY]);
+
   return (
     <div
       ref={trackRef}
@@ -79,11 +105,30 @@ function VerticalEQSlider({
 
 export default function EqualizerPanel({ onDismiss }: Props) {
   const settings = useSettingsStore();
+  const [eqConfig, setEqConfig] = useState<EqConfig | null>(null);
   const [enabled, setEnabled] = useState(() => settings.eqEnabled);
   const [bands, setBands] = useState<number[]>(() => [
     ...(settings.eqBands ?? new Array(10).fill(0)),
   ]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    getEqConfig()
+      .then((config) => {
+        setEqConfig(config);
+        setBands((prev) => {
+          if (prev.length === config.frequencies.length) return prev;
+          const next = new Array(config.frequencies.length).fill(0);
+          for (let i = 0; i < Math.min(prev.length, next.length); i++) next[i] = prev[i];
+          return next;
+        });
+      })
+      .catch(() => {});
+  }, []);
+
+  const bandCount = eqConfig?.frequencies.length ?? bands.length;
+  const maxGain = eqConfig?.maxGain ?? DEFAULT_MAX_GAIN;
+  const bandLabels = eqConfig ? eqConfig.frequencies.map(formatFreqLabel) : DEFAULT_LABELS;
 
   const applyDebounced = useCallback((newEnabled: boolean, newBands: number[]) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -117,10 +162,10 @@ export default function EqualizerPanel({ onDismiss }: Props) {
   }, [bands, applyDebounced]);
 
   const handleReset = useCallback(() => {
-    const zeroed = new Array(10).fill(0);
+    const zeroed = new Array(bandCount).fill(0);
     setBands(zeroed);
     applyDebounced(enabled, zeroed);
-  }, [enabled, applyDebounced]);
+  }, [enabled, applyDebounced, bandCount]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -156,47 +201,35 @@ export default function EqualizerPanel({ onDismiss }: Props) {
         <div className="eq-header">
           <span className="eq-title">Equalizer</span>
           <label className="eq-toggle">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={handleToggle}
-              disabled={IS_ANDROID}
-            />
-            <span className="eq-toggle-label">
-              {IS_ANDROID ? "Unavailable" : enabled ? "On" : "Off"}
-            </span>
+            <input type="checkbox" checked={enabled} onChange={handleToggle} />
+            <span className="eq-toggle-label">{enabled ? "On" : "Off"}</span>
           </label>
           <button className="eq-close" onClick={onDismiss}>
             x
           </button>
         </div>
 
-        {IS_ANDROID && (
-          <div className="eq-unsupported-notice">
-            EQ isn't supported on Android yet.
-          </div>
-        )}
-
-        <div className={`eq-bands${!enabled || IS_ANDROID ? " disabled" : ""}`}>
+        <div className={`eq-bands${!enabled ? " disabled" : ""}`}>
           <div className="eq-db-scale">
-            <span>+12</span>
+            <span>+{Math.round(maxGain)}</span>
             <span>0</span>
-            <span>-12</span>
+            <span>-{Math.round(maxGain)}</span>
           </div>
           {bands.map((value, i) => (
             <div key={i} className="eq-band-col">
               <VerticalEQSlider
                 value={value}
                 onChange={(v) => handleBandChange(i, v)}
-                disabled={!enabled || IS_ANDROID}
+                disabled={!enabled}
+                maxGain={maxGain}
               />
-              <span className="eq-band-label">{BAND_LABELS[i]}</span>
+              <span className="eq-band-label">{bandLabels[i]}</span>
             </div>
           ))}
         </div>
 
         <div className="eq-footer">
-          <button className="eq-reset" onClick={handleReset} disabled={IS_ANDROID}>
+          <button className="eq-reset" onClick={handleReset}>
             Reset
           </button>
         </div>

@@ -30,7 +30,9 @@ import {
   IconMusicNote,
   IconChevronDown,
   IconClose,
+  IconEqualizer,
 } from "../components/Icons";
+import EqualizerPanel from "../components/EqualizerPanel";
 
 function IconSkipBack({ size = 22 }: { size?: number }) {
   return (
@@ -158,6 +160,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
 
   const toggleLyrics = usePlaybackStore((s) => s.toggleLyrics);
   const showLyrics = usePlaybackStore((s) => s.showLyrics);
+  const [showEQ, setShowEQ] = useState(false);
 
   // --- Swipe gestures ---
   // Mini-player: swipe up to expand. Sheet header: swipe down to collapse.
@@ -595,14 +598,23 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
               </div>
             )}
 
-            <button
-              className={`mobile-sheet-lyrics${showLyrics ? " active" : ""}`}
-              onClick={toggleLyrics}
-              aria-label={showLyrics ? "Hide lyrics" : "Show lyrics"}
-              aria-pressed={showLyrics}
-            >
-              <IconQuote />
-            </button>
+            <div className="mobile-sheet-actions">
+              <button
+                className={`mobile-sheet-lyrics${showLyrics ? " active" : ""}`}
+                onClick={toggleLyrics}
+                aria-label={showLyrics ? "Hide lyrics" : "Show lyrics"}
+                aria-pressed={showLyrics}
+              >
+                <IconQuote />
+              </button>
+              <button
+                className="mobile-sheet-eq"
+                onClick={() => setShowEQ(true)}
+                aria-label="Equalizer"
+              >
+                <IconEqualizer size={14} />
+              </button>
+            </div>
 
             <div
               className="mobile-sheet-wave"
@@ -717,6 +729,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
           })()}
         </div>
       </div>
+      {showEQ && <EqualizerPanel onDismiss={() => setShowEQ(false)} />}
     </>
   );
 }

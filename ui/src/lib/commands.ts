@@ -169,6 +169,14 @@ export const getQueue = () => invoke<Track[]>("get_queue");
 export const applyEqualizer = (enabled: boolean, bands: number[]) =>
   invoke<void>("apply_equalizer", { enabled, bands });
 
+export interface EqConfig {
+  frequencies: number[];
+  minGain: number;
+  maxGain: number;
+}
+
+export const getEqConfig = () => invoke<EqConfig>("get_eq_config");
+
 export const fetchLyrics = (ratingKey: string) =>
   invoke<LyricsResult | null>("fetch_lyrics", { ratingKey });
 

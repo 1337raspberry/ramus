@@ -78,6 +78,14 @@ pub struct AudioFiltersArgs {
     pub value: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EqConfigResponse {
+    pub frequencies: Vec<u32>,
+    pub min_gain: f64,
+    pub max_gain: f64,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VolumeResponse {

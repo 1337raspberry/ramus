@@ -189,6 +189,14 @@ class MpvBridgePlugin: Plugin {
         invoke.resolve(["volume": value])
     }
 
+    @objc public func mpvGetEqConfig(_ invoke: Invoke) throws {
+        invoke.resolve([
+            "frequencies": [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],
+            "minGain": -12.0,
+            "maxGain": 12.0
+        ])
+    }
+
     @objc public func mpvSetAudioFilters(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(AudioFiltersArgs.self)
         mpv?.setAudioFilters(args.value)

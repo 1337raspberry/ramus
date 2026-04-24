@@ -140,10 +140,32 @@ pub async fn get_queue(state: State<'_, AppState>) -> CmdResult<Vec<Track>> {
 pub async fn apply_equalizer(
     state: State<'_, AppState>,
     enabled: bool,
-    bands: [f32; 10],
+    bands: Vec<f32>,
 ) -> CmdResult<()> {
     state.player.apply_equalizer(enabled, &bands);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_eq_config(
+    #[allow(unused_variables)] app: AppHandle,
+) -> CmdResult<tauri_plugin_ramus_ios_bridge::EqConfigResponse> {
+    #[cfg(desktop)]
+    {
+        use ramus_core::playback::player::EQ_FREQUENCIES;
+        Ok(tauri_plugin_ramus_ios_bridge::EqConfigResponse {
+            frequencies: EQ_FREQUENCIES.to_vec(),
+            min_gain: -12.0,
+            max_gain: 12.0,
+        })
+    }
+    #[cfg(mobile)]
+    {
+        use tauri_plugin_ramus_ios_bridge::RamusIosBridgeExt;
+        app.ramus_ios_bridge()
+            .mpv_get_eq_config()
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]

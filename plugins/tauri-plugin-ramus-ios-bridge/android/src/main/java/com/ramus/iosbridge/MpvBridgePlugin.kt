@@ -27,6 +27,7 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import android.media.audiofx.Equalizer
 import java.io.File
 
 private const val TAG = "MpvBridge"
@@ -37,6 +38,7 @@ private const val POST_NOTIFICATIONS_REQUEST_CODE = 1001
 // without rebuilding. Flip via `adb shell setprop debug.ramus.media_session 0`
 // before launching, then back to anything else (or unset) to re-enable.
 private const val MEDIA_SESSION_PROP = "debug.ramus.media_session"
+private val GAIN_REGEX = Regex("""g=([-\d.]+)""")
 
 @InvokeArg
 internal class LoadFileArgs {
@@ -160,6 +162,7 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     // jpeg from the local image cache) but main-thread reads stack up
     // when nowPlayingUpdate fires several times per track.
     private val ioHandler = Handler(android.os.HandlerThread("MpvBridgeIO").apply { start() }.looper)
+    private var equalizer: Equalizer? = null
 
     @Command
     fun mpvInit(invoke: Invoke) {
@@ -201,6 +204,14 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                     }
                 } else {
                     Log.w(TAG, "MediaSession disabled via $MEDIA_SESSION_PROP")
+                }
+
+                try {
+                    val eq = Equalizer(0, p.audioSessionId).apply { enabled = false }
+                    equalizer = eq
+                    Log.i(TAG, "System Equalizer attached (${eq.numberOfBands} bands)")
+                } catch (e: Exception) {
+                    Log.w(TAG, "System Equalizer unavailable", e)
                 }
 
                 ensurePostNotificationsPermission()
@@ -395,16 +406,59 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     @Command
-    fun mpvSetAudioFilters(invoke: Invoke) {
-        // mpv `af` filter chain (lavfi biquad EQ etc.) has no direct ExoPlayer
-        // equivalent. Wiring Android's system Equalizer FX or a custom
-        // AudioProcessor is the next step; for now this no-ops so the EQ
-        // toggle in the UI doesn't error.
-        val args = invoke.parseArgs(AudioFiltersArgs::class.java)
-        if (args.value.isNotEmpty()) {
-            Log.w(TAG, "EQ filter not yet implemented on Android: ${args.value}")
+    fun mpvGetEqConfig(invoke: Invoke) {
+        runOnMain {
+            val eq = equalizer
+            if (eq == null) {
+                val fallback = org.json.JSONArray(listOf(31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000))
+                invoke.resolve(JSObject()
+                    .put("frequencies", fallback)
+                    .put("minGain", -12.0)
+                    .put("maxGain", 12.0))
+                return@runOnMain
+            }
+            val freqs = org.json.JSONArray()
+            for (i in 0 until eq.numberOfBands.toInt()) {
+                freqs.put(eq.getCenterFreq(i.toShort()) / 1000)
+            }
+            val range = eq.bandLevelRange
+            invoke.resolve(JSObject()
+                .put("frequencies", freqs)
+                .put("minGain", range[0].toDouble() / 100.0)
+                .put("maxGain", range[1].toDouble() / 100.0))
         }
-        invoke.resolve()
+    }
+
+    @Command
+    fun mpvSetAudioFilters(invoke: Invoke) {
+        val args = invoke.parseArgs(AudioFiltersArgs::class.java)
+        runOnMain {
+            val eq = equalizer
+            if (eq == null) {
+                invoke.resolve()
+                return@runOnMain
+            }
+
+            if (args.value.isEmpty()) {
+                eq.enabled = false
+                invoke.resolve()
+                return@runOnMain
+            }
+
+            val gains = GAIN_REGEX.findAll(args.value)
+                .map { it.groupValues[1].toFloatOrNull() ?: 0f }
+                .toList()
+            val numBands = eq.numberOfBands.toInt()
+            val range = eq.bandLevelRange
+
+            for (band in 0 until numBands) {
+                val gainDb = if (band < gains.size) gains[band] else 0f
+                val level = (gainDb * 100).toInt().coerceIn(range[0].toInt(), range[1].toInt()).toShort()
+                eq.setBandLevel(band.toShort(), level)
+            }
+            eq.enabled = true
+            invoke.resolve()
+        }
     }
 
     @Command
@@ -721,6 +775,9 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         }
         mediaSession?.release()
         mediaSession = null
+
+        equalizer?.release()
+        equalizer = null
 
         val p = player
         player = null

@@ -1138,6 +1138,7 @@ pub fn run() {
             commands::playback::jump_to_queue_index,
             commands::playback::get_queue,
             commands::playback::apply_equalizer,
+            commands::playback::get_eq_config,
             commands::playback::fetch_lyrics,
             commands::playback::get_waveform,
             commands::playback::set_media_accent,

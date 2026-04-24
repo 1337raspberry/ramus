@@ -26,11 +26,12 @@ const ALLOWED_EXTENSIONS: &[&str] = &[
 /// Threshold in seconds: if position > this, `previous()` restarts instead of going back.
 const PREVIOUS_RESTART_THRESHOLD: f64 = 3.0;
 
-/// Build an mpv `af` lavfi equalizer filter string from 10 gain values.
+/// Build an mpv `af` lavfi equalizer filter string from gain values.
 ///
-/// Rust's `format!` always uses `.` for decimals. NaN and Inf values are
-/// sanitized to 0.0.
-pub fn build_eq_filter_string(bands: &[f32; 10]) -> String {
+/// Pairs each gain with the corresponding entry from `EQ_FREQUENCIES`
+/// (up to whichever is shorter). Rust's `format!` always uses `.` for
+/// decimals. NaN and Inf values are sanitized to 0.0.
+pub fn build_eq_filter_string(bands: &[f32]) -> String {
     let filters: Vec<String> = EQ_FREQUENCIES
         .iter()
         .zip(bands.iter())
@@ -45,10 +46,10 @@ pub fn build_eq_filter_string(bands: &[f32; 10]) -> String {
 
 /// Build the mpv `af` chain string for the current EQ state.
 ///
-/// When EQ is enabled, returns the 10-band lavfi equalizer chain. When
-/// disabled, returns an empty string — `set_audio_filters("")` interprets
-/// this as "no filters", clearing anything previously set.
-pub fn build_af_string(eq_enabled: bool, bands: &[f32; 10]) -> String {
+/// When EQ is enabled, returns the lavfi equalizer chain. When disabled,
+/// returns an empty string — `set_audio_filters("")` interprets this as
+/// "no filters", clearing anything previously set.
+pub fn build_af_string(eq_enabled: bool, bands: &[f32]) -> String {
     if eq_enabled {
         build_eq_filter_string(bands)
     } else {
@@ -480,9 +481,9 @@ impl AudioPlayer {
         self.mpv.stop();
     }
 
-    /// Apply or clear the 10-band equalizer. When `enabled` is false the
-    /// `af` chain is cleared entirely.
-    pub fn apply_equalizer(&self, enabled: bool, bands: &[f32; 10]) {
+    /// Apply or clear the equalizer. When `enabled` is false the `af`
+    /// chain is cleared entirely.
+    pub fn apply_equalizer(&self, enabled: bool, bands: &[f32]) {
         let filter = build_af_string(enabled, bands);
         self.mpv.set_audio_filters(&filter);
     }

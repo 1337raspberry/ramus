@@ -491,7 +491,7 @@ pub struct Settings {
     pub disable_spectrum: bool,
     pub flat_genres: bool,
     pub eq_enabled: bool,
-    pub eq_bands: [f32; 10],
+    pub eq_bands: Vec<f32>,
     pub saved_searches: Vec<SavedSearch>,
     /// User manual "Work Offline" toggle. When `true`, the app ignores
     /// live server reachability and shows only downloaded content.
@@ -514,7 +514,7 @@ impl Default for Settings {
             disable_spectrum: false,
             flat_genres: false,
             eq_enabled: false,
-            eq_bands: [0.0; 10],
+            eq_bands: vec![0.0; 10],
             saved_searches: Vec::new(),
             offline_mode: false,
             popularity_display: PopularityDisplay::default(),
