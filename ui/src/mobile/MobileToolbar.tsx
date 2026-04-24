@@ -1,20 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLibraryStore } from "../stores/libraryStore";
+import { useLibraryStore, hasActiveFilters } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { getFavouriteTracks, playTracks } from "../lib/commands";
 import { pushBackHandler } from "../lib/backHandler";
 import SavedSearchEditor from "../components/SavedSearchEditor";
 import SavedSearchPicker from "../components/SavedSearchPicker";
+import MobileFilterPanel from "./MobileFilterPanel";
 import type { SavedSearch } from "../lib/types";
 
-export type MobileView =
-  | "genres"
-  | "favourites"
-  | "artists"
-  | "suggestion"
-  | "search"
-  | "savedSearch";
+export type MobileView = "genres" | "artists" | "suggestion" | "search" | "savedSearch";
 
 interface Props {
   view: MobileView;
@@ -40,14 +35,6 @@ function IconList() {
       <circle cx="4" cy="6" r="1.3" fill="currentColor" />
       <circle cx="4" cy="12" r="1.3" fill="currentColor" />
       <circle cx="4" cy="18" r="1.3" fill="currentColor" />
-    </svg>
-  );
-}
-
-function IconStarFill() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
     </svg>
   );
 }
@@ -128,6 +115,23 @@ function IconShuffleStar() {
   );
 }
 
+function IconFilterToolbar() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    </svg>
+  );
+}
+
 function IconMagnifier() {
   return (
     <svg
@@ -161,9 +165,12 @@ async function shuffleFavourites() {
 export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props) {
   const setSidebarMode = useLibraryStore((s) => s.setSidebarMode);
   const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
+  const albumFilters = useLibraryStore((s) => s.albumFilters);
   const savedSearches = useSettingsStore((s) => s.savedSearches);
   const [showEditor, setShowEditor] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [showFilter, setShowFilter] = useState(false);
+  const filterActive = hasActiveFilters(albumFilters);
 
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggered = useRef(false);
@@ -224,9 +231,6 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
     if (v === "genres") {
       setSidebarMode("genres");
       useLibraryStore.setState({ selectedGenreId: null });
-    } else if (v === "favourites") {
-      setSidebarMode("favourites");
-      useLibraryStore.setState({ selectedGenreId: null });
     } else if (v === "artists") {
       setSidebarMode("artists");
     } else if (v === "suggestion") {
@@ -274,13 +278,6 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
           <IconList />
         </button>
         <button
-          className={`mobile-toolbar-btn${view === "favourites" ? " active" : ""}`}
-          aria-label="Favourite genres"
-          onClick={() => pick("favourites")}
-        >
-          <IconStarFill />
-        </button>
-        <button
           className={`mobile-toolbar-btn${view === "artists" ? " active" : ""}`}
           aria-label="Artists"
           onClick={() => pick("artists")}
@@ -300,6 +297,13 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
           {...makeLongPress(handleBrainTap, () => setShowEditor(true))}
         >
           <IconSave />
+        </button>
+        <button
+          className={`mobile-toolbar-btn${filterActive ? " active" : ""}`}
+          aria-label="Filter albums"
+          onClick={() => setShowFilter(true)}
+        >
+          <IconFilterToolbar />
         </button>
         <button
           className="mobile-toolbar-btn"
@@ -328,6 +332,7 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
       )}
 
       {showEditor && <SavedSearchEditor onDismiss={() => setShowEditor(false)} />}
+      {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
     </>
   );
 }

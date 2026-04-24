@@ -42,13 +42,12 @@ export default function MobileApp({ onOpenSettings }: Props) {
 
   useEffect(() => {
     const store = useLibraryStore.getState();
-    store.loadGenreTree();
+    store.reloadGenreTree();
     store.loadAllAlbums();
   }, []);
 
   useEffect(() => {
-    if (sidebarMode === "favourites") setView("favourites");
-    else if (sidebarMode === "artists") setView("artists");
+    if (sidebarMode === "artists") setView("artists");
     else setView("genres");
   }, [sidebarMode]);
 
@@ -113,8 +112,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
       });
       const gid = s.selectedGenreId;
       if (!gid || gid === "__all__") {
-        if (s.sidebarMode === "favourites") s.loadFavouriteAlbums();
-        else s.loadAllAlbums();
+        s.loadAllAlbums();
       } else {
         const node = findNode(s.genreTree, gid);
         if (node) s.selectGenre(node);
@@ -210,7 +208,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
       {showToolbar && (
         <MobileToolbar view={view} onSelect={setView} onOpenSettings={onOpenSettings} />
       )}
-      <div className="mobile-body" style={bodyStyle}>
+      <div className={`mobile-body${view === "suggestion" ? " no-fade" : ""}`} style={bodyStyle}>
         {renderBody()}
       </div>
       {hasTrack && (

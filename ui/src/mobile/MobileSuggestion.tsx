@@ -11,8 +11,10 @@ import {
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import { applyAccent } from "../lib/accent";
 import { countryToFlag } from "../lib/countryFlag";
-import { IconMusicNote, IconShuffle, IconChevronLeft } from "../components/Icons";
+import { IconMusicNote, IconShuffle, IconChevronLeft, IconFilter } from "../components/Icons";
 import FlowLayout from "../components/FlowLayout";
+import MobileFilterPanel from "./MobileFilterPanel";
+import { hasActiveFilters } from "../stores/libraryStore";
 
 interface Props {
   onClose: () => void;
@@ -26,6 +28,10 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
   const clearSuggestion = useLibraryStore((s) => s.clearSuggestion);
   const selectGenreByName = useLibraryStore((s) => s.selectGenreByName);
   const loadAlbumsForArtistName = useLibraryStore((s) => s.loadAlbumsForArtistName);
+
+  const albumFilters = useLibraryStore((s) => s.albumFilters);
+  const [showFilter, setShowFilter] = useState(false);
+  const filterActive = hasActiveFilters(albumFilters);
 
   const [artSrc, setArtSrc] = useState<string | null>(null);
   const [artErr, setArtErr] = useState(false);
@@ -108,11 +114,19 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
   if (!album) {
     return (
       <div className="mobile-screen mobile-suggestion">
-        <header className="mobile-header">
+        <header className="mobile-header mobile-header-4col">
           <button className="mobile-header-circle" onClick={handleClose} aria-label="Back">
             <IconChevronLeft size={22} />
           </button>
           <div className="mobile-header-title"> </div>
+          <button
+            className={`mobile-header-circle${filterActive ? " accent" : ""}`}
+            onClick={() => setShowFilter(true)}
+            aria-label="Filter suggestions"
+          >
+            <IconFilter size={18} />
+            {filterActive && <span className="mobile-filter-dot" />}
+          </button>
           <button
             className="mobile-header-circle"
             onClick={loadSuggestion}
@@ -121,6 +135,7 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
             <IconShuffle size={22} />
           </button>
         </header>
+        {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
         <div className="mobile-empty">Loading suggestion...</div>
       </div>
     );
@@ -128,11 +143,19 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
 
   return (
     <div className="mobile-screen mobile-suggestion">
-      <header className="mobile-header">
+      <header className="mobile-header mobile-header-4col">
         <button className="mobile-header-circle" onClick={handleClose} aria-label="Back">
           <IconChevronLeft size={22} />
         </button>
         <div className="mobile-header-title"> </div>
+        <button
+          className={`mobile-header-circle${filterActive ? " accent" : ""}`}
+          onClick={() => setShowFilter(true)}
+          aria-label="Filter suggestions"
+        >
+          <IconFilter size={18} />
+          {filterActive && <span className="mobile-filter-dot" />}
+        </button>
         <button
           className="mobile-header-circle"
           onClick={loadSuggestion}
@@ -141,6 +164,7 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
           <IconShuffle size={22} />
         </button>
       </header>
+      {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
 
       <div className="mobile-suggestion-body">
         <button

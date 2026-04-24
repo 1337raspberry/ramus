@@ -60,8 +60,6 @@ export const getAlbumsForGenreNames = (genres: string[]) =>
 
 export const getAllAlbums = () => invoke<Album[]>("get_all_albums");
 
-export const getFavouriteAlbums = () => invoke<Album[]>("get_favourite_albums");
-
 export const getFavouriteTracks = () => invoke<Track[]>("get_favourite_tracks");
 
 export const getAlbumsForArtist = (sourceId: string) =>
@@ -79,7 +77,20 @@ export const getTrack = (sourceId: string) => invoke<Track | null>("get_track", 
 
 export const getAllArtists = () => invoke<ArtistInfo[]>("get_all_artists");
 
-export const getFavouriteGenreTree = () => invoke<GenreTreeResponse>("get_favourite_genre_tree");
+export interface AlbumFilterParamsIPC {
+  unplayed: boolean;
+  favourite: boolean;
+  yearMin: number | null;
+  yearMax: number | null;
+  country: string | null;
+  collection: string | null;
+}
+
+export const getFilteredGenreTree = (filters: AlbumFilterParamsIPC) =>
+  invoke<GenreTreeResponse>("get_filtered_genre_tree", { filters });
+
+export const getFilteredRandomAlbum = (filters: AlbumFilterParamsIPC) =>
+  invoke<Album | null>("get_filtered_random_album", { filters });
 
 export const toggleAlbumFavourite = (sourceId: string, favourite: boolean) =>
   invoke<void>("toggle_album_favourite", { sourceId, favourite });
@@ -123,6 +134,10 @@ export const setAlbumPalette = (sourceId: string, palette: VibrantPalette) =>
   invoke<void>("set_album_palette", { sourceId, palette });
 
 export const getCacheStats = () => invoke<CacheStats>("get_cache_stats");
+
+export const getDistinctCountries = () => invoke<string[]>("get_distinct_countries");
+
+export const getAllCollectionNames = () => invoke<string[]>("get_all_collection_names");
 
 // --- Playback ---
 

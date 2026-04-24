@@ -1,19 +1,13 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type AlbumSortOrder } from "../stores/libraryStore";
-import { usePlaybackStore } from "../stores/playbackStore";
 import type { Album } from "../lib/types";
-import { ART_SIZE, getArtUrl, getFavouriteTracks, getQueue, playTracks } from "../lib/commands";
+import { ART_SIZE, getArtUrl } from "../lib/commands";
 import { useQueueAlbum } from "../lib/useQueueAlbum";
-import {
-  IconPlay,
-  IconStarFilled,
-  IconStarEmpty,
-  IconMusicNote,
-  IconShuffle,
-  IconMoreDots,
-} from "./Icons";
+import { IconPlay, IconStarFilled, IconStarEmpty, IconMusicNote, IconMoreDots } from "./Icons";
 import BreadcrumbBar from "./BreadcrumbBar";
+import FilterDropdown from "./FilterDropdown";
+import ShuffleFavsButton from "./ShuffleFavsButton";
 import { AlbumDownloadMenuItem } from "./DownloadMenuItems";
 
 let savedGridScroll = 0;
@@ -179,7 +173,6 @@ export default function AlbumGridView() {
   const albums = useLibraryStore((s) => s.albums);
   const albumSortOrder = useLibraryStore((s) => s.albumSortOrder);
   const setAlbumSortOrder = useLibraryStore((s) => s.setAlbumSortOrder);
-  const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const searchQuery = useLibraryStore((s) => s.searchQuery);
   const clearSearchResults = useLibraryStore((s) => s.clearSearchResults);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -244,24 +237,6 @@ export default function AlbumGridView() {
     [setAlbumSortOrder],
   );
 
-  const handleShuffleFavs = useCallback(() => {
-    getFavouriteTracks()
-      .then((tracks) => {
-        if (!tracks.length) return;
-        // Fisher–Yates shuffle.
-        const shuffled = [...tracks];
-        for (let i = shuffled.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-        return playTracks(shuffled, 0).then(() => getQueue());
-      })
-      .then((q) => {
-        if (q) usePlaybackStore.setState({ queue: q });
-      })
-      .catch(() => {});
-  }, []);
-
   const maskImage = scrolled ? `linear-gradient(to bottom, transparent, black 36px)` : undefined;
 
   if (!albums.length) {
@@ -270,16 +245,8 @@ export default function AlbumGridView() {
         <div className="album-grid-header">
           <BreadcrumbBar />
           <div className="breadcrumb-right">
-            {sidebarMode === "favourites" && !searchQuery && (
-              <button
-                className="shuffle-favs-btn"
-                onClick={handleShuffleFavs}
-                title="Shuffle all favourite tracks"
-              >
-                <IconShuffle size={14} />
-                <span>Shuffle</span>
-              </button>
-            )}
+            <ShuffleFavsButton />
+            <FilterDropdown />
             <select className="sort-select" value={albumSortOrder} onChange={onSortChange}>
               {SORT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -310,16 +277,8 @@ export default function AlbumGridView() {
       <div className="album-grid-header">
         <BreadcrumbBar />
         <div className="breadcrumb-right">
-          {sidebarMode === "favourites" && !searchQuery && (
-            <button
-              className="shuffle-favs-btn"
-              onClick={handleShuffleFavs}
-              title="Shuffle all favourite tracks"
-            >
-              <IconShuffle size={14} />
-              <span>Shuffle</span>
-            </button>
-          )}
+          <ShuffleFavsButton />
+          <FilterDropdown />
           <select className="sort-select" value={albumSortOrder} onChange={onSortChange}>
             {SORT_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>

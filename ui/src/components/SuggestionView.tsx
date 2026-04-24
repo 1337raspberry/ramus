@@ -14,11 +14,14 @@ import { applyAccent } from "../lib/accent";
 import { formatCodec } from "../lib/format";
 import { countryToFlag } from "../lib/countryFlag";
 import FlowLayout from "./FlowLayout";
-import { IconMusicNote } from "./Icons";
+import FilterDropdown from "./FilterDropdown";
+import ShuffleFavsButton from "./ShuffleFavsButton";
+import { IconMusicNote, IconShuffle } from "./Icons";
 
 export default function SuggestionView() {
   const album = useLibraryStore((s) => s.suggestion);
   const playAlbum = useLibraryStore((s) => s.playAlbum);
+  const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
   const clearSuggestion = useLibraryStore((s) => s.clearSuggestion);
   const status = usePlaybackStore((s) => s.status);
 
@@ -151,6 +154,17 @@ export default function SuggestionView() {
 
   return (
     <div className="suggestion-view">
+      <div className="suggestion-toolbar">
+        <button className="suggestion-reroll" onClick={loadSuggestion} title="New suggestion">
+          <IconShuffle size={14} />
+          <span>Reroll</span>
+        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <ShuffleFavsButton />
+          <FilterDropdown />
+        </div>
+      </div>
+      <div className="suggestion-spacer" />
       <div className="suggestion-card" onClick={handleClick}>
         <div className="suggestion-art-wrapper">
           {artSrc && !artErr ? (
@@ -187,6 +201,7 @@ export default function SuggestionView() {
       <div className="suggestion-genres" onClick={(e) => e.stopPropagation()}>
         <FlowLayout genres={genres} onGenreClick={handleGenreClick} />
       </div>
+      <div className="suggestion-spacer" />
       <div className="suggestion-meta">
         {album.studio && <span className="suggestion-studio">{album.studio}</span>}
         {codec && <span className="suggestion-codec">{codec}</span>}

@@ -21,6 +21,7 @@ export interface Album {
   year: number | null;
   thumb: string | null;
   genres: string[];
+  collections: string[];
   isFavourite: boolean;
   studio: string | null;
   addedAt: number | null;

@@ -102,6 +102,32 @@ pub struct AlbumColorInfo {
     pub palette: Option<VibrantPalette>,
 }
 
+// --- AlbumFilterParams ---
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlbumFilterParams {
+    #[serde(default)]
+    pub unplayed: bool,
+    #[serde(default)]
+    pub favourite: bool,
+    pub year_min: Option<i32>,
+    pub year_max: Option<i32>,
+    pub country: Option<String>,
+    pub collection: Option<String>,
+}
+
+impl AlbumFilterParams {
+    pub fn is_empty(&self) -> bool {
+        !self.unplayed
+            && !self.favourite
+            && self.year_min.is_none()
+            && self.year_max.is_none()
+            && self.country.is_none()
+            && self.collection.is_none()
+    }
+}
+
 // --- Album ---
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -114,6 +140,8 @@ pub struct Album {
     pub thumb: Option<String>,
     #[serde(default)]
     pub genres: Vec<String>,
+    #[serde(default)]
+    pub collections: Vec<String>,
     #[serde(default)]
     pub is_favourite: bool,
     pub studio: Option<String>,

@@ -11,7 +11,6 @@ import type { SavedSearch } from "../lib/types";
 
 const TABS: { mode: SidebarMode; label: string }[] = [
   { mode: "genres", label: "Genres" },
-  { mode: "favourites", label: "Favourites" },
   { mode: "artists", label: "Artists" },
 ];
 
@@ -115,7 +114,7 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
 
   useEffect(() => {
     const store = useLibraryStore.getState();
-    store.loadGenreTree();
+    store.reloadGenreTree();
     store.loadAllAlbums();
     useLibraryStore.setState({ selectedGenreId: "__all__" });
   }, []);
@@ -148,7 +147,7 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
         ))}
       </div>
       <div style={{ flex: 1, overflow: "hidden" }}>
-        {(sidebarMode === "genres" || sidebarMode === "favourites") && <GenreTreeView />}
+        {sidebarMode === "genres" && <GenreTreeView />}
         {sidebarMode === "artists" && (
           <ArtistList
             artists={artists}

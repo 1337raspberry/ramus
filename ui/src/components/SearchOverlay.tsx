@@ -140,10 +140,14 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
           year: result.year,
           thumb: result.albumArtPath,
           genres: [],
+          collections: [],
           isFavourite: result.isFavourite,
           studio: null,
           addedAt: null,
           lastViewedAt: null,
+          viewCount: null,
+          format: null,
+          artistCountry: null,
         });
       } else {
         withFullTrack(result, (t) => playTracks([t], 0)).catch(() => {});

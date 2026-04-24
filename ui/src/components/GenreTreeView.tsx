@@ -71,9 +71,7 @@ export default function GenreTreeView() {
   const collapseAll = useLibraryStore((s) => s.collapseAll);
   const selectGenre = useLibraryStore((s) => s.selectGenre);
   const selectGenreOnly = useLibraryStore((s) => s.selectGenreOnly);
-  const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const loadAllAlbums = useLibraryStore((s) => s.loadAllAlbums);
-  const loadFavouriteAlbums = useLibraryStore((s) => s.loadFavouriteAlbums);
   const set = useLibraryStore.setState;
 
   const { chevronSize, chevronWidth, textSize, padH, rowHeight, indentDepth } =
@@ -125,13 +123,7 @@ export default function GenreTreeView() {
   }, [selectedGenreId, rows, virtualizer]);
 
   if (!genreTree.length) {
-    return (
-      <div className="empty-state">
-        {sidebarMode === "favourites"
-          ? "No favourites yet — star some albums to see them here!"
-          : "No genres loaded"}
-      </div>
-    );
+    return <div className="empty-state">{"No genres loaded"}</div>;
   }
 
   const rowStyle: React.CSSProperties = {
@@ -175,11 +167,7 @@ export default function GenreTreeView() {
                 style={{ ...rowStyle, top: vItem.start }}
                 onClick={() => {
                   set({ selectedGenreId: "__all__" });
-                  if (sidebarMode === "favourites") {
-                    loadFavouriteAlbums();
-                  } else {
-                    loadAllAlbums();
-                  }
+                  loadAllAlbums();
                 }}
               >
                 {flatGenres ? (

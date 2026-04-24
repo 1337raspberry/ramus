@@ -4,7 +4,9 @@ use std::path::Path;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 
-use crate::models::{Album, Track};
+use rand::seq::SliceRandom;
+
+use crate::models::{Album, AlbumFilterParams, Track};
 
 pub use super::upsert::{AlbumUpsertRow, ArtistRow, ArtistUpsertRow, TrackUpsertRow};
 
@@ -277,7 +279,10 @@ impl CacheDatabase {
         const CHUNK_SIZE: usize = 500;
 
         if genre_names.len() <= CHUNK_SIZE {
-            return Self::albums_for_genres_query(&conn, genre_names);
+            let mut albums = Self::albums_for_genres_query(&conn, genre_names)?;
+            drop(conn);
+            self.populate_album_collections(&mut albums)?;
+            return Ok(albums);
         }
 
         // Collect into a map keyed by sourceId to dedup across chunks, then
@@ -297,6 +302,8 @@ impl CacheDatabase {
                 .cmp(&b.artist_name.to_lowercase())
                 .then_with(|| a.year.cmp(&b.year))
         });
+        drop(conn);
+        self.populate_album_collections(&mut all)?;
         Ok(all)
     }
 
@@ -337,6 +344,9 @@ impl CacheDatabase {
              WHERE a.sourceId = ?1",
         )?;
         let mut albums = Self::map_album_rows(&mut stmt, params![source_id], &conn)?;
+        drop(stmt);
+        drop(conn);
+        self.populate_album_collections(&mut albums)?;
         Ok(albums.pop())
     }
 
@@ -352,7 +362,10 @@ impl CacheDatabase {
              WHERE a.year = ?1
              ORDER BY ar.name COLLATE NOCASE, a.title COLLATE NOCASE",
         )?;
-        let albums = Self::map_album_rows(&mut stmt, params![year], &conn)?;
+        let mut albums = Self::map_album_rows(&mut stmt, params![year], &conn)?;
+        drop(stmt);
+        drop(conn);
+        self.populate_album_collections(&mut albums)?;
         Ok(albums)
     }
 
@@ -368,7 +381,10 @@ impl CacheDatabase {
              WHERE ar.name = ?1 COLLATE NOCASE
              ORDER BY a.year",
         )?;
-        let albums = Self::map_album_rows(&mut stmt, params![artist_name], &conn)?;
+        let mut albums = Self::map_album_rows(&mut stmt, params![artist_name], &conn)?;
+        drop(stmt);
+        drop(conn);
+        self.populate_album_collections(&mut albums)?;
         Ok(albums)
     }
 
@@ -384,7 +400,10 @@ impl CacheDatabase {
              WHERE ar.sourceId = ?1
              ORDER BY a.year",
         )?;
-        let albums = Self::map_album_rows(&mut stmt, params![artist_source_id], &conn)?;
+        let mut albums = Self::map_album_rows(&mut stmt, params![artist_source_id], &conn)?;
+        drop(stmt);
+        drop(conn);
+        self.populate_album_collections(&mut albums)?;
         Ok(albums)
     }
 
@@ -459,7 +478,10 @@ impl CacheDatabase {
              WHERE a.rating >= 10.0
              ORDER BY ar.name COLLATE NOCASE, a.year",
         )?;
-        let albums = Self::map_album_rows(&mut stmt, params![], &conn)?;
+        let mut albums = Self::map_album_rows(&mut stmt, params![], &conn)?;
+        drop(stmt);
+        drop(conn);
+        self.populate_album_collections(&mut albums)?;
         Ok(albums)
     }
 
@@ -474,7 +496,10 @@ impl CacheDatabase {
              JOIN artists ar ON ar.id = a.artistId
              ORDER BY ar.name COLLATE NOCASE, a.year",
         )?;
-        let albums = Self::map_album_rows(&mut stmt, params![], &conn)?;
+        let mut albums = Self::map_album_rows(&mut stmt, params![], &conn)?;
+        drop(stmt);
+        drop(conn);
+        self.populate_album_collections(&mut albums)?;
         Ok(albums)
     }
 
@@ -510,7 +535,28 @@ impl CacheDatabase {
              ORDER BY RANDOM() LIMIT 1",
         )?;
         let mut albums = Self::map_album_rows(&mut stmt, params![], &conn)?;
+        drop(stmt);
+        drop(conn);
+        self.populate_album_collections(&mut albums)?;
         Ok(albums.pop())
+    }
+
+    /// Random album from a filtered pool.
+    pub fn filtered_random_album(
+        &self,
+        filter_params: &AlbumFilterParams,
+    ) -> Result<Option<Album>, CacheError> {
+        let ids = self.filtered_album_internal_ids(filter_params)?;
+        if ids.is_empty() {
+            return Ok(None);
+        }
+        let id_vec: Vec<i64> = ids.into_iter().collect();
+        let mut rng = rand::thread_rng();
+        let Some(&chosen) = id_vec.choose(&mut rng) else {
+            return Ok(None);
+        };
+        let albums = self.albums_by_internal_ids(&HashSet::from([chosen]))?;
+        Ok(albums.into_iter().next())
     }
 
     /// Albums by internal rowid, returning full Album objects.
@@ -553,6 +599,8 @@ impl CacheDatabase {
                     .then_with(|| a.year.cmp(&b.year))
             });
         }
+        drop(conn);
+        self.populate_album_collections(&mut all)?;
         Ok(all)
     }
 
@@ -599,6 +647,118 @@ impl CacheDatabase {
         Ok(())
     }
 
+    pub fn filtered_album_internal_ids(
+        &self,
+        params: &AlbumFilterParams,
+    ) -> Result<HashSet<i64>, CacheError> {
+        let conn = self.conn.lock();
+
+        let mut conditions = Vec::new();
+        let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if params.favourite {
+            conditions.push("a.rating >= 10.0");
+        }
+        if params.unplayed {
+            conditions.push("(a.viewCount IS NULL OR a.viewCount = 0)");
+        }
+        if let Some(min) = params.year_min {
+            bind_values.push(Box::new(min));
+            conditions.push("a.year >= ?");
+        }
+        if let Some(max) = params.year_max {
+            bind_values.push(Box::new(max));
+            conditions.push("a.year <= ?");
+        }
+        if params.year_min.is_some() || params.year_max.is_some() {
+            conditions.push("a.year IS NOT NULL");
+        }
+        if let Some(ref country) = params.country {
+            bind_values.push(Box::new(country.clone()));
+            conditions.push("ar.country = ?");
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", conditions.join(" AND "))
+        };
+
+        let base_sql = format!(
+            "SELECT a.id FROM albums a JOIN artists ar ON ar.id = a.artistId{}",
+            where_clause
+        );
+
+        let mut stmt = conn.prepare(&base_sql)?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            bind_values.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(param_refs.as_slice(), |row| row.get::<_, i64>(0))?;
+        let mut ids: HashSet<i64> = rows.collect::<Result<_, _>>()?;
+        drop(stmt);
+        drop(conn);
+
+        if let Some(ref collection) = params.collection {
+            let col_ids = self.album_ids_for_collection_names(std::slice::from_ref(collection))?;
+            ids.retain(|id| col_ids.contains(id));
+        }
+
+        Ok(ids)
+    }
+
+    pub fn distinct_artist_countries(&self) -> Result<Vec<String>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT country FROM artists
+             WHERE country IS NOT NULL AND country != ''
+             ORDER BY country COLLATE NOCASE",
+        )?;
+        let names = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(names)
+    }
+
+    pub fn populate_album_collections(&self, albums: &mut [Album]) -> Result<(), CacheError> {
+        if albums.is_empty() {
+            return Ok(());
+        }
+        let conn = self.conn.lock();
+        let source_ids: Vec<&str> = albums.iter().map(|a| a.rating_key.as_str()).collect();
+
+        const CHUNK: usize = 500;
+        let mut map: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+
+        for chunk in source_ids.chunks(CHUNK) {
+            let placeholders: Vec<String> = (1..=chunk.len()).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "SELECT a.sourceId, c.name
+                 FROM album_collections ac
+                 JOIN albums a ON a.id = ac.albumId
+                 JOIN collections c ON c.id = ac.collectionId
+                 WHERE a.sourceId IN ({})",
+                placeholders.join(", ")
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let params: Vec<&dyn rusqlite::types::ToSql> =
+                chunk.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            let rows = stmt.query_map(params.as_slice(), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (sid, cname) = row?;
+                map.entry(sid).or_default().push(cname);
+            }
+        }
+
+        for album in albums.iter_mut() {
+            if let Some(cols) = map.remove(&album.rating_key) {
+                album.collections = cols;
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn map_album_rows(
         stmt: &mut rusqlite::Statement,
         params: impl rusqlite::Params,
@@ -615,6 +775,7 @@ impl CacheDatabase {
                     year: row.get(3)?,
                     thumb: row.get(4)?,
                     genres: Vec::new(),
+                    collections: Vec::new(),
                     is_favourite: rating.map(|r| r >= 10.0).unwrap_or(false),
                     studio: row.get(6)?,
                     added_at: row.get(7)?,

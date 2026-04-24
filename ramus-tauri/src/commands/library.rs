@@ -2,7 +2,7 @@ use tauri::State;
 
 use ramus_core::cache::db::CacheStats;
 use ramus_core::genre::node::GenreNode;
-use ramus_core::models::{Album, AlbumColorInfo, ArtistInfo, Track, VibrantPalette};
+use ramus_core::models::{Album, AlbumColorInfo, AlbumFilterParams, ArtistInfo, Track, VibrantPalette};
 use ramus_core::search::engine::GenreExpander;
 use ramus_core::util::plex_art_url;
 use rand::seq::SliceRandom;
@@ -155,12 +155,6 @@ pub async fn get_all_albums(state: State<'_, AppState>) -> CmdResult<Vec<Album>>
 }
 
 #[tauri::command]
-pub async fn get_favourite_albums(state: State<'_, AppState>) -> CmdResult<Vec<Album>> {
-    let albums = with_cache(&state, |db| db.favourite_albums())?;
-    Ok(filter_albums(albums, offline_album_source_ids(&state)?))
-}
-
-#[tauri::command]
 pub async fn get_favourite_tracks(state: State<'_, AppState>) -> CmdResult<Vec<Track>> {
     let tracks = with_cache(&state, |db| db.favourite_tracks())?;
     if state.effective_offline() {
@@ -232,32 +226,33 @@ pub async fn get_all_artists(state: State<'_, AppState>) -> CmdResult<Vec<Artist
 }
 
 #[tauri::command]
-pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeResponse> {
-    let mut fav_ids = with_cache(&state, |db| db.album_ids_for_favourites())?;
+pub async fn get_filtered_genre_tree(
+    state: State<'_, AppState>,
+    filters: AlbumFilterParams,
+) -> CmdResult<GenreTreeResponse> {
+    let mut filtered_ids = with_cache(&state, |db| db.filtered_album_internal_ids(&filters))?;
     if state.effective_offline() {
         let downloaded = with_cache(&state, |db| db.downloaded_album_internal_ids())?;
-        fav_ids = fav_ids.intersection(&downloaded).copied().collect();
+        filtered_ids = filtered_ids.intersection(&downloaded).copied().collect();
     }
     let all_sets = with_cache(&state, |db| db.genre_album_sets())?;
 
-    // Intersect genre album sets with favourite IDs.
-    let filtered: std::collections::HashMap<String, std::collections::HashSet<i64>> = all_sets
+    let intersected: std::collections::HashMap<String, std::collections::HashSet<i64>> = all_sets
         .into_iter()
         .filter_map(|(genre, ids)| {
-            let filtered_ids: std::collections::HashSet<i64> =
-                ids.intersection(&fav_ids).copied().collect();
-            if filtered_ids.is_empty() {
+            let kept: std::collections::HashSet<i64> =
+                ids.intersection(&filtered_ids).copied().collect();
+            if kept.is_empty() {
                 None
             } else {
-                Some((genre, filtered_ids))
+                Some((genre, kept))
             }
         })
         .collect();
 
-    // Deduplicated total: union of favourite album IDs across genres.
     let total_album_count = {
         let mut all: std::collections::HashSet<i64> = std::collections::HashSet::new();
-        for ids in filtered.values() {
+        for ids in intersected.values() {
             all.extend(ids);
         }
         all.len()
@@ -265,9 +260,9 @@ pub async fn get_favourite_genre_tree(state: State<'_, AppState>) -> CmdResult<G
 
     let mapper = state.genre_mapper.read();
     let tree = if let Some(mapper) = mapper.as_ref() {
-        mapper.build_display_tree(&filtered)
+        mapper.build_display_tree(&intersected)
     } else {
-        let mut nodes: Vec<GenreNode> = filtered
+        let mut nodes: Vec<GenreNode> = intersected
             .iter()
             .map(|(name, ids)| GenreNode {
                 id: name.clone(),
@@ -338,9 +333,6 @@ pub async fn get_album(state: State<'_, AppState>, source_id: String) -> CmdResu
 #[tauri::command]
 pub async fn get_random_album(state: State<'_, AppState>) -> CmdResult<Option<Album>> {
     if state.effective_offline() {
-        // Avoid returning a non-playable random album in offline mode. Run
-        // the usual offline filter over the full album list, then pick at
-        // random among what's actually on disk.
         let albums = filter_albums(
             with_cache(&state, |db| db.all_albums())?,
             offline_album_source_ids(&state)?,
@@ -352,6 +344,31 @@ pub async fn get_random_album(state: State<'_, AppState>) -> CmdResult<Option<Al
         return Ok(albums.choose(&mut rng).cloned());
     }
     with_cache(&state, |db| db.random_album())
+}
+
+#[tauri::command]
+pub async fn get_filtered_random_album(
+    state: State<'_, AppState>,
+    filters: AlbumFilterParams,
+) -> CmdResult<Option<Album>> {
+    if state.effective_offline() {
+        let mut filtered_ids = with_cache(&state, |db| db.filtered_album_internal_ids(&filters))?;
+        let downloaded = with_cache(&state, |db| db.downloaded_album_internal_ids())?;
+        filtered_ids.retain(|id| downloaded.contains(id));
+        if filtered_ids.is_empty() {
+            return Ok(None);
+        }
+        let id_vec: Vec<i64> = filtered_ids.into_iter().collect();
+        let mut rng = rand::thread_rng();
+        let Some(&chosen) = id_vec.choose(&mut rng) else {
+            return Ok(None);
+        };
+        let albums = with_cache(&state, |db| {
+            db.albums_by_internal_ids(&std::collections::HashSet::from([chosen]))
+        })?;
+        return Ok(albums.into_iter().next());
+    }
+    with_cache(&state, |db| db.filtered_random_album(&filters))
 }
 
 #[tauri::command]
@@ -466,4 +483,14 @@ pub async fn set_album_palette(
 #[tauri::command]
 pub async fn get_cache_stats(state: State<'_, AppState>) -> CmdResult<CacheStats> {
     with_cache(&state, |db| db.cache_stats())
+}
+
+#[tauri::command]
+pub async fn get_distinct_countries(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
+    with_cache(&state, |db| db.distinct_artist_countries())
+}
+
+#[tauri::command]
+pub async fn get_all_collection_names(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
+    with_cache(&state, |db| db.all_collection_names())
 }

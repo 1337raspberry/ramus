@@ -138,9 +138,7 @@ export default function MobileGenreTree({ onOpenSettings }: Props) {
   const toggleExpanded = useLibraryStore((s) => s.toggleGenreExpanded);
   const expandAll = useLibraryStore((s) => s.expandAll);
   const collapseAll = useLibraryStore((s) => s.collapseAll);
-  const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const loadAllAlbums = useLibraryStore((s) => s.loadAllAlbums);
-  const loadFavouriteAlbums = useLibraryStore((s) => s.loadFavouriteAlbums);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastSelectedGenreId = useLibraryStore((s) => s.lastSelectedGenreId);
@@ -173,18 +171,11 @@ export default function MobileGenreTree({ onOpenSettings }: Props) {
 
   const handleAll = () => {
     useLibraryStore.setState({ selectedGenreId: "__all__" });
-    if (sidebarMode === "favourites") loadFavouriteAlbums();
-    else loadAllAlbums();
+    loadAllAlbums();
   };
 
   if (!genreTree.length) {
-    return (
-      <div className="mobile-empty">
-        {sidebarMode === "favourites"
-          ? "No favourites yet — star some albums to see them here!"
-          : "No genres loaded"}
-      </div>
-    );
+    return <div className="mobile-empty">No genres loaded</div>;
   }
 
   return (

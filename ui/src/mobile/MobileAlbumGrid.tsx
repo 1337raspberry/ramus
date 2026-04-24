@@ -2,9 +2,10 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Album, GenreNode } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
-import { IconChevronLeft, IconChevronDown } from "../components/Icons";
-import type { AlbumSortOrder } from "../stores/libraryStore";
+import { IconChevronLeft, IconChevronDown, IconFilter } from "../components/Icons";
+import { type AlbumSortOrder, hasActiveFilters } from "../stores/libraryStore";
 import MobileAlbumCard from "./MobileAlbumCard";
+import MobileFilterPanel from "./MobileFilterPanel";
 import { countryToFlag } from "../lib/countryFlag";
 
 let savedGridScroll = 0;
@@ -89,8 +90,11 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
   const albumSortOrder = useLibraryStore((s) => s.albumSortOrder);
   const setAlbumSortOrder = useLibraryStore((s) => s.setAlbumSortOrder);
   const selectGenre = useLibraryStore((s) => s.selectGenre);
+  const albumFilters = useLibraryStore((s) => s.albumFilters);
 
   const [showBreadcrumb, setShowBreadcrumb] = useState(false);
+  const [showFilter, setShowFilter] = useState(false);
+  const filterActive = hasActiveFilters(albumFilters);
 
   const title = useMemo(() => {
     if (searchQuery) return `"${searchQuery}"`;
@@ -156,9 +160,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
       setShowBreadcrumb(false);
       if (crumb.depth === 0) {
         useLibraryStore.setState({ selectedGenreId: "__all__" });
-        const mode = useLibraryStore.getState().sidebarMode;
-        if (mode === "favourites") useLibraryStore.getState().loadFavouriteAlbums();
-        else useLibraryStore.getState().loadAllAlbums();
+        useLibraryStore.getState().loadAllAlbums();
       } else if (crumb.node) {
         selectGenre(crumb.node);
       }
@@ -181,8 +183,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
       });
       // Reload the underlying view.
       if (selectedGenreId === "__all__" || !selectedGenreId) {
-        if (sidebarMode === "favourites") store.loadFavouriteAlbums();
-        else store.loadAllAlbums();
+        store.loadAllAlbums();
       } else {
         const node = findNode(genreTree, selectedGenreId);
         if (node) store.selectGenre(node);
@@ -204,7 +205,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
 
   return (
     <div className="mobile-screen">
-      <header className="mobile-header">
+      <header className="mobile-header mobile-header-4col">
         <button className="mobile-header-circle" onClick={handleBack} aria-label="Back">
           <IconChevronLeft size={22} />
         </button>
@@ -245,6 +246,14 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
             </>
           )}
         </div>
+        <button
+          className={`mobile-header-circle${filterActive ? " accent" : ""}`}
+          onClick={() => setShowFilter(true)}
+          aria-label="Filter albums"
+        >
+          <IconFilter size={18} />
+          {filterActive && <span className="mobile-filter-dot" />}
+        </button>
         <div className="mobile-sort-wrap">
           <SortIcon mode={albumSortOrder} />
           <IconChevronDown size={10} />
@@ -260,6 +269,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
           </select>
         </div>
       </header>
+      {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
 
       {albums.length === 0 ? (
         <div className="mobile-empty">No albums</div>

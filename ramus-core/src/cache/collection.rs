@@ -123,7 +123,7 @@ impl CacheDatabase {
             "SELECT DISTINCT ac.albumId
              FROM album_collections ac
              JOIN collections c ON c.id = ac.collectionId
-             WHERE c.name IN ({})",
+             WHERE c.name COLLATE NOCASE IN ({})",
             placeholders
         );
         let mut stmt = conn.prepare(&sql)?;

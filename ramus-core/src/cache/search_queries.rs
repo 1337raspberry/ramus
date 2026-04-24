@@ -111,7 +111,10 @@ impl CacheDatabase {
              WHERE a.title LIKE ?1 ESCAPE '\\'
              ORDER BY a.title COLLATE NOCASE",
         )?;
-        let albums = Self::map_album_rows(&mut stmt, params![pattern], &conn)?;
+        let mut albums = Self::map_album_rows(&mut stmt, params![pattern], &conn)?;
+        drop(stmt);
+        drop(conn);
+        self.populate_album_collections(&mut albums)?;
         Ok(albums)
     }
 

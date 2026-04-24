@@ -42,13 +42,8 @@ export default function BreadcrumbBar() {
 
   // Read sidebarMode at call-time to avoid stale closures.
   const selectAll = useCallback(() => {
-    const { sidebarMode: mode } = useLibraryStore.getState();
     useLibraryStore.setState({ selectedGenreId: "__all__" });
-    if (mode === "favourites") {
-      useLibraryStore.getState().loadFavouriteAlbums();
-    } else {
-      useLibraryStore.getState().loadAllAlbums();
-    }
+    useLibraryStore.getState().loadAllAlbums();
   }, []);
 
   const crumbs: Crumb[] = useMemo(() => {
