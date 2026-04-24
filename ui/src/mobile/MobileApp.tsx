@@ -192,6 +192,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
 
     if (view === "artists") {
       if (selectedArtistId) return <MobileAlbumGrid contextLabel="Artist" />;
+      if (browseArtistName) return <MobileAlbumGrid contextLabel="" />;
       return <MobileArtistList onOpenSettings={onOpenSettings} />;
     }
 

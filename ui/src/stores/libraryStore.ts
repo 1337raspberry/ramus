@@ -369,6 +369,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       searchQuery: null,
       activeSavedSearchName: null,
       suggestion: null,
+      selectedArtistId: null,
       browseArtistName: name,
       browseYear: null,
     });
