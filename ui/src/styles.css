@@ -3855,6 +3855,10 @@ body.is-fullscreen .focus-body {
   border-radius: 16px 16px 0 0;
   padding: 0 0 env(safe-area-inset-bottom, 16px);
   max-height: 80vh;
+}
+
+.mobile-filter-panel.with-mini {
+  padding-bottom: calc(env(safe-area-inset-bottom, 16px) + 96px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }

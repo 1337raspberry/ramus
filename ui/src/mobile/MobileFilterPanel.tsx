@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   useLibraryStore,
   hasActiveFilters,
@@ -7,6 +8,7 @@ import {
   type AlbumFilters,
 } from "../stores/libraryStore";
 import { getDistinctCountries, getAllCollectionNames } from "../lib/commands";
+import { usePlaybackStore } from "../stores/playbackStore";
 import { countryToFlag } from "../lib/countryFlag";
 
 interface Props {
@@ -37,9 +39,14 @@ export default function MobileFilterPanel({ onDismiss }: Props) {
 
   const activeCount = countActiveFilters(filters);
 
-  return (
+  const hasTrack = !!usePlaybackStore((s) => s.currentTrack);
+
+  return createPortal(
     <div className="mobile-filter-backdrop" onClick={onDismiss}>
-      <div className="mobile-filter-panel" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`mobile-filter-panel${hasTrack ? " with-mini" : ""}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="mobile-filter-header">
           <span className="mobile-filter-title">
             Filters{activeCount > 0 && <span className="mobile-filter-count">{activeCount}</span>}
@@ -157,6 +164,7 @@ export default function MobileFilterPanel({ onDismiss }: Props) {
           </button>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
