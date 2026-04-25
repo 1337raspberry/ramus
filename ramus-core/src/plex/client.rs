@@ -90,6 +90,10 @@ impl PlexClient {
             "macOS"
         } else if cfg!(target_os = "windows") {
             "Windows"
+        } else if cfg!(target_os = "ios") {
+            "iOS"
+        } else if cfg!(target_os = "android") {
+            "Android"
         } else {
             "Linux"
         }
@@ -100,6 +104,10 @@ impl PlexClient {
             "Mac"
         } else if cfg!(target_os = "windows") {
             "PC"
+        } else if cfg!(target_os = "ios") {
+            "iPhone"
+        } else if cfg!(target_os = "android") {
+            "Android"
         } else {
             "Linux"
         }
