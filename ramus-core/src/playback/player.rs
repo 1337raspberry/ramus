@@ -94,6 +94,7 @@ struct PlayerInner {
     is_remote: bool,
     play_session_id: String,
     cache: DownloadCache,
+    last_retried_track: Option<String>,
 }
 
 /// Core audio player managing queue state, mpv commands, and track resolution.
@@ -124,6 +125,7 @@ impl AudioPlayer {
                 is_remote: false,
                 play_session_id: uuid::Uuid::new_v4().to_string(),
                 cache: DownloadCache::new(PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES as u64),
+                last_retried_track: None,
             }),
             persistent_cache: RwLock::new(HashMap::new()),
         }
@@ -554,6 +556,7 @@ impl AudioPlayer {
         inner.state.queue_index = pos;
         inner.state.current_track = Some(inner.state.queue[pos].clone());
         inner.position = 0.0;
+        inner.last_retried_track = None;
     }
 
     /// Handle mpv pause state change.
@@ -566,9 +569,59 @@ impl AudioPlayer {
         }
     }
 
+    /// Rewrite all non-cached, non-current mpv playlist entries to use the
+    /// current `server_url` and `token`. Called after connection failover
+    /// so stale URLs don't cascade-fail when playback reaches them.
+    pub fn rewrite_stale_playlist_urls(&self) {
+        let rewrites: Vec<(usize, String)> = {
+            let persistent = self.persistent_cache.read();
+            let inner = self.inner.lock();
+            let current_idx = inner.state.queue_index;
+
+            inner
+                .state
+                .queue
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, track)| {
+                    if idx == current_idx {
+                        return None;
+                    }
+                    if persistent.contains_key(&track.rating_key) {
+                        return None;
+                    }
+                    if inner.cache.get(&track.rating_key).is_some() {
+                        return None;
+                    }
+                    let url = resolve_url(track, &inner, &persistent)?;
+                    if url.starts_with("file://") {
+                        return None;
+                    }
+                    Some((idx, url))
+                })
+                .collect()
+        };
+
+        if rewrites.is_empty() {
+            return;
+        }
+
+        log::info!(
+            "rewriting {} stale playlist entries after connection change",
+            rewrites.len()
+        );
+
+        for (idx, new_url) in rewrites.iter().rev() {
+            self.mpv.playlist_remove(*idx as i64);
+            self.mpv.load_file_at(new_url, *idx as i64, None);
+        }
+    }
+
     /// Handle mpv file-loaded event.
     pub fn handle_file_loaded(&self) {
-        self.inner.lock().is_loading = false;
+        let mut inner = self.inner.lock();
+        inner.is_loading = false;
+        inner.last_retried_track = None;
     }
 
     /// Handle mpv file-ended event.
@@ -578,11 +631,55 @@ impl AudioPlayer {
                 // Natural end — mpv auto-advances via gapless playback;
                 // if last track, idle-active will fire.
             }
-            FileEndReason::Error(_) => {
+            FileEndReason::Error(ref msg) => {
+                if self.try_recover_current_track() {
+                    log::info!("handle_file_ended: recovered stale URL, retrying");
+                    return;
+                }
+                log::warn!("handle_file_ended: unrecoverable error, skipping: {msg}");
                 self.next();
             }
             _ => {}
         }
+    }
+
+    /// Attempt to recover from a failed track load by rebuilding its URL
+    /// from the current server connection. Returns `true` if a retry was
+    /// issued (the track hadn't been retried yet and we have a fresh URL).
+    fn try_recover_current_track(&self) -> bool {
+        let (idx, new_url) = {
+            let persistent = self.persistent_cache.read();
+            let mut inner = self.inner.lock();
+            let idx = inner.state.queue_index;
+            let Some(track) = inner.state.queue.get(idx) else {
+                return false;
+            };
+            if inner.last_retried_track.as_deref() == Some(&track.rating_key) {
+                return false;
+            }
+            if persistent.contains_key(&track.rating_key) {
+                return false;
+            }
+            if inner.cache.get(&track.rating_key).is_some() {
+                return false;
+            }
+            let Some(url) = resolve_url(track, &inner, &persistent) else {
+                return false;
+            };
+            if url.starts_with("file://") {
+                return false;
+            }
+            inner.last_retried_track = Some(track.rating_key.clone());
+            (idx, url)
+        };
+
+        // Can't playlist_remove the active index (mpv may still hold it).
+        // Instead: insert the fresh URL before it, play it, then remove
+        // the stale entry that shifted to idx+1.
+        self.mpv.load_file_at(&new_url, idx as i64, None);
+        self.mpv.playlist_play_index(idx as i64);
+        self.mpv.playlist_remove((idx + 1) as i64);
+        true
     }
 
     /// Handle mpv idle-active (queue completed).
@@ -1552,17 +1649,20 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_file_ended_error_skips() {
+    fn test_handle_file_ended_error_retries_then_skips() {
         let (player, _) = make_player();
         player.load_queue(
             vec![make_test_track("1"), make_test_track("2")],
             0,
         );
 
+        // First error: player retries by rebuilding the URL — stays on track 0
         player.handle_file_ended(FileEndReason::Error("test".into()));
+        assert_eq!(player.state().queue_index, 0);
 
-        let state = player.state();
-        assert_eq!(state.queue_index, 1);
+        // Second error on the same track: guard prevents infinite loop, skips
+        player.handle_file_ended(FileEndReason::Error("test".into()));
+        assert_eq!(player.state().queue_index, 1);
     }
 
     #[test]
@@ -1696,5 +1796,121 @@ mod tests {
         let session2 = player.play_session_id();
 
         assert_ne!(session1, session2);
+    }
+
+    #[test]
+    fn test_rewrite_stale_playlist_urls_replaces_non_cached() {
+        let (player, mpv) = make_player();
+        player.load_queue(
+            vec![
+                make_test_track("1"),
+                make_test_track("2"),
+                make_test_track("3"),
+            ],
+            0,
+        );
+
+        mpv.calls.lock().clear();
+
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        player.rewrite_stale_playlist_urls();
+
+        let calls = mpv.calls();
+        let removes: Vec<_> = calls
+            .iter()
+            .filter(|c| matches!(c, MockCall::PlaylistRemove(_)))
+            .collect();
+        let inserts: Vec<_> = calls
+            .iter()
+            .filter(|c| matches!(c, MockCall::LoadFileAt { .. }))
+            .collect();
+
+        // Tracks 1 and 2 (indices 1, 2) should be rewritten; track 0 (current) skipped
+        assert_eq!(removes.len(), 2);
+        assert_eq!(inserts.len(), 2);
+
+        // Verify new URLs contain the new server
+        for call in &inserts {
+            if let MockCall::LoadFileAt { url, .. } = call {
+                assert!(url.contains("new.server:32400"));
+                assert!(url.contains("new-token"));
+            }
+        }
+    }
+
+    #[test]
+    fn test_rewrite_skips_cached_and_current() {
+        let (player, mpv) = make_player();
+        player.load_queue(
+            vec![
+                make_test_track("1"),
+                make_test_track("2"),
+                make_test_track("3"),
+            ],
+            0,
+        );
+
+        // Cache track "2" in LRU
+        player.with_cache(|cache| {
+            cache.insert("2".into(), PathBuf::from("/tmp/cached_2.flac"), 1000);
+        });
+
+        mpv.calls.lock().clear();
+
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        player.rewrite_stale_playlist_urls();
+
+        let calls = mpv.calls();
+        let removes: Vec<_> = calls
+            .iter()
+            .filter(|c| matches!(c, MockCall::PlaylistRemove(_)))
+            .collect();
+
+        // Only track "3" (index 2) should be rewritten; "1" is current, "2" is cached
+        assert_eq!(removes.len(), 1);
+        if let MockCall::PlaylistRemove(idx) = removes[0] {
+            assert_eq!(*idx, 2);
+        }
+    }
+
+    #[test]
+    fn test_rewrite_skips_persistent_downloads() {
+        let (player, mpv) = make_player();
+        player.load_queue(
+            vec![
+                make_test_track("1"),
+                make_test_track("2"),
+                make_test_track("3"),
+            ],
+            0,
+        );
+
+        player.register_persistent_download("2".into(), PathBuf::from("/downloads/2.flac"));
+
+        mpv.calls.lock().clear();
+
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        player.rewrite_stale_playlist_urls();
+
+        let calls = mpv.calls();
+        let removes: Vec<_> = calls
+            .iter()
+            .filter(|c| matches!(c, MockCall::PlaylistRemove(_)))
+            .collect();
+
+        // Only track "3" (index 2) rewritten; "1" is current, "2" has persistent download
+        assert_eq!(removes.len(), 1);
     }
 }

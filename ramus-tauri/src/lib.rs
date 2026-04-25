@@ -726,10 +726,13 @@ pub fn run() {
                                 let monitor_reachable = state.server_reachable.clone();
                                 let monitor_app = app_handle.clone();
                                 let monitor_settings_for_changed = state.settings.clone();
+                                let monitor_prefetch = state.prefetch_handle.clone();
                                 connection_monitor.set_on_connection_changed(
                                     std::sync::Arc::new(move |url, token, is_local, _is_http| {
                                         let is_remote = !is_local;
                                         monitor_player.update_server_connection(url, token, is_remote);
+                                        monitor_player.rewrite_stale_playlist_urls();
+                                        monitor_prefetch.notify_skip();
                                         monitor_reachable
                                             .store(true, std::sync::atomic::Ordering::Release);
                                         let offline_manual =

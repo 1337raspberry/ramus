@@ -630,6 +630,7 @@ async fn run_serial_downloads(
 ) {
     let mut prefetch_failed: HashSet<String> = HashSet::new();
     let mut user_failed: HashSet<String> = HashSet::new();
+    let mut consecutive_net_failures: u32 = 0;
 
     loop {
         if shared_gen.load(Ordering::SeqCst) != my_gen {
@@ -680,6 +681,7 @@ async fn run_serial_downloads(
                     user_failed.insert(job.rating_key);
                 }
             }
+            consecutive_net_failures = 0;
             // Loop back to pick up the next user job (or fall through to prefetch).
             continue;
         }
@@ -698,15 +700,43 @@ async fn run_serial_downloads(
 
         match run_prefetch_download(player, http, app, prefetch_dir, &track_id, &url).await {
             Ok(()) => {
+                consecutive_net_failures = 0;
                 player.swap_playlist_entry_to_cached(&track_id);
                 spawn_analyse_task_from_cache(player, track_id, app.clone());
             }
             Err(e) => {
                 log::debug!("prefetch: serial download failed for {track_id}: {e}");
                 prefetch_failed.insert(track_id);
+
+                if is_network_error(&e) {
+                    consecutive_net_failures += 1;
+                    if consecutive_net_failures >= 2 {
+                        log::info!(
+                            "prefetch: {} consecutive network failures, triggering connection re-evaluation",
+                            consecutive_net_failures,
+                        );
+                        let monitor = app
+                            .state::<crate::state::AppState>()
+                            .connection_monitor
+                            .clone();
+                        tokio::spawn(async move {
+                            monitor.evaluate_connection().await;
+                        });
+                        return;
+                    }
+                } else {
+                    consecutive_net_failures = 0;
+                }
             }
         }
     }
+}
+
+fn is_network_error(err: &str) -> bool {
+    err.contains("request error")
+        || err.contains("timed out")
+        || err.contains("connection refused")
+        || err.contains("connection reset")
 }
 
 // --- Prefetch downloads (ephemeral, go into LRU DownloadCache) ---

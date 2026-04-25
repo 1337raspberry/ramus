@@ -250,12 +250,15 @@ pub async fn finalize_onboarding(
     let allow_http = !state.settings.read().refuse_http;
     state.connection_monitor.set_allow_http(allow_http);
     let monitor_player = state.player.clone();
+    let monitor_prefetch = state.prefetch_handle.clone();
     state
         .connection_monitor
         .set_on_connection_changed(std::sync::Arc::new(
             move |url, token, is_local, _is_http| {
                 let is_remote = !is_local;
                 monitor_player.update_server_connection(url, token, is_remote);
+                monitor_player.rewrite_stale_playlist_urls();
+                monitor_prefetch.notify_skip();
                 log::info!(
                     "monitor: updated player connection (is_remote={})",
                     is_remote
