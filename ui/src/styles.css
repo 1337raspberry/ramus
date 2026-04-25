@@ -5217,6 +5217,7 @@ body.is-fullscreen .focus-body {
   right: 0;
   top: 0;
   bottom: -80px;
+  pointer-events: none;
 }
 
 .mobile-sheet-hint-bar {
@@ -5485,6 +5486,11 @@ body.is-fullscreen .focus-body {
 .mobile-sheet-track-fav {
   cursor: pointer;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 20px;
   color: rgba(255, 255, 255, 0.45);
 }
 
@@ -6136,4 +6142,32 @@ body.is-fullscreen .focus-body {
     --text-secondary: #bbbbbb;
     --text-muted: #999999;
   }
+}
+
+/* ---- Toast ---- */
+
+.toast {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-100%);
+  padding: 10px 20px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.8);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  z-index: 99999;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    transform 0.3s ease,
+    opacity 0.3s ease;
+  white-space: nowrap;
+}
+
+.toast-visible {
+  transform: translateX(-50%) translateY(12px);
+  opacity: 1;
 }

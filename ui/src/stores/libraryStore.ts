@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Album, ArtistInfo, GenreNode, Track } from "../lib/types";
+import { useToastStore } from "../components/Toast";
 import {
   getGenreTree,
   getFilteredGenreTree,
@@ -764,7 +765,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             ? { ...state.nowPlayingAlbum, isFavourite: next }
             : state.nowPlayingAlbum,
       }));
-    } catch {}
+    } catch {
+      useToastStore.getState().show("Favourite update failed, try again later");
+    }
   },
 
   toggleTrackFav: async (track) => {
@@ -791,7 +794,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t,
         ),
       }));
-    } catch {}
+    } catch {
+      useToastStore.getState().show("Favourite update failed, try again later");
+    }
   },
 
   playAlbum: async (album, startAt = 0) => {

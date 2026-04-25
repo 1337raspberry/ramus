@@ -124,7 +124,6 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     handleTrackFavToggle,
     handleArtistClick,
     handleAlbumClick,
-    handleYearClick,
     handleGenreClick,
   } = useNowPlayingActions({ onNavigate: onCollapse });
 
@@ -567,13 +566,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
               <LyricsOverlay />
             </div>
 
-            <div
-              className="mobile-sheet-title"
-              role="button"
-              tabIndex={0}
-              onClick={handleAlbumClick}
-              style={{ fontSize: 16 }}
-            >
+            <div className="mobile-sheet-title" style={{ fontSize: 16 }}>
               {track.title}
             </div>
             <div
@@ -590,7 +583,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                 className="mobile-sheet-album"
                 role="button"
                 tabIndex={0}
-                onClick={handleYearClick}
+                onClick={handleAlbumClick}
                 style={{ fontSize: 12 }}
               >
                 {nowPlayingAlbum.title}

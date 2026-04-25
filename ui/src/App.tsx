@@ -27,6 +27,7 @@ import { clearPin } from "./components/onboarding/OAuthSignIn";
 import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackground";
 import BreadcrumbDebugPanel from "./components/BreadcrumbDebugPanel";
 import MobileApp from "./mobile/MobileApp";
+import Toast from "./components/Toast";
 import { applyAccent } from "./lib/accent";
 import { handleAndroidBack, pushBackHandler } from "./lib/backHandler";
 
@@ -166,6 +167,7 @@ export default function App() {
           />
         )}
         {showDownloads && <DownloadsPanel onDismiss={() => setShowDownloads(false)} />}
+        <Toast />
       </>
     );
   }
@@ -210,6 +212,7 @@ export default function App() {
       )}
       {showDownloads && <DownloadsPanel onDismiss={() => setShowDownloads(false)} />}
       {showBreadcrumbDebug && <BreadcrumbDebugPanel />}
+      <Toast />
     </>
   );
 }
