@@ -36,3 +36,8 @@ CI-check-to-do.md
 *.keystore
 *.jks
 signing.properties
+
+# Genre AKA source + merge script — local-only authoring tools.
+# open.json (the merged output) IS committed.
+ramus-tauri/data/aka.txt
+scripts/merge-aka-into-open-json.py
