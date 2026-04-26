@@ -255,7 +255,7 @@ export default function MobileAlbumDetail() {
                 >
                   <span className="mobile-track-num">
                     {hotTrackKeys.has(t.ratingKey) && (
-                      <IconFire size={11} className="mobile-hot-icon" />
+                      <IconFire size={14} className="mobile-hot-icon" />
                     )}
                     {t.index ?? i + 1}
                   </span>
@@ -278,7 +278,7 @@ export default function MobileAlbumDetail() {
                       toggleTrackFav(t);
                     }}
                   >
-                    {t.isFavourite ? <IconStarFilled /> : <IconStarEmpty />}
+                    {t.isFavourite ? <IconStarFilled size={18} /> : <IconStarEmpty size={18} />}
                   </button>
                   <div className="mobile-menu-wrap" data-menu-wrap>
                     <button

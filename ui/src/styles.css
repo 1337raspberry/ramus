@@ -1172,7 +1172,7 @@ textarea {
 
 .adv-hot-icon {
   position: absolute;
-  right: calc(100% - 8px);
+  right: calc(100% - 6px);
   top: 50%;
   transform: translateY(-50%);
 }
@@ -1186,8 +1186,8 @@ textarea {
 .adv-chart-bar {
   position: absolute;
   left: -2px;
-  top: 0;
-  height: 1.3em;
+  top: -1px;
+  height: calc(1.3em + 5px);
   background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.12);
   border-radius: 3px;
   pointer-events: none;
@@ -4473,7 +4473,7 @@ body.is-fullscreen .focus-body {
   grid-template-columns: 24px 1fr auto 32px 28px;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 18px;
   background: transparent;
   border: none;
   color: inherit;
@@ -4496,23 +4496,22 @@ body.is-fullscreen .focus-body {
 
 .mobile-hot-icon {
   position: absolute;
-  right: calc(100% - 8px);
+  right: calc(100% - 6px);
   top: 50%;
   transform: translateY(-50%);
 }
 
 .mobile-track-info {
   min-width: 0;
-  overflow: hidden;
   position: relative;
 }
 
 .mobile-chart-bar {
   position: absolute;
   left: -2px;
-  top: 0;
-  height: 1.3em;
-  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.12);
+  top: -1px;
+  height: calc(1.3em + 5px);
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.22);
   border-radius: 3px;
   pointer-events: none;
 }

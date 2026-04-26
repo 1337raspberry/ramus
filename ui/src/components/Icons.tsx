@@ -318,8 +318,16 @@ export function IconTriangleFilled({ size = defaults.size, className }: IconProp
 
 export function IconFire({ size = defaults.size, className }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="var(--accent)" className={className}>
-      <path d="M12 23c-4.97 0-8-3.03-8-7.5 0-3.82 2.86-7.6 4.5-9.5.38-.44 1.06-.36 1.3.16.6 1.28 1.56 2.6 2.7 3.34.1-1.8.6-4.24 2-6.5.3-.48.96-.56 1.34-.14C18.22 5.5 20 9.64 20 15.5c0 4.47-3.03 7.5-8 7.5z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className}>
+      <path
+        d="M12 23c-4.97 0-8-3.03-8-7.5 0-3.82 2.86-7.6 4.5-9.5.38-.44 1.06-.36 1.3.16.6 1.28 1.56 2.6 2.7 3.34.1-2.0.6-4.9 2-7.5.3-.48.96-.56 1.34-.14C18.22 4.5 20 9.0 20 15.5c0 4.47-3.03 7.5-8 7.5z"
+        fill="var(--accent)"
+      />
+      <path
+        d="M12 20.8c-2.4 0-3.9-1.5-3.9-3.8 0-1.65 1.05-3.25 2-4.25.22-.22.6-.13.72.18.28.62.78 1.2 1.34 1.55.06-.95.34-2.15 1.04-3.3.18-.28.56-.32.76-.06 1.18 1.5 2.04 3.5 2.04 6 0 2.3-1.6 3.68-4 3.68z"
+        fill="#fff5d0"
+        fillOpacity="0.55"
+      />
     </svg>
   );
 }

@@ -34,15 +34,30 @@ const SPECIAL_FLAGS: Record<string, string> = {
   world: "\u{1F30D}",
 };
 
+const FLAG_CACHE = new Map<string, string | null>();
+
 export function countryToFlag(name: string): string | null {
+  const cached = FLAG_CACHE.get(name);
+  if (cached !== undefined) return cached;
   const lower = name.toLowerCase();
   const special = SPECIAL_FLAGS[lower];
-  if (special) return special;
+  if (special) {
+    FLAG_CACHE.set(name, special);
+    return special;
+  }
   const sub = SUBDIVISION_FLAGS[lower];
-  if (sub) return sub;
+  if (sub) {
+    FLAG_CACHE.set(name, sub);
+    return sub;
+  }
   const code = COUNTRY_CODES[lower];
-  if (!code) return null;
-  return codeToFlag(code);
+  if (!code) {
+    FLAG_CACHE.set(name, null);
+    return null;
+  }
+  const flag = codeToFlag(code);
+  FLAG_CACHE.set(name, flag);
+  return flag;
 }
 
 // Registered in batches to stay under content-filter thresholds.

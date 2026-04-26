@@ -276,7 +276,7 @@ export default function AlbumDetailView() {
               >
                 <span className="adv-track-num">
                   {hotTrackKeys.has(track.ratingKey) && (
-                    <IconFire size={11} className="adv-hot-icon" />
+                    <IconFire size={14} className="adv-hot-icon" />
                   )}
                   {track.index ?? i + 1}
                 </span>
