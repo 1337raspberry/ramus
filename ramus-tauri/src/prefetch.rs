@@ -907,6 +907,11 @@ async fn run_user_download(
     // at every display size. Fire-and-forget — if the network drops
     // between audio download and these best-effort fetches, we just degrade
     // gracefully at render time.
+    //
+    // The user can remove the download between this point and the spawn
+    // running. We re-check `has_persistent_download` at the top to skip
+    // wasted bandwidth, then call `recompute_image_pins` after warming as
+    // a backstop in case removal lands mid-warm.
     {
         let app_warm = app.clone();
         let rk = job.rating_key.clone();
@@ -914,6 +919,9 @@ async fn run_user_download(
         let file_path_warm = file_path.clone();
         tauri::async_runtime::spawn(async move {
             let state = app_warm.state::<crate::state::AppState>();
+            if !state.player.has_persistent_download(&rk) {
+                return;
+            }
             crate::commands::downloads::warm_waveform_sidecar(&state.client, &rk, &file_path_warm)
                 .await;
             if let Some(thumb) = thumb {
@@ -924,6 +932,7 @@ async fn run_user_download(
                     &thumb,
                 )
                 .await;
+                crate::commands::downloads::recompute_image_pins(&state);
             }
         });
     }

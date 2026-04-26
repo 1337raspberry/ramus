@@ -268,6 +268,7 @@ pub async fn finalize_onboarding(
 
     crate::prefetch::rehydrate_persistent_downloads(&state.player, &db2);
     *state.cache.lock() = Some(db2);
+    crate::commands::downloads::recompute_image_pins(&state);
 
     // url::Url::parse adds a trailing slash that Plex connection URIs don't have.
     let server_url_norm = server_url.trim_end_matches('/');

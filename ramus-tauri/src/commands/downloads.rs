@@ -69,22 +69,39 @@ pub async fn read_waveform_sidecar(audio_path: &Path) -> Option<Vec<f32>> {
     postcard::from_bytes::<Vec<f32>>(&bytes).ok()
 }
 
+/// Album-art sizes warmed at download time. Shared with
+/// `recompute_image_pins` so the pin set covers every size that
+/// `warm_art_cache` writes.
+pub const WARM_ART_SIZES: &[u32] = &[72, 300, 1200];
+
 /// Pre-fetch album art at all 3 display sizes into the on-disk image
 /// cache. Used at user-download time so offline playback has art ready
 /// for every surface that shows it (now playing 1200, grid 300, queue 72).
 /// Best-effort — a single size failing doesn't abort the others.
+///
+/// Inserted entries are pinned so the LRU won't evict them when online
+/// browsing pushes other art into the cache. Pins are released by
+/// `recompute_image_pins` after the underlying download is removed.
 pub async fn warm_art_cache(
     image_cache: &Arc<Mutex<ImageCache>>,
     client: &Arc<PlexClient>,
     http: &reqwest::Client,
     thumb: &str,
 ) {
-    for size in [72u32, 300, 1200] {
-        let already_cached = {
+    for &size in WARM_ART_SIZES {
+        let needs_fetch = {
             let mut cache = image_cache.lock();
-            cache.get(thumb, size).is_some()
+            match cache.get(thumb, size) {
+                Some(_) => {
+                    // Already on disk — just promote to pinned, no
+                    // re-download needed.
+                    cache.pin(thumb, size);
+                    false
+                }
+                None => true,
+            }
         };
-        if already_cached {
+        if !needs_fetch {
             continue;
         }
         let Some(server_url) = client.server_url() else {
@@ -104,8 +121,30 @@ pub async fn warm_art_cache(
             continue;
         };
         let mut cache = image_cache.lock();
-        let _ = cache.insert(thumb, size, &bytes);
+        let _ = cache.insert_pinned(thumb, size, &bytes);
     }
+}
+
+/// Reset the image cache's pin set to match the union of art URLs
+/// referenced by the current `downloads` table. Call after any download
+/// removal so orphaned art becomes evictable, and at startup so
+/// upgrades from older builds (whose cache meta has no pin flags) are
+/// repaired.
+pub fn recompute_image_pins(state: &AppState) {
+    let thumbs = match state.cache.lock().as_ref() {
+        Some(db) => match db.pinned_download_thumbs() {
+            Ok(t) => t,
+            Err(e) => {
+                log::warn!("downloads: pinned_download_thumbs failed: {e}");
+                return;
+            }
+        },
+        None => return,
+    };
+    state
+        .image_cache
+        .lock()
+        .set_pinned_thumbs(&thumbs, WARM_ART_SIZES);
 }
 
 /// Summary of the downloaded album for the Downloads panel. "Partial"
@@ -270,6 +309,7 @@ pub async fn remove_download(
         let spec = ramus_core::playback::spectrum::spec_file_path(std::path::Path::new(&p));
         let _ = tokio::fs::remove_file(spec).await;
     }
+    recompute_image_pins(&state);
     emit_downloads_changed(&app);
     Ok(())
 }
@@ -297,6 +337,7 @@ pub async fn remove_album_downloads(
         let spec = ramus_core::playback::spectrum::spec_file_path(std::path::Path::new(p));
         let _ = tokio::fs::remove_file(spec).await;
     }
+    recompute_image_pins(&state);
     emit_downloads_changed(&app);
     Ok(paths.len())
 }
@@ -312,6 +353,7 @@ pub async fn remove_all_downloads(app: AppHandle, state: State<'_, AppState>) ->
         let spec = ramus_core::playback::spectrum::spec_file_path(std::path::Path::new(p));
         let _ = tokio::fs::remove_file(spec).await;
     }
+    recompute_image_pins(&state);
     emit_downloads_changed(&app);
     Ok(paths.len())
 }

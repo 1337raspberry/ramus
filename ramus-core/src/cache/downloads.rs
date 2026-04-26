@@ -140,6 +140,23 @@ impl CacheDatabase {
         Ok(ids)
     }
 
+    /// Distinct album art URLs (`thumb` paths) for every album that has
+    /// at least one downloaded track. Used to recompute the image-cache
+    /// pin set after download removals so warmed art for offline playback
+    /// isn't churned out by online browsing.
+    pub fn pinned_download_thumbs(&self) -> Result<HashSet<String>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT a.artUrl FROM albums a
+             JOIN downloads d ON d.albumRatingKey = a.sourceId
+             WHERE a.artUrl IS NOT NULL",
+        )?;
+        let thumbs: HashSet<String> = stmt
+            .query_map([], |r| r.get::<_, String>(0))?
+            .collect::<Result<_, _>>()?;
+        Ok(thumbs)
+    }
+
     /// Artist names that have at least one downloaded track. Used by
     /// offline-mode to filter the artists list.
     pub fn downloaded_artist_names(&self) -> Result<HashSet<String>, CacheError> {

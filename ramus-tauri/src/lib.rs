@@ -700,6 +700,9 @@ pub fn run() {
                                                 &db2,
                                             );
                                             *state.cache.lock() = Some(db2);
+                                            crate::commands::downloads::recompute_image_pins(
+                                                &state,
+                                            );
                                         }
                                     }
                                 }

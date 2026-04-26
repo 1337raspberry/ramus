@@ -232,7 +232,12 @@ export const hasCustomGenres = () => invoke<boolean>("has_custom_genres");
 export const flushImageCache = () => invoke<void>("flush_image_cache");
 
 export const getImageCacheStats = () =>
-  invoke<{ entryCount: number; totalSizeBytes: number }>("get_image_cache_stats");
+  invoke<{
+    entryCount: number;
+    totalSizeBytes: number;
+    pinnedCount: number;
+    pinnedSizeBytes: number;
+  }>("get_image_cache_stats");
 
 export const clearAudioCache = () => invoke<void>("clear_audio_cache");
 

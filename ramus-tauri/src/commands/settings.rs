@@ -16,6 +16,11 @@ use super::CmdResult;
 pub struct ImageCacheStats {
     pub entry_count: usize,
     pub total_size_bytes: u64,
+    /// Subset of `entry_count` that is pinned for offline downloads —
+    /// these survive `flush_image_cache`.
+    pub pinned_count: usize,
+    /// Subset of `total_size_bytes` that is pinned for offline downloads.
+    pub pinned_size_bytes: u64,
 }
 
 #[derive(Serialize)]
@@ -123,6 +128,8 @@ pub async fn get_image_cache_stats(state: State<'_, AppState>) -> CmdResult<Imag
     Ok(ImageCacheStats {
         entry_count: cache.entry_count(),
         total_size_bytes: cache.total_size(),
+        pinned_count: cache.pinned_count(),
+        pinned_size_bytes: cache.pinned_size(),
     })
 }
 
