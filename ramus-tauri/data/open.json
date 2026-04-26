@@ -74,6 +74,14 @@
             "lower-case"
           ],
           "children": []
+        },
+        {
+          "name": "Psybient",
+          "short_summary": null,
+          "aka": [
+            "Psychadelic Ambient"
+          ],
+          "children": []
         }
       ]
     },
@@ -1016,7 +1024,7 @@
           "short_summary": null,
           "aka": [
             "modern classical music",
-            "new music"
+            "neoclassical"
           ],
           "children": []
         },
@@ -5712,25 +5720,7 @@
             "avant garde jazz",
             "avant-jazz"
           ],
-          "children": [
-            {
-              "name": "Free Jazz",
-              "short_summary": null,
-              "aka": [
-                "free jazz music"
-              ],
-              "children": [
-                {
-                  "name": "European Free Jazz",
-                  "short_summary": null,
-                  "aka": [
-                    "european free jazz music"
-                  ],
-                  "children": []
-                }
-              ]
-            }
-          ]
+          "children": []
         },
         {
           "name": "Bebop",
@@ -6143,6 +6133,14 @@
             "west-coast jazz"
           ],
           "children": []
+        },
+        {
+          "name": "Contemporary Jazz",
+          "short_summary": null,
+          "aka": [
+            "contemporary-jazz"
+          ],
+          "children": []
         }
       ]
     },
@@ -6253,7 +6251,10 @@
               "aka": [
                 "blackened death metal",
                 "blackdeath",
-                "black/death metal"
+                "black/death metal",
+                "death/black metal",
+                "death/black",
+                "deathblack"
               ],
               "children": []
             },
@@ -6334,6 +6335,24 @@
                 "black & roll",
                 "black&roll",
                 "black'n'roll"
+              ],
+              "children": []
+            },
+            {
+              "name": "Folk Black Metal",
+              "short_summary": null,
+              "aka": [
+                "folk bm",
+                "folk black-metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Avant-Garde Black Metal",
+              "short_summary": null,
+              "aka": [
+                "avantgarde black metal",
+                "avantgarde bm"
               ],
               "children": []
             }
@@ -6430,7 +6449,10 @@
               "aka": [
                 "blackened death metal",
                 "blackdeath",
-                "black/death metal"
+                "black/death metal",
+                "death/black metal",
+                "deathblack",
+                "death/black"
               ],
               "children": []
             },
@@ -6441,6 +6463,15 @@
                 "prog death metal",
                 "prog death-metal",
                 "progressive death-metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Avant-Garde Death Metal",
+              "short_summary": null,
+              "aka": [
+                "avantgarde death metal",
+                "avantgarde dm"
               ],
               "children": []
             }
@@ -6700,7 +6731,20 @@
           "aka": [
             "speed metal music"
           ],
-          "children": []
+          "children": [
+            {
+              "name": "Speed/Thrash Metal",
+              "short_summary": null,
+              "aka": [
+                "speedthrash metal",
+                "speed-thrash metal",
+                "thrash/speed metal",
+                "thrash-speed metal",
+                "thrashspeed"
+              ],
+              "children": []
+            }
+          ]
         },
         {
           "name": "Stoner Rock",
@@ -6803,6 +6847,18 @@
                 "techthrash metal",
                 "techthrash",
                 "technical-thrash metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Speed/Thrash Metal",
+              "short_summary": null,
+              "aka": [
+                "speedthrash metal",
+                "speed-thrash metal",
+                "thrash/speed metal",
+                "thrash-speed metal",
+                "thrashspeed"
               ],
               "children": []
             }
@@ -9116,6 +9172,22 @@
               "children": []
             }
           ]
+        },
+        {
+          "name": "Funk Rock",
+          "short_summary": null,
+          "aka": [
+            "funk-rock"
+          ],
+          "children": []
+        },
+        {
+          "name": "Instrumental Rock",
+          "short_summary": null,
+          "aka": [
+            "instrumental-rock"
+          ],
+          "children": []
         }
       ]
     },
