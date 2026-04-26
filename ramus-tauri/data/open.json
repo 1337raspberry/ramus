@@ -3849,16 +3849,6 @@
               "children": []
             },
             {
-              "name": "US Garage",
-              "short_summary": null,
-              "aka": [
-                "usg",
-                "u.s. garage",
-                "us-garage"
-              ],
-              "children": []
-            },
-            {
               "name": "Vocal House",
               "short_summary": null,
               "aka": [
@@ -4622,99 +4612,6 @@
           ]
         },
         {
-          "name": "UK Garage",
-          "short_summary": null,
-          "aka": [
-            "ukg",
-            "u.k. garage",
-            "uk-garage"
-          ],
-          "children": [
-            {
-              "name": "2-Step",
-              "short_summary": null,
-              "aka": [
-                "2 step",
-                "2step",
-                "two step",
-                "two-step",
-                "2-step garage"
-              ],
-              "children": []
-            },
-            {
-              "name": "4x4",
-              "short_summary": null,
-              "aka": [
-                "four by four",
-                "4 by 4",
-                "4-4"
-              ],
-              "children": []
-            },
-            {
-              "name": "Bassline",
-              "short_summary": null,
-              "aka": [
-                "bassline house",
-                "niche",
-                "4x4 bassline"
-              ],
-              "children": []
-            },
-            {
-              "name": "Breakstep",
-              "short_summary": null,
-              "aka": [
-                "break step",
-                "break-step"
-              ],
-              "children": []
-            },
-            {
-              "name": "Dubstep",
-              "short_summary": null,
-              "aka": [
-                "dub step",
-                "dub-step"
-              ],
-              "children": []
-            },
-            {
-              "name": "Funky",
-              "short_summary": null,
-              "aka": [
-                "funky music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Grime",
-              "short_summary": null,
-              "aka": [
-                "grime music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Speed Garage",
-              "short_summary": null,
-              "aka": [
-                "speed garage music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Trap",
-              "short_summary": null,
-              "aka": [
-                "trap music"
-              ],
-              "children": []
-            }
-          ]
-        },
-        {
           "name": "Witch House",
           "short_summary": null,
           "aka": [
@@ -4753,6 +4650,123 @@
           "aka": [
             "electro pop",
             "electro-pop"
+          ],
+          "children": []
+        },
+        {
+          "name": "Garage",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "UK Garage",
+              "short_summary": null,
+              "aka": [
+                "ukg",
+                "u.k. garage",
+                "uk-garage"
+              ],
+              "children": [
+                {
+                  "name": "2-Step",
+                  "short_summary": null,
+                  "aka": [
+                    "2 step",
+                    "2step",
+                    "two step",
+                    "two-step",
+                    "2-step garage"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "4x4",
+                  "short_summary": null,
+                  "aka": [
+                    "four by four",
+                    "4 by 4",
+                    "4-4"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Bassline",
+                  "short_summary": null,
+                  "aka": [
+                    "bassline house",
+                    "niche",
+                    "4x4 bassline"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Breakstep",
+                  "short_summary": null,
+                  "aka": [
+                    "break step",
+                    "break-step"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Dubstep",
+                  "short_summary": null,
+                  "aka": [
+                    "dub step",
+                    "dub-step"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Funky",
+                  "short_summary": null,
+                  "aka": [
+                    "funky music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Grime",
+                  "short_summary": null,
+                  "aka": [
+                    "grime music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Speed Garage",
+                  "short_summary": null,
+                  "aka": [
+                    "speed garage music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Trap",
+                  "short_summary": null,
+                  "aka": [
+                    "trap music"
+                  ],
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "US Garage",
+              "short_summary": null,
+              "aka": [
+                "usg",
+                "u.s. garage",
+                "us-garage"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Vaporwave",
+          "short_summary": null,
+          "aka": [
+            "vapor"
           ],
           "children": []
         }
@@ -6402,6 +6416,32 @@
                 "speed-black metal"
               ],
               "children": []
+            },
+            {
+              "name": "Blackened Doom Metal",
+              "short_summary": null,
+              "aka": [
+                "black/doom metal",
+                "doom/black metal",
+                "black-doom",
+                "doom-black"
+              ],
+              "children": []
+            },
+            {
+              "name": "Technical Black Metal",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Symphonic Black Metal",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Raw Black Metal",
+              "short_summary": null,
+              "children": []
             }
           ]
         },
@@ -6521,6 +6561,14 @@
                 "avantgarde dm"
               ],
               "children": []
+            },
+            {
+              "name": "Atmospheric Death Metal",
+              "short_summary": null,
+              "aka": [
+                "atmospheric dm"
+              ],
+              "children": []
             }
           ]
         },
@@ -6559,6 +6607,17 @@
                 "death doom metal",
                 "doom/death",
                 "doom/death metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Blackened Doom Metal",
+              "short_summary": null,
+              "aka": [
+                "black/doom metal",
+                "doom/black metal",
+                "black-doom",
+                "doom-black"
               ],
               "children": []
             }
@@ -7437,7 +7496,13 @@
             "psych pop",
             "psych-pop"
           ],
-          "children": []
+          "children": [
+            {
+              "name": "Hypnagogic Pop",
+              "short_summary": null,
+              "children": []
+            }
+          ]
         },
         {
           "name": "Schlager",
@@ -7572,6 +7637,24 @@
           "short_summary": null,
           "aka": [
             "wonkypop"
+          ],
+          "children": []
+        },
+        {
+          "name": "Art Pop",
+          "short_summary": null,
+          "aka": [
+            "art-pop",
+            "artpop"
+          ],
+          "children": []
+        },
+        {
+          "name": "Hyperpop",
+          "short_summary": null,
+          "aka": [
+            "hyper pop",
+            "hyper-pop"
           ],
           "children": []
         }
@@ -7829,6 +7912,15 @@
               "children": []
             }
           ]
+        },
+        {
+          "name": "Doo-Wop",
+          "short_summary": null,
+          "aka": [
+            "doowop",
+            "doo wop"
+          ],
+          "children": []
         }
       ]
     },
@@ -7845,7 +7937,8 @@
           "aka": [
             "alt rock",
             "alt-rock",
-            "altrock"
+            "altrock",
+            "alternative"
           ],
           "children": [
             {
@@ -9309,18 +9402,59 @@
       ]
     },
     {
-      "name": "Soundtrack",
+      "name": "Stage & Screen",
       "short_summary": null,
       "aka": [
-        "ost",
-        "original soundtrack",
-        "score",
-        "film score",
-        "film soundtrack",
-        "game soundtrack",
-        "tv soundtrack"
+        "stage and screen"
       ],
-      "children": []
+      "children": [
+        {
+          "name": "Soundtrack",
+          "short_summary": null,
+          "aka": [
+            "ost",
+            "original soundtrack",
+            "score"
+          ],
+          "children": []
+        },
+        {
+          "name": "Game Soundtrack",
+          "short_summary": null,
+          "aka": [
+            "game ost",
+            "game score"
+          ],
+          "children": []
+        },
+        {
+          "name": "TV Soundtrack",
+          "short_summary": null,
+          "aka": [
+            "tv ost",
+            "tv score"
+          ],
+          "children": []
+        },
+        {
+          "name": "Film Soundtrack",
+          "short_summary": null,
+          "aka": [
+            "film ost",
+            "film score"
+          ],
+          "children": []
+        },
+        {
+          "name": "Showtunes",
+          "short_summary": null,
+          "aka": [
+            "musicals",
+            "broadway"
+          ],
+          "children": []
+        }
+      ]
     },
     {
       "name": "World",
