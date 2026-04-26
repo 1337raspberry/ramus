@@ -6170,6 +6170,33 @@
       "short_summary": null,
       "children": [
         {
+          "name": "Avant-Garde Metal",
+          "short_summary": null,
+          "aka": [
+            "avantgarde metal"
+          ],
+          "children": [
+            {
+              "name": "Avant-Garde Black Metal",
+              "short_summary": null,
+              "aka": [
+                "avantgarde black metal",
+                "avantgarde bm"
+              ],
+              "children": []
+            },
+            {
+              "name": "Avant-Garde Death Metal",
+              "short_summary": null,
+              "aka": [
+                "avantgarde death metal",
+                "avantgarde dm"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
           "name": "Alternative Metal",
           "short_summary": null,
           "aka": [
@@ -6353,6 +6380,26 @@
               "aka": [
                 "avantgarde black metal",
                 "avantgarde bm"
+              ],
+              "children": []
+            },
+            {
+              "name": "Ambient Black Metal",
+              "short_summary": null,
+              "aka": [
+                "ambient-black metal",
+                "ambient black-metal",
+                "ambient bm"
+              ],
+              "children": []
+            },
+            {
+              "name": "Black/Speed Metal",
+              "short_summary": null,
+              "aka": [
+                "speed/black metal",
+                "black-speed metal",
+                "speed-black metal"
               ],
               "children": []
             }
@@ -6741,6 +6788,16 @@
                 "thrash/speed metal",
                 "thrash-speed metal",
                 "thrashspeed"
+              ],
+              "children": []
+            },
+            {
+              "name": "Black/Speed Metal",
+              "short_summary": null,
+              "aka": [
+                "speed/black metal",
+                "black-speed metal",
+                "speed-black metal"
               ],
               "children": []
             }
