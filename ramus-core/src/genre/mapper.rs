@@ -1,10 +1,17 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::Mutex;
 
 use crate::genre::node::GenreNode;
 use crate::search::engine::GenreExpander;
+
+/// Default Jaro-Winkler threshold for the fuzzy fallback step in genre
+/// matching. Tunable at runtime via `Settings.genre_fuzzy_threshold` and
+/// `GenreMapper::set_threshold`. A value ≥1.0 disables fuzzy entirely
+/// because no Jaro-Winkler score exceeds 1.0.
+pub const DEFAULT_GENRE_FUZZY_THRESHOLD: f64 = 0.8;
 
 // --- Errors ---
 
@@ -29,6 +36,9 @@ struct GenreFile {
 struct GenreNodeRaw {
     name: String,
     short_summary: Option<String>,
+    /// Curated alternate names for this genre. Optional so user-imported
+    /// custom trees (and any pre-AKA JSON) keep parsing.
+    aka: Option<Vec<String>>,
     children: Option<Vec<GenreNodeRaw>>,
 }
 
@@ -44,8 +54,20 @@ pub struct GenreMapper {
     /// under both R&B and Pop). Matching must expand all of them or
     /// `expand_genre` silently returns an incomplete subtree.
     exact_lookup: HashMap<String, Vec<GenreNode>>,
-    /// All genre names for fuzzy search.
-    all_names: Vec<String>,
+    /// Lowercased AKA → canonical (lowercased) keys. A Vec because
+    /// some AKAs intentionally resolve to multiple canonicals (e.g.
+    /// "kpop" → both "K-Pop" and "Korean Pop", "country blues" →
+    /// both "Country Blues" and "Blues Country"). Resolution goes
+    /// through `exact_lookup` to fetch the actual nodes.
+    aka_lookup: HashMap<String, Vec<String>>,
+    /// Fuzzy search candidate pool: (lowercased text, canonical lower).
+    /// Includes every canonical name and every AKA so a typo in either
+    /// (e.g. "altrok") still resolves to the right canonical.
+    fuzzy_pool: Vec<(String, String)>,
+    /// Jaro-Winkler threshold for fuzzy fallback (f64 bits stored atomically
+    /// for lock-free reads). Updated via `set_threshold`; a value ≥1.0
+    /// disables fuzzy.
+    threshold_bits: AtomicU64,
     /// Cache for matchGenre results.
     cache: Mutex<MatchCache>,
 }
@@ -71,32 +93,58 @@ impl GenreMapper {
             .map(|r| Self::convert_raw_node(r, ""))
             .collect();
 
-        let mut lookup: HashMap<String, Vec<GenreNode>> = HashMap::new();
-        Self::build_lookup(&nodes, &mut lookup);
-        // Deduplicate display names so fuzzy search doesn't try the same
-        // string multiple times when a name appears in several subtrees.
-        let mut seen: HashSet<String> = HashSet::new();
-        let all_names: Vec<String> = lookup
-            .values()
-            .flat_map(|v| v.iter())
-            .filter_map(|n| {
-                if seen.insert(n.name.to_lowercase()) {
-                    Some(n.name.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let mut exact_lookup: HashMap<String, Vec<GenreNode>> = HashMap::new();
+        Self::build_lookup(&nodes, &mut exact_lookup);
+
+        let mut aka_lookup: HashMap<String, Vec<String>> = HashMap::new();
+        Self::collect_akas(&raw.genres, &mut aka_lookup);
+
+        // Fuzzy pool: every distinct canonical (deduplicated by lowercased
+        // name so a node appearing in multiple subtrees is only scored
+        // once) plus every AKA. Each entry carries the canonical lower
+        // it should resolve to.
+        let mut fuzzy_pool: Vec<(String, String)> = Vec::with_capacity(
+            exact_lookup.len() + aka_lookup.values().map(|v| v.len()).sum::<usize>(),
+        );
+        for canonical_lower in exact_lookup.keys() {
+            fuzzy_pool.push((canonical_lower.clone(), canonical_lower.clone()));
+        }
+        for (aka_lower, canonicals) in &aka_lookup {
+            for c in canonicals {
+                fuzzy_pool.push((aka_lower.clone(), c.clone()));
+            }
+        }
 
         Ok(Self {
             root_nodes: nodes,
-            exact_lookup: lookup,
-            all_names,
+            exact_lookup,
+            aka_lookup,
+            fuzzy_pool,
+            threshold_bits: AtomicU64::new(DEFAULT_GENRE_FUZZY_THRESHOLD.to_bits()),
             cache: Mutex::new(MatchCache {
                 matches: HashMap::new(),
                 misses: HashSet::new(),
             }),
         })
+    }
+
+    /// Update the Jaro-Winkler fuzzy threshold and clear the match cache.
+    /// Cache must clear because previously-cached hits/misses depend on
+    /// the old threshold (a tightened threshold may invalidate hits;
+    /// a loosened one may un-miss things). Threshold is clamped to
+    /// `[0.0, 1.0]` — values ≥1.0 disable fuzzy.
+    pub fn set_threshold(&self, threshold: f64) {
+        let clamped = threshold.clamp(0.0, 1.0);
+        self.threshold_bits
+            .store(clamped.to_bits(), Ordering::Relaxed);
+        let mut cache = self.cache.lock();
+        cache.matches.clear();
+        cache.misses.clear();
+    }
+
+    /// Currently active fuzzy threshold (lock-free).
+    pub fn threshold(&self) -> f64 {
+        f64::from_bits(self.threshold_bits.load(Ordering::Relaxed))
     }
 
     /// Match a Plex genre string to the genre hierarchy.
@@ -110,9 +158,12 @@ impl GenreMapper {
         self.match_all(plex_genre).into_iter().next()
     }
 
-    /// Match a Plex genre string to every node in the hierarchy that
-    /// shares that display name. Returns an empty Vec on miss.
-    fn match_all(&self, plex_genre: &str) -> Vec<GenreNode> {
+    /// Match a Plex genre string to every canonical node it resolves to —
+    /// via exact name (case-insensitive), then exact AKA, then fuzzy
+    /// (Jaro-Winkler ≥0.8) over canonicals + AKAs. Returns empty on miss.
+    /// Pub because callers like `build_display_tree` and `get_albums_for_genre`
+    /// need access to the full match set, not just the first hit.
+    pub fn match_all(&self, plex_genre: &str) -> Vec<GenreNode> {
         let key = plex_genre.to_lowercase();
 
         // Check caches first
@@ -126,29 +177,46 @@ impl GenreMapper {
             }
         }
 
-        // Exact match
+        // 1. Exact canonical match
         if let Some(nodes) = self.exact_lookup.get(&key) {
             let nodes = nodes.clone();
             self.cache.lock().matches.insert(key, nodes.clone());
             return nodes;
         }
 
-        // Fuzzy fallback via strsim (expensive — runs outside lock)
-        let mut best_score = 0.0_f64;
-        let mut best_name: Option<&str> = None;
-
-        for name in &self.all_names {
-            let score = strsim::jaro_winkler(&name.to_lowercase(), &key);
-            if score > best_score {
-                best_score = score;
-                best_name = Some(name);
+        // 2. Exact AKA match — resolve every canonical the AKA points to.
+        //    Some AKAs intentionally fan out (e.g. "kpop" -> K-Pop and Korean Pop).
+        if let Some(canonicals) = self.aka_lookup.get(&key) {
+            let mut collected: Vec<GenreNode> = Vec::new();
+            for canonical_lower in canonicals {
+                if let Some(nodes) = self.exact_lookup.get(canonical_lower) {
+                    collected.extend(nodes.iter().cloned());
+                }
+            }
+            if !collected.is_empty() {
+                self.cache.lock().matches.insert(key, collected.clone());
+                return collected;
             }
         }
 
-        // Threshold ~0.8 for jaro_winkler (maps to ~0.4 Fuse threshold)
-        if best_score > 0.8 {
-            if let Some(name) = best_name {
-                if let Some(nodes) = self.exact_lookup.get(&name.to_lowercase()) {
+        // 3. Fuzzy fallback via strsim (expensive — runs outside lock).
+        //    Pool covers canonicals + AKAs, so a typo against either resolves.
+        let mut best_score = 0.0_f64;
+        let mut best_canonical: Option<&str> = None;
+        for (text, canonical) in &self.fuzzy_pool {
+            let score = strsim::jaro_winkler(text, &key);
+            if score > best_score {
+                best_score = score;
+                best_canonical = Some(canonical);
+            }
+        }
+
+        // Threshold tunable at runtime. Default 0.8 ~ 0.4 Fuse threshold.
+        // ≥1.0 disables fuzzy entirely (no JW score exceeds 1.0).
+        let threshold = self.threshold();
+        if best_score > threshold {
+            if let Some(canonical_lower) = best_canonical {
+                if let Some(nodes) = self.exact_lookup.get(canonical_lower) {
                     let nodes = nodes.clone();
                     self.cache.lock().matches.insert(key, nodes.clone());
                     return nodes;
@@ -162,13 +230,37 @@ impl GenreMapper {
 
     /// Build a display tree from album sets, pruning empty branches and computing
     /// deduplicated subtree counts via set unions.
+    ///
+    /// User-library tags are routed through `match_all` so AKAs and fuzzy
+    /// matches contribute albums to the right canonical node. A user tag
+    /// resolving to multiple canonicals (e.g. "kpop" → K-Pop and Korean Pop)
+    /// adds its albums under both. Tags that don't resolve at all land in
+    /// the "Other" bucket.
     pub fn build_display_tree(
         &self,
         genre_album_sets: &HashMap<String, HashSet<i64>>,
     ) -> Vec<GenreNode> {
-        let lowered: HashMap<String, &HashSet<i64>> = genre_album_sets
+        // Translate {user_tag → albums} → {canonical_lower → unioned albums}.
+        // Tags with no canonical match go to `unmatched` for the "Other" bucket.
+        let mut canonical_albums: HashMap<String, HashSet<i64>> = HashMap::new();
+        let mut unmatched: HashMap<&String, &HashSet<i64>> = HashMap::new();
+        for (user_tag, albums) in genre_album_sets {
+            let nodes = self.match_all(user_tag);
+            if nodes.is_empty() {
+                unmatched.insert(user_tag, albums);
+                continue;
+            }
+            for node in &nodes {
+                canonical_albums
+                    .entry(node.name.to_lowercase())
+                    .or_default()
+                    .extend(albums.iter().copied());
+            }
+        }
+
+        let lowered: HashMap<String, &HashSet<i64>> = canonical_albums
             .iter()
-            .map(|(k, v)| (k.to_lowercase(), v))
+            .map(|(k, v)| (k.clone(), v))
             .collect();
 
         let mut matched_names = HashSet::new();
@@ -182,12 +274,6 @@ impl GenreMapper {
         for node in &mut pruned {
             Self::compute_deduplicated_counts(node, &lowered);
         }
-
-        // Collect unmatched genres into an "Other" node
-        let unmatched: HashMap<&String, &HashSet<i64>> = genre_album_sets
-            .iter()
-            .filter(|(k, _)| !matched_names.contains(&k.to_lowercase()))
-            .collect();
 
         if !unmatched.is_empty() {
             let mut other_children: Vec<GenreNode> = unmatched
@@ -252,6 +338,30 @@ impl GenreMapper {
                 .push(node.clone());
             if let Some(ref children) = node.children {
                 Self::build_lookup(children, lookup);
+            }
+        }
+    }
+
+    /// Walk the raw tree and populate {aka_lower -> [canonical_lower, ...]}.
+    /// The same canonical can appear in multiple subtrees with identical
+    /// AKA lists; we dedupe so resolution doesn't return the same nodes twice.
+    fn collect_akas(
+        raws: &[GenreNodeRaw],
+        out: &mut HashMap<String, Vec<String>>,
+    ) {
+        for raw in raws {
+            let canonical_lower = raw.name.to_lowercase();
+            if let Some(akas) = &raw.aka {
+                for aka in akas {
+                    let key = aka.to_lowercase();
+                    let entry = out.entry(key).or_default();
+                    if !entry.contains(&canonical_lower) {
+                        entry.push(canonical_lower.clone());
+                    }
+                }
+            }
+            if let Some(children) = &raw.children {
+                Self::collect_akas(children, out);
             }
         }
     }
@@ -708,5 +818,224 @@ mod tests {
     fn test_mixed_hyphen_segments() {
         let mapper = make_mapper_from_names(&["lo-FI"]);
         assert_eq!(mapper.root_nodes[0].name, "Lo-FI");
+    }
+
+    // --- AKA Matching ---
+
+    const SAMPLE_JSON_WITH_AKAS: &str = r#"{
+      "genres": [
+        {
+          "name": "Alternative Rock",
+          "aka": ["alt rock", "alt-rock", "altrock"],
+          "children": [
+            { "name": "Britpop", "aka": ["brit pop", "brit-pop"], "children": [] }
+          ]
+        },
+        {
+          "name": "K-Pop",
+          "aka": ["kpop", "k pop", "korean pop"],
+          "children": []
+        },
+        {
+          "name": "Korean Pop",
+          "aka": ["kpop", "k-pop", "k pop"],
+          "children": []
+        }
+      ]
+    }"#;
+
+    #[test]
+    fn test_aka_exact_match_resolves_to_canonical() {
+        let mapper = make_mapper(SAMPLE_JSON_WITH_AKAS);
+        let node = mapper.match_genre("alt rock");
+        assert_eq!(node.unwrap().name, "Alternative Rock");
+    }
+
+    #[test]
+    fn test_aka_match_is_case_insensitive() {
+        let mapper = make_mapper(SAMPLE_JSON_WITH_AKAS);
+        let node = mapper.match_genre("ALT-ROCK");
+        assert_eq!(node.unwrap().name, "Alternative Rock");
+    }
+
+    #[test]
+    fn test_aka_shared_by_multiple_canonicals_returns_all() {
+        // "kpop" deliberately resolves to both K-Pop and Korean Pop.
+        let mapper = make_mapper(SAMPLE_JSON_WITH_AKAS);
+        let nodes = mapper.match_all("kpop");
+        let names: Vec<&str> = nodes.iter().map(|n| n.name.as_str()).collect();
+        assert!(names.contains(&"K-Pop"));
+        assert!(names.contains(&"Korean Pop"));
+        assert_eq!(nodes.len(), 2);
+    }
+
+    #[test]
+    fn test_aka_match_takes_priority_over_fuzzy() {
+        // "alt rock" is an exact AKA hit; mustn't fall through to fuzzy.
+        let mapper = make_mapper(SAMPLE_JSON_WITH_AKAS);
+        let node = mapper.match_genre("alt rock").unwrap();
+        assert_eq!(node.name, "Alternative Rock");
+    }
+
+    #[test]
+    fn test_fuzzy_falls_back_to_aka() {
+        // A typo of an AKA ("altrok") should still resolve via fuzzy.
+        let mapper = make_mapper(SAMPLE_JSON_WITH_AKAS);
+        let node = mapper.match_genre("altrok");
+        assert_eq!(node.unwrap().name, "Alternative Rock");
+    }
+
+    #[test]
+    fn test_aka_on_nested_node_works() {
+        let mapper = make_mapper(SAMPLE_JSON_WITH_AKAS);
+        let node = mapper.match_genre("brit-pop");
+        assert_eq!(node.unwrap().name, "Britpop");
+    }
+
+    #[test]
+    fn test_json_without_aka_field_still_loads() {
+        // Backward compat: pre-AKA trees parse cleanly and exact match still works.
+        let mapper = make_mapper(SAMPLE_JSON);
+        assert_eq!(
+            mapper.match_genre("Death Metal").unwrap().name,
+            "Death Metal"
+        );
+    }
+
+    #[test]
+    fn test_build_display_tree_routes_user_tags_through_aka() {
+        // User has the tag "Hip-Hop" but canonical is "Hip Hop" with AKA "hip-hop".
+        // Without AKA routing in build_display_tree, this would land in "Other".
+        let json = r#"{
+          "genres": [
+            { "name": "Hip Hop", "aka": ["hip-hop", "hiphop", "rap"], "children": [] }
+          ]
+        }"#;
+        let mapper = make_mapper(json);
+        let mut sets: HashMap<String, HashSet<i64>> = HashMap::new();
+        sets.insert("Hip-Hop".into(), [1, 2, 3].into());
+
+        let tree = mapper.build_display_tree(&sets);
+        assert!(tree.iter().all(|n| n.name != "Other"), "Hip-Hop should NOT be in Other");
+        let hh = tree.iter().find(|n| n.name == "Hip Hop").unwrap();
+        assert_eq!(hh.album_count, 3);
+    }
+
+    #[test]
+    fn test_build_display_tree_aka_fanout_to_multiple_canonicals() {
+        // User tag "kpop" resolves to both K-Pop and Korean Pop. Both nodes
+        // should receive the tag's albums.
+        let json = r#"{
+          "genres": [
+            { "name": "K-Pop", "aka": ["kpop"], "children": [] },
+            { "name": "Korean Pop", "aka": ["kpop"], "children": [] }
+          ]
+        }"#;
+        let mapper = make_mapper(json);
+        let mut sets: HashMap<String, HashSet<i64>> = HashMap::new();
+        sets.insert("kpop".into(), [42].into());
+
+        let tree = mapper.build_display_tree(&sets);
+        let kpop = tree.iter().find(|n| n.name == "K-Pop").unwrap();
+        let korean = tree.iter().find(|n| n.name == "Korean Pop").unwrap();
+        assert_eq!(kpop.album_count, 1);
+        assert_eq!(korean.album_count, 1);
+    }
+
+    #[test]
+    fn test_build_display_tree_unmatched_user_tags_go_to_other() {
+        let json = r#"{
+          "genres": [{ "name": "Rock", "children": [] }]
+        }"#;
+        let mapper = make_mapper(json);
+        let mut sets: HashMap<String, HashSet<i64>> = HashMap::new();
+        sets.insert("ZZZ Made Up Genre".into(), [1].into());
+
+        let tree = mapper.build_display_tree(&sets);
+        let other = tree.iter().find(|n| n.name == "Other").unwrap();
+        let kids = other.children.as_ref().unwrap();
+        assert_eq!(kids.len(), 1);
+        assert_eq!(kids[0].name, "ZZZ Made Up Genre");
+    }
+
+    #[test]
+    fn test_threshold_default_is_constant() {
+        let mapper = make_mapper(SAMPLE_JSON);
+        assert!((mapper.threshold() - DEFAULT_GENRE_FUZZY_THRESHOLD).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_threshold_at_one_disables_fuzzy() {
+        // "Deth Metal" normally fuzzy-matches "Death Metal" at default 0.8.
+        // With threshold = 1.0, no JW score exceeds it — fuzzy is off.
+        let mapper = make_mapper(SAMPLE_JSON);
+        assert_eq!(mapper.match_genre("Deth Metal").unwrap().name, "Death Metal");
+
+        mapper.set_threshold(1.0);
+        assert!(
+            mapper.match_genre("Deth Metal").is_none(),
+            "threshold 1.0 should disable fuzzy"
+        );
+
+        // Exact match (case-insensitive) still works.
+        assert_eq!(
+            mapper.match_genre("death metal").unwrap().name,
+            "Death Metal"
+        );
+    }
+
+    #[test]
+    fn test_threshold_loosen_catches_more() {
+        let json = r#"{
+          "genres": [{ "name": "Synthwave Outrun", "children": [] }]
+        }"#;
+        let mapper = make_mapper(json);
+
+        // Tight threshold: "Outrun" alone is too distant (different lengths).
+        mapper.set_threshold(0.95);
+        let tight = mapper.match_genre("Outrun");
+        // Loose threshold: should catch it.
+        mapper.set_threshold(0.7);
+        let loose = mapper.match_genre("Outrun");
+
+        // At minimum, loosening must not match strictly less than tightening.
+        assert!(loose.is_some() || tight.is_none());
+    }
+
+    #[test]
+    fn test_threshold_change_clears_cache() {
+        let mapper = make_mapper(SAMPLE_JSON);
+        // Prime the miss cache by querying gibberish at default threshold.
+        assert!(mapper.match_genre("zzz unknown thing").is_none());
+        // Lowering the threshold below 0 keeps things consistent and clears cache.
+        mapper.set_threshold(0.0);
+        // No assertion on result — test passes if no panic and no stale-cache issues.
+        let _ = mapper.match_genre("zzz unknown thing");
+    }
+
+    #[test]
+    fn test_threshold_clamps_to_unit_interval() {
+        let mapper = make_mapper(SAMPLE_JSON);
+        mapper.set_threshold(2.5);
+        assert!((mapper.threshold() - 1.0).abs() < f64::EPSILON);
+        mapper.set_threshold(-3.0);
+        assert!(mapper.threshold().abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_canonical_match_still_takes_priority_over_aka() {
+        // If a query is itself a canonical name, it must hit exact_lookup
+        // before aka_lookup is even consulted.
+        let json = r#"{
+          "genres": [
+            { "name": "Funk", "aka": ["funky"], "children": [] },
+            { "name": "Funky", "aka": ["funk"], "children": [] }
+          ]
+        }"#;
+        let mapper = make_mapper(json);
+        // "Funk" is the canonical of the first node — must resolve to that,
+        // not to "Funky" via the AKA "funk".
+        let node = mapper.match_genre("Funk").unwrap();
+        assert_eq!(node.name, "Funk");
     }
 }

@@ -715,6 +715,7 @@ pub fn run() {
                                     GenreMapper::from_json_bytes(open_json).ok()
                                 });
                                 if let Some(m) = mapper {
+                                    m.set_threshold(settings.genre_fuzzy_threshold);
                                     *state.genre_mapper.write() = Some(m);
                                 }
 
@@ -1104,6 +1105,7 @@ pub fn run() {
             commands::auth::poll_oauth,
             commands::auth::discover_servers,
             commands::auth::test_server,
+            commands::auth::connect_to_discovered,
             commands::auth::connect_manual_url,
             commands::auth::find_music_libraries,
             commands::auth::finalize_onboarding,

@@ -114,6 +114,7 @@ export interface Settings {
   lastSyncTimeSecs: number;
   disableSpectrum: boolean;
   flatGenres: boolean;
+  genreFuzzyThreshold: number;
   eqEnabled: boolean;
   eqBands: number[];
   savedSearches: SavedSearch[];

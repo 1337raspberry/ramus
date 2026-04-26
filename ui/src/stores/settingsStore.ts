@@ -24,6 +24,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   lastSyncTimeSecs: 0,
   disableSpectrum: false,
   flatGenres: false,
+  genreFuzzyThreshold: 0.8,
   eqEnabled: false,
   eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   savedSearches: [],

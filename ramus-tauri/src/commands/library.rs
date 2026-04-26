@@ -109,26 +109,40 @@ pub async fn get_albums_for_genre(
     state: State<'_, AppState>,
     genre: String,
 ) -> CmdResult<Vec<Album>> {
-    // Expand parent genre to include all descendants. Guard against bad fuzzy
-    // matches: if the expanded set doesn't contain the original name
-    // (case-insensitive), the mapper fuzzy-matched to a different family —
-    // fall back to the raw DB name so "Other" genres return correct results.
-    let mapper = state.genre_mapper.read();
-    let names: Vec<String> = if let Some(mapper) = mapper.as_ref() {
-        if let Some(expanded) = mapper.expand_genre(&genre) {
-            let genre_lower = genre.to_lowercase();
-            if expanded.iter().any(|n| n.to_lowercase() == genre_lower) {
-                expanded.into_iter().collect()
-            } else {
-                vec![genre.clone()]
+    // Resolve the canonical to its full subtree, then translate that subtree
+    // back to user-library tags via AKA/fuzzy match — DB stores raw user tags
+    // (e.g. "Hip-Hop"), so querying with canonical names alone misses anything
+    // tagged via an AKA. Guard against bad fuzzy: if expanded doesn't include
+    // the original genre, the mapper landed in the wrong family — fall back
+    // to the raw name (covers "Other" bucket clicks).
+    let mapper_guard = state.genre_mapper.read();
+    let names: Vec<String> = match mapper_guard.as_ref() {
+        Some(mapper) => match mapper.expand_genre(&genre) {
+            Some(expanded) if expanded.iter().any(|n| n.eq_ignore_ascii_case(&genre)) => {
+                let lower_subtree: std::collections::HashSet<String> =
+                    expanded.iter().map(|s| s.to_lowercase()).collect();
+                let user_tags = with_cache(&state, |db| db.genre_album_sets())?
+                    .into_keys()
+                    .collect::<Vec<_>>();
+                let mut matching: Vec<String> = user_tags
+                    .into_iter()
+                    .filter(|tag| {
+                        mapper
+                            .match_all(tag)
+                            .iter()
+                            .any(|n| lower_subtree.contains(&n.name.to_lowercase()))
+                    })
+                    .collect();
+                // Also include the canonical names themselves so verbatim
+                // user-tagged albums still hit even if the inverse pass missed.
+                matching.extend(expanded);
+                matching
             }
-        } else {
-            vec![genre.clone()]
-        }
-    } else {
-        vec![genre.clone()]
+            _ => vec![genre.clone()],
+        },
+        None => vec![genre.clone()],
     };
-    drop(mapper);
+    drop(mapper_guard);
 
     let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
     let albums = with_cache(&state, |db| db.albums_for_genres(&name_refs))?;

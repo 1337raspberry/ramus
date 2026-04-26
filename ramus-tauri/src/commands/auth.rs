@@ -115,6 +115,47 @@ pub async fn test_server(
     }
 }
 
+/// Connect the live client to a server returned by `discover_servers`,
+/// using that server's per-account access token (the master plex.tv token
+/// is rejected by shared servers). The frontend calls this after the user
+/// picks a server and before `find_music_libraries`, so library listing
+/// hits the right URL with a token Plex will accept.
+#[tauri::command]
+pub async fn connect_to_discovered(
+    state: State<'_, AppState>,
+    machine_identifier: String,
+) -> CmdResult<serde_json::Value> {
+    let server = state
+        .discovered_servers
+        .lock()
+        .iter()
+        .find(|s| s.machine_identifier == machine_identifier)
+        .cloned()
+        .ok_or("Server not found — run discover first")?;
+
+    let allow_http = !state.settings.read().refuse_http;
+    // `send_token = false`: probing with the token would notify the server
+    // owner once per candidate. `connect()` below sends it exactly once.
+    let (best_conn, is_http) = state
+        .client
+        .find_best_connection(&server, allow_http, false)
+        .await;
+    let conn = best_conn.ok_or("No reachable connection for server")?;
+    let url = Url::parse(&conn.uri).map_err(|e| e.to_string())?;
+
+    state
+        .client
+        .connect(url, server.access_token.clone())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "uri": conn.uri,
+        "local": conn.local,
+        "isHttp": is_http,
+    }))
+}
+
 #[tauri::command]
 pub async fn connect_manual_url(state: State<'_, AppState>, url: String) -> CmdResult<bool> {
     let token = state.client.token().ok_or("Not authenticated")?;
@@ -243,6 +284,7 @@ pub async fn finalize_onboarding(
 
     let open_json_bytes = include_bytes!("../../data/open.json");
     if let Ok(mapper) = GenreMapper::from_json_bytes(open_json_bytes) {
+        mapper.set_threshold(state.settings.read().genre_fuzzy_threshold);
         *state.genre_mapper.write() = Some(mapper);
     }
 
