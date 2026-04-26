@@ -672,6 +672,13 @@ pub fn run() {
 
                                 player.configure(url.clone(), token, client_id);
 
+                                let url_normalized = url_str.trim_end_matches('/');
+                                let is_local = config
+                                    .connections
+                                    .iter()
+                                    .any(|c| c.uri.trim_end_matches('/') == url_normalized && c.local);
+                                player.set_remote(!is_local);
+
                                 if let Ok(cache_dir) = ramus_core::plex::token_store::config_dir() {
                                     let db_path = cache_dir.join("library_cache.db");
                                     if let Ok(db) = CacheDatabase::open(&db_path) {
@@ -1145,6 +1152,7 @@ pub fn run() {
             commands::playback::fetch_lyrics,
             commands::playback::get_waveform,
             commands::playback::set_media_accent,
+            commands::playback::get_debug_info,
             // spectrum (focus-mode visualiser)
             commands::spectrum::get_spectrum,
             // search

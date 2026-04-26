@@ -10,13 +10,32 @@ use std::sync::Arc;
 use parking_lot::{Mutex, RwLock};
 use url::Url;
 
-use crate::models::{PlaybackConfig, PlaybackStatus, PlayerState, Track};
+use crate::models::{PlaybackConfig, PlaybackMode, PlaybackStatus, PlayerState, Track};
 use crate::playback::download_cache::DownloadCache;
 use crate::playback::mpv::{FileEndReason, LoadMode, MpvPlayer};
 use crate::playback::transcode;
 
 /// 10-band EQ center frequencies in Hz.
 pub const EQ_FREQUENCIES: [u32; 10] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugInfo {
+    pub source: String,
+    pub resolved_url: Option<String>,
+    pub server_url: Option<String>,
+    pub is_remote: bool,
+    pub playback_mode: PlaybackMode,
+    pub is_loading: bool,
+    pub queue_len: usize,
+    pub queue_index: usize,
+    pub lookahead_depth: u8,
+    pub cached_in_lookahead: u32,
+    pub total_in_lookahead: u32,
+    pub codec: Option<String>,
+    pub bitrate: Option<i32>,
+    pub file_size_bytes: Option<i64>,
+}
 
 /// Allowed file extensions for cached audio files.
 const ALLOWED_EXTENSIONS: &[&str] = &[
@@ -521,6 +540,71 @@ impl AudioPlayer {
 
     pub fn play_session_id(&self) -> String {
         self.inner.lock().play_session_id.clone()
+    }
+
+    pub fn debug_snapshot(&self) -> DebugInfo {
+        let persistent = self.persistent_cache.read();
+        let inner = self.inner.lock();
+        let track = inner.state.queue.get(inner.state.queue_index);
+
+        let (source, resolved_url) = match track {
+            Some(t) => {
+                if persistent.contains_key(&t.rating_key) {
+                    ("downloaded".into(), persistent.get(&t.rating_key)
+                        .map(|p| format!("file://{}", p.display())))
+                } else if let Some(path) = inner.cache.get(&t.rating_key) {
+                    ("cached".into(), Some(format!("file://{}", path.display())))
+                } else if transcode::should_transcode(
+                    t.codec.as_deref(),
+                    inner.config.playback_mode,
+                    inner.is_remote,
+                ) {
+                    ("transcode".into(), inner.server_url.as_ref().map(|u| {
+                        format!("{}/music/:/transcode/…", u.as_str().trim_end_matches('/'))
+                    }))
+                } else {
+                    ("streaming".into(), t.part_key.as_ref().and_then(|pk| {
+                        inner.server_url.as_ref().map(|u| {
+                            format!("{}{}", u.as_str().trim_end_matches('/'), pk)
+                        })
+                    }))
+                }
+            }
+            None => ("none".into(), None),
+        };
+
+        let depth = inner.config.lookahead_depth as usize;
+        let pos = inner.state.queue_index;
+        let mut cached_in_lookahead = 0u32;
+        let mut total_in_lookahead = 0u32;
+        for offset in 1..=depth {
+            let Some(t) = inner.state.queue.get(pos + offset) else {
+                break;
+            };
+            total_in_lookahead += 1;
+            if persistent.contains_key(&t.rating_key)
+                || inner.cache.get(&t.rating_key).is_some()
+            {
+                cached_in_lookahead += 1;
+            }
+        }
+
+        DebugInfo {
+            source,
+            resolved_url,
+            server_url: inner.server_url.as_ref().map(|u| u.to_string()),
+            is_remote: inner.is_remote,
+            playback_mode: inner.config.playback_mode,
+            is_loading: inner.is_loading,
+            queue_len: inner.state.queue.len(),
+            queue_index: inner.state.queue_index,
+            lookahead_depth: inner.config.lookahead_depth,
+            cached_in_lookahead,
+            total_in_lookahead,
+            codec: track.and_then(|t| t.codec.clone()),
+            bitrate: track.and_then(|t| t.bitrate),
+            file_size_bytes: track.and_then(|t| t.file_size_bytes),
+        }
     }
 
     /// Handle mpv position change (called by event loop, ~30fps).

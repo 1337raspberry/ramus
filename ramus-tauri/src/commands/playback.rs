@@ -304,3 +304,10 @@ pub async fn set_media_accent(
     }
     Ok(())
 }
+
+#[tauri::command]
+pub async fn get_debug_info(
+    state: State<'_, AppState>,
+) -> CmdResult<ramus_core::playback::player::DebugInfo> {
+    Ok(state.player.debug_snapshot())
+}

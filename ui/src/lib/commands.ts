@@ -234,6 +234,27 @@ export const clearAudioCache = () => invoke<void>("clear_audio_cache");
 export const getAudioCacheStats = () =>
   invoke<{ entryCount: number; totalSizeBytes: number }>("get_audio_cache_stats");
 
+// --- Debug ---
+
+export interface DebugInfo {
+  source: string;
+  resolvedUrl: string | null;
+  serverUrl: string | null;
+  isRemote: boolean;
+  playbackMode: string;
+  isLoading: boolean;
+  queueLen: number;
+  queueIndex: number;
+  lookaheadDepth: number;
+  cachedInLookahead: number;
+  totalInLookahead: number;
+  codec: string | null;
+  bitrate: number | null;
+  fileSizeBytes: number | null;
+}
+
+export const getDebugInfo = () => invoke<DebugInfo>("get_debug_info");
+
 // --- Acknowledgements / licenses ---
 
 export const getAcknowledgementsText = () =>

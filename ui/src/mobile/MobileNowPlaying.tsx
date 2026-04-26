@@ -33,6 +33,7 @@ import {
   IconEqualizer,
 } from "../components/Icons";
 import EqualizerPanel from "../components/EqualizerPanel";
+import MobileDebugPanel from "./MobileDebugPanel";
 
 function IconSkipBack({ size = 22 }: { size?: number }) {
   return (
@@ -160,6 +161,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const toggleLyrics = usePlaybackStore((s) => s.toggleLyrics);
   const showLyrics = usePlaybackStore((s) => s.showLyrics);
   const [showEQ, setShowEQ] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   // --- Swipe gestures ---
   // Mini-player: swipe up to expand. Sheet header: swipe down to collapse.
@@ -607,6 +609,28 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
               >
                 <IconEqualizer size={14} />
               </button>
+              <button
+                className={`mobile-sheet-eq${showDebug ? " active" : ""}`}
+                onClick={() => setShowDebug(true)}
+                aria-label="Debug info"
+              >
+                <svg
+                  width={14}
+                  height={14}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0" />
+                  <path d="M20 12a8 8 0 0 0-8-8" />
+                  <path d="M4 12a8 8 0 0 1 8-8" />
+                  <path d="M20 12a8 8 0 0 1-8 8" />
+                  <path d="M4 12a8 8 0 0 0 8 8" />
+                </svg>
+              </button>
             </div>
 
             <div
@@ -723,6 +747,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
         </div>
       </div>
       {showEQ && <EqualizerPanel onDismiss={() => setShowEQ(false)} />}
+      {showDebug && <MobileDebugPanel onDismiss={() => setShowDebug(false)} />}
     </>
   );
 }
