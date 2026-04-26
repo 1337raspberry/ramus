@@ -6,6 +6,7 @@ target/
 ui/node_modules/
 ui/dist/
 dev/
+.playwright-mcp/
 # libmpv-2.dll downloaded by the Release workflow on Windows runners —
 # not a checked-in binary; CI fetches it fresh each build.
 ramus-tauri/windows-deps/
@@ -41,3 +42,8 @@ signing.properties
 # open.json (the merged output) IS committed.
 ramus-tauri/data/aka.txt
 scripts/merge-aka-into-open-json.py
+
+# Genre tree editor — scratch file + Playwright screenshots are local-only.
+# The tool source under tools/genre-editor/ stays trackable.
+tools/genre-editor/screenshots/
+ramus-tauri/data/edittest.json

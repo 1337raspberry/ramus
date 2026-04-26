@@ -2,725 +2,78 @@
   "updated_at": "2026-04-16T10:22:52.126918+00:00",
   "genres": [
     {
-      "name": "African",
+      "name": "Ambient",
       "short_summary": null,
       "aka": [
-        "african music"
+        "ambient music"
       ],
       "children": [
         {
-          "name": "African Heavy Metal",
+          "name": "Ambient Dub",
           "short_summary": null,
           "aka": [
-            "african metal"
+            "ambient dub music"
           ],
           "children": []
         },
         {
-          "name": "African Hip Hop",
+          "name": "Ambient House",
           "short_summary": null,
           "aka": [
-            "african rap"
+            "ambient house music"
           ],
           "children": []
         },
         {
-          "name": "Afrobeat",
+          "name": "Ambient Techno",
           "short_summary": null,
           "aka": [
-            "afro beat",
-            "afro-beat",
-            "afrobeats"
+            "ambient techno music"
           ],
           "children": []
         },
         {
-          "name": "Apala",
+          "name": "Dark Ambient",
           "short_summary": null,
           "aka": [
-            "akpala"
+            "dark ambient music"
           ],
           "children": []
         },
         {
-          "name": "Benga",
+          "name": "Drone Music",
           "short_summary": null,
           "aka": [
-            "benga music"
+            "drone"
           ],
           "children": []
         },
         {
-          "name": "Bikutsi",
+          "name": "Illbient",
           "short_summary": null,
           "aka": [
-            "bikutsi music"
+            "ill bient",
+            "ill-bient"
           ],
           "children": []
         },
         {
-          "name": "Bongo Flava",
+          "name": "Isolationism",
           "short_summary": null,
           "aka": [
-            "bongo flavor",
-            "bongo flava music"
+            "isolationist",
+            "isolationist ambient"
           ],
           "children": []
         },
         {
-          "name": "Cape Jazz",
+          "name": "Lowercase",
           "short_summary": null,
           "aka": [
-            "cape town jazz",
-            "capetown jazz"
+            "lower case",
+            "lower-case"
           ],
           "children": []
-        },
-        {
-          "name": "Chimurenga",
-          "short_summary": null,
-          "aka": [
-            "chimurenga music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Coupé-Décalé",
-          "short_summary": null,
-          "aka": [
-            "coupe decale",
-            "coupe-decale",
-            "coupé decalé",
-            "coupedecale"
-          ],
-          "children": []
-        },
-        {
-          "name": "Egyptian",
-          "short_summary": null,
-          "aka": [
-            "egyptian music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Fuji Music",
-          "short_summary": null,
-          "aka": [
-            "fuji"
-          ],
-          "children": []
-        },
-        {
-          "name": "Genge",
-          "short_summary": null,
-          "aka": [
-            "genge music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Highlife",
-          "short_summary": null,
-          "aka": [
-            "high life",
-            "high-life"
-          ],
-          "children": []
-        },
-        {
-          "name": "Hiplife",
-          "short_summary": null,
-          "aka": [
-            "hip life",
-            "hip-life"
-          ],
-          "children": []
-        },
-        {
-          "name": "Isicathamiya",
-          "short_summary": null,
-          "aka": [
-            "cothoza mfana"
-          ],
-          "children": []
-        },
-        {
-          "name": "Jit",
-          "short_summary": null,
-          "aka": [
-            "jiti",
-            "jit music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Jùjú",
-          "short_summary": null,
-          "aka": [
-            "juju",
-            "jùjú music",
-            "juju music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Kapuka",
-          "short_summary": null,
-          "aka": [
-            "kapuka music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Kizomba",
-          "short_summary": null,
-          "aka": [
-            "kizomba music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Kuduro",
-          "short_summary": null,
-          "aka": [
-            "kuduru"
-          ],
-          "children": []
-        },
-        {
-          "name": "Kwaito",
-          "short_summary": null,
-          "aka": [
-            "kwaito music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Kwela",
-          "short_summary": null,
-          "aka": [
-            "kwela jazz"
-          ],
-          "children": []
-        },
-        {
-          "name": "Makossa",
-          "short_summary": null,
-          "aka": [
-            "makossa music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Maloya",
-          "short_summary": null,
-          "aka": [
-            "maloya music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Marrabenta",
-          "short_summary": null,
-          "aka": [
-            "marrabenta music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Mbalax",
-          "short_summary": null,
-          "aka": [
-            "mbalakh"
-          ],
-          "children": []
-        },
-        {
-          "name": "Mbaqanga",
-          "short_summary": null,
-          "aka": [
-            "mbaqanga music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Mbube",
-          "short_summary": null,
-          "aka": [
-            "mbube music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Morna",
-          "short_summary": null,
-          "aka": [
-            "morna music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Museve",
-          "short_summary": null,
-          "aka": [
-            "museve music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Palm-Wine",
-          "short_summary": null,
-          "aka": [
-            "palm wine",
-            "palmwine",
-            "palm-wine music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Raï",
-          "short_summary": null,
-          "aka": [
-            "rai",
-            "rai music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Sakara",
-          "short_summary": null,
-          "aka": [
-            "sakara music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Sega",
-          "short_summary": null,
-          "aka": [
-            "sega music"
-          ],
-          "children": [
-            {
-              "name": "Seggae",
-              "short_summary": null,
-              "aka": [
-                "sega reggae",
-                "seggae music"
-              ],
-              "children": []
-            }
-          ]
-        },
-        {
-          "name": "Seggae",
-          "short_summary": null,
-          "aka": [
-            "sega reggae",
-            "seggae music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Semba",
-          "short_summary": null,
-          "aka": [
-            "semba music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Shangaan Electro",
-          "short_summary": null,
-          "aka": [
-            "shangaan electro music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Soukous",
-          "short_summary": null,
-          "aka": [
-            "soukous music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Taarab",
-          "short_summary": null,
-          "aka": [
-            "taarab music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Zouglou",
-          "short_summary": null,
-          "aka": [
-            "zouglou music"
-          ],
-          "children": [
-            {
-              "name": "Coupé-Décalé",
-              "short_summary": null,
-              "aka": [
-                "coupe decale",
-                "coupe-decale",
-                "coupé decalé",
-                "coupedecale"
-              ],
-              "children": []
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Asian",
-      "short_summary": null,
-      "aka": [
-        "asian music"
-      ],
-      "children": [
-        {
-          "name": "East Asian",
-          "short_summary": null,
-          "aka": [
-            "east asian music"
-          ],
-          "children": [
-            {
-              "name": "Anison",
-              "short_summary": null,
-              "aka": [
-                "anime song",
-                "anime music",
-                "anime songs",
-                "anisong",
-                "anime"
-              ],
-              "children": []
-            },
-            {
-              "name": "C-Pop",
-              "short_summary": null,
-              "aka": [
-                "cpop",
-                "c pop",
-                "chinese pop",
-                "chinese-pop",
-                "chinese popular music"
-              ],
-              "children": [
-                {
-                  "name": "Cantopop",
-                  "short_summary": null,
-                  "aka": [
-                    "canto pop",
-                    "canto-pop",
-                    "cantonese pop",
-                    "canto popular"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Mandopop",
-                  "short_summary": null,
-                  "aka": [
-                    "mando pop",
-                    "mando-pop",
-                    "mandarin pop",
-                    "mandarin chinese pop"
-                  ],
-                  "children": []
-                }
-              ]
-            },
-            {
-              "name": "Cantopop",
-              "short_summary": null,
-              "aka": [
-                "canto pop",
-                "canto-pop",
-                "cantonese pop",
-                "canto popular"
-              ],
-              "children": []
-            },
-            {
-              "name": "Enka",
-              "short_summary": null,
-              "aka": [
-                "enka music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Hong Kong English Pop",
-              "short_summary": null,
-              "aka": [
-                "hk pop",
-                "hk english pop"
-              ],
-              "children": []
-            },
-            {
-              "name": "J-Pop",
-              "short_summary": null,
-              "aka": [
-                "jpop",
-                "j pop",
-                "japanese pop",
-                "japanese-pop"
-              ],
-              "children": []
-            },
-            {
-              "name": "K-Pop",
-              "short_summary": null,
-              "aka": [
-                "kpop",
-                "k pop",
-                "korean pop",
-                "korean-pop"
-              ],
-              "children": []
-            },
-            {
-              "name": "Kayōkyoku",
-              "short_summary": null,
-              "aka": [
-                "kayokyoku",
-                "kayoukyoku"
-              ],
-              "children": []
-            },
-            {
-              "name": "Korean Pop",
-              "short_summary": null,
-              "aka": [
-                "kpop",
-                "k-pop",
-                "k pop"
-              ],
-              "children": []
-            },
-            {
-              "name": "Mandopop",
-              "short_summary": null,
-              "aka": [
-                "mando pop",
-                "mando-pop",
-                "mandarin pop",
-                "mandarin chinese pop"
-              ],
-              "children": []
-            },
-            {
-              "name": "Onkyokei",
-              "short_summary": null,
-              "aka": [
-                "onkyo",
-                "onkyo-kei"
-              ],
-              "children": []
-            },
-            {
-              "name": "Taiwanese Pop",
-              "short_summary": null,
-              "aka": [
-                "t-pop",
-                "tpop",
-                "taiwan pop"
-              ],
-              "children": []
-            }
-          ]
-        },
-        {
-          "name": "Fann At-Tanbura",
-          "short_summary": null,
-          "aka": [
-            "fann at tanbura",
-            "fann al tanbura",
-            "fann at-tanboura"
-          ],
-          "children": []
-        },
-        {
-          "name": "Fijiri",
-          "short_summary": null,
-          "aka": [
-            "fijiri music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Khaliji",
-          "short_summary": null,
-          "aka": [
-            "khaleeji",
-            "khaleegi",
-            "khaleeji music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Liwa",
-          "short_summary": null,
-          "aka": [
-            "liwa music"
-          ],
-          "children": []
-        },
-        {
-          "name": "Sawt",
-          "short_summary": null,
-          "aka": [
-            "sawt music"
-          ],
-          "children": []
-        },
-        {
-          "name": "South And Southeast Asian",
-          "short_summary": null,
-          "aka": [
-            "south asian",
-            "southeast asian"
-          ],
-          "children": [
-            {
-              "name": "Baila",
-              "short_summary": null,
-              "aka": [
-                "baila music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Bhangra",
-              "short_summary": null,
-              "aka": [
-                "bhangra music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Bhojpuri",
-              "short_summary": null,
-              "aka": [
-                "bhojpuri music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Dangdut",
-              "short_summary": null,
-              "aka": [
-                "dangdut music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Filmi",
-              "short_summary": null,
-              "aka": [
-                "bollywood music",
-                "filmi geet",
-                "hindi film music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Indian Pop",
-              "short_summary": null,
-              "aka": [
-                "indipop",
-                "indi-pop"
-              ],
-              "children": []
-            },
-            {
-              "name": "Lavani",
-              "short_summary": null,
-              "aka": [
-                "lavni"
-              ],
-              "children": []
-            },
-            {
-              "name": "Luk Thung",
-              "short_summary": null,
-              "aka": [
-                "luk thung music",
-                "country thai"
-              ],
-              "children": [
-                {
-                  "name": "Luk Krung",
-                  "short_summary": null,
-                  "aka": [
-                    "luk krung music"
-                  ],
-                  "children": []
-                }
-              ]
-            },
-            {
-              "name": "Manila Sound",
-              "short_summary": null,
-              "aka": [
-                "manila sound music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Morlam",
-              "short_summary": null,
-              "aka": [
-                "mor lam",
-                "molam"
-              ],
-              "children": []
-            },
-            {
-              "name": "Pinoy Pop",
-              "short_summary": null,
-              "aka": [
-                "p-pop",
-                "ppop",
-                "philippine pop",
-                "filipino pop"
-              ],
-              "children": []
-            },
-            {
-              "name": "Pop Sunda",
-              "short_summary": null,
-              "aka": [
-                "sundanese pop"
-              ],
-              "children": []
-            },
-            {
-              "name": "Ragini",
-              "short_summary": null,
-              "aka": [
-                "ragini music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Thai Pop",
-              "short_summary": null,
-              "aka": [
-                "t-pop thai",
-                "thaipop"
-              ],
-              "children": []
-            }
-          ]
         }
       ]
     },
@@ -871,7 +224,8 @@
           "name": "Country Blues",
           "short_summary": null,
           "aka": [
-            "country blues music"
+            "blues country",
+            "blues country music"
           ],
           "children": [
             {
@@ -955,14 +309,6 @@
           "short_summary": null,
           "aka": [
             "spiritual blues"
-          ],
-          "children": []
-        },
-        {
-          "name": "Hill Country Blues",
-          "short_summary": null,
-          "aka": [
-            "hill country blues music"
           ],
           "children": []
         },
@@ -1289,15 +635,6 @@
               "short_summary": null,
               "aka": [
                 "samba-rock"
-              ],
-              "children": []
-            },
-            {
-              "name": "Tecnobrega",
-              "short_summary": null,
-              "aka": [
-                "tecno brega",
-                "techno brega"
               ],
               "children": []
             },
@@ -1632,14 +969,6 @@
           ]
         },
         {
-          "name": "Classical Music",
-          "short_summary": null,
-          "aka": [
-            "classical"
-          ],
-          "children": []
-        },
-        {
           "name": "Concerto",
           "short_summary": null,
           "aka": [
@@ -1715,14 +1044,6 @@
             "orchestral music"
           ],
           "children": [
-            {
-              "name": "Orchestral",
-              "short_summary": null,
-              "aka": [
-                "orchestral music"
-              ],
-              "children": []
-            },
             {
               "name": "Symphonic",
               "short_summary": null,
@@ -1938,10 +1259,11 @@
           ]
         },
         {
-          "name": "Blues Country",
+          "name": "Country Blues",
           "short_summary": null,
           "aka": [
-            "country blues"
+            "blues country",
+            "blues country music"
           ],
           "children": []
         },
@@ -2345,82 +1667,6 @@
       ],
       "children": [
         {
-          "name": "Ambient",
-          "short_summary": null,
-          "aka": [
-            "ambient music"
-          ],
-          "children": [
-            {
-              "name": "Ambient Dub",
-              "short_summary": null,
-              "aka": [
-                "ambient dub music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Ambient House",
-              "short_summary": null,
-              "aka": [
-                "ambient house music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Ambient Techno",
-              "short_summary": null,
-              "aka": [
-                "ambient techno music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Dark Ambient",
-              "short_summary": null,
-              "aka": [
-                "dark ambient music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Drone Music",
-              "short_summary": null,
-              "aka": [
-                "drone"
-              ],
-              "children": []
-            },
-            {
-              "name": "Illbient",
-              "short_summary": null,
-              "aka": [
-                "ill bient",
-                "ill-bient"
-              ],
-              "children": []
-            },
-            {
-              "name": "Isolationism",
-              "short_summary": null,
-              "aka": [
-                "isolationist",
-                "isolationist ambient"
-              ],
-              "children": []
-            },
-            {
-              "name": "Lowercase",
-              "short_summary": null,
-              "aka": [
-                "lower case",
-                "lower-case"
-              ],
-              "children": []
-            }
-          ]
-        },
-        {
           "name": "Asian Underground",
           "short_summary": null,
           "aka": [
@@ -2749,14 +1995,6 @@
               "children": []
             },
             {
-              "name": "Dub Music",
-              "short_summary": null,
-              "aka": [
-                "dub style"
-              ],
-              "children": []
-            },
-            {
               "name": "Dubtronica",
               "short_summary": null,
               "aka": [
@@ -2994,41 +2232,7 @@
             "electro genre",
             "electro style"
           ],
-          "children": [
-            {
-              "name": "Crunk",
-              "short_summary": null,
-              "aka": [
-                "crunk music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Electro Backbeat",
-              "short_summary": null,
-              "aka": [
-                "electro backbeat music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Electro-Grime",
-              "short_summary": null,
-              "aka": [
-                "electro grime"
-              ],
-              "children": []
-            },
-            {
-              "name": "Electropop",
-              "short_summary": null,
-              "aka": [
-                "electro pop",
-                "electro-pop"
-              ],
-              "children": []
-            }
-          ]
+          "children": []
         },
         {
           "name": "Electro-Industrial",
@@ -3834,6 +3038,15 @@
                   "short_summary": null,
                   "aka": [
                     "vocal trance music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Psytrance",
+                  "short_summary": null,
+                  "aka": [
+                    "psy trance",
+                    "psy-trance"
                   ],
                   "children": []
                 }
@@ -5119,6 +4332,15 @@
           ]
         },
         {
+          "name": "Synthwave",
+          "short_summary": null,
+          "aka": [
+            "synth-wave",
+            "synth wave"
+          ],
+          "children": []
+        },
+        {
           "name": "Techno",
           "short_summary": null,
           "aka": [
@@ -5237,15 +4459,6 @@
               "children": []
             }
           ]
-        },
-        {
-          "name": "Tecnobrega",
-          "short_summary": null,
-          "aka": [
-            "tecno brega",
-            "techno brega"
-          ],
-          "children": []
         },
         {
           "name": "Trance",
@@ -5388,6 +4601,15 @@
                 "vocal trance music"
               ],
               "children": []
+            },
+            {
+              "name": "Psytrance",
+              "short_summary": null,
+              "aka": [
+                "psy trance",
+                "psy-trance"
+              ],
+              "children": []
             }
           ]
         },
@@ -5490,6 +4712,39 @@
           "aka": [
             "witchhouse",
             "witch-house"
+          ],
+          "children": []
+        },
+        {
+          "name": "Crunk",
+          "short_summary": null,
+          "aka": [
+            "crunk music"
+          ],
+          "children": []
+        },
+        {
+          "name": "Electro Backbeat",
+          "short_summary": null,
+          "aka": [
+            "electro backbeat music"
+          ],
+          "children": []
+        },
+        {
+          "name": "Electro-Grime",
+          "short_summary": null,
+          "aka": [
+            "electro grime"
+          ],
+          "children": []
+        },
+        {
+          "name": "Electropop",
+          "short_summary": null,
+          "aka": [
+            "electro pop",
+            "electro-pop"
           ],
           "children": []
         }
@@ -5904,14 +5159,6 @@
               "children": []
             }
           ]
-        },
-        {
-          "name": "Electro Music",
-          "short_summary": null,
-          "aka": [
-            "electro genre"
-          ],
-          "children": []
         },
         {
           "name": "Freestyle Rap",
@@ -6921,6 +6168,674 @@
       ]
     },
     {
+      "name": "Metal",
+      "short_summary": null,
+      "children": [
+        {
+          "name": "Alternative Metal",
+          "short_summary": null,
+          "aka": [
+            "alt metal",
+            "alt-metal",
+            "altmetal"
+          ],
+          "children": [
+            {
+              "name": "Funk Metal",
+              "short_summary": null,
+              "aka": [
+                "funk metal music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Neue Deutsche Härte",
+              "short_summary": null,
+              "aka": [
+                "neue deutsche haerte",
+                "ndh",
+                "neue deutsche harte"
+              ],
+              "children": []
+            },
+            {
+              "name": "Nu Metal",
+              "short_summary": null,
+              "aka": [
+                "numetal",
+                "nu-metal",
+                "new metal",
+                "neo metal",
+                "aggro metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Rap Metal",
+              "short_summary": null,
+              "aka": [
+                "rapmetal",
+                "rap-metal"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Black Metal",
+          "short_summary": null,
+          "aka": [
+            "blackmetal",
+            "black-metal",
+            "bm"
+          ],
+          "children": [
+            {
+              "name": "Atmospheric Black Metal",
+              "short_summary": null,
+              "aka": [
+                "atmospheric bm"
+              ],
+              "children": [
+                {
+                  "name": "Blackgaze",
+                  "short_summary": null,
+                  "aka": [
+                    "black-gaze"
+                  ],
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Black Death Metal",
+              "short_summary": null,
+              "aka": [
+                "blackened death metal",
+                "blackdeath",
+                "black/death metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Post Black Metal",
+              "short_summary": null,
+              "aka": [
+                "post black metal",
+                "post-black metal",
+                "post black-metal",
+                "post bm"
+              ],
+              "children": []
+            },
+            {
+              "name": "Progressive Black Metal",
+              "short_summary": null,
+              "aka": [
+                "prog black metal",
+                "prog bm",
+                "prog black-metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Black/Thrash Metal",
+              "short_summary": null,
+              "aka": [
+                "blackthrash",
+                "blackened thrash metal",
+                "blackened thrash",
+                "black/thrash",
+                "black/thrash metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "DSBM",
+              "short_summary": null,
+              "aka": [
+                "depressive black metal",
+                "depressive suicidal black metal",
+                "suicidal black metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Melodic Black Metal",
+              "short_summary": null,
+              "aka": [
+                "meloblack",
+                "melodic blackmetal",
+                "melodic bm"
+              ],
+              "children": []
+            },
+            {
+              "name": "Pagan Black Metal",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Viking Black Metal",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Dissonant Black Metal",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Black 'n' Roll",
+              "short_summary": null,
+              "aka": [
+                "blacknroll",
+                "black and roll",
+                "black & roll",
+                "black&roll",
+                "black'n'roll"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Christian Metal",
+          "short_summary": null,
+          "aka": [
+            "white metal",
+            "gospel metal"
+          ],
+          "children": []
+        },
+        {
+          "name": "Death Metal",
+          "short_summary": null,
+          "aka": [
+            "deathmetal",
+            "death-metal"
+          ],
+          "children": [
+            {
+              "name": "Death/Doom Metal",
+              "short_summary": null,
+              "aka": [
+                "death doom",
+                "death-doom",
+                "doom death",
+                "death/doom metal",
+                "death-doom metal",
+                "death doom metal",
+                "doom/death",
+                "doom/death metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Goregrind",
+              "short_summary": null,
+              "aka": [
+                "gore grind",
+                "gore-grind"
+              ],
+              "children": []
+            },
+            {
+              "name": "Melodic Death Metal",
+              "short_summary": null,
+              "aka": [
+                "melodeath",
+                "melo-death",
+                "mdm",
+                "melodic-death",
+                "swedish death metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Technical Death Metal",
+              "short_summary": null,
+              "aka": [
+                "tech death",
+                "techdeath",
+                "tech-death",
+                "technical death"
+              ],
+              "children": []
+            },
+            {
+              "name": "Death/Thrash Metal",
+              "short_summary": null,
+              "aka": [
+                "death/thrash metal",
+                "death thrash metal",
+                "death-thrash metal",
+                "death-thrash"
+              ],
+              "children": []
+            },
+            {
+              "name": "Brutal Death Metal",
+              "short_summary": null,
+              "aka": [
+                "brutal death",
+                "brutal-death metal",
+                "brutal/death metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Black Death Metal",
+              "short_summary": null,
+              "aka": [
+                "blackened death metal",
+                "blackdeath",
+                "black/death metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Progressive Death Metal",
+              "short_summary": null,
+              "aka": [
+                "prog death metal",
+                "prog death-metal",
+                "progressive death-metal"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Doom Metal",
+          "short_summary": null,
+          "aka": [
+            "doom"
+          ],
+          "children": [
+            {
+              "name": "Epic Doom Metal",
+              "short_summary": null,
+              "aka": [
+                "epic doom"
+              ],
+              "children": []
+            },
+            {
+              "name": "Funeral Doom",
+              "short_summary": null,
+              "aka": [
+                "funeral doom metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Death/Doom Metal",
+              "short_summary": null,
+              "aka": [
+                "death doom",
+                "death-doom",
+                "doom death",
+                "death/doom metal",
+                "death-doom metal",
+                "death doom metal",
+                "doom/death",
+                "doom/death metal"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Drone Metal",
+          "short_summary": null,
+          "aka": [
+            "drone-metal"
+          ],
+          "children": []
+        },
+        {
+          "name": "Epic Metal",
+          "short_summary": null,
+          "aka": [
+            "epic metal music"
+          ],
+          "children": []
+        },
+        {
+          "name": "Folk Metal",
+          "short_summary": null,
+          "aka": [
+            "folk metal music"
+          ],
+          "children": [
+            {
+              "name": "Celtic Metal",
+              "short_summary": null,
+              "aka": [
+                "celtic metal music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Medieval Metal",
+              "short_summary": null,
+              "aka": [
+                "medieval metal music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Pagan Metal",
+              "short_summary": null,
+              "aka": [
+                "pagan metal music"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Glam Metal",
+          "short_summary": null,
+          "aka": [
+            "hair metal",
+            "pop metal",
+            "cock rock"
+          ],
+          "children": []
+        },
+        {
+          "name": "Gothic Metal",
+          "short_summary": null,
+          "aka": [
+            "goth metal"
+          ],
+          "children": []
+        },
+        {
+          "name": "Industrial Metal",
+          "short_summary": null,
+          "aka": [
+            "industrial metal music"
+          ],
+          "children": [
+            {
+              "name": "Industrial Death Metal",
+              "short_summary": null,
+              "aka": [
+                "industrial death metal music"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Metalcore",
+          "short_summary": null,
+          "aka": [
+            "metal core",
+            "metal-core"
+          ],
+          "children": [
+            {
+              "name": "Deathcore",
+              "short_summary": null,
+              "aka": [
+                "death core",
+                "death-core"
+              ],
+              "children": []
+            },
+            {
+              "name": "Mathcore",
+              "short_summary": null,
+              "aka": [
+                "math core",
+                "math-core"
+              ],
+              "children": [
+                {
+                  "name": "Djent",
+                  "short_summary": null,
+                  "aka": [
+                    "djent metal"
+                  ],
+                  "children": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Neoclassical Metal",
+          "short_summary": null,
+          "aka": [
+            "neo-classical metal",
+            "neoclassical shred"
+          ],
+          "children": []
+        },
+        {
+          "name": "Power Metal",
+          "short_summary": null,
+          "aka": [
+            "powermetal",
+            "power-metal"
+          ],
+          "children": [
+            {
+              "name": "Progressive Power Metal",
+              "short_summary": null,
+              "aka": [
+                "prog power metal",
+                "prog power"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Progressive Metal",
+          "short_summary": null,
+          "aka": [
+            "prog metal",
+            "progmetal",
+            "progressive-metal"
+          ],
+          "children": [
+            {
+              "name": "Progressive Black Metal",
+              "short_summary": null,
+              "aka": [
+                "prog black metal",
+                "prog bm",
+                "prog black-metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Progressive Thrash Metal",
+              "short_summary": null,
+              "aka": [
+                "prog thrash",
+                "progressive thrash",
+                "tech thrash"
+              ],
+              "children": []
+            },
+            {
+              "name": "Progressive Power Metal",
+              "short_summary": null,
+              "aka": [
+                "prog power metal",
+                "prog power"
+              ],
+              "children": []
+            },
+            {
+              "name": "Progressive Death Metal",
+              "short_summary": null,
+              "aka": [
+                "prog death metal",
+                "prog death-metal",
+                "progressive death-metal"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Sludge Metal",
+          "short_summary": null,
+          "aka": [
+            "sludge",
+            "sludge-metal"
+          ],
+          "children": []
+        },
+        {
+          "name": "Speed Metal",
+          "short_summary": null,
+          "aka": [
+            "speed metal music"
+          ],
+          "children": []
+        },
+        {
+          "name": "Stoner Rock",
+          "short_summary": null,
+          "aka": [
+            "stoner-rock",
+            "stoner"
+          ],
+          "children": [
+            {
+              "name": "Stoner Metal",
+              "short_summary": null,
+              "aka": [
+                "stoner-metal"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Symphonic Metal",
+          "short_summary": null,
+          "aka": [
+            "symphonic metal music"
+          ],
+          "children": []
+        },
+        {
+          "name": "Thrash Metal",
+          "short_summary": null,
+          "aka": [
+            "thrash"
+          ],
+          "children": [
+            {
+              "name": "Crossover Thrash",
+              "short_summary": null,
+              "aka": [
+                "crossover",
+                "crossover metal",
+                "crossover thrash metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Groove Metal",
+              "short_summary": null,
+              "aka": [
+                "groove metal music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Progressive Thrash Metal",
+              "short_summary": null,
+              "aka": [
+                "prog thrash",
+                "progressive thrash",
+                "tech thrash"
+              ],
+              "children": []
+            },
+            {
+              "name": "Teutonic Thrash Metal",
+              "short_summary": null,
+              "aka": [
+                "teutonic thrash",
+                "german thrash",
+                "german thrash metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Death/Thrash Metal",
+              "short_summary": null,
+              "aka": [
+                "death/thrash metal",
+                "death thrash metal",
+                "death-thrash metal",
+                "death-thrash"
+              ],
+              "children": []
+            },
+            {
+              "name": "Black/Thrash Metal",
+              "short_summary": null,
+              "aka": [
+                "blackthrash",
+                "blackened thrash metal",
+                "blackened thrash",
+                "black/thrash",
+                "black/thrash metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "Technical Thrash Metal",
+              "short_summary": null,
+              "aka": [
+                "techthrash metal",
+                "techthrash",
+                "technical-thrash metal"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Traditional Heavy Metal",
+          "short_summary": null,
+          "aka": [
+            "traditional metal",
+            "classic metal",
+            "nwobhm-style",
+            "heavy metal",
+            "nwobhm"
+          ],
+          "children": []
+        },
+        {
+          "name": "Viking Metal",
+          "short_summary": null,
+          "aka": [
+            "viking metal music"
+          ],
+          "children": []
+        },
+        {
+          "name": "Djent",
+          "short_summary": null,
+          "children": []
+        }
+      ]
+    },
+    {
       "name": "Pop",
       "short_summary": null,
       "aka": [
@@ -7643,15 +7558,6 @@
                 "romantic flow rap"
               ],
               "children": []
-            },
-            {
-              "name": "Spanish Reggae",
-              "short_summary": null,
-              "aka": [
-                "reggae en español",
-                "reggae en espanol"
-              ],
-              "children": []
             }
           ]
         },
@@ -8343,431 +8249,6 @@
               "short_summary": null,
               "aka": [
                 "stoner-rock"
-              ],
-              "children": []
-            }
-          ]
-        },
-        {
-          "name": "Heavy Metal",
-          "short_summary": null,
-          "aka": [
-            "metal"
-          ],
-          "children": [
-            {
-              "name": "Alternative Metal",
-              "short_summary": null,
-              "aka": [
-                "alt metal",
-                "alt-metal",
-                "altmetal"
-              ],
-              "children": [
-                {
-                  "name": "Funk Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "funk metal music"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Neue Deutsche Härte",
-                  "short_summary": null,
-                  "aka": [
-                    "neue deutsche haerte",
-                    "ndh",
-                    "neue deutsche harte"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Nu Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "numetal",
-                    "nu-metal",
-                    "new metal",
-                    "neo metal",
-                    "aggro metal"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Rap Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "rapmetal",
-                    "rap-metal"
-                  ],
-                  "children": []
-                }
-              ]
-            },
-            {
-              "name": "Black Metal",
-              "short_summary": null,
-              "aka": [
-                "blackmetal",
-                "black-metal",
-                "bm"
-              ],
-              "children": [
-                {
-                  "name": "Viking Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "viking metal music"
-                  ],
-                  "children": []
-                }
-              ]
-            },
-            {
-              "name": "Christian Metal",
-              "short_summary": null,
-              "aka": [
-                "white metal",
-                "gospel metal"
-              ],
-              "children": []
-            },
-            {
-              "name": "Death Metal",
-              "short_summary": null,
-              "aka": [
-                "deathmetal",
-                "death-metal"
-              ],
-              "children": [
-                {
-                  "name": "Death/doom",
-                  "short_summary": null,
-                  "aka": [
-                    "death doom",
-                    "death-doom",
-                    "doom death",
-                    "death/doom metal",
-                    "death-doom metal",
-                    "death doom metal"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Goregrind",
-                  "short_summary": null,
-                  "aka": [
-                    "gore grind",
-                    "gore-grind"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Melodic Death Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "melodeath",
-                    "melo-death",
-                    "mdm",
-                    "melodic-death",
-                    "swedish death metal"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Technical Death Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "tech death",
-                    "techdeath",
-                    "tech-death",
-                    "technical death"
-                  ],
-                  "children": []
-                }
-              ]
-            },
-            {
-              "name": "Doom Metal",
-              "short_summary": null,
-              "aka": [
-                "doom"
-              ],
-              "children": [
-                {
-                  "name": "Epic Doom Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "epic doom"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Funeral Doom",
-                  "short_summary": null,
-                  "aka": [
-                    "funeral doom metal"
-                  ],
-                  "children": []
-                }
-              ]
-            },
-            {
-              "name": "Drone Metal",
-              "short_summary": null,
-              "aka": [
-                "drone-metal"
-              ],
-              "children": []
-            },
-            {
-              "name": "Epic Metal",
-              "short_summary": null,
-              "aka": [
-                "epic metal music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Folk Metal",
-              "short_summary": null,
-              "aka": [
-                "folk metal music"
-              ],
-              "children": [
-                {
-                  "name": "Celtic Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "celtic metal music"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Medieval Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "medieval metal music"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Pagan Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "pagan metal music"
-                  ],
-                  "children": []
-                }
-              ]
-            },
-            {
-              "name": "Glam Metal",
-              "short_summary": null,
-              "aka": [
-                "hair metal",
-                "pop metal",
-                "cock rock"
-              ],
-              "children": []
-            },
-            {
-              "name": "Gothic Metal",
-              "short_summary": null,
-              "aka": [
-                "goth metal"
-              ],
-              "children": []
-            },
-            {
-              "name": "Industrial Metal",
-              "short_summary": null,
-              "aka": [
-                "industrial metal music"
-              ],
-              "children": [
-                {
-                  "name": "Industrial Death Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "industrial death metal music"
-                  ],
-                  "children": []
-                }
-              ]
-            },
-            {
-              "name": "Metalcore",
-              "short_summary": null,
-              "aka": [
-                "metal core",
-                "metal-core"
-              ],
-              "children": [
-                {
-                  "name": "Deathcore",
-                  "short_summary": null,
-                  "aka": [
-                    "death core",
-                    "death-core"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Mathcore",
-                  "short_summary": null,
-                  "aka": [
-                    "math core",
-                    "math-core"
-                  ],
-                  "children": [
-                    {
-                      "name": "Djent",
-                      "short_summary": null,
-                      "aka": [
-                        "djent metal"
-                      ],
-                      "children": []
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "name": "Neoclassical Metal",
-              "short_summary": null,
-              "aka": [
-                "neo-classical metal",
-                "neoclassical shred"
-              ],
-              "children": []
-            },
-            {
-              "name": "Power Metal",
-              "short_summary": null,
-              "aka": [
-                "powermetal",
-                "power-metal"
-              ],
-              "children": [
-                {
-                  "name": "Progressive Power Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "prog power metal",
-                    "prog power"
-                  ],
-                  "children": []
-                }
-              ]
-            },
-            {
-              "name": "Progressive Metal",
-              "short_summary": null,
-              "aka": [
-                "prog metal",
-                "progmetal",
-                "progressive-metal"
-              ],
-              "children": []
-            },
-            {
-              "name": "Sludge Metal",
-              "short_summary": null,
-              "aka": [
-                "sludge",
-                "sludge-metal"
-              ],
-              "children": []
-            },
-            {
-              "name": "Speed Metal",
-              "short_summary": null,
-              "aka": [
-                "speed metal music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Stoner Rock",
-              "short_summary": null,
-              "aka": [
-                "stoner-rock"
-              ],
-              "children": [
-                {
-                  "name": "Stoner Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "stoner-metal"
-                  ],
-                  "children": []
-                }
-              ]
-            },
-            {
-              "name": "Symphonic Metal",
-              "short_summary": null,
-              "aka": [
-                "symphonic metal music"
-              ],
-              "children": []
-            },
-            {
-              "name": "Thrash Metal",
-              "short_summary": null,
-              "aka": [
-                "thrash"
-              ],
-              "children": [
-                {
-                  "name": "Crossover Thrash",
-                  "short_summary": null,
-                  "aka": [
-                    "crossover",
-                    "crossover metal",
-                    "crossover thrash metal"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Groove Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "groove metal music"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Progressive Thrash Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "prog thrash",
-                    "progressive thrash",
-                    "tech thrash"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Teutonic Thrash Metal",
-                  "short_summary": null,
-                  "aka": [
-                    "teutonic thrash",
-                    "german thrash",
-                    "german thrash metal"
-                  ],
-                  "children": []
-                }
-              ]
-            },
-            {
-              "name": "Traditional Heavy Metal",
-              "short_summary": null,
-              "aka": [
-                "traditional metal",
-                "classic metal",
-                "nwobhm-style"
               ],
               "children": []
             }
@@ -9581,6 +9062,24 @@
           "children": []
         },
         {
+          "name": "Stoner Rock",
+          "short_summary": null,
+          "aka": [
+            "stoner-rock",
+            "stoner"
+          ],
+          "children": [
+            {
+              "name": "Stoner Metal",
+              "short_summary": null,
+              "aka": [
+                "stoner-metal"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
           "name": "Sufi Rock",
           "short_summary": null,
           "aka": [
@@ -9688,7 +9187,9 @@
         "original soundtrack",
         "score",
         "film score",
-        "film soundtrack"
+        "film soundtrack",
+        "game soundtrack",
+        "tv soundtrack"
       ],
       "children": []
     },
@@ -9700,12 +9201,717 @@
       ],
       "children": [
         {
-          "name": "World Dub",
+          "name": "African",
           "short_summary": null,
           "aka": [
-            "world dub music"
+            "african music"
           ],
-          "children": []
+          "children": [
+            {
+              "name": "African Heavy Metal",
+              "short_summary": null,
+              "aka": [
+                "african metal"
+              ],
+              "children": []
+            },
+            {
+              "name": "African Hip Hop",
+              "short_summary": null,
+              "aka": [
+                "african rap"
+              ],
+              "children": []
+            },
+            {
+              "name": "Afrobeat",
+              "short_summary": null,
+              "aka": [
+                "afro beat",
+                "afro-beat",
+                "afrobeats"
+              ],
+              "children": []
+            },
+            {
+              "name": "Apala",
+              "short_summary": null,
+              "aka": [
+                "akpala"
+              ],
+              "children": []
+            },
+            {
+              "name": "Benga",
+              "short_summary": null,
+              "aka": [
+                "benga music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Bikutsi",
+              "short_summary": null,
+              "aka": [
+                "bikutsi music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Bongo Flava",
+              "short_summary": null,
+              "aka": [
+                "bongo flavor",
+                "bongo flava music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Cape Jazz",
+              "short_summary": null,
+              "aka": [
+                "cape town jazz",
+                "capetown jazz"
+              ],
+              "children": []
+            },
+            {
+              "name": "Chimurenga",
+              "short_summary": null,
+              "aka": [
+                "chimurenga music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Coupé-Décalé",
+              "short_summary": null,
+              "aka": [
+                "coupe decale",
+                "coupe-decale",
+                "coupé decalé",
+                "coupedecale"
+              ],
+              "children": []
+            },
+            {
+              "name": "Egyptian",
+              "short_summary": null,
+              "aka": [
+                "egyptian music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Fuji Music",
+              "short_summary": null,
+              "aka": [
+                "fuji"
+              ],
+              "children": []
+            },
+            {
+              "name": "Genge",
+              "short_summary": null,
+              "aka": [
+                "genge music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Highlife",
+              "short_summary": null,
+              "aka": [
+                "high life",
+                "high-life"
+              ],
+              "children": []
+            },
+            {
+              "name": "Hiplife",
+              "short_summary": null,
+              "aka": [
+                "hip life",
+                "hip-life"
+              ],
+              "children": []
+            },
+            {
+              "name": "Isicathamiya",
+              "short_summary": null,
+              "aka": [
+                "cothoza mfana"
+              ],
+              "children": []
+            },
+            {
+              "name": "Jit",
+              "short_summary": null,
+              "aka": [
+                "jiti",
+                "jit music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Jùjú",
+              "short_summary": null,
+              "aka": [
+                "juju",
+                "jùjú music",
+                "juju music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Kapuka",
+              "short_summary": null,
+              "aka": [
+                "kapuka music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Kizomba",
+              "short_summary": null,
+              "aka": [
+                "kizomba music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Kuduro",
+              "short_summary": null,
+              "aka": [
+                "kuduru"
+              ],
+              "children": []
+            },
+            {
+              "name": "Kwaito",
+              "short_summary": null,
+              "aka": [
+                "kwaito music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Kwela",
+              "short_summary": null,
+              "aka": [
+                "kwela jazz"
+              ],
+              "children": []
+            },
+            {
+              "name": "Makossa",
+              "short_summary": null,
+              "aka": [
+                "makossa music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Maloya",
+              "short_summary": null,
+              "aka": [
+                "maloya music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Marrabenta",
+              "short_summary": null,
+              "aka": [
+                "marrabenta music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Mbalax",
+              "short_summary": null,
+              "aka": [
+                "mbalakh"
+              ],
+              "children": []
+            },
+            {
+              "name": "Mbaqanga",
+              "short_summary": null,
+              "aka": [
+                "mbaqanga music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Mbube",
+              "short_summary": null,
+              "aka": [
+                "mbube music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Morna",
+              "short_summary": null,
+              "aka": [
+                "morna music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Museve",
+              "short_summary": null,
+              "aka": [
+                "museve music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Palm-Wine",
+              "short_summary": null,
+              "aka": [
+                "palm wine",
+                "palmwine",
+                "palm-wine music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Raï",
+              "short_summary": null,
+              "aka": [
+                "rai",
+                "rai music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Sakara",
+              "short_summary": null,
+              "aka": [
+                "sakara music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Sega",
+              "short_summary": null,
+              "aka": [
+                "sega music"
+              ],
+              "children": [
+                {
+                  "name": "Seggae",
+                  "short_summary": null,
+                  "aka": [
+                    "sega reggae",
+                    "seggae music"
+                  ],
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Seggae",
+              "short_summary": null,
+              "aka": [
+                "sega reggae",
+                "seggae music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Semba",
+              "short_summary": null,
+              "aka": [
+                "semba music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Shangaan Electro",
+              "short_summary": null,
+              "aka": [
+                "shangaan electro music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Soukous",
+              "short_summary": null,
+              "aka": [
+                "soukous music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Taarab",
+              "short_summary": null,
+              "aka": [
+                "taarab music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Zouglou",
+              "short_summary": null,
+              "aka": [
+                "zouglou music"
+              ],
+              "children": [
+                {
+                  "name": "Coupé-Décalé",
+                  "short_summary": null,
+                  "aka": [
+                    "coupe decale",
+                    "coupe-decale",
+                    "coupé decalé",
+                    "coupedecale"
+                  ],
+                  "children": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Asian",
+          "short_summary": null,
+          "aka": [
+            "asian music"
+          ],
+          "children": [
+            {
+              "name": "East Asian",
+              "short_summary": null,
+              "aka": [
+                "east asian music"
+              ],
+              "children": [
+                {
+                  "name": "Anison",
+                  "short_summary": null,
+                  "aka": [
+                    "anime song",
+                    "anime music",
+                    "anime songs",
+                    "anisong",
+                    "anime"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "C-Pop",
+                  "short_summary": null,
+                  "aka": [
+                    "cpop",
+                    "c pop",
+                    "chinese pop",
+                    "chinese-pop",
+                    "chinese popular music"
+                  ],
+                  "children": [
+                    {
+                      "name": "Cantopop",
+                      "short_summary": null,
+                      "aka": [
+                        "canto pop",
+                        "canto-pop",
+                        "cantonese pop",
+                        "canto popular"
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Mandopop",
+                      "short_summary": null,
+                      "aka": [
+                        "mando pop",
+                        "mando-pop",
+                        "mandarin pop",
+                        "mandarin chinese pop"
+                      ],
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "Cantopop",
+                  "short_summary": null,
+                  "aka": [
+                    "canto pop",
+                    "canto-pop",
+                    "cantonese pop",
+                    "canto popular"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Enka",
+                  "short_summary": null,
+                  "aka": [
+                    "enka music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Hong Kong English Pop",
+                  "short_summary": null,
+                  "aka": [
+                    "hk pop",
+                    "hk english pop"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "J-Pop",
+                  "short_summary": null,
+                  "aka": [
+                    "jpop",
+                    "j pop",
+                    "japanese pop",
+                    "japanese-pop"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "K-Pop",
+                  "short_summary": null,
+                  "aka": [
+                    "kpop",
+                    "k pop",
+                    "korean pop",
+                    "korean-pop"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Kayōkyoku",
+                  "short_summary": null,
+                  "aka": [
+                    "kayokyoku",
+                    "kayoukyoku"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Mandopop",
+                  "short_summary": null,
+                  "aka": [
+                    "mando pop",
+                    "mando-pop",
+                    "mandarin pop",
+                    "mandarin chinese pop"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Onkyokei",
+                  "short_summary": null,
+                  "aka": [
+                    "onkyo",
+                    "onkyo-kei"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Taiwanese Pop",
+                  "short_summary": null,
+                  "aka": [
+                    "t-pop",
+                    "tpop",
+                    "taiwan pop"
+                  ],
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "Fann At-Tanbura",
+              "short_summary": null,
+              "aka": [
+                "fann at tanbura",
+                "fann al tanbura",
+                "fann at-tanboura"
+              ],
+              "children": []
+            },
+            {
+              "name": "Fijiri",
+              "short_summary": null,
+              "aka": [
+                "fijiri music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Khaliji",
+              "short_summary": null,
+              "aka": [
+                "khaleeji",
+                "khaleegi",
+                "khaleeji music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Liwa",
+              "short_summary": null,
+              "aka": [
+                "liwa music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Sawt",
+              "short_summary": null,
+              "aka": [
+                "sawt music"
+              ],
+              "children": []
+            },
+            {
+              "name": "South And Southeast Asian",
+              "short_summary": null,
+              "aka": [
+                "south asian",
+                "southeast asianWorld Dub"
+              ],
+              "children": [
+                {
+                  "name": "Baila",
+                  "short_summary": null,
+                  "aka": [
+                    "baila music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Bhangra",
+                  "short_summary": null,
+                  "aka": [
+                    "bhangra music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Bhojpuri",
+                  "short_summary": null,
+                  "aka": [
+                    "bhojpuri music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Dangdut",
+                  "short_summary": null,
+                  "aka": [
+                    "dangdut music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Filmi",
+                  "short_summary": null,
+                  "aka": [
+                    "bollywood music",
+                    "filmi geet",
+                    "hindi film music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Indian Pop",
+                  "short_summary": null,
+                  "aka": [
+                    "indipop",
+                    "indi-pop"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Lavani",
+                  "short_summary": null,
+                  "aka": [
+                    "lavni"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Luk Thung",
+                  "short_summary": null,
+                  "aka": [
+                    "luk thung music",
+                    "country thai"
+                  ],
+                  "children": [
+                    {
+                      "name": "Luk Krung",
+                      "short_summary": null,
+                      "aka": [
+                        "luk krung music"
+                      ],
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "Manila Sound",
+                  "short_summary": null,
+                  "aka": [
+                    "manila sound music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Morlam",
+                  "short_summary": null,
+                  "aka": [
+                    "mor lam",
+                    "molam"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Pinoy Pop",
+                  "short_summary": null,
+                  "aka": [
+                    "p-pop",
+                    "ppop",
+                    "philippine pop",
+                    "filipino pop"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Pop Sunda",
+                  "short_summary": null,
+                  "aka": [
+                    "sundanese pop"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Ragini",
+                  "short_summary": null,
+                  "aka": [
+                    "ragini music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Thai Pop",
+                  "short_summary": null,
+                  "aka": [
+                    "t-pop thai",
+                    "thaipop"
+                  ],
+                  "children": []
+                }
+              ]
+            }
+          ]
         },
         {
           "name": "Worldbeat",
@@ -9713,6 +9919,14 @@
           "aka": [
             "world beat",
             "world-beat"
+          ],
+          "children": []
+        },
+        {
+          "name": "World Dub",
+          "short_summary": null,
+          "aka": [
+            "world dub music"
           ],
           "children": []
         }

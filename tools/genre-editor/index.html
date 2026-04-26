@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>genre tree editor</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="toolbar">
+    <div class="toolbar-row">
+      <label>
+        file
+        <select id="file-select"></select>
+      </label>
+      <button id="reload-btn" type="button">reload</button>
+      <span id="file-meta" class="meta"></span>
+      <span class="grow"></span>
+      <span id="dirty-flag" class="dirty hidden">● unsaved</span>
+      <button id="save-btn" type="button" class="primary" disabled>save</button>
+    </div>
+    <div class="toolbar-row">
+      <input id="search" type="search" placeholder="filter by name or AKA…" />
+      <button id="expand-all-btn" type="button">expand all</button>
+      <button id="collapse-all-btn" type="button">collapse all</button>
+      <button id="add-root-btn" type="button">+ root genre</button>
+      <span class="grow"></span>
+      <span id="status" class="status"></span>
+    </div>
+  </header>
+
+  <main id="tree-root" class="tree-root" aria-label="genre tree"></main>
+
+  <template id="node-template">
+    <div class="node">
+      <div class="node-row">
+        <span class="drag-handle" draggable="true" title="drag to move" aria-label="drag handle">⋮⋮</span>
+        <button class="toggle" type="button" aria-label="toggle children">▸</button>
+        <span class="name" tabindex="0" role="textbox" contenteditable="true"></span>
+        <span class="aka-list"></span>
+        <button class="add-aka" type="button" title="add AKA">+ aka</button>
+        <span class="spacer"></span>
+        <button class="add-child" type="button" title="add child genre">+ child</button>
+        <button class="delete" type="button" title="delete genre">✕</button>
+      </div>
+      <div class="children"></div>
+    </div>
+  </template>
+
+  <template id="aka-template">
+    <span class="aka-chip">
+      <span class="aka-text" contenteditable="true"></span>
+      <button class="aka-remove" type="button" title="remove AKA">✕</button>
+    </span>
+  </template>
+
+  <script src="/app.js"></script>
+</body>
+</html>
