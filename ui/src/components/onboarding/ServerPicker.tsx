@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { discoverServers, testServer, connectManualUrl } from "../../lib/commands";
+import {
+  discoverServers,
+  testServer,
+  connectToDiscovered,
+  connectManualUrl,
+} from "../../lib/commands";
 import type { PlexServer } from "../../lib/types";
 
 interface Props {
@@ -65,11 +70,22 @@ export default function ServerPicker({ onSelect }: Props) {
   }, []);
 
   const handleSelect = useCallback(
-    (server: PlexServer) => {
+    async (server: PlexServer) => {
       const status = statuses.get(server.machineIdentifier);
       if (!status?.connected || !status.uri) return;
       setSelectedId(server.machineIdentifier);
-      onSelect(server, status.uri);
+      setError(null);
+      try {
+        // Bind the live PlexClient to this server's URL + per-account token
+        // before the LibraryPicker fires `find_music_libraries`. Without this
+        // step, shared servers reject the request with 401 because the client
+        // is still using the master plex.tv token (or a previous server's).
+        const result = await connectToDiscovered(server.machineIdentifier);
+        onSelect(server, result.uri);
+      } catch (e) {
+        setSelectedId(null);
+        setError(`Could not connect to ${server.name}: ${String(e)}`);
+      }
     },
     [statuses, onSelect],
   );

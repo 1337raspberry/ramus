@@ -34,6 +34,11 @@ export const testServer = (machineIdentifier: string) =>
     machineIdentifier,
   });
 
+export const connectToDiscovered = (machineIdentifier: string) =>
+  invoke<{ uri: string; local: boolean; isHttp: boolean }>("connect_to_discovered", {
+    machineIdentifier,
+  });
+
 export const connectManualUrl = (url: string) => invoke<boolean>("connect_manual_url", { url });
 
 export const findMusicLibraries = () => invoke<LibrarySection[]>("find_music_libraries");
