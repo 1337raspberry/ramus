@@ -36,7 +36,8 @@
           "name": "Dark Ambient",
           "short_summary": null,
           "aka": [
-            "dark ambient music"
+            "dark ambient music",
+            "Ambient Industrial"
           ],
           "children": [
             {
@@ -89,7 +90,9 @@
           "name": "Psybient",
           "short_summary": null,
           "aka": [
-            "Psychadelic Ambient"
+            "Psychadelic Ambient",
+            "Psychedelic Ambient",
+            "Psychill"
           ],
           "children": []
         },
@@ -147,7 +150,10 @@
             "lofi",
             "lo fi",
             "low fidelity",
-            "low-fi"
+            "low-fi",
+            "Slacker Rock",
+            "Lo-Fi Indie Rock",
+            "Slack Rock"
           ],
           "children": []
         },
@@ -224,7 +230,8 @@
           "name": "Chicago Blues",
           "short_summary": null,
           "aka": [
-            "chicago blues music"
+            "chicago blues music",
+            "Electric Chicago Blues"
           ],
           "children": []
         },
@@ -233,7 +240,8 @@
           "short_summary": null,
           "aka": [
             "classic blues women",
-            "classic women's blues"
+            "classic women's blues",
+            "Vaudeville Blues"
           ],
           "children": []
         },
@@ -260,7 +268,8 @@
               "aka": [
                 "njs",
                 "new-jack swing",
-                "swingbeat"
+                "swingbeat",
+                "New Jack"
               ],
               "children": []
             }
@@ -271,7 +280,10 @@
           "short_summary": null,
           "aka": [
             "blues country",
-            "blues country music"
+            "blues country music",
+            "Folk Blues",
+            "Rural Blues",
+            "Downhome Blues"
           ],
           "children": [
             {
@@ -286,7 +298,8 @@
               "name": "Hill Country Blues",
               "short_summary": null,
               "aka": [
-                "hill country blues music"
+                "hill country blues music",
+                "North Mississippi Hill Country Blues"
               ],
               "children": []
             },
@@ -294,7 +307,8 @@
               "name": "Piedmont Blues",
               "short_summary": null,
               "aka": [
-                "east coast blues"
+                "east coast blues",
+                "Ragtime Blues"
               ],
               "children": []
             }
@@ -336,7 +350,8 @@
               "name": "Chicago Blues",
               "short_summary": null,
               "aka": [
-                "chicago blues music"
+                "chicago blues music",
+                "Electric Chicago Blues"
               ],
               "children": []
             },
@@ -378,7 +393,8 @@
           "name": "Jump Blues",
           "short_summary": null,
           "aka": [
-            "jump blues music"
+            "jump blues music",
+            "Swing Blues"
           ],
           "children": []
         },
@@ -410,7 +426,8 @@
           "name": "Piano Blues",
           "short_summary": null,
           "aka": [
-            "piano blues music"
+            "piano blues music",
+            "Blues Piano"
           ],
           "children": []
         },
@@ -418,7 +435,8 @@
           "name": "Piedmont Blues",
           "short_summary": null,
           "aka": [
-            "east coast blues"
+            "east coast blues",
+            "Ragtime Blues"
           ],
           "children": []
         },
@@ -426,7 +444,8 @@
           "name": "Punk Blues",
           "short_summary": null,
           "aka": [
-            "punk blues music"
+            "punk blues music",
+            "Blues Punk"
           ],
           "children": []
         },
@@ -487,7 +506,8 @@
           "name": "Bachata",
           "short_summary": null,
           "aka": [
-            "bachata music"
+            "bachata music",
+            "Amargue"
           ],
           "children": []
         },
@@ -495,7 +515,8 @@
           "name": "Baithak Gana",
           "short_summary": null,
           "aka": [
-            "baithak gana music"
+            "baithak gana music",
+            "बैठक गाना"
           ],
           "children": []
         },
@@ -513,7 +534,9 @@
           "name": "Brazilian",
           "short_summary": null,
           "aka": [
-            "brazilian music"
+            "brazilian music",
+            "Música brasileira",
+            "Música do Brasil"
           ],
           "children": [
             {
@@ -557,7 +580,9 @@
                   "short_summary": null,
                   "aka": [
                     "tecno brega",
-                    "techno brega"
+                    "techno brega",
+                    "Tecnomelody",
+                    "Brega de aparelhagem"
                   ],
                   "children": []
                 }
@@ -575,7 +600,11 @@
               "name": "Forró",
               "short_summary": null,
               "aka": [
-                "forro"
+                "forro",
+                "Arrasta-pé",
+                "Bate-chinela",
+                "Fobó",
+                "Forrodobó"
               ],
               "children": []
             },
@@ -583,7 +612,9 @@
               "name": "Frevo",
               "short_summary": null,
               "aka": [
-                "frevo music"
+                "frevo music",
+                "Marcha carnavalesca pernambucana",
+                "Marcha nortista"
               ],
               "children": []
             },
@@ -593,7 +624,10 @@
               "aka": [
                 "carioca funk",
                 "baile funk",
-                "funk brasileiro"
+                "funk brasileiro",
+                "Favela Funk",
+                "Brazilian Funk",
+                "Rio Funk"
               ],
               "children": []
             },
@@ -636,7 +670,8 @@
               "short_summary": null,
               "aka": [
                 "pagode music",
-                "pagode brasileiro"
+                "pagode brasileiro",
+                "Pagode de raiz"
               ],
               "children": []
             },
@@ -662,7 +697,8 @@
                   "short_summary": null,
                   "aka": [
                     "pagode music",
-                    "pagode brasileiro"
+                    "pagode brasileiro",
+                    "Pagode de raiz"
                   ],
                   "children": []
                 },
@@ -670,7 +706,9 @@
                   "name": "Samba Rock",
                   "short_summary": null,
                   "aka": [
-                    "samba-rock"
+                    "samba-rock",
+                    "Suingue",
+                    "Samba-suingue"
                   ],
                   "children": []
                 }
@@ -680,7 +718,9 @@
               "name": "Samba Rock",
               "short_summary": null,
               "aka": [
-                "samba-rock"
+                "samba-rock",
+                "Suingue",
+                "Samba-suingue"
               ],
               "children": []
             },
@@ -722,7 +762,8 @@
               "name": "Chutney Soca",
               "short_summary": null,
               "aka": [
-                "chutney soca music"
+                "chutney soca music",
+                "Chatnee Soca"
               ],
               "children": []
             }
@@ -732,7 +773,8 @@
           "name": "Chutney Soca",
           "short_summary": null,
           "aka": [
-            "chutney soca music"
+            "chutney soca music",
+            "Chatnee Soca"
           ],
           "children": []
         },
@@ -743,7 +785,8 @@
             "compas direct",
             "kompa",
             "konpa",
-            "kompas"
+            "kompas",
+            "Konpa dirèk"
           ],
           "children": []
         },
@@ -777,7 +820,9 @@
           "short_summary": null,
           "aka": [
             "meringue",
-            "haitian meringue"
+            "haitian meringue",
+            "Mereng",
+            "Haitian Méringue"
           ],
           "children": []
         },
@@ -793,7 +838,9 @@
               "short_summary": null,
               "aka": [
                 "chicha music",
-                "chicha peruana"
+                "chicha peruana",
+                "Cumbia tropical andina",
+                "Cumbia andina"
               ],
               "children": []
             },
@@ -817,7 +864,15 @@
               "name": "Huayno",
               "short_summary": null,
               "aka": [
-                "wayno"
+                "wayno",
+                "Huaino",
+                "Huaiño",
+                "Huaynu",
+                "Huayño",
+                "Huayñu",
+                "Waynu",
+                "Wayño",
+                "Wayñu"
               ],
               "children": []
             },
@@ -834,7 +889,8 @@
               "name": "Ranchera",
               "short_summary": null,
               "aka": [
-                "ranchero"
+                "ranchero",
+                "Canción ranchera"
               ],
               "children": []
             },
@@ -871,7 +927,8 @@
           "short_summary": null,
           "aka": [
             "racine",
-            "rasin haitian"
+            "rasin haitian",
+            "Mizik rasin"
           ],
           "children": []
         },
@@ -882,7 +939,8 @@
             "reggaeton music",
             "regaetón",
             "reggaetón",
-            "regueton"
+            "regueton",
+            "Reguetón"
           ],
           "children": []
         },
@@ -897,7 +955,8 @@
               "name": "Timba",
               "short_summary": null,
               "aka": [
-                "timba music"
+                "timba music",
+                "Salsa Cubana"
               ],
               "children": []
             }
@@ -907,14 +966,17 @@
           "name": "Soca",
           "short_summary": null,
           "aka": [
-            "soca music"
+            "soca music",
+            "The Soul of Calypso",
+            "Sokah"
           ],
           "children": [
             {
               "name": "Chutney Soca",
               "short_summary": null,
               "aka": [
-                "chutney soca music"
+                "chutney soca music",
+                "Chatnee Soca"
               ],
               "children": []
             }
@@ -933,7 +995,8 @@
           "name": "Timba",
           "short_summary": null,
           "aka": [
-            "timba music"
+            "timba music",
+            "Salsa Cubana"
           ],
           "children": []
         },
@@ -942,7 +1005,8 @@
           "short_summary": null,
           "aka": [
             "twoubadou haitian",
-            "haitian troubadour"
+            "haitian troubadour",
+            "Misik twoubadou"
           ],
           "children": []
         },
@@ -960,7 +1024,8 @@
       "name": "Classical",
       "short_summary": null,
       "aka": [
-        "classical music"
+        "classical music",
+        "Formal Music"
       ],
       "children": [
         {
@@ -982,7 +1047,8 @@
               "name": "Baroque Music",
               "short_summary": null,
               "aka": [
-                "baroque era"
+                "baroque era",
+                "Baroque Period"
               ],
               "children": []
             }
@@ -1025,7 +1091,8 @@
               "name": "Concerto Grosso",
               "short_summary": null,
               "aka": [
-                "concerti grossi"
+                "concerti grossi",
+                "Grand Concerto"
               ],
               "children": []
             }
@@ -1043,7 +1110,9 @@
           "name": "Mass",
           "short_summary": null,
           "aka": [
-            "mass music"
+            "mass music",
+            "Mass Setting",
+            "Missa"
           ],
           "children": [
             {
@@ -1051,7 +1120,14 @@
               "short_summary": null,
               "aka": [
                 "requiem mass",
-                "requiem music"
+                "requiem music",
+                "Funeral Mass",
+                "Mass for the Dead",
+                "Mass of the Dead",
+                "Missa defunctorum",
+                "Missa pro defunctis",
+                "Missa pro mortuis",
+                "Requiem Setting"
               ],
               "children": []
             }
@@ -1062,7 +1138,8 @@
           "short_summary": null,
           "aka": [
             "modern classical music",
-            "neoclassical"
+            "neoclassical",
+            "Neoclassicism"
           ],
           "children": []
         },
@@ -1071,7 +1148,9 @@
           "short_summary": null,
           "aka": [
             "operatic",
-            "opera music"
+            "opera music",
+            "European Opera",
+            "Western Classical Opera"
           ],
           "children": []
         },
@@ -1087,7 +1166,8 @@
           "name": "Orchestra",
           "short_summary": null,
           "aka": [
-            "orchestral music"
+            "orchestral music",
+            "Orchestral"
           ],
           "children": [
             {
@@ -1171,7 +1251,8 @@
           "short_summary": null,
           "aka": [
             "Romantic Music",
-            "Romantic Period"
+            "Romantic Period",
+            "Romantic Classical"
           ],
           "children": []
         }
@@ -1255,7 +1336,8 @@
       "name": "Country",
       "short_summary": null,
       "aka": [
-        "country music"
+        "country music",
+        "Country and Western"
       ],
       "children": [
         {
@@ -1276,7 +1358,8 @@
               "aka": [
                 "cow punk",
                 "cow-punk",
-                "hicksploitation"
+                "hicksploitation",
+                "Country Punk"
               ],
               "children": []
             }
@@ -1340,7 +1423,10 @@
           "short_summary": null,
           "aka": [
             "blues country",
-            "blues country music"
+            "blues country music",
+            "Folk Blues",
+            "Rural Blues",
+            "Downhome Blues"
           ],
           "children": []
         },
@@ -1348,7 +1434,8 @@
           "name": "Cajun",
           "short_summary": null,
           "aka": [
-            "cajun music"
+            "cajun music",
+            "Musique cadienne"
           ],
           "children": [
             {
@@ -1382,7 +1469,8 @@
           "short_summary": null,
           "aka": [
             "close harmony singing",
-            "close harmony music"
+            "close harmony music",
+            "Brother Duets"
           ],
           "children": []
         },
@@ -1402,7 +1490,8 @@
             "hick hop",
             "hick-hop",
             "country hip hop",
-            "hickhop"
+            "hickhop",
+            "Rural Rap"
           ],
           "children": []
         },
@@ -1432,7 +1521,9 @@
             "cowboy western",
             "cowboy & western",
             "country & western",
-            "c&w"
+            "c&w",
+            "Western",
+            "Cowboy"
           ],
           "children": []
         },
@@ -1500,7 +1591,9 @@
               "aka": [
                 "truck driving country",
                 "trucker country",
-                "truck-driver country"
+                "truck-driver country",
+                "Trucking Music",
+                "Trucking Country"
               ],
               "children": []
             }
@@ -1624,7 +1717,8 @@
           "name": "Traditional Country Music",
           "short_summary": null,
           "aka": [
-            "traditional country"
+            "traditional country",
+            "Hillbilly Music"
           ],
           "children": []
         },
@@ -1634,7 +1728,9 @@
           "aka": [
             "truck driving country",
             "trucker country",
-            "truck-driver country"
+            "truck-driver country",
+            "Trucking Music",
+            "Trucking Country"
           ],
           "children": []
         },
@@ -1734,7 +1830,9 @@
           "short_summary": null,
           "aka": [
             "space-age pop",
-            "bachelor pad"
+            "bachelor pad",
+            "Space Age Bachelor Pad Music",
+            "SABPM"
           ],
           "children": []
         }
@@ -1745,14 +1843,16 @@
       "short_summary": null,
       "aka": [
         "electronic music",
-        "electronica"
+        "electronica",
+        "dance"
       ],
       "children": [
         {
           "name": "Asian Underground",
           "short_summary": null,
           "aka": [
-            "asian underground music"
+            "asian underground music",
+            "New Asian Kool"
           ],
           "children": []
         },
@@ -1782,7 +1882,8 @@
           "aka": [
             "break beat",
             "break-beat",
-            "breaks"
+            "breaks",
+            "Breakbeats"
           ],
           "children": [
             {
@@ -1813,7 +1914,8 @@
                 "bmore",
                 "baltimore breaks",
                 "bmore breaks",
-                "b-more breaks"
+                "b-more breaks",
+                "Bmore House"
               ],
               "children": []
             },
@@ -1822,7 +1924,8 @@
               "short_summary": null,
               "aka": [
                 "bigbeat",
-                "big-beat"
+                "big-beat",
+                "Chemical Breaks"
               ],
               "children": []
             },
@@ -1831,7 +1934,9 @@
               "short_summary": null,
               "aka": [
                 "hardcore breaks",
-                "hardcore breakbeat"
+                "hardcore breakbeat",
+                "Oldskool Hardcore",
+                "Oldskool Rave"
               ],
               "children": []
             },
@@ -1849,7 +1954,10 @@
               "name": "Florida Breaks",
               "short_summary": null,
               "aka": [
-                "florida breaks music"
+                "florida breaks music",
+                "Orlando Breaks",
+                "Tampa Breaks",
+                "The Orlando Sound"
               ],
               "children": []
             },
@@ -1859,7 +1967,10 @@
               "aka": [
                 "nu school breaks",
                 "nu-skool breaks",
-                "new school breaks"
+                "new school breaks",
+                "Nu Breaks",
+                "Nu Skool Breakbeat",
+                "Nu Skool Breakz"
               ],
               "children": []
             },
@@ -1869,7 +1980,8 @@
               "aka": [
                 "prog breaks",
                 "progressive breakbeat",
-                "progressive break beat"
+                "progressive break beat",
+                "Atmospheric Breaks"
               ],
               "children": []
             },
@@ -1879,7 +1991,8 @@
               "aka": [
                 "psy breaks",
                 "psy-breaks",
-                "psychedelic breaks"
+                "psychedelic breaks",
+                "Psy Tech-Funk"
               ],
               "children": []
             }
@@ -1890,7 +2003,9 @@
           "short_summary": null,
           "aka": [
             "chill wave",
-            "chill-wave"
+            "chill-wave",
+            "Glo-Fi",
+            "Dream-beat"
           ],
           "children": []
         },
@@ -1903,7 +2018,8 @@
             "chip music",
             "chipmusic",
             "8-bit music",
-            "8bit"
+            "8bit",
+            "8-bit"
           ],
           "children": [
             {
@@ -1953,7 +2069,11 @@
                 "yorkshire bleeps & bass",
                 "yorkshire bleep",
                 "bleep and bass",
-                "bleep & bass"
+                "bleep & bass",
+                "Bleep Techno",
+                "Bleep",
+                "Yorkshire Bass",
+                "Yorkshire Bleep and Bass"
               ],
               "children": []
             }
@@ -1971,7 +2091,8 @@
               "short_summary": null,
               "aka": [
                 "boogie music",
-                "post-disco boogie"
+                "post-disco boogie",
+                "Disco Boogie"
               ],
               "children": []
             },
@@ -1988,7 +2109,9 @@
               "name": "Disco Polo",
               "short_summary": null,
               "aka": [
-                "disco polo music"
+                "disco polo music",
+                "Muzyka chodnikowa",
+                "Piosenka chodnikowa"
               ],
               "children": [
                 {
@@ -2016,7 +2139,9 @@
               "short_summary": null,
               "aka": [
                 "italodisco",
-                "italo-disco"
+                "italo-disco",
+                "Spaghetti Disco",
+                "Spaghetti-Dance"
               ],
               "children": []
             },
@@ -2045,7 +2170,10 @@
           "short_summary": null,
           "aka": [
             "down tempo",
-            "down-tempo"
+            "down-tempo",
+            "Downtempo Electronica",
+            "Downtempo Electronic",
+            "Downbeat"
           ],
           "children": [
             {
@@ -2053,7 +2181,8 @@
               "short_summary": null,
               "aka": [
                 "acidjazz",
-                "acid-jazz"
+                "acid-jazz",
+                "Club Jazz"
               ],
               "children": []
             },
@@ -2105,7 +2234,9 @@
               "short_summary": null,
               "aka": [
                 "nujazz",
-                "nu-jazz"
+                "nu-jazz",
+                "Jazztronica",
+                "Future Jazz"
               ],
               "children": []
             },
@@ -2131,7 +2262,9 @@
             "drum-and-bass",
             "drumandbass",
             "drum & bass",
-            "drum'n'bass"
+            "drum'n'bass",
+            "D 'n' B",
+            "Drum&Bass"
           ],
           "children": [
             {
@@ -2139,7 +2272,8 @@
               "short_summary": null,
               "aka": [
                 "dark core",
-                "dark-core"
+                "dark-core",
+                "Darkcore Hardcore"
               ],
               "children": []
             },
@@ -2157,7 +2291,9 @@
               "short_summary": null,
               "aka": [
                 "drum funk",
-                "drum-funk"
+                "drum-funk",
+                "Edits",
+                "Choppage"
               ],
               "children": []
             },
@@ -2166,7 +2302,8 @@
               "short_summary": null,
               "aka": [
                 "drum step",
-                "drum-step"
+                "drum-step",
+                "DnBstep"
               ],
               "children": []
             },
@@ -2175,7 +2312,9 @@
               "short_summary": null,
               "aka": [
                 "half time",
-                "half-time"
+                "half-time",
+                "Halftime Neurofunk",
+                "Halftime Drum & Bass"
               ],
               "children": []
             },
@@ -2194,7 +2333,10 @@
                 "intelligent dnb",
                 "intelligent d&b",
                 "idnb",
-                "intelligent drum n bass"
+                "intelligent drum n bass",
+                "Atmospheric Drum and Bass",
+                "Ambient Jungle",
+                "Artcore Drum and Bass"
               ],
               "children": []
             },
@@ -2206,7 +2348,8 @@
                 "jumpup",
                 "jump up dnb",
                 "jump up drum and bass",
-                "jump-up dnb"
+                "jump-up dnb",
+                "Bouyon"
               ],
               "children": []
             },
@@ -2282,7 +2425,9 @@
               "short_summary": null,
               "aka": [
                 "ragga core",
-                "ragga-core"
+                "ragga-core",
+                "Yardcore",
+                "Speedhall"
               ],
               "children": []
             },
@@ -2292,7 +2437,11 @@
               "aka": [
                 "samba bass",
                 "samba dnb",
-                "samba drum and bass"
+                "samba drum and bass",
+                "Drum 'n' Bossa",
+                "Drum & Bossa",
+                "Brazilian Drum and Bass",
+                "Brazilian Sound"
               ],
               "children": []
             },
@@ -2312,7 +2461,9 @@
           "short_summary": null,
           "aka": [
             "electro genre",
-            "electro style"
+            "electro style",
+            "Electro-Funk",
+            "Electro-Boogie"
           ],
           "children": []
         },
@@ -2321,7 +2472,8 @@
           "short_summary": null,
           "aka": [
             "electro industrial",
-            "electroindustrial"
+            "electroindustrial",
+            "Elektro"
           ],
           "children": [
             {
@@ -2338,7 +2490,10 @@
                     "aggro tech",
                     "aggrotechno",
                     "aggro-tech",
-                    "hellektro"
+                    "hellektro",
+                    "Harsh EBM",
+                    "Terror EBM",
+                    "Endzeit Elektro"
                   ],
                   "children": []
                 }
@@ -2351,7 +2506,8 @@
           "short_summary": null,
           "aka": [
             "electro acoustic",
-            "electro-acoustic"
+            "electro-acoustic",
+            "EA"
           ],
           "children": [
             {
@@ -2385,7 +2541,8 @@
               "name": "Field Recording",
               "short_summary": null,
               "aka": [
-                "field recordings"
+                "field recordings",
+                "Phonography"
               ],
               "children": []
             },
@@ -2465,7 +2622,8 @@
               "aka": [
                 "break beat",
                 "break-beat",
-                "breaks"
+                "breaks",
+                "Breakbeats"
               ],
               "children": [
                 {
@@ -2486,7 +2644,8 @@
                     "bmore",
                     "baltimore breaks",
                     "bmore breaks",
-                    "b-more breaks"
+                    "b-more breaks",
+                    "Bmore House"
                   ],
                   "children": []
                 },
@@ -2495,7 +2654,8 @@
                   "short_summary": null,
                   "aka": [
                     "bigbeat",
-                    "big-beat"
+                    "big-beat",
+                    "Chemical Breaks"
                   ],
                   "children": []
                 },
@@ -2504,7 +2664,9 @@
                   "short_summary": null,
                   "aka": [
                     "hardcore breaks",
-                    "hardcore breakbeat"
+                    "hardcore breakbeat",
+                    "Oldskool Hardcore",
+                    "Oldskool Rave"
                   ],
                   "children": []
                 },
@@ -2512,7 +2674,10 @@
                   "name": "Florida Breaks",
                   "short_summary": null,
                   "aka": [
-                    "florida breaks music"
+                    "florida breaks music",
+                    "Orlando Breaks",
+                    "Tampa Breaks",
+                    "The Orlando Sound"
                   ],
                   "children": []
                 },
@@ -2522,7 +2687,10 @@
                   "aka": [
                     "nu school breaks",
                     "nu-skool breaks",
-                    "new school breaks"
+                    "new school breaks",
+                    "Nu Breaks",
+                    "Nu Skool Breakbeat",
+                    "Nu Skool Breakz"
                   ],
                   "children": []
                 },
@@ -2532,7 +2700,8 @@
                   "aka": [
                     "prog breaks",
                     "progressive breakbeat",
-                    "progressive break beat"
+                    "progressive break beat",
+                    "Atmospheric Breaks"
                   ],
                   "children": []
                 },
@@ -2542,7 +2711,8 @@
                   "aka": [
                     "psy breaks",
                     "psy-breaks",
-                    "psychedelic breaks"
+                    "psychedelic breaks",
+                    "Psy Tech-Funk"
                   ],
                   "children": []
                 }
@@ -2580,7 +2750,9 @@
                 "drum-and-bass",
                 "drumandbass",
                 "drum & bass",
-                "drum'n'bass"
+                "drum'n'bass",
+                "D 'n' B",
+                "Drum&Bass"
               ],
               "children": [
                 {
@@ -2597,7 +2769,9 @@
                   "short_summary": null,
                   "aka": [
                     "drum funk",
-                    "drum-funk"
+                    "drum-funk",
+                    "Edits",
+                    "Choppage"
                   ],
                   "children": []
                 },
@@ -2606,7 +2780,8 @@
                   "short_summary": null,
                   "aka": [
                     "drum step",
-                    "drum-step"
+                    "drum-step",
+                    "DnBstep"
                   ],
                   "children": []
                 },
@@ -2615,7 +2790,9 @@
                   "short_summary": null,
                   "aka": [
                     "half time",
-                    "half-time"
+                    "half-time",
+                    "Halftime Neurofunk",
+                    "Halftime Drum & Bass"
                   ],
                   "children": []
                 },
@@ -2635,7 +2812,8 @@
                     "jumpup",
                     "jump up dnb",
                     "jump up drum and bass",
-                    "jump-up dnb"
+                    "jump-up dnb",
+                    "Bouyon"
                   ],
                   "children": []
                 },
@@ -2700,7 +2878,9 @@
               "short_summary": null,
               "aka": [
                 "electro genre",
-                "electro style"
+                "electro style",
+                "Electro-Funk",
+                "Electro-Boogie"
               ],
               "children": []
             },
@@ -2709,7 +2889,9 @@
               "short_summary": null,
               "aka": [
                 "electro clash",
-                "electro-clash"
+                "electro-clash",
+                "Nouveau Disco",
+                "Neo-Electro"
               ],
               "children": []
             },
@@ -2727,7 +2909,8 @@
               "short_summary": null,
               "aka": [
                 "euro dance",
-                "euro-dance"
+                "euro-dance",
+                "Euro-NRG"
               ],
               "children": [
                 {
@@ -2744,7 +2927,10 @@
                   "short_summary": null,
                   "aka": [
                     "italodance",
-                    "italo-dance"
+                    "italo-dance",
+                    "Nu Italo Disco",
+                    "Nu Italo",
+                    "Nu-Italo"
                   ],
                   "children": []
                 }
@@ -2810,7 +2996,8 @@
                     "bmore",
                     "baltimore breaks",
                     "bmore breaks",
-                    "b-more breaks"
+                    "b-more breaks",
+                    "Bmore House"
                   ],
                   "children": []
                 },
@@ -2820,7 +3007,11 @@
                   "aka": [
                     "bassline house",
                     "niche",
-                    "4x4 bassline"
+                    "4x4 bassline",
+                    "UK Jackin'",
+                    "UK Jackin' House",
+                    "House & Bass",
+                    "Jackin Bass House"
                   ],
                   "children": []
                 },
@@ -2845,14 +3036,16 @@
                   "name": "Diva House",
                   "short_summary": null,
                   "aka": [
-                    "diva-house"
+                    "diva-house",
+                    "Handbag House"
                   ],
                   "children": [
                     {
                       "name": "Hardbag",
                       "short_summary": null,
                       "aka": [
-                        "hard bag"
+                        "hard bag",
+                        "Hardbag House"
                       ],
                       "children": []
                     }
@@ -2870,7 +3063,8 @@
                       "name": "Dutch House",
                       "short_summary": null,
                       "aka": [
-                        "dutch house music"
+                        "dutch house music",
+                        "Dirty Dutch"
                       ],
                       "children": []
                     }
@@ -2880,7 +3074,10 @@
                   "name": "French House",
                   "short_summary": null,
                   "aka": [
-                    "french touch"
+                    "french touch",
+                    "Neu-Disco",
+                    "Filter House",
+                    "Tek Funk"
                   ],
                   "children": []
                 },
@@ -2905,7 +3102,9 @@
                       "short_summary": null,
                       "aka": [
                         "juke music",
-                        "chicago juke"
+                        "chicago juke",
+                        "Juke House",
+                        "Jukin' House"
                       ],
                       "children": []
                     }
@@ -2916,7 +3115,8 @@
                   "short_summary": null,
                   "aka": [
                     "hip-house",
-                    "hiphouse"
+                    "hiphouse",
+                    "House Rap"
                   ],
                   "children": []
                 },
@@ -3003,7 +3203,10 @@
               "short_summary": null,
               "aka": [
                 "mákina",
-                "mákina spanish"
+                "mákina spanish",
+                "Bakalao",
+                "Bacalao",
+                "Máquina"
               ],
               "children": []
             },
@@ -3036,7 +3239,9 @@
               "name": "Skweee",
               "short_summary": null,
               "aka": [
-                "squeee"
+                "squeee",
+                "Scandinavian Funk",
+                "Conflict R&B"
               ],
               "children": []
             },
@@ -3120,7 +3325,12 @@
                   "name": "Uplifting Trance",
                   "short_summary": null,
                   "aka": [
-                    "uplift trance"
+                    "uplift trance",
+                    "Melodic Trance",
+                    "Epic Trance",
+                    "Emotional Trance",
+                    "Euphoric Trance",
+                    "Anthem Trance"
                   ],
                   "children": []
                 },
@@ -3137,7 +3347,8 @@
                   "short_summary": null,
                   "aka": [
                     "psy trance",
-                    "psy-trance"
+                    "psy-trance",
+                    "Psychedelic Trance"
                   ],
                   "children": []
                 }
@@ -3170,7 +3381,11 @@
                   "aka": [
                     "bassline house",
                     "niche",
-                    "4x4 bassline"
+                    "4x4 bassline",
+                    "UK Jackin'",
+                    "UK Jackin' House",
+                    "House & Bass",
+                    "Jackin Bass House"
                   ],
                   "children": []
                 },
@@ -3179,7 +3394,8 @@
                   "short_summary": null,
                   "aka": [
                     "break step",
-                    "break-step"
+                    "break-step",
+                    "Breakbeat Garage"
                   ],
                   "children": []
                 },
@@ -3236,7 +3452,9 @@
                   "aka": [
                     "nu rave",
                     "nu-rave",
-                    "newrave"
+                    "newrave",
+                    "Neu Rave",
+                    "Rock 'n' Rave"
                   ],
                   "children": []
                 }
@@ -3276,7 +3494,9 @@
               "short_summary": null,
               "aka": [
                 "electro clash",
-                "electro-clash"
+                "electro-clash",
+                "Nouveau Disco",
+                "Neo-Electro"
               ],
               "children": []
             },
@@ -3315,7 +3535,8 @@
               "aka": [
                 "indietronic",
                 "indie electronic",
-                "indietronics"
+                "indietronics",
+                "Lap-Pop"
               ],
               "children": [
                 {
@@ -3323,7 +3544,9 @@
                   "short_summary": null,
                   "aka": [
                     "chill wave",
-                    "chill-wave"
+                    "chill-wave",
+                    "Glo-Fi",
+                    "Dream-beat"
                   ],
                   "children": []
                 }
@@ -3335,7 +3558,9 @@
               "aka": [
                 "nu rave",
                 "nu-rave",
-                "newrave"
+                "newrave",
+                "Neu Rave",
+                "Rock 'n' Rave"
               ],
               "children": []
             },
@@ -3362,7 +3587,11 @@
                   "short_summary": null,
                   "aka": [
                     "future pop",
-                    "future-pop"
+                    "future-pop",
+                    "Picopop",
+                    "フューチャーポップ",
+                    "Pico Pop",
+                    "Pico Pico Pop"
                   ],
                   "children": []
                 }
@@ -3393,7 +3622,8 @@
           "short_summary": null,
           "aka": [
             "euro dance",
-            "euro-dance"
+            "euro-dance",
+            "Euro-NRG"
           ],
           "children": [
             {
@@ -3410,7 +3640,10 @@
               "short_summary": null,
               "aka": [
                 "italodance",
-                "italo-dance"
+                "italo-dance",
+                "Nu Italo Disco",
+                "Nu Italo",
+                "Nu-Italo"
               ],
               "children": []
             },
@@ -3419,7 +3652,8 @@
               "short_summary": null,
               "aka": [
                 "turbo folk",
-                "turbo-folk"
+                "turbo-folk",
+                "Турбо-фолк"
               ],
               "children": []
             }
@@ -3431,7 +3665,8 @@
           "aka": [
             "folk tronica",
             "folktronic",
-            "folk-tronica"
+            "folk-tronica",
+            "Laptop Folk"
           ],
           "children": []
         },
@@ -3448,7 +3683,8 @@
           "name": "Glitch",
           "short_summary": null,
           "aka": [
-            "glitch music"
+            "glitch music",
+            "Clicks & Cuts"
           ],
           "children": []
         },
@@ -3466,14 +3702,19 @@
           "short_summary": null,
           "aka": [
             "hardcore techno",
-            "hardcore dance"
+            "hardcore dance",
+            "Hardcore [EDM]"
           ],
           "children": [
             {
               "name": "Bouncy House",
               "short_summary": null,
               "aka": [
-                "bouncy house music"
+                "bouncy house music",
+                "Scouse House",
+                "Donk",
+                "Scouse",
+                "UK Bounce"
               ],
               "children": []
             },
@@ -3481,7 +3722,8 @@
               "name": "Bouncy Techno",
               "short_summary": null,
               "aka": [
-                "bouncy techno music"
+                "bouncy techno music",
+                "Tartan Techno"
               ],
               "children": []
             },
@@ -3490,7 +3732,9 @@
               "short_summary": null,
               "aka": [
                 "hardcore breaks",
-                "hardcore breakbeat"
+                "hardcore breakbeat",
+                "Oldskool Hardcore",
+                "Oldskool Rave"
               ],
               "children": []
             },
@@ -3507,7 +3751,9 @@
                   "short_summary": null,
                   "aka": [
                     "ragga core",
-                    "ragga-core"
+                    "ragga-core",
+                    "Yardcore",
+                    "Speedhall"
                   ],
                   "children": []
                 }
@@ -3540,7 +3786,8 @@
               "short_summary": null,
               "aka": [
                 "gabba",
-                "gabberhouse"
+                "gabberhouse",
+                "Rotterdam Hardcore"
               ],
               "children": []
             },
@@ -3550,14 +3797,16 @@
               "aka": [
                 "happycore",
                 "happy core",
-                "happyhardcore"
+                "happyhardcore",
+                "Happy Rave"
               ],
               "children": [
                 {
                   "name": "Bouncy Techno",
                   "short_summary": null,
                   "aka": [
-                    "bouncy techno music"
+                    "bouncy techno music",
+                    "Tartan Techno"
                   ],
                   "children": []
                 },
@@ -3591,7 +3840,8 @@
               "short_summary": null,
               "aka": [
                 "jump style",
-                "jump-style"
+                "jump-style",
+                "Jump"
               ],
               "children": []
             },
@@ -3600,7 +3850,10 @@
               "short_summary": null,
               "aka": [
                 "mákina",
-                "mákina spanish"
+                "mákina spanish",
+                "Bakalao",
+                "Bacalao",
+                "Máquina"
               ],
               "children": []
             },
@@ -3618,7 +3871,8 @@
               "short_summary": null,
               "aka": [
                 "terror core",
-                "terror-core"
+                "terror-core",
+                "Terror"
               ],
               "children": []
             },
@@ -3640,7 +3894,8 @@
             "hi nrg",
             "high nrg",
             "high energy",
-            "hi-energy"
+            "hi-energy",
+            "High-Energy"
           ],
           "children": [
             {
@@ -3657,7 +3912,9 @@
               "short_summary": null,
               "aka": [
                 "hard nrg trance",
-                "hard energy"
+                "hard energy",
+                "NRG",
+                "Nu NRG"
               ],
               "children": []
             },
@@ -3666,7 +3923,8 @@
               "short_summary": null,
               "aka": [
                 "newbeat",
-                "new-beat"
+                "new-beat",
+                "Belgian New Beat"
               ],
               "children": []
             }
@@ -3705,7 +3963,8 @@
                 "bmore",
                 "baltimore breaks",
                 "bmore breaks",
-                "b-more breaks"
+                "b-more breaks",
+                "Bmore House"
               ],
               "children": []
             },
@@ -3715,7 +3974,11 @@
               "aka": [
                 "bassline house",
                 "niche",
-                "4x4 bassline"
+                "4x4 bassline",
+                "UK Jackin'",
+                "UK Jackin' House",
+                "House & Bass",
+                "Jackin Bass House"
               ],
               "children": []
             },
@@ -3740,14 +4003,16 @@
               "name": "Diva House",
               "short_summary": null,
               "aka": [
-                "diva-house"
+                "diva-house",
+                "Handbag House"
               ],
               "children": [
                 {
                   "name": "Hardbag",
                   "short_summary": null,
                   "aka": [
-                    "hard bag"
+                    "hard bag",
+                    "Hardbag House"
                   ],
                   "children": []
                 }
@@ -3757,7 +4022,8 @@
               "name": "Dutch House",
               "short_summary": null,
               "aka": [
-                "dutch house music"
+                "dutch house music",
+                "Dirty Dutch"
               ],
               "children": []
             },
@@ -3773,7 +4039,8 @@
                   "name": "Dutch House",
                   "short_summary": null,
                   "aka": [
-                    "dutch house music"
+                    "dutch house music",
+                    "Dirty Dutch"
                   ],
                   "children": []
                 }
@@ -3791,7 +4058,10 @@
               "name": "French House",
               "short_summary": null,
               "aka": [
-                "french touch"
+                "french touch",
+                "Neu-Disco",
+                "Filter House",
+                "Tek Funk"
               ],
               "children": []
             },
@@ -3816,7 +4086,9 @@
                   "short_summary": null,
                   "aka": [
                     "juke music",
-                    "chicago juke"
+                    "chicago juke",
+                    "Juke House",
+                    "Jukin' House"
                   ],
                   "children": []
                 }
@@ -3826,7 +4098,8 @@
               "name": "Hardbag",
               "short_summary": null,
               "aka": [
-                "hard bag"
+                "hard bag",
+                "Hardbag House"
               ],
               "children": []
             },
@@ -3835,7 +4108,8 @@
               "short_summary": null,
               "aka": [
                 "hip-house",
-                "hiphouse"
+                "hiphouse",
+                "House Rap"
               ],
               "children": []
             },
@@ -3868,7 +4142,8 @@
               "name": "Minimal House",
               "short_summary": null,
               "aka": [
-                "minimal house music"
+                "minimal house music",
+                "Microhouse"
               ],
               "children": []
             },
@@ -3943,6 +4218,16 @@
               "name": "Future House",
               "short_summary": null,
               "children": []
+            },
+            {
+              "name": "Euro House",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Hard House",
+              "short_summary": null,
+              "children": []
             }
           ]
         },
@@ -3951,7 +4236,8 @@
           "short_summary": null,
           "aka": [
             "intelligent dance music",
-            "braindance"
+            "braindance",
+            "Electronic Listening Music"
           ],
           "children": []
         },
@@ -3970,7 +4256,8 @@
           "aka": [
             "indietronic",
             "indie electronic",
-            "indietronics"
+            "indietronics",
+            "Lap-Pop"
           ],
           "children": [
             {
@@ -3978,7 +4265,9 @@
               "short_summary": null,
               "aka": [
                 "chill wave",
-                "chill-wave"
+                "chill-wave",
+                "Glo-Fi",
+                "Dream-beat"
               ],
               "children": []
             }
@@ -3998,7 +4287,10 @@
                 "aggro tech",
                 "aggrotechno",
                 "aggro-tech",
-                "hellektro"
+                "hellektro",
+                "Harsh EBM",
+                "Terror EBM",
+                "Endzeit Elektro"
               ],
               "children": []
             },
@@ -4016,7 +4308,8 @@
               "short_summary": null,
               "aka": [
                 "cyber grind",
-                "cyber-grind"
+                "cyber-grind",
+                "Electrogrind"
               ],
               "children": []
             },
@@ -4034,7 +4327,10 @@
                     "aggro tech",
                     "aggrotechno",
                     "aggro-tech",
-                    "hellektro"
+                    "hellektro",
+                    "Harsh EBM",
+                    "Terror EBM",
+                    "Endzeit Elektro"
                   ],
                   "children": []
                 }
@@ -4044,7 +4340,8 @@
               "name": "Death Industrial",
               "short_summary": null,
               "aka": [
-                "death industrial music"
+                "death industrial music",
+                "Dark Noise"
               ],
               "children": []
             },
@@ -4053,7 +4350,8 @@
               "short_summary": null,
               "aka": [
                 "electro industrial",
-                "electroindustrial"
+                "electroindustrial",
+                "Elektro"
               ],
               "children": [
                 {
@@ -4070,7 +4368,10 @@
                         "aggro tech",
                         "aggrotechno",
                         "aggro-tech",
-                        "hellektro"
+                        "hellektro",
+                        "Harsh EBM",
+                        "Terror EBM",
+                        "Endzeit Elektro"
                       ],
                       "children": []
                     }
@@ -4082,7 +4383,9 @@
               "name": "Electronic Body Music",
               "short_summary": null,
               "aka": [
-                "ebm"
+                "ebm",
+                "Aggrepo",
+                "Industrial Dance"
               ],
               "children": [
                 {
@@ -4090,7 +4393,11 @@
                   "short_summary": null,
                   "aka": [
                     "future pop",
-                    "future-pop"
+                    "future-pop",
+                    "Picopop",
+                    "フューチャーポップ",
+                    "Pico Pop",
+                    "Pico Pico Pop"
                   ],
                   "children": []
                 }
@@ -4132,7 +4439,8 @@
                       "name": "Death Industrial",
                       "short_summary": null,
                       "aka": [
-                        "death industrial music"
+                        "death industrial music",
+                        "Dark Noise"
                       ],
                       "children": []
                     }
@@ -4144,7 +4452,10 @@
                   "aka": [
                     "powernoise",
                     "rhythmic noise",
-                    "power-noise"
+                    "power-noise",
+                    "Rhythm 'n' Noise",
+                    "Noize",
+                    "Distorted Beat Music"
                   ],
                   "children": []
                 },
@@ -4167,7 +4478,8 @@
                   "name": "Death Industrial",
                   "short_summary": null,
                   "aka": [
-                    "death industrial music"
+                    "death industrial music",
+                    "Dark Noise"
                   ],
                   "children": []
                 }
@@ -4178,7 +4490,11 @@
               "short_summary": null,
               "aka": [
                 "witchhouse",
-                "witch-house"
+                "witch-house",
+                "Drag",
+                "Haunted House",
+                "Screwgaze",
+                "Crunk Shoegaze"
               ],
               "children": []
             }
@@ -4189,7 +4505,9 @@
           "short_summary": null,
           "aka": [
             "juke music",
-            "chicago juke"
+            "chicago juke",
+            "Juke House",
+            "Jukin' House"
           ],
           "children": [
             {
@@ -4227,7 +4545,9 @@
           "short_summary": null,
           "aka": [
             "nujazz",
-            "nu-jazz"
+            "nu-jazz",
+            "Jazztronica",
+            "Future Jazz"
           ],
           "children": []
         },
@@ -4244,7 +4564,8 @@
               "short_summary": null,
               "aka": [
                 "boogie music",
-                "post-disco boogie"
+                "post-disco boogie",
+                "Disco Boogie"
               ],
               "children": []
             },
@@ -4269,7 +4590,9 @@
                   "name": "Disco Polo",
                   "short_summary": null,
                   "aka": [
-                    "disco polo music"
+                    "disco polo music",
+                    "Muzyka chodnikowa",
+                    "Piosenka chodnikowa"
                   ],
                   "children": []
                 }
@@ -4289,7 +4612,8 @@
               "name": "Death Industrial",
               "short_summary": null,
               "aka": [
-                "death industrial music"
+                "death industrial music",
+                "Dark Noise"
               ],
               "children": []
             }
@@ -4301,7 +4625,10 @@
           "aka": [
             "powernoise",
             "rhythmic noise",
-            "power-noise"
+            "power-noise",
+            "Rhythm 'n' Noise",
+            "Noize",
+            "Distorted Beat Music"
           ],
           "children": []
         },
@@ -4315,7 +4642,8 @@
               "aka": [
                 "prog breaks",
                 "progressive breakbeat",
-                "progressive break beat"
+                "progressive break beat",
+                "Atmospheric Breaks"
               ],
               "children": []
             },
@@ -4389,7 +4717,9 @@
           "name": "Skweee",
           "short_summary": null,
           "aka": [
-            "squeee"
+            "squeee",
+            "Scandinavian Funk",
+            "Conflict R&B"
           ],
           "children": []
         },
@@ -4397,7 +4727,9 @@
           "name": "Sound Art",
           "short_summary": null,
           "aka": [
-            "sound-art"
+            "sound-art",
+            "Sound Installation & Sculpture",
+            "Sonic Art"
           ],
           "children": []
         },
@@ -4424,7 +4756,11 @@
               "short_summary": null,
               "aka": [
                 "future pop",
-                "future-pop"
+                "future-pop",
+                "Picopop",
+                "フューチャーポップ",
+                "Pico Pop",
+                "Pico Pico Pop"
               ],
               "children": []
             }
@@ -4435,7 +4771,12 @@
           "short_summary": null,
           "aka": [
             "synth-wave",
-            "synth wave"
+            "synth wave",
+            "Minimal Wave",
+            "Outrun Electro",
+            "Retro Electro",
+            "Neo 80s",
+            "Retrowave"
           ],
           "children": []
         },
@@ -4484,7 +4825,9 @@
               "short_summary": null,
               "aka": [
                 "free techno",
-                "freetekno"
+                "freetekno",
+                "Tekno",
+                "Tribe"
               ],
               "children": []
             },
@@ -4510,7 +4853,8 @@
               "name": "Nortec",
               "short_summary": null,
               "aka": [
-                "nor-tec"
+                "nor-tec",
+                "Nortech"
               ],
               "children": []
             },
@@ -4528,7 +4872,8 @@
               "aka": [
                 "techno dnb",
                 "techno drum and bass",
-                "techno drum n bass"
+                "techno drum n bass",
+                "Technoid"
               ],
               "children": []
             },
@@ -4553,7 +4898,9 @@
               "name": "Toytown Techno",
               "short_summary": null,
               "aka": [
-                "toytown"
+                "toytown",
+                "Toytown Pop",
+                "Toytown Psych"
               ],
               "children": []
             },
@@ -4602,7 +4949,8 @@
               "aka": [
                 "goa",
                 "goatrance",
-                "goa-trance"
+                "goa-trance",
+                "604"
               ],
               "children": [
                 {
@@ -4612,7 +4960,9 @@
                     "dark psy",
                     "darkpsy",
                     "dark-psy",
-                    "night psy"
+                    "night psy",
+                    "Dark Psychedelic Trance",
+                    "Horror Trance"
                   ],
                   "children": []
                 },
@@ -4624,7 +4974,8 @@
                     "fullon",
                     "full on psy",
                     "full on psytrance",
-                    "full-on psy"
+                    "full-on psy",
+                    "Full-On Psytrance"
                   ],
                   "children": []
                 },
@@ -4634,7 +4985,8 @@
                   "aka": [
                     "psy breaks",
                     "psy-breaks",
-                    "psychedelic breaks"
+                    "psychedelic breaks",
+                    "Psy Tech-Funk"
                   ],
                   "children": []
                 },
@@ -4645,7 +4997,10 @@
                     "psy prog",
                     "psy-prog",
                     "progressive psytrance",
-                    "prog psy"
+                    "prog psy",
+                    "Minimal Psytrance",
+                    "Progpsy",
+                    "Psygressive"
                   ],
                   "children": []
                 },
@@ -4656,7 +5011,8 @@
                     "suomisound",
                     "suomi sound",
                     "suomisaundi music",
-                    "finnish psy"
+                    "finnish psy",
+                    "Spugedelic Trance"
                   ],
                   "children": []
                 }
@@ -4684,7 +5040,12 @@
               "name": "Uplifting Trance",
               "short_summary": null,
               "aka": [
-                "uplift trance"
+                "uplift trance",
+                "Melodic Trance",
+                "Epic Trance",
+                "Emotional Trance",
+                "Euphoric Trance",
+                "Anthem Trance"
               ],
               "children": [
                 {
@@ -4711,7 +5072,8 @@
               "short_summary": null,
               "aka": [
                 "psy trance",
-                "psy-trance"
+                "psy-trance",
+                "Psychedelic Trance"
               ],
               "children": []
             },
@@ -4722,6 +5084,14 @@
                 "Eurotrance"
               ],
               "children": []
+            },
+            {
+              "name": "Progressive Trance",
+              "short_summary": null,
+              "aka": [
+                "prog trance"
+              ],
+              "children": []
             }
           ]
         },
@@ -4730,7 +5100,11 @@
           "short_summary": null,
           "aka": [
             "witchhouse",
-            "witch-house"
+            "witch-house",
+            "Drag",
+            "Haunted House",
+            "Screwgaze",
+            "Crunk Shoegaze"
           ],
           "children": []
         },
@@ -4738,7 +5112,8 @@
           "name": "Crunk",
           "short_summary": null,
           "aka": [
-            "crunk music"
+            "crunk music",
+            "Get-Buck"
           ],
           "children": []
         },
@@ -4770,6 +5145,12 @@
         {
           "name": "Garage",
           "short_summary": null,
+          "aka": [
+            "Garage House",
+            "New York House",
+            "New York Garage",
+            "US Garage"
+          ],
           "children": [
             {
               "name": "2-Step",
@@ -4799,7 +5180,11 @@
               "aka": [
                 "bassline house",
                 "niche",
-                "4x4 bassline"
+                "4x4 bassline",
+                "UK Jackin'",
+                "UK Jackin' House",
+                "House & Bass",
+                "Jackin Bass House"
               ],
               "children": []
             },
@@ -4808,7 +5193,8 @@
               "short_summary": null,
               "aka": [
                 "break step",
-                "break-step"
+                "break-step",
+                "Breakbeat Garage"
               ],
               "children": []
             },
@@ -4825,7 +5211,10 @@
               "name": "Funky",
               "short_summary": null,
               "aka": [
-                "funky music"
+                "funky music",
+                "UK Funky",
+                "UKF",
+                "UK Funky House"
               ],
               "children": []
             },
@@ -4851,7 +5240,9 @@
           "name": "Vaporwave",
           "short_summary": null,
           "aka": [
-            "vapor"
+            "vapor",
+            "Vapour",
+            "Vapourwave"
           ],
           "children": []
         },
@@ -4864,6 +5255,16 @@
             "Chill-Hop"
           ],
           "children": []
+        },
+        {
+          "name": "Experimental Electronic",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Plunderphonics",
+          "short_summary": null,
+          "children": []
         }
       ]
     },
@@ -4871,7 +5272,8 @@
       "name": "Folk",
       "short_summary": null,
       "aka": [
-        "folk music"
+        "folk music",
+        "Traditional Folk Music"
       ],
       "children": [
         {
@@ -4968,7 +5370,8 @@
                   "aka": [
                     "freakfolk",
                     "freak-folk",
-                    "new weird america"
+                    "new weird america",
+                    "NWA"
                   ],
                   "children": []
                 }
@@ -4980,7 +5383,8 @@
           "name": "Filk Music",
           "short_summary": null,
           "aka": [
-            "filk"
+            "filk",
+            "Filksong"
           ],
           "children": []
         },
@@ -4990,7 +5394,8 @@
           "aka": [
             "freakfolk",
             "freak-folk",
-            "new weird america"
+            "new weird america",
+            "NWA"
           ],
           "children": []
         },
@@ -5007,7 +5412,9 @@
           "name": "Industrial Folk",
           "short_summary": null,
           "aka": [
-            "industrial folk music"
+            "industrial folk music",
+            "Industrial Folk Song",
+            "Industrial Work Song"
           ],
           "children": []
         },
@@ -5044,7 +5451,8 @@
               "aka": [
                 "freakfolk",
                 "freak-folk",
-                "new weird america"
+                "new weird america",
+                "NWA"
               ],
               "children": []
             }
@@ -5166,7 +5574,8 @@
           "short_summary": null,
           "aka": [
             "chap-hop",
-            "chaphop"
+            "chaphop",
+            "Gentleman Rap"
           ],
           "children": []
         },
@@ -5178,7 +5587,10 @@
             "chopped & screwed",
             "chop and screw",
             "chopped-and-screwed",
-            "screwed"
+            "screwed",
+            "Screwed and Chopped",
+            "Screw Music",
+            "Slowed and Throwed"
           ],
           "children": []
         },
@@ -5212,7 +5624,8 @@
             "hick hop",
             "hick-hop",
             "country hip hop",
-            "hickhop"
+            "hickhop",
+            "Rural Rap"
           ],
           "children": []
         },
@@ -5220,7 +5633,8 @@
           "name": "Crunk",
           "short_summary": null,
           "aka": [
-            "crunk music"
+            "crunk music",
+            "Get-Buck"
           ],
           "children": []
         },
@@ -5229,7 +5643,8 @@
           "short_summary": null,
           "aka": [
             "crunk core",
-            "crunk-core"
+            "crunk-core",
+            "Scrunk"
           ],
           "children": []
         },
@@ -5255,7 +5670,8 @@
               "short_summary": null,
               "aka": [
                 "newark club",
-                "jersey club brick city"
+                "jersey club brick city",
+                "Jersey Club"
               ],
               "children": []
             },
@@ -5477,7 +5893,8 @@
           "short_summary": null,
           "aka": [
             "industrial rap",
-            "industrial hop"
+            "industrial hop",
+            "Noise Rap"
           ],
           "children": []
         },
@@ -5496,7 +5913,8 @@
           "aka": [
             "jazz hip hop",
             "jazz hop",
-            "jazzrap"
+            "jazzrap",
+            "Jazzy Hip-Hop"
           ],
           "children": []
         },
@@ -5522,7 +5940,10 @@
           "name": "Merenrap",
           "short_summary": null,
           "aka": [
-            "merengue rap"
+            "merengue rap",
+            "Merenhouse",
+            "Merengue Hip-Hop",
+            "Merengue House"
           ],
           "children": []
         },
@@ -5531,7 +5952,8 @@
           "short_summary": null,
           "aka": [
             "booty bass",
-            "booty music"
+            "booty music",
+            "Bass Music"
           ],
           "children": []
         },
@@ -5539,7 +5961,8 @@
           "name": "Midwest Hip Hop",
           "short_summary": null,
           "aka": [
-            "midwest rap"
+            "midwest rap",
+            "Midwestern Hip Hop"
           ],
           "children": [
             {
@@ -5610,7 +6033,9 @@
             "nerd core",
             "nerd hip hop",
             "nerdcore hip hop",
-            "nerd rap"
+            "nerd rap",
+            "Geeksta Rap",
+            "Nerdcore Rap"
           ],
           "children": []
         },
@@ -5620,7 +6045,8 @@
           "aka": [
             "njs",
             "new-jack swing",
-            "swingbeat"
+            "swingbeat",
+            "New Jack"
           ],
           "children": []
         },
@@ -5743,7 +6169,8 @@
               "short_summary": null,
               "aka": [
                 "bounce",
-                "new orleans bounce"
+                "new orleans bounce",
+                "NOLA Bounce"
               ],
               "children": []
             },
@@ -5765,7 +6192,10 @@
                     "chopped & screwed",
                     "chop and screw",
                     "chopped-and-screwed",
-                    "screwed"
+                    "screwed",
+                    "Screwed and Chopped",
+                    "Screw Music",
+                    "Slowed and Throwed"
                   ],
                   "children": []
                 }
@@ -5776,7 +6206,8 @@
               "short_summary": null,
               "aka": [
                 "booty bass",
-                "booty music"
+                "booty music",
+                "Bass Music"
               ],
               "children": []
             }
@@ -5786,7 +6217,8 @@
           "name": "Trap",
           "short_summary": null,
           "aka": [
-            "trap music"
+            "trap music",
+            "Trap Rap"
           ],
           "children": []
         },
@@ -5841,7 +6273,10 @@
                 "jerkin",
                 "jerk",
                 "jerk music",
-                "jerkin music"
+                "jerkin music",
+                "Jerk Rap",
+                "Jerknb",
+                "Hoodtrap"
               ],
               "children": []
             }
@@ -5947,7 +6382,9 @@
       "name": "Jazz",
       "short_summary": null,
       "aka": [
-        "jazz music"
+        "jazz music",
+        "Jass",
+        "Jas"
       ],
       "children": [
         {
@@ -5974,7 +6411,10 @@
           "aka": [
             "be bop",
             "be-bop",
-            "bop"
+            "bop",
+            "Chicago Bop",
+            "Bopping Music",
+            "Bop [Jazz]"
           ],
           "children": []
         },
@@ -6076,7 +6516,8 @@
           "name": "European Free Jazz",
           "short_summary": null,
           "aka": [
-            "european free jazz music"
+            "european free jazz music",
+            "FMP Style Free Jazz"
           ],
           "children": []
         },
@@ -6093,7 +6534,11 @@
           "short_summary": null,
           "aka": [
             "free improv",
-            "free-improv"
+            "free-improv",
+            "Non-Idiomatic Improvisation",
+            "Free Music",
+            "Total Improvisation",
+            "Open Improvisation"
           ],
           "children": []
         },
@@ -6101,14 +6546,16 @@
           "name": "Free Jazz",
           "short_summary": null,
           "aka": [
-            "free jazz music"
+            "free jazz music",
+            "Free-Form Jazz"
           ],
           "children": [
             {
               "name": "European Free Jazz",
               "short_summary": null,
               "aka": [
-                "european free jazz music"
+                "european free jazz music",
+                "FMP Style Free Jazz"
               ],
               "children": []
             }
@@ -6122,7 +6569,9 @@
             "manouche",
             "jazz manouche",
             "gypsy-jazz",
-            "hot club jazz"
+            "hot club jazz",
+            "Manouche Jazz",
+            "Gypsy Swing"
           ],
           "children": []
         },
@@ -6141,7 +6590,8 @@
           "aka": [
             "fusion",
             "jazzfusion",
-            "jazz-fusion"
+            "jazz-fusion",
+            "Electric Jazz"
           ],
           "children": []
         },
@@ -6232,7 +6682,8 @@
           "aka": [
             "neo swing",
             "neoswing",
-            "swing revival"
+            "swing revival",
+            "Retro Swing"
           ],
           "children": []
         },
@@ -6241,7 +6692,8 @@
           "short_summary": null,
           "aka": [
             "novelty ragtime music",
-            "novelty rag"
+            "novelty rag",
+            "Novelty Piano"
           ],
           "children": []
         },
@@ -6275,7 +6727,8 @@
           "short_summary": null,
           "aka": [
             "rag time",
-            "rag-time"
+            "rag-time",
+            "Rag"
           ],
           "children": []
         },
@@ -6285,7 +6738,8 @@
           "aka": [
             "shibuya kei",
             "shibuya",
-            "shibuyakei"
+            "shibuyakei",
+            "渋谷系"
           ],
           "children": []
         },
@@ -6327,7 +6781,9 @@
           "aka": [
             "stride",
             "stride piano",
-            "stride jazz piano"
+            "stride jazz piano",
+            "Harlem Stride",
+            "Harlem Stride Piano"
           ],
           "children": []
         },
@@ -6376,7 +6832,8 @@
           "name": "West Coast Jazz",
           "short_summary": null,
           "aka": [
-            "west-coast jazz"
+            "west-coast jazz",
+            "West Coast Cool"
           ],
           "children": []
         },
@@ -6386,6 +6843,11 @@
           "aka": [
             "contemporary-jazz"
           ],
+          "children": []
+        },
+        {
+          "name": "Big Band",
+          "short_summary": null,
           "children": []
         }
       ]
@@ -6398,7 +6860,9 @@
           "name": "Avant-Garde Metal",
           "short_summary": null,
           "aka": [
-            "avantgarde metal"
+            "avantgarde metal",
+            "Avant-Metal",
+            "Experimental Metal"
           ],
           "children": [
             {
@@ -6444,7 +6908,9 @@
               "aka": [
                 "neue deutsche haerte",
                 "ndh",
-                "neue deutsche harte"
+                "neue deutsche harte",
+                "New German Hardness",
+                "Tanzmetall"
               ],
               "children": []
             },
@@ -6484,7 +6950,8 @@
               "name": "Atmospheric Black Metal",
               "short_summary": null,
               "aka": [
-                "atmospheric bm"
+                "atmospheric bm",
+                "Atmoblack"
               ],
               "children": [
                 {
@@ -6566,6 +7033,9 @@
             {
               "name": "Pagan Black Metal",
               "short_summary": null,
+              "aka": [
+                "Pagan Black"
+              ],
               "children": []
             },
             {
@@ -6576,6 +7046,9 @@
             {
               "name": "Dissonant Black Metal",
               "short_summary": null,
+              "aka": [
+                "Dissoblack"
+              ],
               "children": []
             },
             {
@@ -6787,7 +7260,9 @@
               "aka": [
                 "Slamming Brutal Death Metal",
                 "Slamming Death Metal",
-                "Slam"
+                "Slam",
+                "Slam Poetry",
+                "Poetry Slam"
               ],
               "children": []
             }
@@ -6862,7 +7337,10 @@
           "name": "Drone Metal",
           "short_summary": null,
           "aka": [
-            "drone-metal"
+            "drone-metal",
+            "Drone Doom Metal",
+            "Drone Doom",
+            "Doom Drone"
           ],
           "children": []
         },
@@ -6885,7 +7363,8 @@
               "name": "Celtic Metal",
               "short_summary": null,
               "aka": [
-                "celtic metal music"
+                "celtic metal music",
+                "Celtic Folk Metal"
               ],
               "children": []
             },
@@ -6893,7 +7372,8 @@
               "name": "Medieval Metal",
               "short_summary": null,
               "aka": [
-                "medieval metal music"
+                "medieval metal music",
+                "Mittelalter-Metal"
               ],
               "children": []
             },
@@ -6955,7 +7435,9 @@
           "short_summary": null,
           "aka": [
             "metal core",
-            "metal-core"
+            "metal-core",
+            "Metallic Hardcore",
+            "MxC"
           ],
           "children": [
             {
@@ -6963,7 +7445,8 @@
               "short_summary": null,
               "aka": [
                 "death core",
-                "death-core"
+                "death-core",
+                "DxC"
               ],
               "children": []
             },
@@ -6979,7 +7462,8 @@
                   "name": "Djent",
                   "short_summary": null,
                   "aka": [
-                    "djent metal"
+                    "djent metal",
+                    "Math Metal"
                   ],
                   "children": []
                 }
@@ -7006,7 +7490,9 @@
           "short_summary": null,
           "aka": [
             "powermetal",
-            "power-metal"
+            "power-metal",
+            "EUPM",
+            "European Power Metal"
           ],
           "children": [
             {
@@ -7176,7 +7662,8 @@
               "name": "Groove Metal",
               "short_summary": null,
               "aka": [
-                "groove metal music"
+                "groove metal music",
+                "Post-Thrash"
               ],
               "children": []
             },
@@ -7229,7 +7716,8 @@
               "aka": [
                 "techthrash metal",
                 "techthrash",
-                "technical-thrash metal"
+                "technical-thrash metal",
+                "Technical Thrash"
               ],
               "children": []
             },
@@ -7255,13 +7743,17 @@
             "classic metal",
             "nwobhm-style",
             "heavy metal",
-            "nwobhm"
+            "nwobhm",
+            "New Wave of British Heavy Metal"
           ],
           "children": []
         },
         {
           "name": "Djent",
           "short_summary": null,
+          "aka": [
+            "Math Metal"
+          ],
           "children": []
         },
         {
@@ -7306,7 +7798,8 @@
           "short_summary": null,
           "aka": [
             "baroque-pop",
-            "chamber pop"
+            "chamber pop",
+            "Ork-Pop"
           ],
           "children": []
         },
@@ -7326,7 +7819,8 @@
           "aka": [
             "blue eyed soul",
             "blueeyed soul",
-            "blue-eyed r&b"
+            "blue-eyed r&b",
+            "White Soul"
           ],
           "children": []
         },
@@ -7386,7 +7880,9 @@
               "name": "Disco Polo",
               "short_summary": null,
               "aka": [
-                "disco polo music"
+                "disco polo music",
+                "Muzyka chodnikowa",
+                "Piosenka chodnikowa"
               ],
               "children": []
             }
@@ -7431,7 +7927,8 @@
               "name": "Balkan Pop",
               "short_summary": null,
               "aka": [
-                "balkan pop music"
+                "balkan pop music",
+                "Balkan Pop-Folk"
               ],
               "children": []
             },
@@ -7460,7 +7957,11 @@
                 "laiko",
                 "laika",
                 "laïka",
-                "laïko"
+                "laïko",
+                "Laiki",
+                "Laïki",
+                "Λαϊκή",
+                "Λαϊκά"
               ],
               "children": []
             },
@@ -7499,7 +8000,8 @@
           "short_summary": null,
           "aka": [
             "indipop",
-            "indi-pop"
+            "indi-pop",
+            "Hindi Pop"
           ],
           "children": []
         },
@@ -7528,7 +8030,10 @@
           "short_summary": null,
           "aka": [
             "persian pop",
-            "farsi pop"
+            "farsi pop",
+            "Farsipop",
+            "Musiqi-e pop",
+            "موسیقی پاپ ایرانی"
           ],
           "children": []
         },
@@ -7539,7 +8044,9 @@
             "jpop",
             "j pop",
             "japanese pop",
-            "japanese-pop"
+            "japanese-pop",
+            "ジェイポップ",
+            "Jポップ"
           ],
           "children": []
         },
@@ -7556,7 +8063,8 @@
               "name": "Paisley Underground",
               "short_summary": null,
               "aka": [
-                "paisley underground music"
+                "paisley underground music",
+                "Paisley Pop"
               ],
               "children": []
             }
@@ -7569,7 +8077,9 @@
             "kpop",
             "k pop",
             "korean pop",
-            "korean-pop"
+            "korean-pop",
+            "케이팝",
+            "Keipab"
           ],
           "children": []
         },
@@ -7578,7 +8088,13 @@
           "short_summary": null,
           "aka": [
             "kayokyoku",
-            "kayoukyoku"
+            "kayoukyoku",
+            "Kayō",
+            "Kayou",
+            "Shōwa Era Pop",
+            "Standard Japanese Pop",
+            "歌謡曲",
+            "かようきょく"
           ],
           "children": []
         },
@@ -7587,7 +8103,10 @@
           "short_summary": null,
           "aka": [
             "balada",
-            "balada romántica"
+            "balada romántica",
+            "Canción melódica",
+            "Canción ligera",
+            "Melódicos"
           ],
           "children": []
         },
@@ -7693,7 +8212,8 @@
                   "name": "Paisley Underground",
                   "short_summary": null,
                   "aka": [
-                    "paisley underground music"
+                    "paisley underground music",
+                    "Paisley Pop"
                   ],
                   "children": []
                 }
@@ -7767,6 +8287,9 @@
             {
               "name": "Hypnagogic Pop",
               "short_summary": null,
+              "aka": [
+                "H-pop"
+              ],
               "children": []
             }
           ]
@@ -7813,7 +8336,9 @@
           "short_summary": null,
           "aka": [
             "space-age pop",
-            "bachelor pad"
+            "bachelor pad",
+            "Space Age Bachelor Pad Music",
+            "SABPM"
           ],
           "children": []
         },
@@ -7821,7 +8346,8 @@
           "name": "Sunshine Pop",
           "short_summary": null,
           "aka": [
-            "sunshine-pop"
+            "sunshine-pop",
+            "Soft Pop"
           ],
           "children": []
         },
@@ -7829,7 +8355,9 @@
           "name": "Surf Pop",
           "short_summary": null,
           "aka": [
-            "surf pop music"
+            "surf pop music",
+            "Vocal Surf",
+            "Surf Vocal"
           ],
           "children": []
         },
@@ -7847,7 +8375,11 @@
               "short_summary": null,
               "aka": [
                 "future pop",
-                "future-pop"
+                "future-pop",
+                "Picopop",
+                "フューチャーポップ",
+                "Pico Pop",
+                "Pico Pico Pop"
               ],
               "children": []
             }
@@ -7869,7 +8401,9 @@
           "aka": [
             "traditional pop",
             "standards",
-            "classic pop"
+            "classic pop",
+            "Pop Standards",
+            "American Standards"
           ],
           "children": []
         },
@@ -7878,7 +8412,8 @@
           "short_summary": null,
           "aka": [
             "türk pop",
-            "turk pop"
+            "turk pop",
+            "Türkçe Pop"
           ],
           "children": []
         },
@@ -7977,7 +8512,8 @@
       "name": "Reggae",
       "short_summary": null,
       "aka": [
-        "reggae music"
+        "reggae music",
+        "Reggay"
       ],
       "children": [
         {
@@ -7985,7 +8521,8 @@
           "short_summary": null,
           "aka": [
             "dance hall",
-            "dance-hall"
+            "dance-hall",
+            "Bashment"
           ],
           "children": [
             {
@@ -8064,7 +8601,9 @@
               "short_summary": null,
               "aka": [
                 "flow romántico",
-                "romantic flow rap"
+                "romantic flow rap",
+                "Romantic Style",
+                "Reggaetón romántico"
               ],
               "children": []
             }
@@ -8109,7 +8648,8 @@
                 "two tone",
                 "2-tone",
                 "2tone",
-                "two-tone"
+                "two-tone",
+                "Second Wave Ska"
               ],
               "children": []
             },
@@ -8138,7 +8678,8 @@
         "r&b",
         "rnb",
         "r and b",
-        "rhythm-and-blues"
+        "rhythm-and-blues",
+        "Rhythm & Blues"
       ],
       "children": [
         {
@@ -8152,7 +8693,8 @@
               "name": "Deep Funk",
               "short_summary": null,
               "aka": [
-                "deep funk music"
+                "deep funk music",
+                "Heavy Funk"
               ],
               "children": []
             },
@@ -8181,8 +8723,14 @@
                 "p funk",
                 "parliament funkadelic",
                 "pfunk",
-                "p-funk all stars"
+                "p-funk all stars",
+                "Pure Funk"
               ],
+              "children": []
+            },
+            {
+              "name": "Future Funk",
+              "short_summary": null,
               "children": []
             }
           ]
@@ -8191,7 +8739,14 @@
           "name": "Soul",
           "short_summary": null,
           "aka": [
-            "soul music"
+            "soul music",
+            "Muzikat dika'on",
+            "מוזיקת דיכאון",
+            "שירי נשמה",
+            "שירי דיכאון",
+            "מוזיקת נשמה",
+            "Depression Music",
+            "Depression Songs"
           ],
           "children": [
             {
@@ -8200,7 +8755,8 @@
               "aka": [
                 "blue eyed soul",
                 "blueeyed soul",
-                "blue-eyed r&b"
+                "blue-eyed r&b",
+                "White Soul"
               ],
               "children": []
             },
@@ -8217,7 +8773,8 @@
               "short_summary": null,
               "aka": [
                 "neosoul",
-                "neo-soul"
+                "neo-soul",
+                "Nu Soul"
               ],
               "children": []
             },
@@ -8290,7 +8847,9 @@
                   "aka": [
                     "nu rave",
                     "nu-rave",
-                    "newrave"
+                    "newrave",
+                    "Neu Rave",
+                    "Rock 'n' Rave"
                   ],
                   "children": []
                 }
@@ -8332,7 +8891,8 @@
               "short_summary": null,
               "aka": [
                 "grunge music",
-                "grunge rock"
+                "grunge rock",
+                "Seattle Sound"
               ],
               "children": [
                 {
@@ -8380,7 +8940,8 @@
               "aka": [
                 "indierock",
                 "indie-rock",
-                "indie"
+                "indie",
+                "Independent Rock"
               ],
               "children": [
                 {
@@ -8406,7 +8967,9 @@
                   "aka": [
                     "nu rave",
                     "nu-rave",
-                    "newrave"
+                    "newrave",
+                    "Neu Rave",
+                    "Rock 'n' Rave"
                   ],
                   "children": []
                 },
@@ -8424,7 +8987,8 @@
                   "short_summary": null,
                   "aka": [
                     "post punk revival",
-                    "postpunk revival"
+                    "postpunk revival",
+                    "New Wave Revival"
                   ],
                   "children": []
                 },
@@ -8462,7 +9026,8 @@
                   "name": "Paisley Underground",
                   "short_summary": null,
                   "aka": [
-                    "paisley underground music"
+                    "paisley underground music",
+                    "Paisley Pop"
                   ],
                   "children": []
                 }
@@ -8513,7 +9078,8 @@
               "short_summary": null,
               "aka": [
                 "post punk revival",
-                "postpunk revival"
+                "postpunk revival",
+                "New Wave Revival"
               ],
               "children": []
             },
@@ -8553,7 +9119,8 @@
                 "shoegazing",
                 "shoegazer",
                 "shoe gaze",
-                "shoegaze rock"
+                "shoegaze rock",
+                "Wombadelia"
               ],
               "children": [
                 {
@@ -8663,7 +9230,8 @@
           "aka": [
             "cow punk",
             "cow-punk",
-            "hicksploitation"
+            "hicksploitation",
+            "Country Punk"
           ],
           "children": []
         },
@@ -8679,7 +9247,8 @@
           "name": "Desert Rock",
           "short_summary": null,
           "aka": [
-            "desert rock music"
+            "desert rock music",
+            "Palm Desert Scene"
           ],
           "children": []
         },
@@ -8696,7 +9265,8 @@
               "name": "Screamo",
               "short_summary": null,
               "aka": [
-                "screamo punk"
+                "screamo punk",
+                "Skramz"
               ],
               "children": []
             },
@@ -8732,7 +9302,9 @@
           "aka": [
             "exp rock",
             "experimental-rock",
-            "weird rock"
+            "weird rock",
+            "Avant-Garde Rock",
+            "Avant-Rock"
           ],
           "children": [
             {
@@ -8864,7 +9436,8 @@
                 "two tone",
                 "2-tone",
                 "2tone",
-                "two-tone"
+                "two-tone",
+                "Second Wave Ska"
               ],
               "children": []
             },
@@ -8891,7 +9464,8 @@
           "name": "Paisley Underground",
           "short_summary": null,
           "aka": [
-            "paisley underground music"
+            "paisley underground music",
+            "Paisley Pop"
           ],
           "children": []
         },
@@ -8927,7 +9501,8 @@
                   "name": "Paisley Underground",
                   "short_summary": null,
                   "aka": [
-                    "paisley underground music"
+                    "paisley underground music",
+                    "Paisley Pop"
                   ],
                   "children": []
                 }
@@ -8978,7 +9553,8 @@
           "short_summary": null,
           "aka": [
             "post punk",
-            "postpunk"
+            "postpunk",
+            "New Musick"
           ],
           "children": [
             {
@@ -9015,7 +9591,10 @@
                   "short_summary": null,
                   "aka": [
                     "death rock",
-                    "death-rock"
+                    "death-rock",
+                    "Death Punk",
+                    "Goth Punk",
+                    "Gothic Punk"
                   ],
                   "children": []
                 }
@@ -9044,7 +9623,8 @@
               "short_summary": null,
               "aka": [
                 "post punk revival",
-                "postpunk revival"
+                "postpunk revival",
+                "New Wave Revival"
               ],
               "children": []
             }
@@ -9125,7 +9705,8 @@
             "psych rock",
             "psych-rock",
             "psychedelia",
-            "acid rock psych"
+            "acid rock psych",
+            "Psychedelic Music"
           ],
           "children": [
             {
@@ -9178,7 +9759,8 @@
                   "name": "Paisley Underground",
                   "short_summary": null,
                   "aka": [
-                    "paisley underground music"
+                    "paisley underground music",
+                    "Paisley Pop"
                   ],
                   "children": []
                 }
@@ -9215,7 +9797,8 @@
           "name": "Punk Blues",
           "short_summary": null,
           "aka": [
-            "punk blues music"
+            "punk blues music",
+            "Blues Punk"
           ],
           "children": []
         },
@@ -9252,7 +9835,8 @@
                       "aka": [
                         "dbeat",
                         "d beat",
-                        "discore"
+                        "discore",
+                        "Kängpunk"
                       ],
                       "children": []
                     }
@@ -9273,7 +9857,11 @@
               "name": "Celtic Punk",
               "short_summary": null,
               "aka": [
-                "celtic punk music"
+                "celtic punk music",
+                "Paddybeat",
+                "Celtcore",
+                "Jig Punk",
+                "Rock and Reel"
               ],
               "children": []
             },
@@ -9290,7 +9878,10 @@
               "short_summary": null,
               "aka": [
                 "death rock",
-                "death-rock"
+                "death-rock",
+                "Death Punk",
+                "Goth Punk",
+                "Gothic Punk"
               ],
               "children": []
             },
@@ -9315,7 +9906,11 @@
                   "name": "Celtic Punk",
                   "short_summary": null,
                   "aka": [
-                    "celtic punk music"
+                    "celtic punk music",
+                    "Paddybeat",
+                    "Celtcore",
+                    "Jig Punk",
+                    "Rock and Reel"
                   ],
                   "children": []
                 },
@@ -9360,7 +9955,8 @@
                   "short_summary": null,
                   "aka": [
                     "cyber grind",
-                    "cyber-grind"
+                    "cyber-grind",
+                    "Electrogrind"
                   ],
                   "children": []
                 },
@@ -9378,7 +9974,8 @@
                   "short_summary": null,
                   "aka": [
                     "noise grind",
-                    "noise-grind"
+                    "noise-grind",
+                    "Grindnoise"
                   ],
                   "children": []
                 }
@@ -9389,7 +9986,8 @@
               "short_summary": null,
               "aka": [
                 "hxc",
-                "hard-core punk"
+                "hard-core punk",
+                "Hardcore [Punk]"
               ],
               "children": [
                 {
@@ -9418,7 +10016,8 @@
                   "aka": [
                     "dbeat",
                     "d beat",
-                    "discore"
+                    "discore",
+                    "Kängpunk"
                   ],
                   "children": []
                 },
@@ -9443,7 +10042,8 @@
                           "name": "Screamo",
                           "short_summary": null,
                           "aka": [
-                            "screamo punk"
+                            "screamo punk",
+                            "Skramz"
                           ],
                           "children": []
                         },
@@ -9477,7 +10077,8 @@
                       "name": "Screamo",
                       "short_summary": null,
                       "aka": [
-                        "screamo punk"
+                        "screamo punk",
+                        "Skramz"
                       ],
                       "children": []
                     }
@@ -9497,7 +10098,8 @@
                   "name": "Street Punk",
                   "short_summary": null,
                   "aka": [
-                    "street-punk"
+                    "street-punk",
+                    "Streetpunk"
                   ],
                   "children": []
                 },
@@ -9506,7 +10108,8 @@
                   "short_summary": null,
                   "aka": [
                     "thrash core",
-                    "thrash-core"
+                    "thrash-core",
+                    "Fastcore"
                   ],
                   "children": [
                     {
@@ -9542,7 +10145,8 @@
               "short_summary": null,
               "aka": [
                 "horror-punk",
-                "horrorpunk"
+                "horrorpunk",
+                "Horror Rock"
               ],
               "children": []
             },
@@ -9561,7 +10165,8 @@
               "short_summary": null,
               "aka": [
                 "poppunk",
-                "pop-punk"
+                "pop-punk",
+                "Punk Pop"
               ],
               "children": []
             },
@@ -9590,7 +10195,8 @@
               "short_summary": null,
               "aka": [
                 "ska-punk",
-                "skapunk"
+                "skapunk",
+                "Punk Ska"
               ],
               "children": [
                 {
@@ -9614,7 +10220,8 @@
               "short_summary": null,
               "aka": [
                 "skatepunk",
-                "skate-punk"
+                "skate-punk",
+                "Skate Rock"
               ],
               "children": []
             }
@@ -9648,7 +10255,8 @@
             "rocknroll",
             "r&r",
             "rock-and-roll",
-            "rock'n'roll"
+            "rock'n'roll",
+            "Rock & Roll"
           ],
           "children": [
             {
@@ -9713,7 +10321,8 @@
           "aka": [
             "surfrock",
             "surf",
-            "surf-rock"
+            "surf-rock",
+            "Surf Music"
           ],
           "children": []
         },
@@ -9723,7 +10332,11 @@
           "aka": [
             "visual-kei",
             "v-kei",
-            "vkei"
+            "vkei",
+            "Vijuaru kei",
+            "ヴィジュアル系",
+            "VK",
+            "V系"
           ],
           "children": [
             {
@@ -9731,7 +10344,8 @@
               "short_summary": null,
               "aka": [
                 "nagoya-kei",
-                "nagoyakei"
+                "nagoyakei",
+                "名古屋系"
               ],
               "children": []
             }
@@ -9757,6 +10371,16 @@
           "name": "Acoustic Rock",
           "short_summary": null,
           "children": []
+        },
+        {
+          "name": "Symphonic Rock",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Arena Rock",
+          "short_summary": null,
+          "children": []
         }
       ]
     },
@@ -9765,7 +10389,8 @@
       "short_summary": null,
       "aka": [
         "singer songwriter",
-        "singersongwriter"
+        "singersongwriter",
+        "Singer/Songwriter"
       ],
       "children": [
         {
@@ -9876,6 +10501,9 @@
         {
           "name": "Musical Theatre and Entertainment",
           "short_summary": null,
+          "aka": [
+            "musical"
+          ],
           "children": []
         }
       ]
@@ -9916,7 +10544,8 @@
               "aka": [
                 "afro beat",
                 "afro-beat",
-                "afrobeats"
+                "afrobeats",
+                "Azonto"
               ],
               "children": []
             },
@@ -9924,7 +10553,8 @@
               "name": "Apala",
               "short_summary": null,
               "aka": [
-                "akpala"
+                "akpala",
+                "Àpàlà"
               ],
               "children": []
             },
@@ -9940,7 +10570,8 @@
               "name": "Bikutsi",
               "short_summary": null,
               "aka": [
-                "bikutsi music"
+                "bikutsi music",
+                "Bikut-si"
               ],
               "children": []
             },
@@ -9985,7 +10616,8 @@
               "name": "Egyptian",
               "short_summary": null,
               "aka": [
-                "egyptian music"
+                "egyptian music",
+                "موسيقى مصرية"
               ],
               "children": []
             },
@@ -9993,7 +10625,8 @@
               "name": "Fuji Music",
               "short_summary": null,
               "aka": [
-                "fuji"
+                "fuji",
+                "Fújì"
               ],
               "children": []
             },
@@ -10010,7 +10643,9 @@
               "short_summary": null,
               "aka": [
                 "high life",
-                "high-life"
+                "high-life",
+                "Hi-Life",
+                "Osibi"
               ],
               "children": []
             },
@@ -10036,7 +10671,9 @@
               "short_summary": null,
               "aka": [
                 "jiti",
-                "jit music"
+                "jit music",
+                "Jit-jive",
+                "Harare beat"
               ],
               "children": []
             },
@@ -10054,7 +10691,8 @@
               "name": "Kapuka",
               "short_summary": null,
               "aka": [
-                "kapuka music"
+                "kapuka music",
+                "Boomba Music"
               ],
               "children": []
             },
@@ -10086,7 +10724,8 @@
               "name": "Kwela",
               "short_summary": null,
               "aka": [
-                "kwela jazz"
+                "kwela jazz",
+                "Pennywhistle Kwela"
               ],
               "children": []
             },
@@ -10126,7 +10765,8 @@
               "name": "Mbaqanga",
               "short_summary": null,
               "aka": [
-                "mbaqanga music"
+                "mbaqanga music",
+                "Mbaqanga Jazz"
               ],
               "children": []
             },
@@ -10134,7 +10774,11 @@
               "name": "Mbube",
               "short_summary": null,
               "aka": [
-                "mbube music"
+                "mbube music",
+                "Isikhwela jo",
+                "Isikambula",
+                "Ibombing",
+                "Isikhwela joe"
               ],
               "children": []
             },
@@ -10236,7 +10880,10 @@
               "name": "Taarab",
               "short_summary": null,
               "aka": [
-                "taarab music"
+                "taarab music",
+                "tarab",
+                "tarabu",
+                "طرب"
               ],
               "children": []
             },
@@ -10287,7 +10934,9 @@
                         "jpop",
                         "j pop",
                         "japanese pop",
-                        "japanese-pop"
+                        "japanese-pop",
+                        "ジェイポップ",
+                        "Jポップ"
                       ],
                       "children": []
                     },
@@ -10296,7 +10945,8 @@
                       "short_summary": null,
                       "aka": [
                         "onkyo",
-                        "onkyo-kei"
+                        "onkyo-kei",
+                        "音響系"
                       ],
                       "children": []
                     },
@@ -10378,7 +11028,13 @@
                       "short_summary": null,
                       "aka": [
                         "kayokyoku",
-                        "kayoukyoku"
+                        "kayoukyoku",
+                        "Kayō",
+                        "Kayou",
+                        "Shōwa Era Pop",
+                        "Standard Japanese Pop",
+                        "歌謡曲",
+                        "かようきょく"
                       ],
                       "children": []
                     },
@@ -10416,7 +11072,8 @@
                   "name": "Enka",
                   "short_summary": null,
                   "aka": [
-                    "enka music"
+                    "enka music",
+                    "演歌"
                   ],
                   "children": []
                 },
@@ -10456,7 +11113,9 @@
                         "kpop",
                         "k pop",
                         "korean pop",
-                        "korean-pop"
+                        "korean-pop",
+                        "케이팝",
+                        "Keipab"
                       ],
                       "children": []
                     }
@@ -10479,7 +11138,10 @@
                         "c pop",
                         "chinese pop",
                         "chinese-pop",
-                        "chinese popular music"
+                        "chinese popular music",
+                        "中文流行音乐",
+                        "中文流行音樂",
+                        "Zhōngwén liúxíng yīnyuè"
                       ],
                       "children": [
                         {
@@ -10489,7 +11151,14 @@
                             "canto pop",
                             "canto-pop",
                             "cantonese pop",
-                            "canto popular"
+                            "canto popular",
+                            "HK-pop",
+                            "Hong Kong Pop",
+                            "粵語流行音樂",
+                            "Yueyu liuxing yinyue",
+                            "Jyutyu lauhang jamngok",
+                            "廣東歌",
+                            "Gwongdung go"
                           ],
                           "children": []
                         },
@@ -10500,7 +11169,12 @@
                             "mando pop",
                             "mando-pop",
                             "mandarin pop",
-                            "mandarin chinese pop"
+                            "mandarin chinese pop",
+                            "Mandapop",
+                            "Mandarin Popular Music",
+                            "华语流行音乐",
+                            "華語流行音樂",
+                            "Huáyǔ liúxíng yīnyuè"
                           ],
                           "children": []
                         }
@@ -10524,7 +11198,12 @@
               "name": "Fijiri",
               "short_summary": null,
               "aka": [
-                "fijiri music"
+                "fijiri music",
+                "Fidjeri",
+                "Fijri",
+                "Al-Fijiri",
+                "الفجيري",
+                "لفجري"
               ],
               "children": []
             },
@@ -10534,7 +11213,11 @@
               "aka": [
                 "khaleeji",
                 "khaleegi",
-                "khaleeji music"
+                "khaleeji music",
+                "Khaliji Music",
+                "Gulf Music",
+                "الفن الخليجي",
+                "الموسيقى الخليجية"
               ],
               "children": []
             },
@@ -10542,7 +11225,11 @@
               "name": "Liwa",
               "short_summary": null,
               "aka": [
-                "liwa music"
+                "liwa music",
+                "فن الليوة",
+                "الليوة",
+                "Al-Laywah",
+                "Laywah"
               ],
               "children": []
             },
@@ -10550,7 +11237,11 @@
               "name": "Sawt",
               "short_summary": null,
               "aka": [
-                "sawt music"
+                "sawt music",
+                "Ṣawt",
+                "Sout",
+                "Sowt",
+                "صوت"
               ],
               "children": []
             },
@@ -10574,7 +11265,9 @@
                   "name": "Bhangra",
                   "short_summary": null,
                   "aka": [
-                    "bhangra music"
+                    "bhangra music",
+                    "ਭੰਗੜਾ",
+                    "بھنگڑا"
                   ],
                   "children": []
                 },
@@ -10609,7 +11302,8 @@
                   "short_summary": null,
                   "aka": [
                     "indipop",
-                    "indi-pop"
+                    "indi-pop",
+                    "Hindi Pop"
                   ],
                   "children": []
                 },
@@ -10626,14 +11320,22 @@
                   "short_summary": null,
                   "aka": [
                     "luk thung music",
-                    "country thai"
+                    "country thai",
+                    "ลูกทุ่ง",
+                    "Loog thung",
+                    "Thai Country Music"
                   ],
                   "children": [
                     {
                       "name": "Luk Krung",
                       "short_summary": null,
                       "aka": [
-                        "luk krung music"
+                        "luk krung music",
+                        "ลูกกรุง",
+                        "Phleng luk krung",
+                        "Look krung",
+                        "Luk grung",
+                        "Thai City Music"
                       ],
                       "children": []
                     }
@@ -10652,7 +11354,13 @@
                   "short_summary": null,
                   "aka": [
                     "mor lam",
-                    "molam"
+                    "molam",
+                    "หมอลำ",
+                    "ລຳ",
+                    "Maw Lam",
+                    "Maw Lum",
+                    "Moh Lam",
+                    "Mhor Lum"
                   ],
                   "children": []
                 },
@@ -10663,7 +11371,8 @@
                     "p-pop",
                     "ppop",
                     "philippine pop",
-                    "filipino pop"
+                    "filipino pop",
+                    "OPM Pop"
                   ],
                   "children": []
                 },
@@ -10893,6 +11602,11 @@
           "aka": [
             "SFX"
           ],
+          "children": []
+        },
+        {
+          "name": "Non-Music",
+          "short_summary": null,
           "children": []
         }
       ]
