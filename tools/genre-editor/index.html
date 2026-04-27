@@ -24,6 +24,7 @@
       <button id="expand-all-btn" type="button">expand all</button>
       <button id="collapse-all-btn" type="button">collapse all</button>
       <button id="add-root-btn" type="button">+ root genre</button>
+      <button id="add-tsv-root-btn" type="button" title="paste tab-separated rows as new root genres">+ tsv roots</button>
       <span class="grow"></span>
       <span id="status" class="status"></span>
     </div>
@@ -41,6 +42,7 @@
         <button class="add-aka" type="button" title="add AKA">+ aka</button>
         <span class="spacer"></span>
         <button class="add-child" type="button" title="add child genre">+ child</button>
+        <button class="add-tsv" type="button" title="paste tab-separated rows as children">+ tsv</button>
         <button class="delete" type="button" title="delete genre">✕</button>
       </div>
       <div class="children"></div>
@@ -53,6 +55,24 @@
       <button class="aka-remove" type="button" title="remove AKA">✕</button>
     </span>
   </template>
+
+  <div id="tsv-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tsv-title">
+    <div class="modal-card">
+      <div id="tsv-title" class="modal-title">paste TSV as children of <span id="tsv-target"></span></div>
+      <div class="modal-help">
+        format: <code>count⇥name⇥aka1, aka2, …</code> &nbsp;— column 1 (count) is ignored, column 3 is optional.
+        each non-empty line becomes a new child.
+      </div>
+      <textarea id="tsv-input" placeholder="paste tab-separated rows here…" spellcheck="false"></textarea>
+      <div id="tsv-preview" class="modal-preview"></div>
+      <div class="modal-buttons">
+        <span class="modal-shortcut">⌘/ctrl + enter to add &nbsp;·&nbsp; esc to cancel</span>
+        <span class="grow"></span>
+        <button id="tsv-cancel" type="button">cancel</button>
+        <button id="tsv-add" type="button" class="primary">add children</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/app.js"></script>
 </body>

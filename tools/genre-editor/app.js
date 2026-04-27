@@ -38,11 +38,23 @@ const els = {
   expandAllBtn: $("#expand-all-btn"),
   collapseAllBtn: $("#collapse-all-btn"),
   addRootBtn: $("#add-root-btn"),
+  addTsvRootBtn: $("#add-tsv-root-btn"),
   status: $("#status"),
   tree: $("#tree-root"),
   nodeTpl: $("#node-template"),
   akaTpl: $("#aka-template"),
+  tsvModal: $("#tsv-modal"),
+  tsvTarget: $("#tsv-target"),
+  tsvInput: $("#tsv-input"),
+  tsvPreview: $("#tsv-preview"),
+  tsvAdd: $("#tsv-add"),
+  tsvCancel: $("#tsv-cancel"),
 };
+
+// Active TSV-modal context: { node, isRoot }. `node` is the parent that new
+// children will be appended to; for isRoot=true, children are pushed to
+// state.data.genres directly.
+let tsvContext = null;
 
 // --- helpers ---------------------------------------------------------------
 
@@ -151,6 +163,7 @@ function buildNodeEl(node, parentArr) {
   const akaList = root.querySelector(".aka-list");
   const addAka = root.querySelector(".add-aka");
   const addChild = root.querySelector(".add-child");
+  const addTsv = root.querySelector(".add-tsv");
   const del = root.querySelector(".delete");
   const childrenEl = root.querySelector(".children");
 
@@ -257,6 +270,10 @@ function buildNodeEl(node, parentArr) {
       sel.removeAllRanges();
       sel.addRange(range);
     }
+  });
+
+  addTsv.addEventListener("click", () => {
+    openTsvModal({ node, isRoot: false });
   });
 
   del.addEventListener("click", () => {
@@ -589,6 +606,110 @@ els.tree.addEventListener("drop", (e) => {
   flashNode = null;
 });
 
+// --- TSV paste -------------------------------------------------------------
+
+function parseTsvLines(text) {
+  // Format per line: count<tab>name<tab>aka1, aka2, ...
+  // Column 1 (count) is ignored. Column 3 is optional. Blank lines are
+  // skipped. Lines without a usable name go into `skipped` so the modal can
+  // surface them in the live preview.
+  const results = [];
+  const skipped = [];
+  const lines = text.split(/\r?\n/);
+  lines.forEach((rawLine, idx) => {
+    if (!rawLine.trim()) return;
+    const cols = rawLine.split("\t");
+    const name = (cols[1] || "").trim();
+    const akasRaw = (cols[2] || "").trim();
+    if (!name) {
+      skipped.push(idx + 1);
+      return;
+    }
+    const aka = akasRaw
+      ? akasRaw
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+    const node = { name, short_summary: null };
+    if (aka.length) node.aka = aka;
+    node.children = [];
+    results.push(node);
+  });
+  return { results, skipped };
+}
+
+function openTsvModal(context) {
+  tsvContext = context;
+  els.tsvTarget.textContent = context.isRoot ? "(root level)" : context.node.name;
+  els.tsvInput.value = "";
+  els.tsvPreview.textContent = "";
+  els.tsvPreview.className = "modal-preview";
+  els.tsvModal.classList.remove("hidden");
+  setTimeout(() => els.tsvInput.focus(), 0);
+}
+
+function closeTsvModal() {
+  els.tsvModal.classList.add("hidden");
+  tsvContext = null;
+}
+
+function updateTsvPreview() {
+  const { results, skipped } = parseTsvLines(els.tsvInput.value);
+  if (results.length === 0 && skipped.length === 0) {
+    els.tsvPreview.textContent = "";
+    els.tsvPreview.className = "modal-preview";
+    els.tsvAdd.disabled = true;
+    return;
+  }
+  const wordChild = results.length === 1 ? "child" : "children";
+  let msg = `→ ${results.length} ${wordChild} ready`;
+  if (skipped.length) {
+    const linesWord = skipped.length === 1 ? "line" : "lines";
+    msg += `, skipping ${skipped.length} ${linesWord} with no name (line ${skipped.join(", ")})`;
+  }
+  els.tsvPreview.textContent = msg;
+  els.tsvPreview.className =
+    "modal-preview " + (skipped.length ? "warn" : results.length ? "ok" : "");
+  els.tsvAdd.disabled = results.length === 0;
+}
+
+function applyTsvModal() {
+  if (!tsvContext) return;
+  const { results } = parseTsvLines(els.tsvInput.value);
+  if (results.length === 0) {
+    setStatus("nothing to add", "err");
+    return;
+  }
+  let statusMsg;
+  if (tsvContext.isRoot) {
+    state.data.genres.push(...results);
+    statusMsg = `added ${results.length} root ${results.length === 1 ? "genre" : "genres"}`;
+  } else {
+    const target = tsvContext.node;
+    target.children.push(...results);
+    expandedSet.add(target);
+    for (const a of findAncestors(target)) expandedSet.add(a);
+    statusMsg = `added ${results.length} ${results.length === 1 ? "child" : "children"} to "${target.name}"`;
+  }
+  // Flash the first newly-added node so the user can spot the result.
+  flashNode = results[0];
+  setDirty(true);
+  els.fileMeta.textContent = `${countNodes(state.data.genres)} nodes`;
+  setStatus(statusMsg, "ok");
+  closeTsvModal();
+  render();
+  flashNode = null;
+}
+
+els.tsvInput.addEventListener("input", updateTsvPreview);
+els.tsvAdd.addEventListener("click", applyTsvModal);
+els.tsvCancel.addEventListener("click", closeTsvModal);
+els.tsvModal.addEventListener("click", (e) => {
+  // Click on backdrop (outside the card) → close.
+  if (e.target === els.tsvModal) closeTsvModal();
+});
+
 // --- wire up --------------------------------------------------------------
 
 function setAllExpanded(expanded) {
@@ -649,7 +770,25 @@ els.addRootBtn.addEventListener("click", () => {
   if (lastNode) lastNode.scrollIntoView({ block: "center" });
 });
 
+els.addTsvRootBtn.addEventListener("click", () => {
+  openTsvModal({ node: null, isRoot: true });
+});
+
 window.addEventListener("keydown", (e) => {
+  // Modal-specific shortcuts take precedence.
+  if (!els.tsvModal.classList.contains("hidden")) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeTsvModal();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      applyTsvModal();
+      return;
+    }
+    return;
+  }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
     e.preventDefault();
     if (!els.saveBtn.disabled) save();

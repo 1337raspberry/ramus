@@ -20,7 +20,13 @@ no dependencies — stdlib only.
 - click a name to rename inline (Enter to commit, Esc to cancel)
 - `+ aka` adds an editable AKA chip; the small `✕` removes one
 - `+ child` adds a child genre (auto-expands and selects the new name)
-- `+ root genre` adds at the top level
+- `+ tsv` (per row) and `+ tsv roots` (toolbar) open a paste modal: drop in
+  tab-separated rows of the form `count⇥name⇥aka1, aka2, …` and each non-empty
+  line becomes a child of that node (or a new root). column 1 (count) is
+  ignored, column 3 (AKAs) is optional. live preview shows how many will be
+  added and which lines were skipped (no usable name). ⌘/Ctrl+Enter to commit,
+  Esc or click outside the card to cancel.
+- `+ root genre` adds a single empty root at the top level
 - `✕` on a row deletes that genre and all descendants (with a confirm)
 - drag the `⋮⋮` handle on the left of a row to move a genre (and all its
   children). drop targets:

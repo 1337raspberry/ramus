@@ -270,7 +270,8 @@ button.primary:hover:not(:disabled) {
 }
 
 .add-aka,
-.add-child {
+.add-child,
+.add-tsv {
   font-size: 11px;
   color: var(--muted);
   padding: 1px 6px;
@@ -355,4 +356,101 @@ button.primary:hover:not(:disabled) {
   100% {
     background: transparent;
   }
+}
+
+/* TSV paste modal */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  width: 100%;
+  max-width: 720px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+.modal-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.modal-title #tsv-target {
+  color: var(--accent);
+}
+
+.modal-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.modal-help code {
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+#tsv-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  min-height: 240px;
+  resize: vertical;
+  outline: none;
+  white-space: pre;
+  overflow: auto;
+}
+
+#tsv-input:focus {
+  border-color: var(--accent);
+}
+
+.modal-preview {
+  color: var(--muted);
+  font-size: 12px;
+  min-height: 14px;
+}
+
+.modal-preview.warn {
+  color: var(--warn);
+}
+
+.modal-preview.ok {
+  color: var(--ok);
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.modal-shortcut {
+  color: var(--muted);
+  font-size: 11px;
 }
