@@ -4,9 +4,10 @@ import type { LibrarySection, PlexServer } from "../../lib/types";
 import OAuthSignIn from "./OAuthSignIn";
 import ServerPicker from "./ServerPicker";
 import LibraryPicker from "./LibraryPicker";
+import StyleToggle from "./StyleToggle";
 import InitialSync from "./InitialSync";
 
-type Step = "signIn" | "discoverServers" | "selectLibrary" | "initialSync";
+type Step = "signIn" | "discoverServers" | "selectLibrary" | "styleToggle" | "initialSync";
 
 // Onboarding progress survives a WKWebView content-process kill via
 // localStorage. sessionStorage is lost when iOS terminates the web content
@@ -76,11 +77,15 @@ export default function OnboardingFlow({ onComplete }: Props) {
       if (!server) return;
       setFinalizeError(null);
       finalizeOnboarding(server.machineIdentifier, lib.key, serverUrl)
-        .then(() => setStep("initialSync"))
+        .then(() => setStep("styleToggle"))
         .catch((e) => setFinalizeError(String(e)));
     },
     [server, serverUrl],
   );
+
+  const handleStyleContinue = useCallback(() => {
+    setStep("initialSync");
+  }, []);
 
   const handleSyncComplete = useCallback(() => {
     clearOnboardingStorage();
@@ -106,6 +111,7 @@ export default function OnboardingFlow({ onComplete }: Props) {
             )}
           </>
         )}
+        {step === "styleToggle" && <StyleToggle onContinue={handleStyleContinue} />}
         {step === "initialSync" && (
           <InitialSync onComplete={handleSyncComplete} onSkip={handleSkip} />
         )}

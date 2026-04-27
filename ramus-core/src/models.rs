@@ -500,6 +500,8 @@ pub struct Settings {
     /// live server reachability and shows only downloaded content.
     pub offline_mode: bool,
     pub popularity_display: PopularityDisplay,
+    /// Merge Plex `Style` tags into the genre table during sync when true.
+    pub include_plex_styles: bool,
 }
 
 impl Default for Settings {
@@ -522,6 +524,7 @@ impl Default for Settings {
             saved_searches: Vec::new(),
             offline_mode: false,
             popularity_display: PopularityDisplay::default(),
+            include_plex_styles: true,
         }
     }
 }

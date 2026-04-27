@@ -120,6 +120,8 @@ export interface Settings {
   savedSearches: SavedSearch[];
   offlineMode: boolean;
   popularityDisplay: "off" | "hot" | "chart";
+  /** When true, Plex `Style` tags are merged into the genre table at sync. */
+  includePlexStyles: boolean;
 }
 
 export interface CacheStats {

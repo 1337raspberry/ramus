@@ -6,6 +6,7 @@ use tokio::sync::Semaphore;
 use crate::cache::db::{CacheDatabase, CacheError};
 use crate::cache::upsert::{AlbumUpsertRow, TrackUpsertRow};
 use crate::plex::client::{MediaItem, PlexClient, PlexClientError};
+use crate::util::dedup_case_insensitive;
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,19 +59,22 @@ impl SyncEngine {
     }
 
     /// Full sync: all artists/albums/tracks + deep genre fetch for ALL albums.
+    /// `include_styles` merges Plex `Style` tags into the genre table.
     pub async fn full_sync<F>(
         &self,
         library_key: &str,
+        include_styles: bool,
         on_progress: F,
     ) -> Result<(), SyncError>
     where
         F: Fn(SyncProgress) + Send + Sync + 'static,
     {
         let on_progress = Arc::new(on_progress);
-        let (album_map, _) =
-            self.core_sync(library_key, false, on_progress.clone()).await?;
+        let (album_map, _) = self
+            .core_sync(library_key, false, on_progress.clone())
+            .await?;
 
-        self.deep_genre_sync(&album_map, None, on_progress.clone())
+        self.deep_genre_sync(&album_map, None, include_styles, on_progress.clone())
             .await?;
 
         on_progress(SyncProgress {
@@ -86,19 +90,22 @@ impl SyncEngine {
     pub async fn incremental_sync<F>(
         &self,
         library_key: &str,
+        include_styles: bool,
         on_progress: F,
     ) -> Result<(), SyncError>
     where
         F: Fn(SyncProgress) + Send + Sync + 'static,
     {
         let on_progress = Arc::new(on_progress);
-        let (album_map, changed_source_ids) =
-            self.core_sync(library_key, true, on_progress.clone()).await?;
+        let (album_map, changed_source_ids) = self
+            .core_sync(library_key, true, on_progress.clone())
+            .await?;
 
         if !changed_source_ids.is_empty() {
             self.deep_genre_sync(
                 &album_map,
                 Some(&changed_source_ids),
+                include_styles,
                 on_progress.clone(),
             )
             .await?;
@@ -116,6 +123,7 @@ impl SyncEngine {
     /// Genre sync only: re-fetches full metadata for all albums to populate complete genre lists.
     pub async fn genre_sync<F>(
         &self,
+        include_styles: bool,
         on_progress: F,
     ) -> Result<(), SyncError>
     where
@@ -126,7 +134,7 @@ impl SyncEngine {
         let album_map: HashMap<String, i64> =
             cached.into_iter().map(|(k, v)| (k, v.id)).collect();
 
-        self.deep_genre_sync(&album_map, None, on_progress.clone())
+        self.deep_genre_sync(&album_map, None, include_styles, on_progress.clone())
             .await?;
 
         on_progress(SyncProgress {
@@ -394,7 +402,8 @@ impl SyncEngine {
                 });
                 changed_ids.insert(item.rating_key.clone());
 
-                // List views return only the first genre; deep fetch fills in the rest.
+                // List views return only the first genre; deep fetch fills in the rest
+                // (and merges Style tags in if enabled).
                 if let Some(genre) = item.genre.as_ref().and_then(|g| g.first()) {
                     genre_links.push((item.rating_key.clone(), genre.tag.clone()));
                 }
@@ -558,6 +567,7 @@ impl SyncEngine {
         &self,
         album_map: &HashMap<String, i64>,
         only_source_ids: Option<&HashSet<String>>,
+        include_styles: bool,
         on_progress: Arc<dyn Fn(SyncProgress) + Send + Sync>,
     ) -> Result<(), SyncError> {
         let entries: Vec<(String, i64)> = match only_source_ids {
@@ -596,8 +606,14 @@ impl SyncEngine {
             let on_progress = on_progress.clone();
 
             handles.push(tokio::spawn(async move {
-                let result =
-                    process_album_deep_sync(&source_id, album_id, &client, &cache).await;
+                let result = process_album_deep_sync(
+                    &source_id,
+                    album_id,
+                    include_styles,
+                    &client,
+                    &cache,
+                )
+                .await;
                 drop(permit);
 
                 match result {
@@ -643,14 +659,20 @@ impl SyncEngine {
 async fn process_album_deep_sync(
     source_id: &str,
     album_id: i64,
+    include_styles: bool,
     client: &PlexClient,
     cache: &CacheDatabase,
 ) -> Result<(), SyncError> {
     let metadata = client.fetch_item_metadata(source_id).await?;
     let genres = metadata.genre.unwrap_or_default();
     let collections = metadata.collection.unwrap_or_default();
+    let styles = metadata.style.unwrap_or_default();
 
-    let genre_names: Vec<String> = genres.into_iter().map(|g| g.tag).collect();
+    let mut genre_names: Vec<String> = genres.into_iter().map(|g| g.tag).collect();
+    if include_styles {
+        genre_names.extend(styles.into_iter().map(|s| s.tag));
+        genre_names = dedup_case_insensitive(genre_names);
+    }
     let collection_names: Vec<String> = collections.into_iter().map(|c| c.tag).collect();
 
     let colors_json = metadata
@@ -819,7 +841,7 @@ mod tests {
         let pc = progress_count.clone();
 
         engine
-            .full_sync("1", move |_p| {
+            .full_sync("1", true, move |_p| {
                 pc.fetch_add(1, Ordering::Relaxed);
             })
             .await
@@ -847,10 +869,10 @@ mod tests {
         let client = setup_client(&server.uri());
         let engine = SyncEngine::new(cache.clone(), client.clone());
 
-        engine.full_sync("1", |_| {}).await.unwrap();
+        engine.full_sync("1", true, |_| {}).await.unwrap();
 
         let engine2 = SyncEngine::new(cache.clone(), client);
-        engine2.incremental_sync("1", |_| {}).await.unwrap();
+        engine2.incremental_sync("1", true, |_| {}).await.unwrap();
 
         let stats = cache.cache_stats().unwrap();
         assert_eq!(stats.artist_count, 1);
@@ -867,7 +889,7 @@ mod tests {
         let client = setup_client(&server.uri());
         let engine = SyncEngine::new(cache.clone(), client);
 
-        engine.full_sync("1", |_| {}).await.unwrap();
+        engine.full_sync("1", true, |_| {}).await.unwrap();
 
         // Server2: same updatedAt, different genre.
         let server2 = MockServer::start().await;
@@ -928,11 +950,114 @@ mod tests {
         let client2 = setup_client(&server2.uri());
         let engine2 = SyncEngine::new(cache.clone(), client2);
 
-        engine2.incremental_sync("1", |_| {}).await.unwrap();
+        engine2.incremental_sync("1", true, |_| {}).await.unwrap();
 
         let genres = cache.album_genres("al1").unwrap();
         assert!(genres.contains(&"Electronic".into()));
         assert!(genres.contains(&"Experimental".into()));
+    }
+
+    /// Mounts a library where the album has `Genre: [Rock, Pop]` and
+    /// `Style: [Pop, Indie Rock]`. With Style merging on, we expect the
+    /// album to end up tagged with the union (3 distinct genres after
+    /// case-insensitive dedup); off, we expect just the two raw genres.
+    async fn mount_library_with_styles(server: &MockServer) {
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "8"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": {
+                    "Metadata": [media_item_json("ar1", "Artist", 1000, None, None)]
+                }
+            })))
+            .mount(server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "9"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": {
+                    "Metadata": [{
+                        "ratingKey": "al1",
+                        "title": "Album",
+                        "updatedAt": 1000,
+                        "parentRatingKey": "ar1",
+                        "Genre": [{"tag": "Rock"}, {"tag": "Pop"}],
+                        "Style": [{"tag": "pop"}, {"tag": "Indie Rock"}]
+                    }]
+                }
+            })))
+            .mount(server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "10"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": { "Metadata": [] }
+            })))
+            .mount(server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/library/metadata/al1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": {
+                    "Metadata": [{
+                        "ratingKey": "al1",
+                        "title": "Album",
+                        "Genre": [{"tag": "Rock"}, {"tag": "Pop"}],
+                        "Style": [{"tag": "pop"}, {"tag": "Indie Rock"}]
+                    }]
+                }
+            })))
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_styles_merged_when_enabled() {
+        let server = MockServer::start().await;
+        mount_library_with_styles(&server).await;
+
+        let cache = Arc::new(CacheDatabase::open_in_memory().unwrap());
+        let client = setup_client(&server.uri());
+        let engine = SyncEngine::new(cache.clone(), client);
+
+        engine.full_sync("1", true, |_| {}).await.unwrap();
+
+        let mut genres = cache.album_genres("al1").unwrap();
+        genres.sort();
+        // "Pop" appears in both Genre and Style — must dedupe case-insensitively.
+        assert_eq!(genres.len(), 3, "got: {:?}", genres);
+        assert!(genres.iter().any(|g| g.eq_ignore_ascii_case("rock")));
+        assert!(genres.iter().any(|g| g.eq_ignore_ascii_case("indie rock")));
+        // First-occurrence casing wins: Genre's "Pop" beats Style's "pop".
+        assert!(
+            genres.iter().any(|g| g == "Pop"),
+            "Genre casing must win over Style casing: {:?}",
+            genres,
+        );
+    }
+
+    #[tokio::test]
+    async fn test_styles_excluded_when_disabled() {
+        let server = MockServer::start().await;
+        mount_library_with_styles(&server).await;
+
+        let cache = Arc::new(CacheDatabase::open_in_memory().unwrap());
+        let client = setup_client(&server.uri());
+        let engine = SyncEngine::new(cache.clone(), client);
+
+        engine.full_sync("1", false, |_| {}).await.unwrap();
+
+        let mut genres = cache.album_genres("al1").unwrap();
+        genres.sort();
+        assert_eq!(genres.len(), 2, "got: {:?}", genres);
+        assert!(genres.iter().any(|g| g.eq_ignore_ascii_case("rock")));
+        assert!(genres.iter().any(|g| g.eq_ignore_ascii_case("pop")));
+        assert!(!genres.iter().any(|g| g.eq_ignore_ascii_case("indie rock")));
     }
 
     #[tokio::test]
@@ -1018,7 +1143,7 @@ mod tests {
         let client = setup_client(&server.uri());
         let engine = SyncEngine::new(cache.clone(), client);
 
-        engine.full_sync("1", |_| {}).await.unwrap();
+        engine.full_sync("1", true, |_| {}).await.unwrap();
 
         let stats = cache.cache_stats().unwrap();
         assert_eq!(stats.album_count, 10);

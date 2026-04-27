@@ -79,7 +79,10 @@ async fn auto_sync_loop(
             s.sync_interval_hours
         );
 
-        let result = sync.incremental_sync(&library_key, |_| {}).await;
+        let include_styles = s.include_plex_styles;
+        let result = sync
+            .incremental_sync(&library_key, include_styles, |_| {})
+            .await;
         sync_in_progress.store(false, Ordering::Release);
 
         match result {

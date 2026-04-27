@@ -69,6 +69,7 @@ pub async fn start_full_sync(app: AppHandle, state: State<'_, AppState>) -> CmdR
     let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
     let app_handle = app.clone();
     let settings = state.settings.clone();
+    let include_styles = settings.read().include_plex_styles;
 
     // Hand ownership of the flag to the background task; forgetting the guard
     // prevents its drop from racing the task clearing the flag.
@@ -77,7 +78,7 @@ pub async fn start_full_sync(app: AppHandle, state: State<'_, AppState>) -> CmdR
 
     tokio::spawn(async move {
         let result = sync
-            .full_sync(&library_key, move |progress| {
+            .full_sync(&library_key, include_styles, move |progress| {
                 events::emit_sync_progress(&app_handle, progress);
             })
             .await;
@@ -105,13 +106,14 @@ pub async fn start_incremental_sync(app: AppHandle, state: State<'_, AppState>) 
     let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
     let app_handle = app.clone();
     let settings = state.settings.clone();
+    let include_styles = settings.read().include_plex_styles;
 
     std::mem::forget(guard);
     let flag = state.sync_in_progress.clone();
 
     tokio::spawn(async move {
         let result = sync
-            .incremental_sync(&library_key, move |progress| {
+            .incremental_sync(&library_key, include_styles, move |progress| {
                 events::emit_sync_progress(&app_handle, progress);
             })
             .await;
@@ -138,13 +140,14 @@ pub async fn start_genre_sync(app: AppHandle, state: State<'_, AppState>) -> Cmd
     let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
     let app_handle = app.clone();
     let settings = state.settings.clone();
+    let include_styles = settings.read().include_plex_styles;
 
     std::mem::forget(guard);
     let flag = state.sync_in_progress.clone();
 
     tokio::spawn(async move {
         let result = sync
-            .genre_sync(move |progress| {
+            .genre_sync(include_styles, move |progress| {
                 events::emit_sync_progress(&app_handle, progress);
             })
             .await;

@@ -2814,6 +2814,21 @@ textarea {
   padding: 12px;
 }
 
+.onboarding-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 8px 4px;
+}
+
+.onboarding-toggle input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
 .onboarding-error {
   font-size: 11px;
   color: #e55;

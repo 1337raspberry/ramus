@@ -30,6 +30,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   savedSearches: [],
   offlineMode: false,
   popularityDisplay: "hot",
+  includePlexStyles: true,
 
   loadSettings: async () => {
     try {

@@ -1,5 +1,20 @@
+use std::collections::HashSet;
+
 /// Lossless audio codecs (case-insensitive matching via `is_lossless_codec`).
 pub const LOSSLESS_CODECS: &[&str] = &["flac", "alac", "wav", "aiff", "aif", "pcm"];
+
+/// Deduplicate strings case-insensitively (ASCII), preserving the first
+/// occurrence's casing. Uses ASCII folding to match SQLite's `COLLATE NOCASE`.
+pub fn dedup_case_insensitive(names: Vec<String>) -> Vec<String> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out: Vec<String> = Vec::with_capacity(names.len());
+    for n in names {
+        if seen.insert(n.to_ascii_lowercase()) {
+            out.push(n);
+        }
+    }
+    out
+}
 
 /// Returns `true` if `codec` is a lossless audio format (case-insensitive).
 pub fn is_lossless_codec(codec: &str) -> bool {
