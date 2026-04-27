@@ -38,7 +38,17 @@
           "aka": [
             "dark ambient music"
           ],
-          "children": []
+          "children": [
+            {
+              "name": "Ritual Ambient",
+              "short_summary": null,
+              "aka": [
+                "Ritual Dark Ambient",
+                "Dark Ritual Ambient"
+              ],
+              "children": []
+            }
+          ]
         },
         {
           "name": "Drone Music",
@@ -80,6 +90,34 @@
           "short_summary": null,
           "aka": [
             "Psychadelic Ambient"
+          ],
+          "children": []
+        },
+        {
+          "name": "Dungeon Synth",
+          "short_summary": null,
+          "aka": [
+            "Dark Dungeon Music",
+            "Dark Medieval",
+            "Fantasy Music"
+          ],
+          "children": []
+        },
+        {
+          "name": "Space Ambient",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Ambient Pop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Black Ambient",
+          "short_summary": null,
+          "aka": [
+            "Blackened Ambient"
           ],
           "children": []
         }
@@ -1113,6 +1151,29 @@
             "sonata music"
           ],
           "children": []
+        },
+        {
+          "name": "Choral",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Western Classical Music",
+          "short_summary": null,
+          "aka": [
+            "Western Art Music",
+            "European Classical Music"
+          ],
+          "children": []
+        },
+        {
+          "name": "Romanticism",
+          "short_summary": null,
+          "aka": [
+            "Romantic Music",
+            "Romantic Period"
+          ],
+          "children": []
         }
       ]
     },
@@ -1177,6 +1238,14 @@
             "stand-up comedy",
             "standup",
             "standup comedy"
+          ],
+          "children": []
+        },
+        {
+          "name": "Comedy Rap",
+          "short_summary": null,
+          "aka": [
+            "Comedy Hip Hop"
           ],
           "children": []
         }
@@ -1583,6 +1652,11 @@
           "aka": [
             "zydeco music"
           ],
+          "children": []
+        },
+        {
+          "name": "Contemporary Country",
+          "short_summary": null,
           "children": []
         }
       ]
@@ -2610,7 +2684,16 @@
                 "dub step",
                 "dub-step"
               ],
-              "children": []
+              "children": [
+                {
+                  "name": "Brostep",
+                  "short_summary": null,
+                  "aka": [
+                    "Filthstep"
+                  ],
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Electro",
@@ -3855,6 +3938,11 @@
                 "vocal house music"
               ],
               "children": []
+            },
+            {
+              "name": "Future House",
+              "short_summary": null,
+              "children": []
             }
           ]
         },
@@ -4058,6 +4146,11 @@
                     "rhythmic noise",
                     "power-noise"
                   ],
+                  "children": []
+                },
+                {
+                  "name": "Harsh Noise",
+                  "short_summary": null,
                   "children": []
                 }
               ]
@@ -4281,6 +4374,14 @@
                 "progressive-techno"
               ],
               "children": []
+            },
+            {
+              "name": "Progressive Electronic",
+              "short_summary": null,
+              "aka": [
+                "Prog Electronic"
+              ],
+              "children": []
             }
           ]
         },
@@ -4455,6 +4556,11 @@
                 "toytown"
               ],
               "children": []
+            },
+            {
+              "name": "Melodic Techno",
+              "short_summary": null,
+              "children": []
             }
           ]
         },
@@ -4608,6 +4714,14 @@
                 "psy-trance"
               ],
               "children": []
+            },
+            {
+              "name": "Euro Trance",
+              "short_summary": null,
+              "aka": [
+                "Eurotrance"
+              ],
+              "children": []
             }
           ]
         },
@@ -4658,105 +4772,76 @@
           "short_summary": null,
           "children": [
             {
-              "name": "UK Garage",
+              "name": "2-Step",
               "short_summary": null,
               "aka": [
-                "ukg",
-                "u.k. garage",
-                "uk-garage"
+                "2 step",
+                "2step",
+                "two step",
+                "two-step",
+                "2-step garage"
               ],
-              "children": [
-                {
-                  "name": "2-Step",
-                  "short_summary": null,
-                  "aka": [
-                    "2 step",
-                    "2step",
-                    "two step",
-                    "two-step",
-                    "2-step garage"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "4x4",
-                  "short_summary": null,
-                  "aka": [
-                    "four by four",
-                    "4 by 4",
-                    "4-4"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Bassline",
-                  "short_summary": null,
-                  "aka": [
-                    "bassline house",
-                    "niche",
-                    "4x4 bassline"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Breakstep",
-                  "short_summary": null,
-                  "aka": [
-                    "break step",
-                    "break-step"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Dubstep",
-                  "short_summary": null,
-                  "aka": [
-                    "dub step",
-                    "dub-step"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Funky",
-                  "short_summary": null,
-                  "aka": [
-                    "funky music"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Grime",
-                  "short_summary": null,
-                  "aka": [
-                    "grime music"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Speed Garage",
-                  "short_summary": null,
-                  "aka": [
-                    "speed garage music"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Trap",
-                  "short_summary": null,
-                  "aka": [
-                    "trap music"
-                  ],
-                  "children": []
-                }
-              ]
+              "children": []
             },
             {
-              "name": "US Garage",
+              "name": "4x4",
               "short_summary": null,
               "aka": [
-                "usg",
-                "u.s. garage",
-                "us-garage"
+                "four by four",
+                "4 by 4",
+                "4-4"
+              ],
+              "children": []
+            },
+            {
+              "name": "Bassline",
+              "short_summary": null,
+              "aka": [
+                "bassline house",
+                "niche",
+                "4x4 bassline"
+              ],
+              "children": []
+            },
+            {
+              "name": "Breakstep",
+              "short_summary": null,
+              "aka": [
+                "break step",
+                "break-step"
+              ],
+              "children": []
+            },
+            {
+              "name": "Dubstep",
+              "short_summary": null,
+              "aka": [
+                "dub step",
+                "dub-step"
+              ],
+              "children": []
+            },
+            {
+              "name": "Funky",
+              "short_summary": null,
+              "aka": [
+                "funky music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Grime",
+              "short_summary": null,
+              "aka": [
+                "grime music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Speed Garage",
+              "short_summary": null,
+              "aka": [
+                "speed garage music"
               ],
               "children": []
             }
@@ -4767,6 +4852,16 @@
           "short_summary": null,
           "aka": [
             "vapor"
+          ],
+          "children": []
+        },
+        {
+          "name": "Lo-Fi Hip Hop",
+          "short_summary": null,
+          "aka": [
+            "Lofi Hip Hop",
+            "Chillhop",
+            "Chill-Hop"
           ],
           "children": []
         }
@@ -4969,6 +5064,49 @@
           "aka": [
             "techno folk"
           ],
+          "children": []
+        },
+        {
+          "name": "European Folk Music",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "American Folk Music",
+          "short_summary": null,
+          "aka": [
+            "American Roots Music",
+            "United States Folk",
+            "USA Folk Music"
+          ],
+          "children": []
+        },
+        {
+          "name": "Folk Pop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Celtic Folk Music",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Avant-Folk",
+          "short_summary": null,
+          "aka": [
+            "Avant-Garde Folk"
+          ],
+          "children": []
+        },
+        {
+          "name": "Chamber Folk",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Dark Folk",
+          "short_summary": null,
           "children": []
         }
       ]
@@ -5708,6 +5846,100 @@
               "children": []
             }
           ]
+        },
+        {
+          "name": "Boom Bap",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Drill",
+          "short_summary": null,
+          "aka": [
+            "Drill Rap"
+          ],
+          "children": [
+            {
+              "name": "UK Drill",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Chicago Drill",
+              "short_summary": null,
+              "aka": [
+                "Chiraq Drill"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "French Hip Hop",
+          "short_summary": null,
+          "aka": [
+            "Rap français",
+            "Hip hop français",
+            "Rap FR",
+            "French Rap"
+          ],
+          "children": []
+        },
+        {
+          "name": "UK Hip Hop",
+          "short_summary": null,
+          "aka": [
+            "UK Rap",
+            "British Hip Hop",
+            "British Rap",
+            "Brithop"
+          ],
+          "children": []
+        },
+        {
+          "name": "Emo Rap",
+          "short_summary": null,
+          "aka": [
+            "Emo Hip Hop",
+            "Emo Trap"
+          ],
+          "children": []
+        },
+        {
+          "name": "Lo-Fi Hip Hop",
+          "short_summary": null,
+          "aka": [
+            "Lofi Hip Hop",
+            "Chillhop",
+            "Chill-Hop"
+          ],
+          "children": []
+        },
+        {
+          "name": "Cloud Rap",
+          "short_summary": null,
+          "aka": [
+            "Trillwave"
+          ],
+          "children": []
+        },
+        {
+          "name": "Experimental Hip Hop",
+          "short_summary": null,
+          "aka": [
+            "Experimental Rap"
+          ],
+          "children": []
+        },
+        {
+          "name": "Japanese Hip Hop",
+          "short_summary": null,
+          "aka": [
+            "Japanese Rap",
+            "J-Rap",
+            "J-Hop"
+          ],
+          "children": []
         }
       ]
     },
@@ -6159,27 +6391,6 @@
       ]
     },
     {
-      "name": "Kids Music",
-      "short_summary": null,
-      "aka": [
-        "children's music",
-        "kids",
-        "children music",
-        "childrens music",
-        "kid music"
-      ],
-      "children": [
-        {
-          "name": "Kinderlieder",
-          "short_summary": null,
-          "aka": [
-            "children's songs german"
-          ],
-          "children": []
-        }
-      ]
-    },
-    {
       "name": "Metal",
       "short_summary": null,
       "children": [
@@ -6569,6 +6780,16 @@
                 "atmospheric dm"
               ],
               "children": []
+            },
+            {
+              "name": "Slam Death Metal",
+              "short_summary": null,
+              "aka": [
+                "Slamming Brutal Death Metal",
+                "Slamming Death Metal",
+                "Slam"
+              ],
+              "children": []
             }
           ]
         },
@@ -6620,6 +6841,20 @@
                 "doom-black"
               ],
               "children": []
+            },
+            {
+              "name": "Traditional Doom Metal",
+              "short_summary": null,
+              "aka": [
+                "Trad Doom Metal",
+                "Trad Doom"
+              ],
+              "children": []
+            },
+            {
+              "name": "Doomgaze",
+              "short_summary": null,
+              "children": []
             }
           ]
         },
@@ -6667,6 +6902,14 @@
               "short_summary": null,
               "aka": [
                 "pagan metal music"
+              ],
+              "children": []
+            },
+            {
+              "name": "Viking Metal",
+              "short_summary": null,
+              "aka": [
+                "viking metal music"
               ],
               "children": []
             }
@@ -6741,6 +6984,11 @@
                   "children": []
                 }
               ]
+            },
+            {
+              "name": "Melodic Metalcore",
+              "short_summary": null,
+              "children": []
             }
           ]
         },
@@ -6767,6 +7015,15 @@
               "aka": [
                 "prog power metal",
                 "prog power"
+              ],
+              "children": []
+            },
+            {
+              "name": "US Power Metal",
+              "short_summary": null,
+              "aka": [
+                "USPM",
+                "United States Power Metal"
               ],
               "children": []
             }
@@ -6829,7 +7086,17 @@
             "sludge",
             "sludge-metal"
           ],
-          "children": []
+          "children": [
+            {
+              "name": "Atmospheric Sludge Metal",
+              "short_summary": null,
+              "aka": [
+                "Atmospheric Sludge",
+                "Atmosludge"
+              ],
+              "children": []
+            }
+          ]
         },
         {
           "name": "Speed Metal",
@@ -6993,16 +7260,16 @@
           "children": []
         },
         {
-          "name": "Viking Metal",
+          "name": "Djent",
           "short_summary": null,
-          "aka": [
-            "viking metal music"
-          ],
           "children": []
         },
         {
-          "name": "Djent",
+          "name": "War Metal",
           "short_summary": null,
+          "aka": [
+            "Bestial Black Metal"
+          ],
           "children": []
         }
       ]
@@ -7657,6 +7924,52 @@
             "hyper-pop"
           ],
           "children": []
+        },
+        {
+          "name": "Folk Pop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Alt-Pop",
+          "short_summary": null,
+          "aka": [
+            "Alternative Pop"
+          ],
+          "children": []
+        },
+        {
+          "name": "Pop Soul",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Emo-Pop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Progressive Pop",
+          "short_summary": null,
+          "aka": [
+            "Prog Pop"
+          ],
+          "children": []
+        },
+        {
+          "name": "Ambient Pop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Glitch Pop",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Bedroom Pop",
+          "short_summary": null,
+          "children": []
         }
       ]
     },
@@ -7808,6 +8121,11 @@
                 "rock-steady"
               ],
               "children": []
+            },
+            {
+              "name": "Third Wave Ska",
+              "short_summary": null,
+              "children": []
             }
           ]
         }
@@ -7910,6 +8228,11 @@
                 "northern soul music"
               ],
               "children": []
+            },
+            {
+              "name": "Pop Soul",
+              "short_summary": null,
+              "children": []
             }
           ]
         },
@@ -7919,6 +8242,16 @@
           "aka": [
             "doowop",
             "doo wop"
+          ],
+          "children": []
+        },
+        {
+          "name": "Alternative R&B",
+          "short_summary": null,
+          "aka": [
+            "Indie R&B",
+            "PBR&B",
+            "R-Neg-B"
           ],
           "children": []
         }
@@ -8222,7 +8555,13 @@
                 "shoe gaze",
                 "shoegaze rock"
               ],
-              "children": []
+              "children": [
+                {
+                  "name": "Doomgaze",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
             },
             {
               "name": "Slowcore",
@@ -8359,6 +8698,30 @@
               "aka": [
                 "screamo punk"
               ],
+              "children": []
+            },
+            {
+              "name": "Midwest Emo",
+              "short_summary": null,
+              "aka": [
+                "Indie Emo",
+                "Midwestern Emo",
+                "Post-Emo Indie Rock"
+              ],
+              "children": []
+            },
+            {
+              "name": "Emo Rap",
+              "short_summary": null,
+              "aka": [
+                "Emo Hip Hop",
+                "Emo Trap"
+              ],
+              "children": []
+            },
+            {
+              "name": "Emo-Pop",
+              "short_summary": null,
               "children": []
             }
           ]
@@ -8837,6 +9200,14 @@
                 "space-rock"
               ],
               "children": []
+            },
+            {
+              "name": "Jam Band",
+              "short_summary": null,
+              "aka": [
+                "Jam Rock"
+              ],
+              "children": []
             }
           ]
         },
@@ -9075,6 +9446,30 @@
                             "screamo punk"
                           ],
                           "children": []
+                        },
+                        {
+                          "name": "Midwest Emo",
+                          "short_summary": null,
+                          "aka": [
+                            "Indie Emo",
+                            "Midwestern Emo",
+                            "Post-Emo Indie Rock"
+                          ],
+                          "children": []
+                        },
+                        {
+                          "name": "Emo Rap",
+                          "short_summary": null,
+                          "aka": [
+                            "Emo Hip Hop",
+                            "Emo Trap"
+                          ],
+                          "children": []
+                        },
+                        {
+                          "name": "Emo-Pop",
+                          "short_summary": null,
+                          "children": []
                         }
                       ]
                     },
@@ -9125,6 +9520,20 @@
                       "children": []
                     }
                   ]
+                },
+                {
+                  "name": "Melodic Hardcore",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Straight Edge",
+                  "short_summary": null,
+                  "aka": [
+                    "SxE",
+                    "Straight Edge Hardcore"
+                  ],
+                  "children": []
                 }
               ]
             },
@@ -9191,6 +9600,11 @@
                     "ska core",
                     "skacore"
                   ],
+                  "children": []
+                },
+                {
+                  "name": "Third Wave Ska",
+                  "short_summary": null,
                   "children": []
                 }
               ]
@@ -9338,6 +9752,11 @@
             "instrumental-rock"
           ],
           "children": []
+        },
+        {
+          "name": "Acoustic Rock",
+          "short_summary": null,
+          "children": []
         }
       ]
     },
@@ -9453,11 +9872,16 @@
             "broadway"
           ],
           "children": []
+        },
+        {
+          "name": "Musical Theatre and Entertainment",
+          "short_summary": null,
+          "children": []
         }
       ]
     },
     {
-      "name": "World",
+      "name": "World & Regional",
       "short_summary": null,
       "aka": [
         "world music"
@@ -9853,6 +10277,130 @@
               ],
               "children": [
                 {
+                  "name": "Japanese Music",
+                  "short_summary": null,
+                  "children": [
+                    {
+                      "name": "J-Pop",
+                      "short_summary": null,
+                      "aka": [
+                        "jpop",
+                        "j pop",
+                        "japanese pop",
+                        "japanese-pop"
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Onkyokei",
+                      "short_summary": null,
+                      "aka": [
+                        "onkyo",
+                        "onkyo-kei"
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Japanese Idol",
+                      "short_summary": null,
+                      "aka": [
+                        "アイドル",
+                        "Heisei Idol",
+                        "平成アイドル",
+                        "J-Idol"
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Shimokita-kei",
+                      "short_summary": null,
+                      "aka": [
+                        "下北系",
+                        "下北系ギターロック",
+                        "Shimokita-kei Guitar Rock",
+                        "ロキノン系",
+                        "Rockin'On-kei"
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Doujin Music",
+                      "short_summary": null,
+                      "aka": [
+                        "同人音楽",
+                        "音系同人",
+                        "Doujin ongaku",
+                        "Dōjin Music",
+                        "Dōjin ongaku",
+                        "Otokei doujin",
+                        "Otokei dōjin"
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Japanese Hip Hop",
+                      "short_summary": null,
+                      "aka": [
+                        "Japanese Rap",
+                        "J-Rap",
+                        "J-Hop"
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Vocaloid Scene",
+                      "short_summary": null,
+                      "aka": [
+                        "Vocalo",
+                        "ボカロ",
+                        "ボカロ曲",
+                        "ボカロシーン"
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Touhou Music",
+                      "short_summary": null,
+                      "aka": [
+                        "Touhou Project Music",
+                        "Tōhō Music",
+                        "Tōhō Project Music",
+                        "東方音楽",
+                        "東方Project音楽",
+                        "Touhou Doujin Music",
+                        "Tōhō Dōjin Music",
+                        "東方同人音楽"
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Kayōkyoku",
+                      "short_summary": null,
+                      "aka": [
+                        "kayokyoku",
+                        "kayoukyoku"
+                      ],
+                      "children": []
+                    },
+                    {
+                      "name": "Kote kei",
+                      "short_summary": null,
+                      "aka": [
+                        "コテ系",
+                        "コテコテ系",
+                        "kotekote kei",
+                        "コテヴィ",
+                        "kotevi",
+                        "コテビ",
+                        "kotebi",
+                        "Matina 系",
+                        "Matina kei"
+                      ],
+                      "children": []
+                    }
+                  ]
+                },
+                {
                   "name": "Anison",
                   "short_summary": null,
                   "aka": [
@@ -9861,52 +10409,6 @@
                     "anime songs",
                     "anisong",
                     "anime"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "C-Pop",
-                  "short_summary": null,
-                  "aka": [
-                    "cpop",
-                    "c pop",
-                    "chinese pop",
-                    "chinese-pop",
-                    "chinese popular music"
-                  ],
-                  "children": [
-                    {
-                      "name": "Cantopop",
-                      "short_summary": null,
-                      "aka": [
-                        "canto pop",
-                        "canto-pop",
-                        "cantonese pop",
-                        "canto popular"
-                      ],
-                      "children": []
-                    },
-                    {
-                      "name": "Mandopop",
-                      "short_summary": null,
-                      "aka": [
-                        "mando pop",
-                        "mando-pop",
-                        "mandarin pop",
-                        "mandarin chinese pop"
-                      ],
-                      "children": []
-                    }
-                  ]
-                },
-                {
-                  "name": "Cantopop",
-                  "short_summary": null,
-                  "aka": [
-                    "canto pop",
-                    "canto-pop",
-                    "cantonese pop",
-                    "canto popular"
                   ],
                   "children": []
                 },
@@ -9928,57 +10430,6 @@
                   "children": []
                 },
                 {
-                  "name": "J-Pop",
-                  "short_summary": null,
-                  "aka": [
-                    "jpop",
-                    "j pop",
-                    "japanese pop",
-                    "japanese-pop"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "K-Pop",
-                  "short_summary": null,
-                  "aka": [
-                    "kpop",
-                    "k pop",
-                    "korean pop",
-                    "korean-pop"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Kayōkyoku",
-                  "short_summary": null,
-                  "aka": [
-                    "kayokyoku",
-                    "kayoukyoku"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Mandopop",
-                  "short_summary": null,
-                  "aka": [
-                    "mando pop",
-                    "mando-pop",
-                    "mandarin pop",
-                    "mandarin chinese pop"
-                  ],
-                  "children": []
-                },
-                {
-                  "name": "Onkyokei",
-                  "short_summary": null,
-                  "aka": [
-                    "onkyo",
-                    "onkyo-kei"
-                  ],
-                  "children": []
-                },
-                {
                   "name": "Taiwanese Pop",
                   "short_summary": null,
                   "aka": [
@@ -9987,6 +10438,75 @@
                     "taiwan pop"
                   ],
                   "children": []
+                },
+                {
+                  "name": "Korean Music",
+                  "short_summary": null,
+                  "aka": [
+                    "한국음악",
+                    "Hanguk eum-ak",
+                    "조선음악",
+                    "Chosŏn ŭmak"
+                  ],
+                  "children": [
+                    {
+                      "name": "K-Pop",
+                      "short_summary": null,
+                      "aka": [
+                        "kpop",
+                        "k pop",
+                        "korean pop",
+                        "korean-pop"
+                      ],
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "Chinese Music",
+                  "short_summary": null,
+                  "aka": [
+                    "中国音乐",
+                    "中國音樂",
+                    "Zhōngguó yīnyuè"
+                  ],
+                  "children": [
+                    {
+                      "name": "C-Pop",
+                      "short_summary": null,
+                      "aka": [
+                        "cpop",
+                        "c pop",
+                        "chinese pop",
+                        "chinese-pop",
+                        "chinese popular music"
+                      ],
+                      "children": [
+                        {
+                          "name": "Cantopop",
+                          "short_summary": null,
+                          "aka": [
+                            "canto pop",
+                            "canto-pop",
+                            "cantonese pop",
+                            "canto popular"
+                          ],
+                          "children": []
+                        },
+                        {
+                          "name": "Mandopop",
+                          "short_summary": null,
+                          "aka": [
+                            "mando pop",
+                            "mando-pop",
+                            "mandarin pop",
+                            "mandarin chinese pop"
+                          ],
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
                 }
               ]
             },
@@ -10190,6 +10710,211 @@
           "short_summary": null,
           "aka": [
             "world dub music"
+          ],
+          "children": []
+        },
+        {
+          "name": "European Music",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "European Folk Music",
+              "short_summary": null,
+              "children": [
+                {
+                  "name": "Spanish Folk Music",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Celtic Folk Music",
+                  "short_summary": null,
+                  "children": []
+                },
+                {
+                  "name": "Irish Folk Music",
+                  "short_summary": null,
+                  "aka": [
+                    "Ceol traidisiúnta na hÉireann",
+                    "Irish Traditional Music",
+                    "Irish Trad"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "Scottish Folk Music",
+                  "short_summary": null,
+                  "aka": [
+                    "Ceòl Traidiseanta na h-Alba",
+                    "Ceòl Folk",
+                    "Scots Fowk Music"
+                  ],
+                  "children": []
+                },
+                {
+                  "name": "French Folk Music",
+                  "short_summary": null,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "French Hip Hop",
+              "short_summary": null,
+              "aka": [
+                "Rap français",
+                "Hip hop français",
+                "Rap FR",
+                "French Rap"
+              ],
+              "children": []
+            },
+            {
+              "name": "UK Hip Hop",
+              "short_summary": null,
+              "aka": [
+                "UK Rap",
+                "British Hip Hop",
+                "British Rap",
+                "Brithop"
+              ],
+              "children": []
+            },
+            {
+              "name": "Spanish Music",
+              "short_summary": null,
+              "children": []
+            },
+            {
+              "name": "Euro Trance",
+              "short_summary": null,
+              "aka": [
+                "Eurotrance"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Northern American Music",
+          "short_summary": null,
+          "children": [
+            {
+              "name": "American Folk Music",
+              "short_summary": null,
+              "aka": [
+                "American Roots Music",
+                "United States Folk",
+                "USA Folk Music"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Hispanic Music",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Hispanic American Music",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Caribbean Music",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "South American Music",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Southeast Asian Music",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Arabic Music",
+          "short_summary": null,
+          "aka": [
+            "موسيقى عربية",
+            "Mūsīqā ʿArabīyya",
+            "Arab Music"
+          ],
+          "children": []
+        }
+      ]
+    },
+    {
+      "name": "Novelty & Other",
+      "short_summary": null,
+      "children": [
+        {
+          "name": "Kids Music",
+          "short_summary": null,
+          "aka": [
+            "children's music",
+            "kids",
+            "children music",
+            "childrens music",
+            "kid music"
+          ],
+          "children": [
+            {
+              "name": "Kinderlieder",
+              "short_summary": null,
+              "aka": [
+                "children's songs german"
+              ],
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "Nature Recordings",
+          "short_summary": null,
+          "aka": [
+            "Nature Sounds",
+            "Natural Sounds"
+          ],
+          "children": []
+        },
+        {
+          "name": "Drumless",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Sound Effects",
+          "short_summary": null,
+          "aka": [
+            "SFX"
+          ],
+          "children": []
+        }
+      ]
+    },
+    {
+      "name": "Spoken Word",
+      "short_summary": null,
+      "children": [
+        {
+          "name": "Poetry",
+          "short_summary": null,
+          "children": []
+        },
+        {
+          "name": "Radio Drama",
+          "short_summary": null,
+          "aka": [
+            "Audio Drama",
+            "Audio Play",
+            "Audio Theatre",
+            "Radio Play",
+            "Radio Theatre"
           ],
           "children": []
         }
