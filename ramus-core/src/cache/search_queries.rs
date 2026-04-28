@@ -114,7 +114,9 @@ impl CacheDatabase {
         let mut albums = Self::map_album_rows(&mut stmt, params![pattern], &conn)?;
         drop(stmt);
         drop(conn);
+        self.populate_album_genres(&mut albums)?;
         self.populate_album_collections(&mut albums)?;
+        self.populate_album_favourite_tracks(&mut albums)?;
         Ok(albums)
     }
 
