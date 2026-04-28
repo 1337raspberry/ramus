@@ -131,6 +131,20 @@ pub fn is_loopback_uri(uri: &str) -> bool {
     false
 }
 
+/// Replace any whitespace-delimited token containing `://` with `<url>`.
+/// Used to scrub URLs out of free-form error messages before logging,
+/// since mpv (and reqwest) embed the offending URL — including any
+/// `?X-Plex-Token=…` query — into network-error strings.
+pub fn redact_urls(msg: &str) -> String {
+    if !msg.contains("://") {
+        return msg.to_string();
+    }
+    msg.split_whitespace()
+        .map(|tok| if tok.contains("://") { "<url>" } else { tok })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,5 +245,38 @@ mod tests {
         assert_eq!(percent_decode("abc123"), "abc123");
         assert_eq!(percent_decode("%2e%2e"), "..");
         assert_eq!(percent_decode("/library/%2e%2e/etc"), "/library/../etc");
+    }
+
+    #[test]
+    fn test_redact_urls_passthrough_when_no_url() {
+        assert_eq!(redact_urls("Connection reset"), "Connection reset");
+        assert_eq!(redact_urls(""), "");
+        assert_eq!(redact_urls("HTTP 500"), "HTTP 500");
+    }
+
+    #[test]
+    fn test_redact_urls_strips_url_with_token() {
+        let msg = "Failed to open https://example.com/library/parts/1?X-Plex-Token=secret123";
+        let out = redact_urls(msg);
+        assert!(!out.contains("X-Plex-Token"));
+        assert!(!out.contains("secret123"));
+        assert!(out.contains("Failed to open"));
+        assert!(out.contains("<url>"));
+    }
+
+    #[test]
+    fn test_redact_urls_strips_multiple_urls() {
+        let msg = "redirect from http://a/b to https://c/d?token=x failed";
+        let out = redact_urls(msg);
+        assert!(!out.contains("a/b"));
+        assert!(!out.contains("token"));
+        assert_eq!(out.matches("<url>").count(), 2);
+    }
+
+    #[test]
+    fn test_redact_urls_keeps_non_url_words_with_colons() {
+        // "::" or "key:value" without "://" must pass through.
+        assert_eq!(redact_urls("foo::bar baz"), "foo::bar baz");
+        assert_eq!(redact_urls("key:value pair"), "key:value pair");
     }
 }

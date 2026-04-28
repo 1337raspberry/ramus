@@ -14,6 +14,7 @@ use crate::models::{PlaybackConfig, PlaybackMode, PlaybackStatus, PlayerState, T
 use crate::playback::download_cache::DownloadCache;
 use crate::playback::mpv::{FileEndReason, LoadMode, MpvPlayer};
 use crate::playback::transcode;
+use crate::util::redact_urls;
 
 /// 10-band EQ center frequencies in Hz.
 pub const EQ_FREQUENCIES: [u32; 10] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -745,7 +746,10 @@ impl AudioPlayer {
                     log::info!("handle_file_ended: recovered stale URL, retrying");
                     return;
                 }
-                log::warn!("handle_file_ended: unrecoverable error, skipping: {msg}");
+                log::warn!(
+                    "handle_file_ended: unrecoverable error, skipping: {}",
+                    redact_urls(msg)
+                );
                 self.next();
             }
             _ => {}
