@@ -405,9 +405,20 @@ pub fn rehydrate_persistent_downloads(
     let mut stale: Vec<String> = Vec::new();
     for (rating_key, file_path) in rows {
         let path = PathBuf::from(&file_path);
-        if path.is_file() {
+        // Treat zero-length files as stale: a download whose write
+        // got truncated by an abrupt process suspension (or a previous
+        // crash before the fsync landed) would otherwise rehydrate as
+        // valid offline content and play as silence.
+        let is_valid = std::fs::metadata(&path)
+            .map(|m| m.is_file() && m.len() > 0)
+            .unwrap_or(false);
+        if is_valid {
             entries.insert(rating_key, path);
         } else {
+            // Best-effort: remove the empty file so it can't accumulate.
+            if path.exists() {
+                let _ = std::fs::remove_file(&path);
+            }
             stale.push(rating_key);
         }
     }
