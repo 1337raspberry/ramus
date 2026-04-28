@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSettingsStore } from "../stores/settingsStore";
-import { useLibraryStore, filtersToIPC } from "../stores/libraryStore";
+import { useLibraryStore } from "../stores/libraryStore";
+import { filtersToIPC } from "../lib/filters";
 import { isNameUnique, makeBookmark } from "../lib/bookmark";
 import { MAX_BOOKMARKS } from "../lib/types";
 import { describeFilters } from "../lib/filterDescribe";
+import { pushBackHandler } from "../lib/backHandler";
 import { useToastStore } from "./Toast";
 
 interface Props {
@@ -42,6 +44,18 @@ export default function BookmarkSaveDialog({ onDismiss }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onDismiss]);
 
+  // Android hardware-back support — the dialog can appear on mobile via the
+  // filter panel's overflow menu, where a back press should close it rather
+  // than the underlying filter panel.
+  useEffect(
+    () =>
+      pushBackHandler(() => {
+        onDismiss();
+        return true;
+      }),
+    [onDismiss],
+  );
+
   const summary = useMemo(() => describeFilters(filters), [filters]);
 
   const trimmed = name.trim();
@@ -76,10 +90,15 @@ export default function BookmarkSaveDialog({ onDismiss }: Props) {
 
   return createPortal(
     <div className="settings-backdrop" onClick={handleBackdrop}>
-      <div className="settings-panel glass bookmark-save-dialog">
+      <div
+        className="settings-panel glass bookmark-save-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bookmark-save-title"
+      >
         <div className="settings-header">
-          <h2>Save bookmark</h2>
-          <button className="settings-close" onClick={onDismiss}>
+          <h2 id="bookmark-save-title">Save bookmark</h2>
+          <button className="settings-close" onClick={onDismiss} aria-label="Close">
             x
           </button>
         </div>

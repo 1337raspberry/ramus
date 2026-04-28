@@ -5,7 +5,8 @@ import { useSettingsStore } from "../stores/settingsStore";
 import GenreTreeView from "./GenreTreeView";
 import { useGenreDebugStore } from "./GenreDebugPanel";
 import BookmarkEditor from "./BookmarkEditor";
-import BookmarkPicker, { filtersFromBookmark } from "./BookmarkPicker";
+import BookmarkPicker from "./BookmarkPicker";
+import { filtersFromBookmark } from "../lib/bookmark";
 import { countryToFlag } from "../lib/countryFlag";
 import type { Bookmark } from "../lib/types";
 

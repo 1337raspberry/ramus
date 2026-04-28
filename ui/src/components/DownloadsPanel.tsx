@@ -10,7 +10,7 @@ import type {
   DownloadedTrackSummary,
   InProgressDownload,
 } from "../lib/types";
-import { filtersFromBookmark } from "./BookmarkPicker";
+import { filtersFromBookmark } from "../lib/bookmark";
 import { describeFilters } from "../lib/filterDescribe";
 import { useArtUrl } from "../lib/useArtUrl";
 import { ART_SIZE } from "../lib/commands";

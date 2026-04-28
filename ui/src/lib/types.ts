@@ -95,26 +95,15 @@ export interface SearchResult {
   score: number;
 }
 
-/// Mirrors the Rust `AlbumFilterParams` struct (camelCase). Inline-defined
-/// here as well as in `commands.ts` to break the import cycle between
-/// `types.ts` (where Bookmark lives) and `commands.ts`.
-export interface AlbumFilterParamsTS {
-  unplayed: boolean;
-  favouriteAlbums: boolean;
-  favouriteTracks: boolean;
-  yearMin: number | null;
-  yearMax: number | null;
-  countries: string[];
-  genres: string[];
-  collection: string | null;
-}
+import type { AlbumFilterParamsIPC } from "./filters";
 
 export interface Bookmark {
   id: string;
   name: string;
-  filters: AlbumFilterParamsTS;
+  filters: AlbumFilterParamsIPC;
 }
 
+/// User-requested cap; backend enforces the same value via `Bookmark::validate_batch`.
 export const MAX_BOOKMARKS = 50;
 
 export interface Settings {

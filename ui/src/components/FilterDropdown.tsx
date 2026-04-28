@@ -37,11 +37,12 @@ export default function FilterDropdown() {
       const target = e.target as Element | null;
       if (!target || !wrapRef.current) return;
       if (wrapRef.current.contains(target)) return;
-      // Don't dismiss while a modal triggered from inside the dropdown
-      // (e.g. the bookmark save dialog) is open: the modal lives in this
-      // dropdown's React tree, so closing the dropdown unmounts it before
-      // the modal's click handler fires. The modal owns its own dismiss.
-      if (target.closest(".settings-backdrop")) return;
+      // Don't dismiss while the bookmark save dialog (the only modal that
+      // currently mounts from inside this dropdown's React tree) is open —
+      // closing the dropdown unmounts the modal before its click handler
+      // fires. Scoped narrowly to that dialog's class so unrelated overlays
+      // (settings panel, equaliser, etc.) don't keep the dropdown alive.
+      if (target.closest(".bookmark-save-dialog")) return;
       setOpen(false);
     };
     document.addEventListener("mousedown", handler);

@@ -473,15 +473,22 @@ pub async fn estimate_starred_albums_size(state: State<'_, AppState>) -> CmdResu
     Ok(total)
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BookmarkDownloadEstimate {
+    pub total_bytes: i64,
+    pub track_count: usize,
+    pub album_count: usize,
+}
+
 /// Estimated bytes + track count for a bookmark's filter without hitting the
 /// network. Same estimation rules as the starred helpers: real
 /// `fileSizeBytes` where known, otherwise bitrate × duration.
 ///
 /// Mirrors `download_bookmark`'s `favourite_tracks` narrowing: when set,
-/// only the starred tracks contribute to the count and byte total. Album
-/// count still reflects the matching albums (so the user sees how many
-/// albums their favourite tracks span, even though most tracks on those
-/// albums won't be downloaded).
+/// only the starred tracks contribute to the count and byte total. Albums
+/// with no starred tracks still appear in `album_count`; they contribute
+/// zero to `track_count`.
 #[tauri::command]
 pub async fn estimate_bookmark(
     state: State<'_, AppState>,
@@ -504,14 +511,6 @@ pub async fn estimate_bookmark(
         track_count,
         album_count: albums.len(),
     })
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BookmarkDownloadEstimate {
-    pub total_bytes: i64,
-    pub track_count: usize,
-    pub album_count: usize,
 }
 
 // --- Connection status ---
@@ -594,7 +593,8 @@ fn build_job(state: &State<'_, AppState>, track: &Track) -> Result<UserDownloadJ
 
 /// Resolve a bookmark's filter to the matching album records. Reuses the
 /// same `compute_filtered_album_ids` pipeline that the album grid uses, so
-/// downloaded set is identical to what the grid shows.
+/// downloaded set is identical to what the grid shows. Relies on
+/// `library::compute_filtered_album_ids` being `pub(crate)`.
 fn resolve_filter_albums(
     state: &State<'_, AppState>,
     filters: &AlbumFilterParams,

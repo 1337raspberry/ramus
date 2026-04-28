@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
-import { isNameUnique } from "../lib/bookmark";
+import { filtersFromBookmark, isNameUnique } from "../lib/bookmark";
 import { MAX_BOOKMARKS, type Bookmark } from "../lib/types";
 import { describeFilters } from "../lib/filterDescribe";
-import { filtersFromBookmark } from "./BookmarkPicker";
 
 interface Props {
   onDismiss: () => void;
@@ -91,10 +90,15 @@ export default function BookmarkEditor({ onDismiss }: Props) {
 
   return (
     <div className="settings-backdrop" onClick={handleBackdrop}>
-      <div className="settings-panel glass bookmark-editor">
+      <div
+        className="settings-panel glass bookmark-editor"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bookmark-editor-title"
+      >
         <div className="settings-header">
-          <h2>Bookmarks</h2>
-          <button className="settings-close" onClick={onDismiss}>
+          <h2 id="bookmark-editor-title">Bookmarks</h2>
+          <button className="settings-close" onClick={onDismiss} aria-label="Close">
             x
           </button>
         </div>
@@ -108,8 +112,7 @@ export default function BookmarkEditor({ onDismiss }: Props) {
 
           {rows.length === 0 ? (
             <div className="downloads-empty">
-              No bookmarks yet — set a filter and tap the Bookmark item in the filter menu to save
-              one.
+              No bookmarks yet — set a filter and use the … menu in the filter panel to save one.
             </div>
           ) : (
             <ul className="bookmark-edit-list">

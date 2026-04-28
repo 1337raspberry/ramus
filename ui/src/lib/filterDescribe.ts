@@ -47,12 +47,18 @@ function formatYear(raw: string): string | null {
     switch (cmp[1]) {
       case ">":
         return `after ${val}`;
+      // `>=` and `<=` use "from N" / "up to N" rather than "N onwards" /
+      // "N or earlier" so that bookmark round-trips read naturally — the
+      // IPC layer collapses `>N` / `>=N+1` (and `<N` / `<=N-1`) into a
+      // single inclusive bound, so reconstructed strings are always the
+      // `=` variant. "From 2001" reads cleanly whether the user originally
+      // typed `>2000` or `>=2001`.
       case ">=":
-        return `${val} onwards`;
+        return `from ${val}`;
       case "<":
         return `before ${val}`;
       case "<=":
-        return `${val} or earlier`;
+        return `up to ${val}`;
     }
   }
   return s;

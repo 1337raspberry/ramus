@@ -19,8 +19,8 @@ import {
   toggleTrackFavourite,
   playTracks,
   expandGenreToLibraryTags,
-  type AlbumFilterParamsIPC,
 } from "../lib/commands";
+import { filtersToIPC } from "../lib/filters";
 import { usePlaybackStore } from "./playbackStore";
 import { useConnectionStore } from "./connectionStore";
 import { useDownloadsStore } from "./downloadsStore";
@@ -240,20 +240,6 @@ function sortAndFilter(
 ): { sorted: Album[]; filtered: Album[] } {
   const sorted = sortAlbums(albums, order);
   return { sorted, filtered: filterAlbums(sorted, filters, genreExpansions) };
-}
-
-export function filtersToIPC(filters: AlbumFilters): AlbumFilterParamsIPC {
-  const yr = parseYearRange(filters.year);
-  return {
-    unplayed: filters.unplayed,
-    favouriteAlbums: filters.favouriteAlbums,
-    favouriteTracks: filters.favouriteTracks,
-    yearMin: yr?.min ?? null,
-    yearMax: yr?.max ?? null,
-    countries: filters.countries,
-    genres: filters.genres,
-    collection: filters.collection || null,
-  };
 }
 
 interface LibraryState {

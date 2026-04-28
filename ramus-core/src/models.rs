@@ -478,6 +478,9 @@ pub enum GenreSource {
 /// store the structured `AlbumFilterParams` rather than a query string so
 /// they can be created from the chip-based filter UI and re-applied against
 /// the live library every time (additions/removals reflect automatically).
+///
+/// The `filters` field persists verbatim; adding fields to `AlbumFilterParams`
+/// implicitly extends the stored `Settings` schema.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Bookmark {
@@ -553,24 +556,31 @@ impl Default for Settings {
 
 impl Bookmark {
     /// Validate a batch of bookmarks: cap at `MAX_BOOKMARKS`, names must be
-    /// non-empty (after trim) and case-insensitive unique. Returns an
-    /// explanation string suitable for surfacing on `update_settings`
-    /// rejection.
+    /// non-empty (after trim) and case-insensitive unique, ids must be
+    /// non-empty and unique. Returns an explanation string suitable for
+    /// surfacing on `update_settings` rejection.
     pub fn validate_batch(items: &[Bookmark]) -> Result<(), String> {
         if items.len() > MAX_BOOKMARKS {
+            let count = items.len();
             return Err(format!(
-                "too many bookmarks ({} > {})",
-                items.len(),
-                MAX_BOOKMARKS
+                "too many bookmarks: {count} (max {MAX_BOOKMARKS})"
             ));
         }
-        let mut seen = std::collections::HashSet::new();
+        let mut seen_names = std::collections::HashSet::new();
+        let mut seen_ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
         for b in items {
+            let id = b.id.trim();
+            if id.is_empty() {
+                return Err("bookmark id cannot be empty".into());
+            }
+            if !seen_ids.insert(id) {
+                return Err(format!("duplicate bookmark id: {id}"));
+            }
             let name = b.name.trim();
             if name.is_empty() {
                 return Err("bookmark name cannot be empty".into());
             }
-            if !seen.insert(name.to_lowercase()) {
+            if !seen_names.insert(name.to_lowercase()) {
                 return Err(format!("duplicate bookmark name: {name}"));
             }
         }
@@ -930,6 +940,18 @@ mod tests {
             .map(|i| bm(&i.to_string(), &format!("name{i}")))
             .collect();
         assert!(Bookmark::validate_batch(&batch).is_err());
+    }
+
+    #[test]
+    fn test_bookmark_rejects_duplicate_ids() {
+        let batch = vec![bm("a", "Metal"), bm("a", "Chill")];
+        assert!(Bookmark::validate_batch(&batch).is_err());
+    }
+
+    #[test]
+    fn test_bookmark_rejects_empty_id() {
+        assert!(Bookmark::validate_batch(&[bm("", "Metal")]).is_err());
+        assert!(Bookmark::validate_batch(&[bm("   ", "Metal")]).is_err());
     }
 
     #[test]

@@ -5,7 +5,8 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { getFavouriteTracks, playTracks } from "../lib/commands";
 import { pushBackHandler } from "../lib/backHandler";
 import BookmarkEditor from "../components/BookmarkEditor";
-import BookmarkPicker, { filtersFromBookmark } from "../components/BookmarkPicker";
+import BookmarkPicker from "../components/BookmarkPicker";
+import { filtersFromBookmark } from "../lib/bookmark";
 import MobileFilterPanel from "./MobileFilterPanel";
 import type { Bookmark } from "../lib/types";
 

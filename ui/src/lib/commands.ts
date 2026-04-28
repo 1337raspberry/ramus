@@ -19,7 +19,10 @@ import type {
   Track,
   UltraBlurColors,
 } from "./types";
+import type { AlbumFilterParamsIPC } from "./filters";
 import type { VibrantPalette } from "./vibrantColor";
+
+export type { AlbumFilterParamsIPC } from "./filters";
 
 // --- Auth ---
 
@@ -81,17 +84,6 @@ export const getTracksForAlbum = (sourceId: string) =>
 export const getTrack = (sourceId: string) => invoke<Track | null>("get_track", { sourceId });
 
 export const getAllArtists = () => invoke<ArtistInfo[]>("get_all_artists");
-
-export interface AlbumFilterParamsIPC {
-  unplayed: boolean;
-  favouriteAlbums: boolean;
-  favouriteTracks: boolean;
-  yearMin: number | null;
-  yearMax: number | null;
-  countries: string[];
-  genres: string[];
-  collection: string | null;
-}
 
 export const getFilteredGenreTree = (filters: AlbumFilterParamsIPC) =>
   invoke<GenreTreeResponse>("get_filtered_genre_tree", { filters });
