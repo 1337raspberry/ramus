@@ -114,6 +114,13 @@ struct PlayerInner {
     play_session_id: String,
     cache: DownloadCache,
     last_retried_track: Option<String>,
+    /// Set by `load_queue` when the requested `start_at > 0`. mpv's first
+    /// `loadfile Replace` inevitably fires `playlist-pos-change(0)` before
+    /// the explicit `playlist_play_index(start_at)` lands; that transient
+    /// event would otherwise be reported to Plex as a phantom track switch
+    /// to queue[0]. While this is `Some(target)` and the incoming pos
+    /// doesn't match, `handle_playlist_pos_change` skips state mutation.
+    pending_initial_pos: Option<usize>,
 }
 
 /// Core audio player managing queue state, mpv commands, and track resolution.
@@ -145,6 +152,7 @@ impl AudioPlayer {
                 play_session_id: uuid::Uuid::new_v4().to_string(),
                 cache: DownloadCache::new(PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES as u64),
                 last_retried_track: None,
+                pending_initial_pos: None,
             }),
             persistent_cache: RwLock::new(HashMap::new()),
         }
@@ -242,6 +250,9 @@ impl AudioPlayer {
             inner.position = 0.0;
             inner.duration = 0.0;
             inner.is_loading = false;
+            // Suppress the transient pos=0 event mpv fires from the first
+            // loadfile Replace before our playlist_play_index(start_at) call.
+            inner.pending_initial_pos = if start_at > 0 { Some(start_at) } else { None };
 
             inner
                 .state
@@ -638,6 +649,17 @@ impl AudioPlayer {
         let pos = pos as usize;
         if pos >= inner.state.queue.len() {
             return;
+        }
+
+        // Drop the transient pos=0 event mpv fires from the first loadfile
+        // Replace during a load_queue with start_at > 0. Without this guard,
+        // the lib.rs callback would observe current_track flipping briefly
+        // to queue[0] and emit a phantom track-switch session report to Plex.
+        if let Some(target) = inner.pending_initial_pos {
+            if pos != target {
+                return;
+            }
+            inner.pending_initial_pos = None;
         }
 
         inner.state.queue_index = pos;
@@ -1237,6 +1259,42 @@ mod tests {
         assert!(calls
             .iter()
             .any(|c| matches!(c, MockCall::PlaylistPlayIndex(2))));
+    }
+
+    #[test]
+    fn test_pos_change_to_zero_after_start_at_is_suppressed() {
+        // load_queue with start_at > 0 issues `loadfile Replace` for queue[0],
+        // which makes mpv fire playlist-pos-change(0) before the explicit
+        // playlist_play_index lands. That transient event must not mutate
+        // current_track or queue_index away from the requested start.
+        let (player, _) = make_player();
+        let tracks = vec![
+            make_test_track("A"),
+            make_test_track("B"),
+            make_test_track("C"),
+        ];
+
+        player.load_queue(tracks, 2);
+        assert_eq!(player.state().current_track.as_ref().unwrap().rating_key, "C");
+
+        // Transient pos=0 event from mpv: must be ignored.
+        player.handle_playlist_pos_change(0);
+        assert_eq!(
+            player.state().current_track.as_ref().unwrap().rating_key,
+            "C",
+            "transient pos=0 must not flip current_track"
+        );
+        assert_eq!(player.state().queue_index, 2);
+
+        // Real pos=2 event arrives; gate clears, state stays consistent.
+        player.handle_playlist_pos_change(2);
+        assert_eq!(player.state().current_track.as_ref().unwrap().rating_key, "C");
+
+        // Subsequent natural advance to pos=0 (e.g. user clicks back to start)
+        // is now processed normally because the gate cleared.
+        player.handle_playlist_pos_change(0);
+        assert_eq!(player.state().current_track.as_ref().unwrap().rating_key, "A");
+        assert_eq!(player.state().queue_index, 0);
     }
 
     #[test]
