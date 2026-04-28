@@ -161,9 +161,21 @@ impl ConnectionMonitor {
             inner.is_evaluating = true;
         }
 
-        let result = self.do_evaluate().await;
+        // RAII guard so the flag clears even if the future is dropped
+        // mid-await — e.g. handle_path_update aborts the spawned
+        // debounce task while do_evaluate is awaiting. Without it, the
+        // reentrancy check above would short-circuit every subsequent
+        // call and connection monitoring would silently die.
+        struct EvalGuard<'a>(&'a Mutex<MonitorInner>);
+        impl Drop for EvalGuard<'_> {
+            fn drop(&mut self) {
+                self.0.lock().is_evaluating = false;
+            }
+        }
+        let guard = EvalGuard(&self.inner);
 
-        self.inner.lock().is_evaluating = false;
+        let result = self.do_evaluate().await;
+        drop(guard);
 
         match result {
             EvalResult::Unchanged => {}
