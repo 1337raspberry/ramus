@@ -33,10 +33,19 @@ CLAUDE.md
 # Actions minutes return. Not meaningful to other contributors.
 CI-check-to-do.md
 
+# Drafted GitHub-issue bodies to file once the repo goes public.
+# Local scratch only — not part of the project.
+LAUNCH-ISSUES.md
+
 # Android release signing — keystore + credentials never committed
 *.keystore
 *.jks
 signing.properties
+
+# Environment + local override files (Vite reads .env.local etc. at runtime)
+.env
+.env.*
+*.local
 
 # Genre AKA source + merge script — local-only authoring tools.
 # open.json (the merged output) IS committed.
