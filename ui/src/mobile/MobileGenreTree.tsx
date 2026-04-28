@@ -108,20 +108,20 @@ function MobileGenreRow({
             className="mobile-genre-count mobile-genre-count-link"
             onClick={(e) => {
               e.stopPropagation();
-              selectGenreOnly(row.node);
-            }}
-          >
-            {row.node.albumCount}
-          </span>
-          <span className="mobile-genre-count mobile-genre-count-sep">/</span>
-          <span
-            className="mobile-genre-count mobile-genre-count-link"
-            onClick={(e) => {
-              e.stopPropagation();
               selectGenre(row.node);
             }}
           >
             {row.node.deduplicatedTotalCount}
+          </span>
+          <span className="mobile-genre-count mobile-genre-count-sep">|</span>
+          <span
+            className="mobile-genre-count mobile-genre-count-link mobile-genre-count-secondary"
+            onClick={(e) => {
+              e.stopPropagation();
+              selectGenreOnly(row.node);
+            }}
+          >
+            ({row.node.albumCount})
           </span>
         </>
       ) : (
@@ -197,7 +197,7 @@ export default function MobileGenreTree({ onOpenSettings }: Props) {
         <span className="mobile-genre-name" style={{ fontWeight: 600 }}>
           All
         </span>
-        <span className="mobile-genre-count">{totalAlbumCount}</span>
+        <span className="mobile-genre-count mobile-genre-count-quiet">{totalAlbumCount}</span>
       </div>
       {rows.map((row) => (
         <MobileGenreRow

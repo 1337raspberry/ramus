@@ -254,22 +254,22 @@ export default function GenreTreeView() {
                     className="genre-count genre-count-link"
                     onClick={(e) => {
                       e.stopPropagation();
-                      selectGenreOnly(row.node);
-                    }}
-                    title={`${row.node.name} only`}
-                  >
-                    {row.node.albumCount}
-                  </span>
-                  <span className="genre-count genre-count-sep">/</span>
-                  <span
-                    className="genre-count genre-count-link"
-                    onClick={(e) => {
-                      e.stopPropagation();
                       selectGenre(row.node);
                     }}
                     title={`${row.node.name} and all children`}
                   >
                     {row.node.deduplicatedTotalCount}
+                  </span>
+                  <span className="genre-count genre-count-sep">|</span>
+                  <span
+                    className="genre-count genre-count-link genre-count-secondary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selectGenreOnly(row.node);
+                    }}
+                    title={`${row.node.name} only`}
+                  >
+                    ({row.node.albumCount})
                   </span>
                 </>
               ) : (

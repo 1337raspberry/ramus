@@ -419,8 +419,17 @@ textarea {
 }
 
 .genre-count-sep {
-  margin-left: 2px;
+  margin-left: 6px;
   cursor: default;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.genre-count-sep + .genre-count {
+  margin-left: 6px;
+}
+
+.genre-count-secondary {
+  opacity: 0.7;
 }
 
 /* Hierarchy guide lines.
@@ -4354,9 +4363,17 @@ body.is-fullscreen .focus-body {
 .mobile-genre-count {
   flex-shrink: 0;
   margin-left: 8px;
-  color: rgba(255, 255, 255, 0.45);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
+}
+
+.mobile-genre-count-quiet {
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.35);
 }
 
 .mobile-genre-chev {
@@ -4425,18 +4442,28 @@ body.is-fullscreen .focus-body {
 
 .mobile-genre-count-link {
   cursor: pointer;
-  text-decoration: underline;
-  text-decoration-color: rgba(255, 255, 255, 0.25);
-  text-underline-offset: 2px;
+  transition: background-color 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-genre-count-link:active {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .mobile-genre-count-sep {
-  margin: 0 3px 0 3px;
+  margin: 0 4px;
+  padding: 0;
+  background: none;
   flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.25);
 }
 
 .mobile-genre-count-sep + .mobile-genre-count {
   margin-left: 0;
+}
+
+.mobile-genre-count-secondary {
+  opacity: 0.7;
 }
 
 /* --- Artist list --- */
