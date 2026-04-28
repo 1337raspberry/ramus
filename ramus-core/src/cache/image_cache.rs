@@ -52,7 +52,12 @@ impl ImageCache {
         let mut access_order = Vec::new();
         for key in &meta.access_order {
             if let Some(entry) = meta.entries.get(key) {
-                if entry.path.exists() {
+                // Guard against a tampered or corrupted sidecar pointing
+                // outside the cache directory. Only entries whose path is
+                // inside cache_dir are kept; anything else is silently
+                // dropped from the live index.
+                let safe = entry.path.starts_with(&cache_dir) && entry.path.exists();
+                if safe {
                     entries.insert(key.clone(), entry.clone());
                     access_order.push(key.clone());
                 }
