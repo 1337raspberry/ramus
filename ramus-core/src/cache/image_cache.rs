@@ -137,7 +137,7 @@ impl ImageCache {
         fs::create_dir_all(&self.cache_dir).map_err(|e| e.to_string())?;
 
         let file_path = self.cache_dir.join(format!("{}.jpg", key));
-        fs::write(&file_path, data).map_err(|e| e.to_string())?;
+        atomic_write(&file_path, data).map_err(|e| e.to_string())?;
 
         let file_size = data.len() as u64;
 
@@ -272,9 +272,32 @@ impl ImageCache {
             access_order: self.access_order.clone(),
         };
         if let Ok(data) = serde_json::to_vec(&meta) {
-            let _ = fs::write(self.cache_dir.join(META_FILENAME), data);
+            let _ = atomic_write(&self.cache_dir.join(META_FILENAME), &data);
         }
     }
+}
+
+/// Stage data into a sibling `.tmp` file, fsync, then rename atomically.
+/// Without this, an iOS suspension or crash mid-write could leave a
+/// truncated file on disk that subsequent loads would treat as valid —
+/// for the meta sidecar that means losing the entire LRU index.
+fn atomic_write(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let tmp_path = path.with_extension({
+        let mut e = path
+            .extension()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        e.push_str(".tmp");
+        e
+    });
+    {
+        let mut f = fs::File::create(&tmp_path)?;
+        f.write_all(data)?;
+        f.sync_all()?;
+    }
+    fs::rename(&tmp_path, path)
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
