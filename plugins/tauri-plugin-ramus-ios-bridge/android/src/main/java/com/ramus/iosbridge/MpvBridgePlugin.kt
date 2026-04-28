@@ -494,10 +494,6 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             val albumChanged = args.album != lastAlbum
             val coverChanged = args.coverUrl != lastCoverUrl
             if (!titleChanged && !artistChanged && !albumChanged && !coverChanged) return@post
-            Log.i(
-                TAG,
-                "nowPlayingUpdate: title='${args.title}' artist='${args.artist}' album='${args.album}' cover=${args.coverUrl != null} coverChanged=$coverChanged",
-            )
 
             lastTitle = args.title
             lastArtist = args.artist
@@ -527,7 +523,6 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                         // landed, OR if everything was cleared via
                         // `nowPlayingClear` while we were loading.
                         if (myGen != coverRequestGen) {
-                            Log.i(TAG, "applyMetadata: cover gen stale ($myGen != $coverRequestGen), dropping")
                             return@post
                         }
                         lastCoverUrl = coverUrl
@@ -561,10 +556,6 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             Log.w(TAG, "applyMetadata: currentUri null")
             return
         }
-        Log.i(
-            TAG,
-            "applyMetadata: idx=${p.currentMediaItemIndex} title='$lastTitle' artist='$lastArtist' album='$lastAlbum' hasCover=${lastCoverBytes != null}",
-        )
 
         val builder = MediaMetadata.Builder()
             .setTitle(lastTitle)
@@ -587,7 +578,6 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             .build()
         try {
             p.replaceMediaItem(p.currentMediaItemIndex, newItem)
-            Log.i(TAG, "applyMetadata: replaceMediaItem ok")
         } catch (e: Exception) {
             Log.w(TAG, "replaceMediaItem failed", e)
         }

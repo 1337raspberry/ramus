@@ -163,6 +163,64 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const [showEQ, setShowEQ] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
 
+  // Long-press the EQ button to summon the debug panel. The timer is
+  // armed on touchstart and cancelled on touchend / touchmove past a
+  // small threshold; if the timer fires the click handler is suppressed
+  // via the ref flag so EQ doesn't also open.
+  const eqLongPressTimerRef = useRef<number | null>(null);
+  const eqLongPressFiredRef = useRef(false);
+  const eqLongPressStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const cancelEqLongPress = useCallback(() => {
+    if (eqLongPressTimerRef.current != null) {
+      window.clearTimeout(eqLongPressTimerRef.current);
+      eqLongPressTimerRef.current = null;
+    }
+    eqLongPressStartRef.current = null;
+  }, []);
+
+  const startEqLongPress = useCallback(
+    (x: number, y: number) => {
+      cancelEqLongPress();
+      eqLongPressFiredRef.current = false;
+      eqLongPressStartRef.current = { x, y };
+      eqLongPressTimerRef.current = window.setTimeout(() => {
+        eqLongPressFiredRef.current = true;
+        setShowDebug(true);
+      }, 600);
+    },
+    [cancelEqLongPress],
+  );
+
+  const handleEqTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      const t = e.touches[0];
+      if (!t) return;
+      startEqLongPress(t.clientX, t.clientY);
+    },
+    [startEqLongPress],
+  );
+
+  const handleEqTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      const start = eqLongPressStartRef.current;
+      const t = e.touches[0];
+      if (!start || !t) return;
+      const dx = t.clientX - start.x;
+      const dy = t.clientY - start.y;
+      if (dx * dx + dy * dy > 100) cancelEqLongPress();
+    },
+    [cancelEqLongPress],
+  );
+
+  const handleEqClick = useCallback(() => {
+    if (eqLongPressFiredRef.current) {
+      eqLongPressFiredRef.current = false;
+      return;
+    }
+    setShowEQ(true);
+  }, []);
+
   // --- Swipe gestures ---
   // Mini-player: swipe up to expand. Sheet header: swipe down to collapse.
   // Both use the imperative non-passive touchmove pattern (same as the
@@ -604,32 +662,14 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
               </button>
               <button
                 className="mobile-sheet-eq"
-                onClick={() => setShowEQ(true)}
+                onClick={handleEqClick}
+                onTouchStart={handleEqTouchStart}
+                onTouchMove={handleEqTouchMove}
+                onTouchEnd={cancelEqLongPress}
+                onTouchCancel={cancelEqLongPress}
                 aria-label="Equalizer"
               >
                 <IconEqualizer size={14} />
-              </button>
-              <button
-                className={`mobile-sheet-eq${showDebug ? " active" : ""}`}
-                onClick={() => setShowDebug(true)}
-                aria-label="Debug info"
-              >
-                <svg
-                  width={14}
-                  height={14}
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0" />
-                  <path d="M20 12a8 8 0 0 0-8-8" />
-                  <path d="M4 12a8 8 0 0 1 8-8" />
-                  <path d="M20 12a8 8 0 0 1-8 8" />
-                  <path d="M4 12a8 8 0 0 0 8 8" />
-                </svg>
               </button>
             </div>
 

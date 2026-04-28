@@ -1,9 +1,16 @@
 import { useCallback, useMemo } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { useBreadcrumbDebugStore } from "./BreadcrumbDebugPanel";
 import { countryToFlag } from "../lib/countryFlag";
 import type { GenreNode } from "../lib/types";
+
+const FONT_SIZE = 11;
+const CRUMB_PAD_H = 0;
+const CRUMB_PAD_V = 0;
+const CRUMB_GAP = 4;
+const BAR_PAD_H = 20;
+const BAR_PAD_V = 13;
+const SEP_SPACING = 2;
 
 interface Crumb {
   label: string;
@@ -36,9 +43,6 @@ export default function BreadcrumbBar() {
   const selectGenre = useLibraryStore((s) => s.selectGenre);
   const clearSearchResults = useLibraryStore((s) => s.clearSearchResults);
   const flatGenres = useSettingsStore((s) => s.flatGenres);
-
-  const { fontSize, crumbPadH, crumbPadV, crumbGap, barPadH, barPadV, sepSpacing } =
-    useBreadcrumbDebugStore();
 
   // Read sidebarMode at call-time to avoid stale closures.
   const selectAll = useCallback(() => {
@@ -120,24 +124,24 @@ export default function BreadcrumbBar() {
     <div
       className="breadcrumb-bar"
       style={{
-        padding: `${barPadV}px ${barPadH}px`,
-        fontSize,
-        gap: crumbGap,
+        padding: `${BAR_PAD_V}px ${BAR_PAD_H}px`,
+        fontSize: FONT_SIZE,
+        gap: CRUMB_GAP,
       }}
     >
-      <div className="breadcrumb-trail" style={{ gap: crumbGap }}>
+      <div className="breadcrumb-trail" style={{ gap: CRUMB_GAP }}>
         {crumbs.map((crumb, i) => {
           const isLast = i === crumbs.length - 1;
           return (
-            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: crumbGap }}>
+            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: CRUMB_GAP }}>
               {i > 0 && (
-                <span className="crumb-sep" style={{ margin: `0 ${sepSpacing}px` }}>
+                <span className="crumb-sep" style={{ margin: `0 ${SEP_SPACING}px` }}>
                   &gt;
                 </span>
               )}
               <span
                 className={`crumb${crumb.onClick && !isLast ? " crumb-link" : ""}`}
-                style={{ padding: `${crumbPadV}px ${crumbPadH}px` }}
+                style={{ padding: `${CRUMB_PAD_V}px ${CRUMB_PAD_H}px` }}
                 onClick={crumb.onClick}
               >
                 {crumb.label}

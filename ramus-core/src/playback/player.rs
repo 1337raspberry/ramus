@@ -258,7 +258,10 @@ impl AudioPlayer {
                 } else {
                     LoadMode::Append
                 };
-                log::debug!("load_queue[{i}]: mode={mode:?} url={url}");
+                // Track URLs contain `X-Plex-Token` in the query string —
+                // log only enough to correlate with mpv events, never the
+                // URL itself.
+                log::debug!("load_queue[{i}]: mode={mode:?}");
                 self.mpv.load_file(url, mode, None);
             }
         }
@@ -823,15 +826,13 @@ impl AudioPlayer {
             let Some(url) = transcode::build_direct_play_url(server_url, part_key, token) else {
                 continue;
             };
-            // DEBUG-ONLY, SENSITIVE: the URL contains a live `X-Plex-Token`
-            // query parameter. Do NOT promote above `debug!`, and scrub
-            // the token before copying into a bug report.
+            // The constructed URL contains a live `X-Plex-Token` query
+            // parameter, so only log the rating key + part key — never
+            // the URL itself.
             log::debug!(
-                "next_uncached_target: idx={idx} rk={} server={} part_key={} -> {}",
+                "next_uncached_target: idx={idx} rk={} part_key={}",
                 track.rating_key,
-                server_url,
                 part_key,
-                url,
             );
             return Some((track.rating_key.clone(), url.to_string()));
         }

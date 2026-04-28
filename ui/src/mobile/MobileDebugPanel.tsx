@@ -24,6 +24,14 @@ const MODE_LABELS: Record<string, string> = {
   transcodeLossless: "Always Transcode",
 };
 
+// Strip credentials from a Plex URL before display. Direct-play URLs
+// carry `?X-Plex-Token=…` and transcode URLs nest the token inside an
+// `X-Plex-Headers=…` value, so screenshotting the panel as-is would
+// leak the user's server token.
+function redactUrl(url: string): string {
+  return url.replace(/(X-Plex-Token=|X-Plex-Headers=)[^&#]*/gi, "$1<redacted>");
+}
+
 export default function MobileDebugPanel({ onDismiss }: { onDismiss: () => void }) {
   const [info, setInfo] = useState<DebugInfo | null>(null);
   const track = usePlaybackStore((s) => s.currentTrack);
@@ -124,7 +132,7 @@ export default function MobileDebugPanel({ onDismiss }: { onDismiss: () => void 
 
           {info?.resolvedUrl && (
             <Section title="Resolved URL">
-              <div className="debug-url">{info.resolvedUrl}</div>
+              <div className="debug-url">{redactUrl(info.resolvedUrl)}</div>
             </Section>
           )}
         </div>

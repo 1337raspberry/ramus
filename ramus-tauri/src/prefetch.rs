@@ -1008,6 +1008,25 @@ fn extension_from_url(url: &str) -> String {
 /// Cancellation is external — callers wrap this in `tokio::spawn` and
 /// abort the task if needed. Partial files survive abort so the next call
 /// with the same destination path can resume.
+/// reqwest's `Error::Display` impl prefixes "for url (...)" with the
+/// full request URL, which carries `X-Plex-Token` in the query string.
+/// Use the inner source's message instead, falling back to a category
+/// label, so logs never echo the token back.
+fn redact_reqwest_err(e: &reqwest::Error) -> String {
+    if let Some(src) = std::error::Error::source(e) {
+        return src.to_string();
+    }
+    if e.is_timeout() {
+        "timeout".into()
+    } else if e.is_connect() {
+        "connect".into()
+    } else if let Some(status) = e.status() {
+        format!("status={status}")
+    } else {
+        "request error".into()
+    }
+}
+
 async fn download_http_to_file(
     client: &reqwest::Client,
     url: &str,
@@ -1050,10 +1069,11 @@ async fn download_http_to_file(
             Ok(r) => r,
             Err(e) => {
                 retries += 1;
+                let cause = redact_reqwest_err(&e);
                 if Instant::now() >= deadline {
-                    return Err(format!("request error after {retries} retries: {e}"));
+                    return Err(format!("request error after {retries} retries: {cause}"));
                 }
-                log::debug!("download: request error (attempt {retries}): {e}");
+                log::debug!("download: request error (attempt {retries}): {cause}");
                 current_backoff = (current_backoff * 2).min(MAX_BACKOFF);
                 tokio::time::sleep(current_backoff).await;
                 continue;
@@ -1110,7 +1130,10 @@ async fn download_http_to_file(
                 }
                 Ok(None) => break,
                 Err(e) => {
-                    log::debug!("download: chunk error at {written} bytes: {e}");
+                    log::debug!(
+                        "download: chunk error at {written} bytes: {}",
+                        redact_reqwest_err(&e),
+                    );
                     if let Some(expected) = expected_size {
                         if written >= expected {
                             break;

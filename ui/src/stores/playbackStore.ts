@@ -181,14 +181,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       get().refreshSpectrum(track.ratingKey);
 
       getWaveform(track.ratingKey)
-        .then((levels) => {
-          if (levels) {
-            console.log(`[waveform] got ${levels.length} levels for ${track.ratingKey}`);
-          } else {
-            console.log(`[waveform] no levels returned for ${track.ratingKey}`);
-          }
-          set({ waveformLevels: levels });
-        })
+        .then((levels) => set({ waveformLevels: levels }))
         .catch((e) => console.warn("[waveform] fetch failed:", e));
 
       if (track.albumKey) {
@@ -261,66 +254,25 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
     const gen = spectrumGen;
     const ratingKey = current.ratingKey;
-    const trackDurationS = current.duration;
 
     // Debounced placeholder: only flip to "analysing" after 120 ms.
     // Cached `.spec` files resolve in ~50 ms, so debouncing avoids a
     // placeholder flash during bar-to-bar transitions. Cold analysis
     // (first play or slow decode) still gets visual feedback below
     // the "app is frozen" perception threshold.
-    let placeholderFired = false;
     const placeholderTimer = window.setTimeout(() => {
       if (gen !== spectrumGen) return;
-      placeholderFired = true;
       set({ spectrumState: "analysing" });
     }, 120);
 
-    const t0 = performance.now();
     getSpectrum(ratingKey)
       .then((state) => {
-        const ipcMs = performance.now() - t0;
         clearTimeout(placeholderTimer);
         // Drop stale results if the track changed during the await. The
         // gen check beats `current.ratingKey` because replay/queue reload
         // could reuse the same key.
         if (gen !== spectrumGen) return;
-
-        // Timing log: IPC latency routinely over 500 ms for cached tracks
-        // points at the JSON-array encoding of `Vec<u8>` as the bottleneck
-        // (switch to binary IPC via `tauri::ipc::Response`). Analyser vs
-        // Plex duration deltas mean the analyser is off.
-        if (typeof state === "object" && "ready" in state) {
-          const frames = state.ready;
-          const frameCount = Math.floor(frames.frames.length / frames.bandCount);
-          const analyserDurationS = (frameCount * frames.hopMs) / 1000;
-          console.log(
-            `[spectrum] ${ratingKey} ready: ` +
-              `ipc=${ipcMs.toFixed(0)}ms ` +
-              `placeholderShown=${placeholderFired} ` +
-              `hopMs=${frames.hopMs.toFixed(3)} ` +
-              `bands=${frames.bandCount} ` +
-              `sr=${frames.sampleRate} ` +
-              `frames=${frameCount} ` +
-              `analyserDuration=${analyserDurationS.toFixed(2)}s ` +
-              `plexDuration=${trackDurationS.toFixed(2)}s ` +
-              `delta=${(analyserDurationS - trackDurationS).toFixed(2)}s`,
-          );
-        } else {
-          console.log(
-            `[spectrum] ${ratingKey} ${typeof state === "string" ? state : "unavailable"}: ` +
-              `ipc=${ipcMs.toFixed(0)}ms placeholderShown=${placeholderFired}`,
-          );
-        }
-
-        // State-commit cost. FocusVisualizer's `Uint8Array.from` runs
-        // here, so a large value points at JSON-array conversion rather
-        // than IPC.
-        const tBeforeSet = performance.now();
         set({ spectrumState: state });
-        const setMs = performance.now() - tBeforeSet;
-        if (setMs > 30) {
-          console.log(`[spectrum] ${ratingKey} set() took ${setMs.toFixed(0)}ms`);
-        }
       })
       .catch((err) => {
         clearTimeout(placeholderTimer);

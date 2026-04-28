@@ -25,7 +25,6 @@ import DownloadsPanel from "./components/DownloadsPanel";
 import OnboardingFlow, { clearOnboardingStorage } from "./components/onboarding/OnboardingFlow";
 import { clearPin } from "./components/onboarding/OAuthSignIn";
 import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackground";
-import BreadcrumbDebugPanel from "./components/BreadcrumbDebugPanel";
 import MobileApp from "./mobile/MobileApp";
 import Toast from "./components/Toast";
 import { applyAccent } from "./lib/accent";
@@ -44,7 +43,6 @@ export default function App() {
   const [showEQ, setShowEQ] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDownloads, setShowDownloads] = useState(false);
-  const [showBreadcrumbDebug, setShowBreadcrumbDebug] = useState(false);
   const suggestion = useLibraryStore((s) => s.suggestion);
   const detailAlbum = useLibraryStore((s) => s.detailAlbum);
   const albumColors = usePlaybackStore((s) => s.ultraBlurColors);
@@ -105,7 +103,6 @@ export default function App() {
     setSearchInitial,
     setShowEQ,
     setShowSettings,
-    setShowBreadcrumbDebug,
     toggleFocusMode,
   });
 
@@ -220,7 +217,6 @@ export default function App() {
         />
       )}
       {showDownloads && <DownloadsPanel onDismiss={() => setShowDownloads(false)} />}
-      {showBreadcrumbDebug && <BreadcrumbDebugPanel />}
       <Toast />
     </>
   );

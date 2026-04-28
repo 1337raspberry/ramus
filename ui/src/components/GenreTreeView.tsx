@@ -3,8 +3,14 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { GenreNode } from "../lib/types";
 import { useLibraryStore, hasActiveFilters } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { useGenreDebugStore } from "./GenreDebugPanel";
 import { IconTriangleFilled, IconChevronOpenDown } from "./Icons";
+
+const CHEVRON_SIZE = 18;
+const CHEVRON_WIDTH = 20;
+const TEXT_SIZE = 12;
+const PAD_H = 6;
+const ROW_HEIGHT = 30;
+const INDENT_DEPTH = 16;
 
 interface FlatRow {
   node: GenreNode;
@@ -74,12 +80,10 @@ export default function GenreTreeView() {
   const loadAllAlbums = useLibraryStore((s) => s.loadAllAlbums);
   const set = useLibraryStore.setState;
 
-  const { chevronSize, chevronWidth, textSize, padH, rowHeight, indentDepth } =
-    useGenreDebugStore();
   const libraryPadding = useSettingsStore((s) => s.libraryPadding);
   const flatGenres = useSettingsStore((s) => s.flatGenres);
   const albumFilters = useLibraryStore((s) => s.albumFilters);
-  const effectiveRowHeight = Math.max(12, rowHeight + libraryPadding * 2);
+  const effectiveRowHeight = Math.max(12, ROW_HEIGHT + libraryPadding * 2);
 
   const rows = useMemo(
     () => (flatGenres ? flattenToAZ(genreTree) : flattenTree(genreTree, expandedGenreIds)),
@@ -137,17 +141,17 @@ export default function GenreTreeView() {
     height: effectiveRowHeight,
     display: "flex",
     alignItems: "center",
-    paddingLeft: padH,
-    paddingRight: padH,
-    fontSize: textSize,
+    paddingLeft: PAD_H,
+    paddingRight: PAD_H,
+    fontSize: TEXT_SIZE,
     cursor: "pointer",
     whiteSpace: "nowrap",
   };
 
   const chevronStyle: React.CSSProperties = {
-    width: chevronWidth,
+    width: CHEVRON_WIDTH,
     flexShrink: 0,
-    fontSize: chevronSize,
+    fontSize: CHEVRON_SIZE,
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
@@ -175,7 +179,7 @@ export default function GenreTreeView() {
                 }}
               >
                 {flatGenres ? (
-                  <span style={{ width: chevronWidth, flexShrink: 0 }} />
+                  <span style={{ width: CHEVRON_WIDTH, flexShrink: 0 }} />
                 ) : (
                   <span
                     className="genre-chevron-toggle"
@@ -229,7 +233,7 @@ export default function GenreTreeView() {
                       ]
                         .filter(Boolean)
                         .join(" ")}
-                      style={{ width: indentDepth }}
+                      style={{ width: INDENT_DEPTH }}
                     />
                   );
                 })}
@@ -245,7 +249,7 @@ export default function GenreTreeView() {
                   {isExpanded ? <IconChevronOpenDown /> : <IconTriangleFilled />}
                 </span>
               ) : (
-                <span style={{ width: chevronWidth, flexShrink: 0 }} />
+                <span style={{ width: CHEVRON_WIDTH, flexShrink: 0 }} />
               )}
               <span className="genre-name">{row.node.name}</span>
               {showDualCount ? (

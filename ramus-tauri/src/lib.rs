@@ -378,11 +378,9 @@ pub fn run() {
 
     use crate::state::AppState;
 
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("ramus_tauri=debug,ramus_core=debug,info"),
-    )
-    .format_timestamp_millis()
-    .init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp_millis()
+        .init();
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

@@ -3,12 +3,16 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type SidebarMode } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import GenreTreeView from "./GenreTreeView";
-import { useGenreDebugStore } from "./GenreDebugPanel";
 import BookmarkEditor from "./BookmarkEditor";
 import BookmarkPicker from "./BookmarkPicker";
 import { filtersFromBookmark } from "../lib/bookmark";
 import { countryToFlag } from "../lib/countryFlag";
 import type { Bookmark } from "../lib/types";
+
+const TEXT_SIZE = 12;
+const PAD_H = 6;
+const ROW_HEIGHT = 30;
+const CHEVRON_WIDTH = 20;
 
 const TABS: { mode: SidebarMode; label: string }[] = [
   { mode: "genres", label: "Genres" },
@@ -28,12 +32,8 @@ function ArtistList({
   selectedArtistId: string | null;
   selectArtist: (id: string) => void;
 }) {
-  const textSize = useGenreDebugStore((s) => s.textSize);
-  const padH = useGenreDebugStore((s) => s.padH);
-  const rowHeight = useGenreDebugStore((s) => s.rowHeight);
-  const chevronWidth = useGenreDebugStore((s) => s.chevronWidth);
   const libraryPadding = useSettingsStore((s) => s.libraryPadding);
-  const effectiveRowHeight = Math.max(12, rowHeight + libraryPadding * 2);
+  const effectiveRowHeight = Math.max(12, ROW_HEIGHT + libraryPadding * 2);
   const parentRef = useRef<HTMLDivElement>(null);
 
   const estimateSize = useCallback(() => effectiveRowHeight, [effectiveRowHeight]);
@@ -75,9 +75,9 @@ function ArtistList({
                 height: effectiveRowHeight,
                 display: "flex",
                 alignItems: "center",
-                paddingLeft: padH,
-                paddingRight: padH,
-                fontSize: textSize,
+                paddingLeft: PAD_H,
+                paddingRight: PAD_H,
+                fontSize: TEXT_SIZE,
                 cursor: "pointer",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
@@ -86,10 +86,10 @@ function ArtistList({
             >
               <span
                 style={{
-                  width: chevronWidth,
+                  width: CHEVRON_WIDTH,
                   flexShrink: 0,
                   textAlign: "center",
-                  fontSize: textSize,
+                  fontSize: TEXT_SIZE,
                 }}
               >
                 {artist.country ? (countryToFlag(artist.country) ?? "") : ""}
