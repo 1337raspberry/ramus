@@ -22,7 +22,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   libraryPadding: 0,
   refuseHttp: false,
   lastSyncTimeSecs: 0,
-  disableSpectrum: false,
+  disableSpectrum: true,
   flatGenres: false,
   genreFuzzyThreshold: 0.8,
   eqEnabled: false,

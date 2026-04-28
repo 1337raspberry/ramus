@@ -516,7 +516,7 @@ impl Default for Settings {
             library_padding: 0,
             refuse_http: false,
             last_sync_time_secs: 0,
-            disable_spectrum: false,
+            disable_spectrum: true,
             flat_genres: false,
             genre_fuzzy_threshold: crate::genre::mapper::DEFAULT_GENRE_FUZZY_THRESHOLD,
             eq_enabled: false,

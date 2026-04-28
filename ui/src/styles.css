@@ -2647,6 +2647,31 @@ textarea {
   align-self: flex-start;
 }
 
+.confirm-dialog {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.confirm-dialog-message {
+  line-height: 1.5;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-dialog-actions .settings-btn {
+  padding: 6px 16px;
+}
+
 .settings-signout:hover {
   background: rgba(238, 85, 85, 0.15);
   color: #f66;

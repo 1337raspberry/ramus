@@ -36,6 +36,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
   const [genreWarnings, setGenreWarnings] = useState<string[]>([]);
   const [hasCustomGenres, setHasCustomGenres] = useState(false);
   const [showAcknowledgements, setShowAcknowledgements] = useState(false);
+  const [showSpectrumConfirm, setShowSpectrumConfirm] = useState(false);
   const isMobile = useIsMobile();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -169,19 +170,19 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
       .catch((e) => showError(`Sign out failed: ${e}`));
   }, [onSignOut, showError]);
 
-  // Skip when the Acknowledgements overlay is open so Escape only
-  // dismisses the topmost layer. Both panels attach to `window`; the
-  // nested listener alone can't stop this one from firing first.
+  // Skip when a nested overlay (acknowledgements or confirm dialog) is open
+  // so Escape only dismisses the topmost layer. Both panels attach to
+  // `window`; the nested listener alone can't stop this one from firing first.
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !showAcknowledgements) {
+      if (e.key === "Escape" && !showAcknowledgements && !showSpectrumConfirm) {
         e.preventDefault();
         onDismiss();
       }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onDismiss, showAcknowledgements]);
+  }, [onDismiss, showAcknowledgements, showSpectrumConfirm]);
 
   if (!settings) return null;
 
@@ -273,11 +274,17 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
 
           {!isMobile && (
             <label className="settings-row">
-              <span>Disable visualiser</span>
+              <span>Enable visualiser</span>
               <input
                 type="checkbox"
-                checked={settings.disableSpectrum}
-                onChange={(e) => save({ disableSpectrum: e.target.checked })}
+                checked={!settings.disableSpectrum}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setShowSpectrumConfirm(true);
+                  } else {
+                    save({ disableSpectrum: true });
+                  }
+                }}
               />
             </label>
           )}
@@ -379,7 +386,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
           </button>
 
           <label className="settings-row">
-            <span>Work offline</span>
+            <span>Offline mode</span>
             <input
               type="checkbox"
               checked={settings.offlineMode}
@@ -510,6 +517,55 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
       {showAcknowledgements && (
         <AcknowledgementsPanel onDismiss={() => setShowAcknowledgements(false)} />
       )}
+      {showSpectrumConfirm && (
+        <ConfirmDialog
+          message="The visualiser uses a small amount of cpu to analyse your music after it is buffered or precached. Are you sure?"
+          onConfirm={() => {
+            save({ disableSpectrum: false });
+            setShowSpectrumConfirm(false);
+          }}
+          onCancel={() => setShowSpectrumConfirm(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+interface ConfirmDialogProps {
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmDialogProps) {
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onCancel]);
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) onCancel();
+  };
+
+  return (
+    <div className="settings-backdrop" onClick={handleBackdropClick}>
+      <div className="confirm-dialog glass">
+        <div className="confirm-dialog-message">{message}</div>
+        <div className="confirm-dialog-actions">
+          <button className="settings-btn" onClick={onCancel}>
+            No
+          </button>
+          <button className="settings-btn active" onClick={onConfirm}>
+            Yes
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
