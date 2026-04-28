@@ -91,12 +91,14 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
   const setAlbumSortOrder = useLibraryStore((s) => s.setAlbumSortOrder);
   const selectGenre = useLibraryStore((s) => s.selectGenre);
   const albumFilters = useLibraryStore((s) => s.albumFilters);
+  const activeBookmarkName = useLibraryStore((s) => s.activeBookmarkName);
 
   const [showBreadcrumb, setShowBreadcrumb] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   const filterActive = hasActiveFilters(albumFilters);
 
   const title = useMemo(() => {
+    if (activeBookmarkName) return activeBookmarkName;
     if (searchQuery) return `"${searchQuery}"`;
     if (browseArtistName) return browseArtistName;
     if (browseYear) return String(browseYear);
@@ -110,6 +112,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
     }
     return contextLabel || "All";
   }, [
+    activeBookmarkName,
     searchQuery,
     browseArtistName,
     browseYear,

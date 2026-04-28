@@ -28,7 +28,7 @@ export default function BreadcrumbBar() {
   const selectedGenreId = useLibraryStore((s) => s.selectedGenreId);
   const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const searchQuery = useLibraryStore((s) => s.searchQuery);
-  const activeSavedSearchName = useLibraryStore((s) => s.activeSavedSearchName);
+  const activeBookmarkName = useLibraryStore((s) => s.activeBookmarkName);
   const browseArtistName = useLibraryStore((s) => s.browseArtistName);
   const browseYear = useLibraryStore((s) => s.browseYear);
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
@@ -47,8 +47,8 @@ export default function BreadcrumbBar() {
   }, []);
 
   const crumbs: Crumb[] = useMemo(() => {
-    if (activeSavedSearchName) {
-      return [{ label: activeSavedSearchName }];
+    if (activeBookmarkName) {
+      return [{ label: activeBookmarkName }];
     }
 
     if (searchQuery) {
@@ -102,7 +102,7 @@ export default function BreadcrumbBar() {
 
     return trail;
   }, [
-    activeSavedSearchName,
+    activeBookmarkName,
     searchQuery,
     browseArtistName,
     browseYear,

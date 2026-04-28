@@ -36,7 +36,6 @@ export default function MobileApp({ onOpenSettings }: Props) {
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
   const browseArtistName = useLibraryStore((s) => s.browseArtistName);
   const browseYear = useLibraryStore((s) => s.browseYear);
-  const activeSavedSearchName = useLibraryStore((s) => s.activeSavedSearchName);
   const hasTrack = usePlaybackStore((s) => !!s.currentTrack);
   const [sheetExpanded, setSheetExpanded] = useState(false);
 
@@ -75,8 +74,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
     !!browseArtistName ||
     !!browseYear ||
     (view === "artists" && !!selectedArtistId);
-  const showToolbar =
-    !inGrid && !detailAlbum && view !== "search" && view !== "suggestion" && view !== "savedSearch";
+  const showToolbar = !inGrid && !detailAlbum && view !== "search" && view !== "suggestion";
 
   // Unified back navigation — pops one level of the view hierarchy
   const handleBack = useCallback(() => {
@@ -89,11 +87,6 @@ export default function MobileApp({ onOpenSettings }: Props) {
 
     if (view === "search") {
       useLibraryStore.setState({ searchQuery: null });
-      setView("genres");
-      return;
-    }
-
-    if (view === "savedSearch") {
       setView("genres");
       return;
     }
@@ -139,7 +132,6 @@ export default function MobileApp({ onOpenSettings }: Props) {
   const canGoBack =
     !!detailAlbum ||
     view === "search" ||
-    view === "savedSearch" ||
     view === "suggestion" ||
     !!browseArtistName ||
     !!browseYear ||
@@ -173,10 +165,6 @@ export default function MobileApp({ onOpenSettings }: Props) {
 
     if (view === "search" && searchQuery !== null)
       return <MobileSearch onBack={() => setView("genres")} />;
-    if (view === "savedSearch") {
-      const label = activeSavedSearchName ?? "Saved search";
-      return <MobileAlbumGrid contextLabel={label} onBack={() => setView("genres")} />;
-    }
     if (view === "suggestion")
       return (
         <MobileSuggestion

@@ -5089,21 +5089,21 @@ body.is-fullscreen .focus-body {
   color: rgba(255, 255, 255, 0.85);
 }
 
-/* --- Saved Search: shared hint, actions, buttons (editor + popover) --- */
+/* --- Bookmarks: shared hint, actions, buttons (editor + save dialog) --- */
 
-.saved-search-hint {
+.bookmark-hint {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.4);
   line-height: 1.4;
 }
 
-.saved-search-actions {
+.bookmark-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.saved-search-btn {
+.bookmark-btn {
   padding: 8px 16px;
   border-radius: 10px;
   border: none;
@@ -5114,31 +5114,31 @@ body.is-fullscreen .focus-body {
   cursor: pointer;
 }
 
-.saved-search-btn:disabled {
+.bookmark-btn:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.saved-search-save {
+.bookmark-save {
   background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.6);
   color: #fff;
 }
 
-/* --- Saved Search: desktop popover (anchored above the Saved button) --- */
+/* --- Bookmarks: desktop popover (anchored above the Bookmarks button) --- */
 
-.sidebar-saved-anchor {
+.sidebar-bookmarks-anchor {
   position: relative;
   flex: 1;
   display: flex;
 }
 
-.saved-search-popover {
+.bookmark-popover {
   position: absolute;
   bottom: calc(100% + 4px);
   right: 0;
-  min-width: 160px;
-  max-width: 260px;
-  max-height: 280px;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 320px;
   overflow-y: auto;
   z-index: 150;
   background: rgba(28, 28, 30, 0.96);
@@ -5152,7 +5152,7 @@ body.is-fullscreen .focus-body {
   flex-direction: column;
 }
 
-.saved-search-popover-row {
+.bookmark-popover-row {
   background: none;
   border: none;
   color: var(--text-primary);
@@ -5160,33 +5160,65 @@ body.is-fullscreen .focus-body {
   padding: 8px 14px;
   text-align: left;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
-.saved-search-popover-row:hover {
+.bookmark-popover-row:hover {
   background: var(--bg-hover);
 }
 
-.saved-search-popover-divider {
+.bookmark-popover-divider {
   height: 1px;
   background: rgba(255, 255, 255, 0.06);
   margin: 4px 0;
 }
 
-.saved-search-popover-manage {
+.bookmark-popover-manage {
   color: var(--text-secondary);
   font-size: 11px;
 }
 
-/* --- Saved Search editor (shared modal, list layout) --- */
+.bookmark-empty-row {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  text-align: left;
+}
 
-.saved-search-editor .settings-body {
+.bookmark-row-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bookmark-row-summary {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mobile sheet rows reuse the popover styles for consistency. */
+.bookmark-sheet-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+/* --- Bookmark editor (shared modal, list layout) --- */
+
+.bookmark-editor .settings-body {
   gap: 12px;
 }
 
-.saved-search-edit-list {
+.bookmark-edit-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -5195,7 +5227,7 @@ body.is-fullscreen .focus-body {
   gap: 10px;
 }
 
-.saved-search-edit-row {
+.bookmark-edit-row {
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -5205,7 +5237,7 @@ body.is-fullscreen .focus-body {
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.saved-search-edit-fields {
+.bookmark-edit-fields {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -5213,7 +5245,7 @@ body.is-fullscreen .focus-body {
   min-width: 0;
 }
 
-.saved-search-edit-input {
+.bookmark-edit-input {
   width: 100%;
   padding: 8px 10px;
   border-radius: 6px;
@@ -5225,40 +5257,79 @@ body.is-fullscreen .focus-body {
   outline: none;
 }
 
-.saved-search-edit-input:focus {
+.bookmark-edit-input:focus {
   border-color: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.6);
 }
 
-.saved-search-edit-query {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.bookmark-edit-summary {
   font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
-.saved-search-edit-error {
+.bookmark-edit-error {
   font-size: 11px;
   color: #ff8a8a;
 }
 
-/* --- Downloads panel: saved-search bulk row --- */
+/* --- Bookmark save dialog --- */
 
-.saved-search-download-row {
+.bookmark-save-dialog .settings-body {
+  gap: 12px;
+}
+
+.bookmark-save-summary-label,
+.bookmark-save-name-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.bookmark-save-summary {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.bookmark-save-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+
+.bookmark-save-input:focus {
+  border-color: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.6);
+}
+
+/* --- Downloads panel: bookmark bulk row --- */
+
+.bookmark-download-row {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.saved-search-download-select {
+.bookmark-download-select {
   flex: 1;
   min-width: 140px;
 }
 
-.saved-search-download-query {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+.bookmark-download-summary {
+  font-size: 12px;
   color: var(--text-muted);
   padding: 2px 2px 0;
-  word-break: break-all;
 }
 
 /* --- Mini-player (bottom bar, docked) --- */

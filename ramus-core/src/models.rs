@@ -104,7 +104,7 @@ pub struct AlbumColorInfo {
 
 // --- AlbumFilterParams ---
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlbumFilterParams {
     #[serde(default)]
@@ -474,14 +474,16 @@ pub enum GenreSource {
 
 // --- Settings ---
 
-/// A named search query the user has saved for one-tap recall. Uses the
-/// same operator syntax as the live search overlay (see `search::parser`).
+/// A named filter snapshot the user has saved for one-tap recall. Bookmarks
+/// store the structured `AlbumFilterParams` rather than a query string so
+/// they can be created from the chip-based filter UI and re-applied against
+/// the live library every time (additions/removals reflect automatically).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SavedSearch {
+pub struct Bookmark {
     pub id: String,
     pub name: String,
-    pub query: String,
+    pub filters: AlbumFilterParams,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -493,8 +495,8 @@ pub enum PopularityDisplay {
     Chart,
 }
 
-/// Maximum number of saved searches. Enforced in `update_settings`.
-pub const MAX_SAVED_SEARCHES: usize = 20;
+/// Maximum number of bookmarks. Enforced in `update_settings`.
+pub const MAX_BOOKMARKS: usize = 50;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -515,7 +517,7 @@ pub struct Settings {
     pub genre_fuzzy_threshold: f64,
     pub eq_enabled: bool,
     pub eq_bands: Vec<f32>,
-    pub saved_searches: Vec<SavedSearch>,
+    pub bookmarks: Vec<Bookmark>,
     /// User manual "Work Offline" toggle. When `true`, the app ignores
     /// live server reachability and shows only downloaded content.
     pub offline_mode: bool,
@@ -541,7 +543,7 @@ impl Default for Settings {
             genre_fuzzy_threshold: crate::genre::mapper::DEFAULT_GENRE_FUZZY_THRESHOLD,
             eq_enabled: false,
             eq_bands: vec![0.0; 10],
-            saved_searches: Vec::new(),
+            bookmarks: Vec::new(),
             offline_mode: false,
             popularity_display: PopularityDisplay::default(),
             include_plex_styles: true,
@@ -549,30 +551,27 @@ impl Default for Settings {
     }
 }
 
-impl SavedSearch {
-    /// Validate a batch of saved searches: cap at `MAX_SAVED_SEARCHES`,
-    /// names must be non-empty + case-insensitive unique, queries must be
-    /// non-empty. Returns an explanation string suitable for surfacing to
-    /// the user on `update_settings` rejection.
-    pub fn validate_batch(items: &[SavedSearch]) -> Result<(), String> {
-        if items.len() > MAX_SAVED_SEARCHES {
+impl Bookmark {
+    /// Validate a batch of bookmarks: cap at `MAX_BOOKMARKS`, names must be
+    /// non-empty (after trim) and case-insensitive unique. Returns an
+    /// explanation string suitable for surfacing on `update_settings`
+    /// rejection.
+    pub fn validate_batch(items: &[Bookmark]) -> Result<(), String> {
+        if items.len() > MAX_BOOKMARKS {
             return Err(format!(
-                "too many saved searches ({} > {})",
+                "too many bookmarks ({} > {})",
                 items.len(),
-                MAX_SAVED_SEARCHES
+                MAX_BOOKMARKS
             ));
         }
         let mut seen = std::collections::HashSet::new();
-        for s in items {
-            let name = s.name.trim();
+        for b in items {
+            let name = b.name.trim();
             if name.is_empty() {
-                return Err("saved search name cannot be empty".into());
-            }
-            if s.query.trim().is_empty() {
-                return Err("saved search query cannot be empty".into());
+                return Err("bookmark name cannot be empty".into());
             }
             if !seen.insert(name.to_lowercase()) {
-                return Err(format!("duplicate saved search name: {name}"));
+                return Err(format!("duplicate bookmark name: {name}"));
             }
         }
         Ok(())
@@ -899,51 +898,64 @@ mod tests {
         assert_eq!(RangeOp::LessOrEqual.sql_literal(), "<=");
     }
 
-    fn saved(id: &str, name: &str, query: &str) -> SavedSearch {
-        SavedSearch {
+    fn bm(id: &str, name: &str) -> Bookmark {
+        Bookmark {
             id: id.into(),
             name: name.into(),
-            query: query.into(),
+            filters: AlbumFilterParams::default(),
         }
     }
 
     #[test]
-    fn test_saved_search_validate_ok() {
-        let batch = vec![
-            saved("a", "Metal", "/metal"),
-            saved("b", "Chill", "%chill"),
-        ];
-        assert!(SavedSearch::validate_batch(&batch).is_ok());
+    fn test_bookmark_validate_ok() {
+        let batch = vec![bm("a", "Metal"), bm("b", "Chill")];
+        assert!(Bookmark::validate_batch(&batch).is_ok());
     }
 
     #[test]
-    fn test_saved_search_rejects_duplicate_names_case_insensitive() {
-        let batch = vec![saved("a", "Metal", "/metal"), saved("b", "metal", "/metal2")];
-        assert!(SavedSearch::validate_batch(&batch).is_err());
+    fn test_bookmark_rejects_duplicate_names_case_insensitive() {
+        let batch = vec![bm("a", "Metal"), bm("b", "metal")];
+        assert!(Bookmark::validate_batch(&batch).is_err());
     }
 
     #[test]
-    fn test_saved_search_rejects_blank_name_and_query() {
-        assert!(SavedSearch::validate_batch(&[saved("a", "", "/metal")]).is_err());
-        assert!(SavedSearch::validate_batch(&[saved("a", "Metal", "   ")]).is_err());
+    fn test_bookmark_rejects_blank_name() {
+        assert!(Bookmark::validate_batch(&[bm("a", "")]).is_err());
+        assert!(Bookmark::validate_batch(&[bm("a", "   ")]).is_err());
     }
 
     #[test]
-    fn test_saved_search_rejects_over_cap() {
-        let batch: Vec<SavedSearch> = (0..(MAX_SAVED_SEARCHES + 1))
-            .map(|i| saved(&i.to_string(), &format!("name{i}"), "/metal"))
+    fn test_bookmark_rejects_over_cap() {
+        let batch: Vec<Bookmark> = (0..(MAX_BOOKMARKS + 1))
+            .map(|i| bm(&i.to_string(), &format!("name{i}")))
             .collect();
-        assert!(SavedSearch::validate_batch(&batch).is_err());
+        assert!(Bookmark::validate_batch(&batch).is_err());
     }
 
     #[test]
-    fn test_settings_ignores_legacy_saved_search_field() {
-        // Simulate upgrading from the single-string schema: the old
-        // `savedSearch` JSON key should be silently dropped because the
-        // top-level `#[serde(default)]` means unknown fields are not
-        // surfaced as errors. `saved_searches` defaults to empty.
-        let legacy = r#"{"savedSearch":"/metal"}"#;
+    fn test_settings_ignores_legacy_saved_searches_field() {
+        // Pre-bookmarks shape persisted a `savedSearches` array. After the
+        // rename to `bookmarks` the legacy key is silently dropped (serde
+        // ignores unknown fields by default) and the new field falls back
+        // to an empty Vec via `#[serde(default)]` on `Settings`.
+        let legacy = r#"{"savedSearches":[{"id":"a","name":"Metal","query":"/metal"}]}"#;
         let settings: Settings = serde_json::from_str(legacy).unwrap();
-        assert!(settings.saved_searches.is_empty());
+        assert!(settings.bookmarks.is_empty());
+    }
+
+    #[test]
+    fn test_bookmark_round_trip_serde() {
+        let original = Bookmark {
+            id: "b1".into(),
+            name: "algerian sleepytime favourites".into(),
+            filters: AlbumFilterParams {
+                favourite_albums: true,
+                countries: vec!["Algeria".into()],
+                ..Default::default()
+            },
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: Bookmark = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, original);
     }
 }

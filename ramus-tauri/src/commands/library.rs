@@ -51,7 +51,7 @@ fn intersect_genre_chips(
 /// SQL-resolvable filters then the genre-AND chips. Pure `HashSet` — no
 /// offline-mode intersection here; callers add that layer themselves so the
 /// downloaded-id query can be skipped when not in offline mode.
-fn compute_filtered_album_ids(
+pub(crate) fn compute_filtered_album_ids(
     state: &State<'_, AppState>,
     filters: &AlbumFilterParams,
 ) -> CmdResult<HashSet<i64>> {

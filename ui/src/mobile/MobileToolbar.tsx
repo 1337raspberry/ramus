@@ -4,12 +4,12 @@ import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { getFavouriteTracks, playTracks } from "../lib/commands";
 import { pushBackHandler } from "../lib/backHandler";
-import SavedSearchEditor from "../components/SavedSearchEditor";
-import SavedSearchPicker from "../components/SavedSearchPicker";
+import BookmarkEditor from "../components/BookmarkEditor";
+import BookmarkPicker, { filtersFromBookmark } from "../components/BookmarkPicker";
 import MobileFilterPanel from "./MobileFilterPanel";
-import type { SavedSearch } from "../lib/types";
+import type { Bookmark } from "../lib/types";
 
-export type MobileView = "genres" | "artists" | "suggestion" | "search" | "savedSearch";
+export type MobileView = "genres" | "artists" | "suggestion" | "search";
 
 interface Props {
   view: MobileView;
@@ -166,7 +166,7 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
   const setSidebarMode = useLibraryStore((s) => s.setSidebarMode);
   const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
   const albumFilters = useLibraryStore((s) => s.albumFilters);
-  const savedSearches = useSettingsStore((s) => s.savedSearches);
+  const bookmarks = useSettingsStore((s) => s.bookmarks);
   const [showEditor, setShowEditor] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
@@ -196,8 +196,8 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
     },
   });
 
-  const loadSavedEntry = useCallback(
-    (entry: SavedSearch) => {
+  const loadBookmarkEntry = useCallback(
+    (entry: Bookmark) => {
       useLibraryStore.setState({
         detailAlbum: null,
         detailTracks: [],
@@ -205,12 +205,12 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
         searchQuery: null,
         browseArtistName: null,
         browseYear: null,
-        selectedGenreId: null,
+        selectedGenreId: "__all__",
         selectedArtistId: null,
       });
       usePlaybackStore.setState({ isFocusMode: false });
-      useLibraryStore.getState().loadSavedSearch(entry.query, entry.name);
-      onSelect("savedSearch");
+      useLibraryStore.getState().loadBookmark(filtersFromBookmark(entry), entry.name);
+      onSelect("genres");
     },
     [onSelect],
   );
@@ -221,7 +221,6 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
       detailTracks: [],
       suggestion: null,
       searchQuery: null,
-      activeSavedSearchName: null,
       browseArtistName: null,
       browseYear: null,
       selectedGenreId: null,
@@ -266,14 +265,8 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
     });
   }, [showShuffleConfirm]);
 
-  const handleBrainTap = () => {
-    if (savedSearches.length === 0) {
-      setShowEditor(true);
-    } else if (savedSearches.length === 1) {
-      loadSavedEntry(savedSearches[0]);
-    } else {
-      setShowPicker(true);
-    }
+  const handleBookmarksTap = () => {
+    setShowPicker(true);
   };
 
   return (
@@ -300,11 +293,7 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
         >
           <IconDice />
         </button>
-        <button
-          className={`mobile-toolbar-btn${view === "savedSearch" ? " active" : ""}`}
-          aria-label="Saved search"
-          {...makeLongPress(handleBrainTap, () => setShowEditor(true))}
-        >
+        <button className="mobile-toolbar-btn" aria-label="Bookmarks" onClick={handleBookmarksTap}>
           <IconSave />
         </button>
         <button
@@ -331,16 +320,16 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
       </nav>
 
       {showPicker && (
-        <SavedSearchPicker
+        <BookmarkPicker
           variant="sheet"
-          entries={savedSearches}
-          onSelect={loadSavedEntry}
+          entries={bookmarks}
+          onSelect={loadBookmarkEntry}
           onManage={() => setShowEditor(true)}
           onDismiss={() => setShowPicker(false)}
         />
       )}
 
-      {showEditor && <SavedSearchEditor onDismiss={() => setShowEditor(false)} />}
+      {showEditor && <BookmarkEditor onDismiss={() => setShowEditor(false)} />}
       {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
 
       {showShuffleConfirm && (

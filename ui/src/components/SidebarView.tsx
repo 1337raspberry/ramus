@@ -4,10 +4,10 @@ import { useLibraryStore, type SidebarMode } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import GenreTreeView from "./GenreTreeView";
 import { useGenreDebugStore } from "./GenreDebugPanel";
-import SavedSearchEditor from "./SavedSearchEditor";
-import SavedSearchPicker from "./SavedSearchPicker";
+import BookmarkEditor from "./BookmarkEditor";
+import BookmarkPicker, { filtersFromBookmark } from "./BookmarkPicker";
 import { countryToFlag } from "../lib/countryFlag";
-import type { SavedSearch } from "../lib/types";
+import type { Bookmark } from "../lib/types";
 
 const TABS: { mode: SidebarMode; label: string }[] = [
   { mode: "genres", label: "Genres" },
@@ -108,7 +108,7 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
   const artists = useLibraryStore((s) => s.artists);
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
   const selectArtist = useLibraryStore((s) => s.selectArtist);
-  const savedSearches = useSettingsStore((s) => s.savedSearches);
+  const bookmarks = useSettingsStore((s) => s.bookmarks);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
 
@@ -119,18 +119,12 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
     useLibraryStore.setState({ selectedGenreId: "__all__" });
   }, []);
 
-  const loadEntry = useCallback((entry: SavedSearch) => {
-    useLibraryStore.getState().loadSavedSearch(entry.query, entry.name);
+  const loadEntry = useCallback((entry: Bookmark) => {
+    useLibraryStore.getState().loadBookmark(filtersFromBookmark(entry), entry.name);
   }, []);
 
   const handleSavedClick = () => {
-    if (savedSearches.length === 0) {
-      setEditorOpen(true);
-    } else if (savedSearches.length === 1) {
-      loadEntry(savedSearches[0]);
-    } else {
-      setPickerOpen((v) => !v);
-    }
+    setPickerOpen((v) => !v);
   };
 
   return (
@@ -168,22 +162,14 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
         >
           Suggest
         </button>
-        <div className="sidebar-saved-anchor">
-          <button
-            className="sidebar-bottom-btn"
-            onClick={handleSavedClick}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setPickerOpen(false);
-              setEditorOpen(true);
-            }}
-          >
-            Saved
+        <div className="sidebar-bookmarks-anchor">
+          <button className="sidebar-bottom-btn" onClick={handleSavedClick}>
+            Bookmarks
           </button>
           {pickerOpen && (
-            <SavedSearchPicker
+            <BookmarkPicker
               variant="popover"
-              entries={savedSearches}
+              entries={bookmarks}
               onSelect={loadEntry}
               onManage={() => setEditorOpen(true)}
               onDismiss={() => setPickerOpen(false)}
@@ -192,7 +178,7 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
         </div>
       </div>
 
-      {editorOpen && <SavedSearchEditor onDismiss={() => setEditorOpen(false)} />}
+      {editorOpen && <BookmarkEditor onDismiss={() => setEditorOpen(false)} />}
     </div>
   );
 }

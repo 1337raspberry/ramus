@@ -12,7 +12,7 @@ import type {
   LibrarySection,
   LyricsResult,
   PlexServer,
-  SearchDownloadEstimate,
+  BookmarkDownloadEstimate,
   SearchResult,
   Settings,
   SpectrumState,
@@ -315,11 +315,11 @@ export const estimateStarredTracksSize = () => invoke<number>("estimate_starred_
 
 export const estimateStarredAlbumsSize = () => invoke<number>("estimate_starred_albums_size");
 
-export const downloadSearchResults = (query: string) =>
-  invoke<number>("download_search_results", { query });
+export const downloadBookmark = (filters: AlbumFilterParamsIPC) =>
+  invoke<number>("download_bookmark", { filters });
 
-export const estimateSearchSize = (query: string) =>
-  invoke<SearchDownloadEstimate>("estimate_search_size", { query });
+export const estimateBookmark = (filters: AlbumFilterParamsIPC) =>
+  invoke<BookmarkDownloadEstimate>("estimate_bookmark", { filters });
 
 // --- Connection status / offline mode ---
 

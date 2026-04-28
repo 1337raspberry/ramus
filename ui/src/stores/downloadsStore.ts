@@ -7,9 +7,9 @@ import {
   downloadAlbum,
   downloadAllStarredAlbums,
   downloadAllStarredTracks,
-  downloadSearchResults,
+  downloadBookmark,
   downloadTrack,
-  estimateSearchSize,
+  estimateBookmark as estimateBookmarkIPC,
   estimateStarredAlbumsSize,
   estimateStarredTracksSize,
   getDownloadsOverview,
@@ -17,10 +17,11 @@ import {
   removeAllDownloads,
   removeDownload,
 } from "../lib/commands";
+import type { AlbumFilterParamsIPC } from "../lib/commands";
 import type {
+  BookmarkDownloadEstimate,
   DownloadProgressPayload,
   DownloadsOverview,
-  SearchDownloadEstimate,
 } from "../lib/types";
 
 /// Live per-track byte progress. Kept for the currently-in-flight item
@@ -58,8 +59,8 @@ interface DownloadsState {
   startAlbumDownload: (albumRatingKey: string) => Promise<void>;
   startStarredTracks: () => Promise<number>;
   startStarredAlbums: () => Promise<number>;
-  startSavedSearchDownload: (query: string) => Promise<number>;
-  estimateSavedSearch: (query: string) => Promise<SearchDownloadEstimate>;
+  startBookmarkDownload: (filters: AlbumFilterParamsIPC) => Promise<number>;
+  estimateBookmark: (filters: AlbumFilterParamsIPC) => Promise<BookmarkDownloadEstimate>;
   cancel: (ratingKey: string) => Promise<void>;
   cancelAll: () => Promise<void>;
   remove: (ratingKey: string) => Promise<void>;
@@ -169,14 +170,14 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
     return n;
   },
 
-  startSavedSearchDownload: async (query) => {
-    const n = await downloadSearchResults(query);
+  startBookmarkDownload: async (filters) => {
+    const n = await downloadBookmark(filters);
     get().scheduleRefresh();
     return n;
   },
 
-  estimateSavedSearch: async (query) => {
-    return await estimateSearchSize(query);
+  estimateBookmark: async (filters) => {
+    return await estimateBookmarkIPC(filters);
   },
 
   cancel: async (ratingKey) => {

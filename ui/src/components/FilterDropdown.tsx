@@ -34,9 +34,15 @@ export default function FilterDropdown() {
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Element | null;
+      if (!target || !wrapRef.current) return;
+      if (wrapRef.current.contains(target)) return;
+      // Don't dismiss while a modal triggered from inside the dropdown
+      // (e.g. the bookmark save dialog) is open: the modal lives in this
+      // dropdown's React tree, so closing the dropdown unmounts it before
+      // the modal's click handler fires. The modal owns its own dismiss.
+      if (target.closest(".settings-backdrop")) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);

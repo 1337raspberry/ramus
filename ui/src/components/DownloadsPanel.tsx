@@ -4,12 +4,14 @@ import { useDownloadsStore } from "../stores/downloadsStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { formatBytes } from "../lib/format";
 import type {
+  Bookmark,
+  BookmarkDownloadEstimate,
   DownloadedAlbumSummary,
   DownloadedTrackSummary,
   InProgressDownload,
-  SavedSearch,
-  SearchDownloadEstimate,
 } from "../lib/types";
+import { filtersFromBookmark } from "./BookmarkPicker";
+import { describeFilters } from "../lib/filterDescribe";
 import { useArtUrl } from "../lib/useArtUrl";
 import { ART_SIZE } from "../lib/commands";
 
@@ -167,7 +169,7 @@ export default function DownloadsPanel({ onDismiss }: Props) {
             </button>
           </section>
 
-          <SavedSearchDownloadSection onError={setError} />
+          <BookmarkDownloadSection onError={setError} />
 
           <section className="downloads-section">
             <h3 className="downloads-section-title">
@@ -306,28 +308,28 @@ function AlbumRow({ album, onRemove }: { album: DownloadedAlbumSummary; onRemove
   );
 }
 
-function SavedSearchDownloadSection({ onError }: { onError: (msg: string | null) => void }) {
-  const savedSearches = useSettingsStore((s) => s.savedSearches);
-  const startSavedSearchDownload = useDownloadsStore((s) => s.startSavedSearchDownload);
-  const estimateSavedSearch = useDownloadsStore((s) => s.estimateSavedSearch);
+function BookmarkDownloadSection({ onError }: { onError: (msg: string | null) => void }) {
+  const bookmarks = useSettingsStore((s) => s.bookmarks);
+  const startBookmarkDownload = useDownloadsStore((s) => s.startBookmarkDownload);
+  const estimateBookmark = useDownloadsStore((s) => s.estimateBookmark);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [estimate, setEstimate] = useState<SearchDownloadEstimate | null>(null);
+  const [estimate, setEstimate] = useState<BookmarkDownloadEstimate | null>(null);
   const [estimating, setEstimating] = useState(false);
 
-  const selected: SavedSearch | undefined = savedSearches.find((s) => s.id === selectedId);
+  const selected: Bookmark | undefined = bookmarks.find((b) => b.id === selectedId);
 
-  // Auto-pick the first entry when the list changes so the dropdown
-  // never holds a stale selection after an entry is renamed or removed
-  // from the editor.
+  // Auto-pick the first entry when the list changes so the dropdown never
+  // holds a stale selection after an entry is renamed or removed from the
+  // editor.
   useEffect(() => {
-    if (savedSearches.length === 0) {
+    if (bookmarks.length === 0) {
       setSelectedId(null);
       return;
     }
-    if (!selectedId || !savedSearches.some((s) => s.id === selectedId)) {
-      setSelectedId(savedSearches[0].id);
+    if (!selectedId || !bookmarks.some((b) => b.id === selectedId)) {
+      setSelectedId(bookmarks[0].id);
     }
-  }, [savedSearches, selectedId]);
+  }, [bookmarks, selectedId]);
 
   useEffect(() => {
     if (!selected) {
@@ -337,7 +339,7 @@ function SavedSearchDownloadSection({ onError }: { onError: (msg: string | null)
     let cancelled = false;
     setEstimating(true);
     setEstimate(null);
-    estimateSavedSearch(selected.query)
+    estimateBookmark(selected.filters)
       .then((e) => {
         if (!cancelled) setEstimate(e);
       })
@@ -350,24 +352,27 @@ function SavedSearchDownloadSection({ onError }: { onError: (msg: string | null)
     return () => {
       cancelled = true;
     };
-  }, [selected, estimateSavedSearch]);
+    // Key on the bookmark id — the underlying filter shape is stable per
+    // bookmark, so we don't need a deep-compare here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, estimateBookmark]);
 
   const handleDownload = useCallback(async () => {
     if (!selected) return;
     try {
-      const n = await startSavedSearchDownload(selected.query);
-      if (n === 0) onError("No downloadable tracks for that saved search.");
+      const n = await startBookmarkDownload(selected.filters);
+      if (n === 0) onError("No downloadable tracks for that bookmark.");
     } catch (e) {
       onError(String(e));
     }
-  }, [selected, startSavedSearchDownload, onError]);
+  }, [selected, startBookmarkDownload, onError]);
 
-  if (savedSearches.length === 0) {
+  if (bookmarks.length === 0) {
     return (
       <section className="downloads-section">
-        <h3 className="downloads-section-title">Saved searches</h3>
+        <h3 className="downloads-section-title">Bookmarks</h3>
         <div className="downloads-empty">
-          No saved searches yet — create one from the sidebar's Saved button.
+          No bookmarks yet — set a filter and tap the … menu to save one.
         </div>
       </section>
     );
@@ -375,16 +380,16 @@ function SavedSearchDownloadSection({ onError }: { onError: (msg: string | null)
 
   return (
     <section className="downloads-section">
-      <h3 className="downloads-section-title">Saved searches</h3>
-      <div className="saved-search-download-row">
+      <h3 className="downloads-section-title">Bookmarks</h3>
+      <div className="bookmark-download-row">
         <select
-          className="sort-select saved-search-download-select"
+          className="sort-select bookmark-download-select"
           value={selectedId ?? ""}
           onChange={(e) => setSelectedId(e.target.value)}
         >
-          {savedSearches.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
+          {bookmarks.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
             </option>
           ))}
         </select>
@@ -400,7 +405,11 @@ function SavedSearchDownloadSection({ onError }: { onError: (msg: string | null)
           {estimating && <span className="downloads-btn-detail"> (estimating…)</span>}
         </button>
       </div>
-      {selected && <div className="saved-search-download-query">{selected.query}</div>}
+      {selected && (
+        <div className="bookmark-download-summary">
+          {describeFilters(filtersFromBookmark(selected))}
+        </div>
+      )}
     </section>
   );
 }

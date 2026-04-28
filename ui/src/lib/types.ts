@@ -95,13 +95,27 @@ export interface SearchResult {
   score: number;
 }
 
-export interface SavedSearch {
-  id: string;
-  name: string;
-  query: string;
+/// Mirrors the Rust `AlbumFilterParams` struct (camelCase). Inline-defined
+/// here as well as in `commands.ts` to break the import cycle between
+/// `types.ts` (where Bookmark lives) and `commands.ts`.
+export interface AlbumFilterParamsTS {
+  unplayed: boolean;
+  favouriteAlbums: boolean;
+  favouriteTracks: boolean;
+  yearMin: number | null;
+  yearMax: number | null;
+  countries: string[];
+  genres: string[];
+  collection: string | null;
 }
 
-export const MAX_SAVED_SEARCHES = 20;
+export interface Bookmark {
+  id: string;
+  name: string;
+  filters: AlbumFilterParamsTS;
+}
+
+export const MAX_BOOKMARKS = 50;
 
 export interface Settings {
   playbackMode: "directPlay" | "transcodeLosslessRemote" | "transcodeLossless";
@@ -118,7 +132,7 @@ export interface Settings {
   genreFuzzyThreshold: number;
   eqEnabled: boolean;
   eqBands: number[];
-  savedSearches: SavedSearch[];
+  bookmarks: Bookmark[];
   offlineMode: boolean;
   popularityDisplay: "off" | "hot" | "chart";
   /** When true, Plex `Style` tags are merged into the genre table at sync. */
@@ -286,7 +300,7 @@ export interface DownloadsOverview {
   downloadedRatingKeys: string[];
 }
 
-export interface SearchDownloadEstimate {
+export interface BookmarkDownloadEstimate {
   totalBytes: number;
   trackCount: number;
   albumCount: number;

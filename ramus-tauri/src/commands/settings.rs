@@ -3,7 +3,7 @@ use tauri::{AppHandle, State};
 
 use ramus_core::genre::mapper::GenreMapper;
 use ramus_core::genre::parser::CustomGenreParser;
-use ramus_core::models::{SavedSearch, Settings};
+use ramus_core::models::{Bookmark, Settings};
 use ramus_core::playback::spectrum::spec_file_path;
 
 use crate::events::{emit_connection_status, ConnectionStatusPayload};
@@ -41,7 +41,7 @@ pub async fn update_settings(
     state: State<'_, AppState>,
     settings: Settings,
 ) -> CmdResult<()> {
-    SavedSearch::validate_batch(&settings.saved_searches)?;
+    Bookmark::validate_batch(&settings.bookmarks)?;
 
     let prev_genre_source = state.settings.read().genre_source;
     let prev_offline_mode = state.settings.read().offline_mode;

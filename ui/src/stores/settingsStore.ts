@@ -1,15 +1,15 @@
 import { create } from "zustand";
-import type { SavedSearch, Settings } from "../lib/types";
-import { MAX_SAVED_SEARCHES } from "../lib/types";
+import type { Bookmark, Settings } from "../lib/types";
+import { MAX_BOOKMARKS } from "../lib/types";
 import { getSettings, updateSettings } from "../lib/commands";
 
 interface SettingsState extends Settings {
   loadSettings: () => Promise<void>;
-  /// Replace the entire saved-search list. Captures a full-settings
-  /// snapshot before the optimistic write so a concurrent `loadSettings`
-  /// mid-flight cannot pollute the payload sent to `update_settings`.
-  /// Rolls back `savedSearches` on failure (e.g. server-side validation).
-  setSavedSearches: (next: SavedSearch[]) => Promise<void>;
+  /// Replace the entire bookmark list. Captures a full-settings snapshot
+  /// before the optimistic write so a concurrent `loadSettings` mid-flight
+  /// cannot pollute the payload sent to `update_settings`. Rolls back
+  /// `bookmarks` on failure (e.g. server-side validation).
+  setBookmarks: (next: Bookmark[]) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -27,7 +27,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   genreFuzzyThreshold: 0.8,
   eqEnabled: false,
   eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  savedSearches: [],
+  bookmarks: [],
   offlineMode: false,
   popularityDisplay: "hot",
   includePlexStyles: true,
@@ -41,17 +41,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
-  setSavedSearches: async (next: SavedSearch[]) => {
-    if (next.length > MAX_SAVED_SEARCHES) {
-      throw new Error(`Maximum ${MAX_SAVED_SEARCHES} saved searches.`);
+  setBookmarks: async (next: Bookmark[]) => {
+    if (next.length > MAX_BOOKMARKS) {
+      throw new Error(`Maximum ${MAX_BOOKMARKS} bookmarks.`);
     }
-    const prev = get().savedSearches;
-    const snapshot: Settings = { ...get(), savedSearches: next };
-    set({ savedSearches: next });
+    const prev = get().bookmarks;
+    const snapshot: Settings = { ...get(), bookmarks: next };
+    set({ bookmarks: next });
     try {
       await updateSettings(snapshot);
     } catch (e) {
-      set({ savedSearches: prev });
+      set({ bookmarks: prev });
       throw e;
     }
   },

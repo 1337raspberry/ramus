@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { IconMoreDots } from "./Icons";
-import { useLibraryStore } from "../stores/libraryStore";
+import { useLibraryStore, hasActiveFilters } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useConnectionStore } from "../stores/connectionStore";
 import { useDownloadsStore } from "../stores/downloadsStore";
 import { useToastStore } from "./Toast";
 import { appendToQueue, getTracksForAlbum, playTracks } from "../lib/commands";
 import type { Album, Track } from "../lib/types";
+import BookmarkSaveDialog from "./BookmarkSaveDialog";
 
 interface Props {
   /** Optional close-handler so the parent panel can dismiss after an action
@@ -98,8 +99,11 @@ async function queueAlbumsAsTracks(
 
 export default function FilterPanelMenu({ onAfterAction }: Props) {
   const albums = useLibraryStore((s) => s.albums);
-  const favouriteTracksFilterOn = useLibraryStore((s) => s.albumFilters.favouriteTracks);
+  const albumFilters = useLibraryStore((s) => s.albumFilters);
+  const favouriteTracksFilterOn = albumFilters.favouriteTracks;
+  const canBookmark = hasActiveFilters(albumFilters);
   const [open, setOpen] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -135,38 +139,55 @@ export default function FilterPanelMenu({ onAfterAction }: Props) {
   };
 
   const handleBookmark = () => {
-    close();
-    useToastStore.getState().show("Bookmarks coming soon");
+    if (!canBookmark) return;
+    setOpen(false);
+    setShowSaveDialog(true);
   };
 
   return (
-    <div className="filter-panel-menu" ref={wrapRef}>
-      <button
-        type="button"
-        className="filter-panel-menu-btn"
-        aria-label="More actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
-      >
-        <IconMoreDots size={22} />
-      </button>
-      {open && (
-        <div className="filter-panel-menu-dropdown" role="menu">
-          <button type="button" role="menuitem" onClick={handleAddAlbums}>
-            Add all Albums to playlist
-          </button>
-          <button type="button" role="menuitem" onClick={handleAddTracks}>
-            Add all tracks to playlist
-          </button>
-          <button type="button" role="menuitem" onClick={handleBookmark}>
-            Bookmark
-          </button>
-        </div>
+    <>
+      <div className="filter-panel-menu" ref={wrapRef}>
+        <button
+          type="button"
+          className="filter-panel-menu-btn"
+          aria-label="More actions"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((v) => !v);
+          }}
+        >
+          <IconMoreDots size={22} />
+        </button>
+        {open && (
+          <div className="filter-panel-menu-dropdown" role="menu">
+            <button type="button" role="menuitem" onClick={handleAddAlbums}>
+              Add all Albums to playlist
+            </button>
+            <button type="button" role="menuitem" onClick={handleAddTracks}>
+              Add all tracks to playlist
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={handleBookmark}
+              disabled={!canBookmark}
+              title={canBookmark ? undefined : "Set a filter first to bookmark it"}
+            >
+              Bookmark
+            </button>
+          </div>
+        )}
+      </div>
+      {showSaveDialog && (
+        <BookmarkSaveDialog
+          onDismiss={() => {
+            setShowSaveDialog(false);
+            onAfterAction?.();
+          }}
+        />
       )}
-    </div>
+    </>
   );
 }

@@ -232,7 +232,17 @@ export function countActiveFilters(filters: AlbumFilters): number {
   ].filter(Boolean).length;
 }
 
-function filtersToIPC(filters: AlbumFilters): AlbumFilterParamsIPC {
+function sortAndFilter(
+  albums: Album[],
+  order: AlbumSortOrder,
+  filters: AlbumFilters,
+  genreExpansions: Record<string, string[]>,
+): { sorted: Album[]; filtered: Album[] } {
+  const sorted = sortAlbums(albums, order);
+  return { sorted, filtered: filterAlbums(sorted, filters, genreExpansions) };
+}
+
+export function filtersToIPC(filters: AlbumFilters): AlbumFilterParamsIPC {
   const yr = parseYearRange(filters.year);
   return {
     unplayed: filters.unplayed,
@@ -244,16 +254,6 @@ function filtersToIPC(filters: AlbumFilters): AlbumFilterParamsIPC {
     genres: filters.genres,
     collection: filters.collection || null,
   };
-}
-
-function sortAndFilter(
-  albums: Album[],
-  order: AlbumSortOrder,
-  filters: AlbumFilters,
-  genreExpansions: Record<string, string[]>,
-): { sorted: Album[]; filtered: Album[] } {
-  const sorted = sortAlbums(albums, order);
-  return { sorted, filtered: filterAlbums(sorted, filters, genreExpansions) };
 }
 
 interface LibraryState {
@@ -328,13 +328,21 @@ interface LibraryState {
 
   // --- Search Results ---
   searchQuery: string | null;
-  /// Display name of the saved search currently driving the album grid,
-  /// or `null` if the results came from live search / genre / etc. Used
-  /// by the mobile saved-search header and by offline badges.
-  activeSavedSearchName: string | null;
+  /// Display name of the bookmark currently driving the album grid, or
+  /// `null` if the user has navigated/edited away from it. Surfaced by
+  /// `BreadcrumbBar` as the grid title when set. Cleared by every nav
+  /// action and by `setAlbumFilters` so any user-initiated change breaks
+  /// the bookmark association.
+  activeBookmarkName: string | null;
   loadSearchResults: (query: string) => Promise<void>;
-  loadSavedSearch: (query: string, name?: string) => Promise<void>;
   clearSearchResults: () => void;
+  /// Apply a bookmark's saved filter snapshot, clearing any browse/search/
+  /// detail context first and reloading the full album list under the new
+  /// filter. The `name` is surfaced as the grid title until the user
+  /// edits filters or navigates. Bookmarks store the filter config (not a
+  /// result snapshot), so reloading reflects newly added matching albums
+  /// automatically.
+  loadBookmark: (filters: AlbumFilters, name: string) => Promise<void>;
 
   // --- Actions ---
   toggleAlbumFav: (album: Album) => Promise<void>;
@@ -440,7 +448,7 @@ function genreSelectionState(node: GenreNode, currentExpanded: Set<string>): Par
     browseArtistName: null,
     browseYear: null,
     searchQuery: null,
-    activeSavedSearchName: null,
+    activeBookmarkName: null,
   };
 }
 
@@ -486,7 +494,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       browseArtistName: null,
       browseYear: null,
       searchQuery: null,
-      activeSavedSearchName: null,
+      activeBookmarkName: null,
     });
     if (mode === "genres") {
       get().reloadGenreTree();
@@ -560,10 +568,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       detailAlbum: null,
       detailTracks: [],
       searchQuery: null,
-      activeSavedSearchName: null,
       suggestion: null,
       browseArtistName: null,
       browseYear: null,
+      activeBookmarkName: null,
     });
     // Skip loadAllAlbums() on mode switch: genre-specific albums load
     // below and we must not race. Await the tree so
@@ -603,7 +611,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       browseArtistName: null,
       browseYear: null,
       searchQuery: null,
-      activeSavedSearchName: null,
+      activeBookmarkName: null,
     });
     get().loadAlbumsForArtist(sourceId);
   },
@@ -633,6 +641,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     set((state) => ({
       albumFilters: filters,
       albums: filterAlbums(state.unfilteredAlbums, filters, state.genreExpansions),
+      activeBookmarkName: null,
     }));
     if (get().sidebarMode === "genres") {
       get().reloadGenreTree();
@@ -683,11 +692,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       detailAlbum: null,
       detailTracks: [],
       searchQuery: null,
-      activeSavedSearchName: null,
       suggestion: null,
       selectedArtistId: null,
       browseArtistName: name,
       browseYear: null,
+      activeBookmarkName: null,
     });
     try {
       const albums = await getAlbumsForArtistName(name);
@@ -708,10 +717,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       detailAlbum: null,
       detailTracks: [],
       searchQuery: null,
-      activeSavedSearchName: null,
       suggestion: null,
       browseYear: year,
       browseArtistName: null,
+      activeBookmarkName: null,
     });
     try {
       const albums = await getAlbumsForYear(year);
@@ -742,7 +751,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   // --- Search Results ---
   searchQuery: null,
-  activeSavedSearchName: null,
+  activeBookmarkName: null,
 
   loadSearchResults: async (query) => {
     try {
@@ -758,11 +767,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           unfilteredAlbums: sorted,
           albums: filtered,
           searchQuery: query,
-          activeSavedSearchName: null,
           browseArtistName: null,
           browseYear: null,
           detailAlbum: null,
           suggestion: null,
+          activeBookmarkName: null,
         };
       });
     } catch {
@@ -770,46 +779,32 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         unfilteredAlbums: [],
         albums: [],
         searchQuery: query,
-        activeSavedSearchName: null,
         browseArtistName: null,
         browseYear: null,
         detailAlbum: null,
         suggestion: null,
+        activeBookmarkName: null,
       });
     }
   },
 
-  loadSavedSearch: async (query, name) => {
-    try {
-      const albums = await searchAlbumsForGrid(query);
-      set((state) => {
-        const { sorted, filtered } = sortAndFilter(
-          albums,
-          state.albumSortOrder,
-          state.albumFilters,
-          state.genreExpansions,
-        );
-        return {
-          unfilteredAlbums: sorted,
-          albums: filtered,
-          activeSavedSearchName: name ?? query,
-          browseArtistName: null,
-          browseYear: null,
-          detailAlbum: null,
-          suggestion: null,
-        };
-      });
-    } catch {
-      set({
-        unfilteredAlbums: [],
-        albums: [],
-        activeSavedSearchName: name ?? query,
-        browseArtistName: null,
-        browseYear: null,
-        detailAlbum: null,
-        suggestion: null,
-      });
-    }
+  loadBookmark: async (filters, name) => {
+    // Drop any browse/search/detail context so the grid shows the bookmark's
+    // results unambiguously.
+    set({
+      searchQuery: null,
+      browseArtistName: null,
+      browseYear: null,
+      detailAlbum: null,
+      suggestion: null,
+    });
+    // Apply the bookmark's filter (persists, updates state, triggers genre
+    // expansion fetches for any new chips). `setAlbumFilters` clears
+    // `activeBookmarkName`, so we set it again immediately after — this is
+    // the only path that should restore it.
+    get().setAlbumFilters(filters);
+    set({ activeBookmarkName: name });
+    await get().loadAllAlbums();
   },
 
   clearSearchResults: () => {
@@ -817,9 +812,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     const { sidebarMode, selectedGenreId, selectedArtistId, browseArtistName, browseYear } = get();
     set({
       searchQuery: null,
-      activeSavedSearchName: null,
       browseArtistName: null,
       browseYear: null,
+      activeBookmarkName: null,
     });
 
     if (browseArtistName || browseYear) {

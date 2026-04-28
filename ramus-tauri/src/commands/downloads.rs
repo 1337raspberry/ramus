@@ -11,11 +11,10 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 use ramus_core::cache::image_cache::ImageCache;
-use ramus_core::models::{Album, Track};
+use ramus_core::models::{Album, AlbumFilterParams, Track};
 use ramus_core::playback::transcode;
 use ramus_core::playback::waveform;
 use ramus_core::plex::client::PlexClient;
-use ramus_core::search::parser::QueryParser;
 use ramus_core::util::plex_art_url;
 
 use crate::events::{emit_downloads_changed, ConnectionStatusPayload};
@@ -257,19 +256,29 @@ pub async fn download_all_starred_albums(state: State<'_, AppState>) -> CmdResul
     Ok(n)
 }
 
-/// Enqueue every direct-play track for albums matching a saved-search query.
-/// Mirrors the starred-albums pipeline: resolve query → album IDs → tracks,
+/// Enqueue every direct-play track for albums matching a bookmark's filter.
+/// Mirrors the starred-albums pipeline: resolve filters → album IDs → tracks,
 /// then one job per track. Returns the number of jobs enqueued.
+///
+/// When the bookmark's filter has `favourite_tracks` set, only the actual
+/// starred tracks on each matching album are enqueued — the rest are
+/// skipped. (The album was matched because it has at least one starred
+/// track, but the user asked specifically for those tracks, not the whole
+/// album they live on.)
 #[tauri::command]
-pub async fn download_search_results(
+pub async fn download_bookmark(
     state: State<'_, AppState>,
-    query: String,
+    filters: AlbumFilterParams,
 ) -> CmdResult<usize> {
-    let albums = resolve_search_albums(&state, &query)?;
+    let albums = resolve_filter_albums(&state, &filters)?;
+    let only_favourites = filters.favourite_tracks;
     let mut jobs: Vec<UserDownloadJob> = Vec::new();
     for album in &albums {
         let tracks = lookup_album_tracks(&state, &album.rating_key)?;
         for t in &tracks {
+            if only_favourites && !t.is_favourite {
+                continue;
+            }
             if let Ok(job) = build_job(&state, t) {
                 jobs.push(job);
             }
@@ -464,23 +473,33 @@ pub async fn estimate_starred_albums_size(state: State<'_, AppState>) -> CmdResu
     Ok(total)
 }
 
-/// Estimated bytes + track count for a saved-search query without hitting
-/// the network. Same estimation rules as the starred helpers: real
+/// Estimated bytes + track count for a bookmark's filter without hitting the
+/// network. Same estimation rules as the starred helpers: real
 /// `fileSizeBytes` where known, otherwise bitrate × duration.
+///
+/// Mirrors `download_bookmark`'s `favourite_tracks` narrowing: when set,
+/// only the starred tracks contribute to the count and byte total. Album
+/// count still reflects the matching albums (so the user sees how many
+/// albums their favourite tracks span, even though most tracks on those
+/// albums won't be downloaded).
 #[tauri::command]
-pub async fn estimate_search_size(
+pub async fn estimate_bookmark(
     state: State<'_, AppState>,
-    query: String,
-) -> CmdResult<SearchDownloadEstimate> {
-    let albums = resolve_search_albums(&state, &query)?;
+    filters: AlbumFilterParams,
+) -> CmdResult<BookmarkDownloadEstimate> {
+    let albums = resolve_filter_albums(&state, &filters)?;
+    let only_favourites = filters.favourite_tracks;
     let mut total_bytes: i64 = 0;
     let mut track_count: usize = 0;
     for album in &albums {
-        let tracks = lookup_album_tracks(&state, &album.rating_key)?;
+        let mut tracks = lookup_album_tracks(&state, &album.rating_key)?;
+        if only_favourites {
+            tracks.retain(|t| t.is_favourite);
+        }
         track_count += tracks.len();
         total_bytes += estimate_total_bytes(&tracks);
     }
-    Ok(SearchDownloadEstimate {
+    Ok(BookmarkDownloadEstimate {
         total_bytes,
         track_count,
         album_count: albums.len(),
@@ -489,7 +508,7 @@ pub async fn estimate_search_size(
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SearchDownloadEstimate {
+pub struct BookmarkDownloadEstimate {
     pub total_bytes: i64,
     pub track_count: usize,
     pub album_count: usize,
@@ -573,19 +592,14 @@ fn build_job(state: &State<'_, AppState>, track: &Track) -> Result<UserDownloadJ
     })
 }
 
-/// Run a saved-search-style query through the search engine and return the
-/// matching albums. Mirrors `commands::search::search_albums_for_grid` but
-/// used from downloads where we need both album metadata and the full
-/// track list per album.
-fn resolve_search_albums(state: &State<'_, AppState>, query: &str) -> Result<Vec<Album>, String> {
-    let parsed = QueryParser::parse(query);
-    let ids = {
-        let engine = state.search_engine.read();
-        let engine = engine.as_ref().ok_or("Search engine not initialized")?;
-        engine
-            .search_album_ids(&parsed)
-            .map_err(|e| e.to_string())?
-    };
+/// Resolve a bookmark's filter to the matching album records. Reuses the
+/// same `compute_filtered_album_ids` pipeline that the album grid uses, so
+/// downloaded set is identical to what the grid shows.
+fn resolve_filter_albums(
+    state: &State<'_, AppState>,
+    filters: &AlbumFilterParams,
+) -> Result<Vec<Album>, String> {
+    let ids = super::library::compute_filtered_album_ids(state, filters)?;
     with_cache(state, |cache| cache.albums_by_internal_ids(&ids))
 }
 
