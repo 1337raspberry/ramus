@@ -5,6 +5,7 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -249,6 +250,16 @@ impl Drop for MpvController {
     }
 }
 
+/// Invoke a caller-supplied callback, catching any panic so a single bad
+/// callback doesn't take down the event-loop thread. Without this, a
+/// panic anywhere in user code (poisoned lock, closed channel, etc.)
+/// would silently kill event delivery for the rest of the session.
+fn safe_invoke(label: &str, f: impl FnOnce()) {
+    if catch_unwind(AssertUnwindSafe(f)).is_err() {
+        log::error!("mpv {label} callback panicked; event loop continuing");
+    }
+}
+
 fn event_loop(
     lib: Arc<MpvLib>,
     handle: Arc<MpvHandle>,
@@ -287,7 +298,7 @@ fn event_loop(
                         if prop.format == MPV_FORMAT_DOUBLE {
                             let val = unsafe { *(prop.data as *const f64) };
                             if let Some(ref cb) = callbacks.on_position_change {
-                                cb(val);
+                                safe_invoke("on_position_change", || cb(val));
                             }
                         }
                     }
@@ -295,7 +306,7 @@ fn event_loop(
                         if prop.format == MPV_FORMAT_DOUBLE {
                             let val = unsafe { *(prop.data as *const f64) };
                             if let Some(ref cb) = callbacks.on_duration_change {
-                                cb(val);
+                                safe_invoke("on_duration_change", || cb(val));
                             }
                         }
                     }
@@ -303,7 +314,7 @@ fn event_loop(
                         if prop.format == MPV_FORMAT_INT64 {
                             let val = unsafe { *(prop.data as *const i64) };
                             if let Some(ref cb) = callbacks.on_playlist_pos_change {
-                                cb(val);
+                                safe_invoke("on_playlist_pos_change", || cb(val));
                             }
                         }
                     }
@@ -311,7 +322,7 @@ fn event_loop(
                         if prop.format == MPV_FORMAT_FLAG {
                             let val = unsafe { *(prop.data as *const c_int) };
                             if let Some(ref cb) = callbacks.on_pause_change {
-                                cb(val != 0);
+                                safe_invoke("on_pause_change", || cb(val != 0));
                             }
                         }
                     }
@@ -320,7 +331,7 @@ fn event_loop(
                             let val = unsafe { *(prop.data as *const c_int) };
                             if val != 0 {
                                 if let Some(ref cb) = callbacks.on_idle_active {
-                                    cb();
+                                    safe_invoke("on_idle_active", cb);
                                 }
                             }
                         }
@@ -331,7 +342,7 @@ fn event_loop(
 
             MPV_EVENT_FILE_LOADED => {
                 if let Some(ref cb) = callbacks.on_file_loaded {
-                    cb();
+                    safe_invoke("on_file_loaded", cb);
                 }
             }
 
@@ -354,7 +365,7 @@ fn event_loop(
                         _ => FileEndReason::Unknown,
                     };
                     if let Some(ref cb) = callbacks.on_file_ended {
-                        cb(reason);
+                        safe_invoke("on_file_ended", || cb(reason));
                     }
                 }
             }
