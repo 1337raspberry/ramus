@@ -160,7 +160,14 @@ impl TokenStore {
         let _guard = self.lock.lock();
         let mut tokens = match self.load_all() {
             Ok(t) => t,
-            Err(_) => return true,
+            Err(_) => {
+                // Blob is unreadable (corrupt, or encryption key changed).
+                // Selective edit is impossible; remove the file so the next
+                // load_all sees an empty store rather than a permanent
+                // ciphertext that no caller can touch.
+                let path = self.token_file();
+                return !path.exists() || fs::remove_file(&path).is_ok();
+            }
         };
         tokens.remove(key.as_str());
         self.save_all(&tokens).is_ok()
