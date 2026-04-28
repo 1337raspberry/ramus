@@ -58,6 +58,13 @@ const MAX_BACKOFF: Duration = Duration::from_secs(5);
 /// backoff-reset purposes.
 const MIN_PROGRESS_BYTES: u64 = 4096;
 
+/// Hard cap on a single download. Generous enough to cover any plausible
+/// lossless album track (a 24-bit/192k FLAC tops out around ~150 MB), but
+/// finite — protects against a server that lies about (or omits)
+/// Content-Length and streams unbounded bytes, which would otherwise fill
+/// the device's disk before the time budget elapses.
+const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
+
 /// Delay before starting prefetch after a natural advance; enough for mpv
 /// to issue its initial request.
 const NATURAL_GAP: Duration = Duration::from_secs(1);
@@ -1157,6 +1164,11 @@ async fn download_http_to_file(
                         .await
                         .map_err(|e| format!("write error: {e}"))?;
                     written += chunk.len() as u64;
+                    if written > MAX_DOWNLOAD_BYTES {
+                        return Err(format!(
+                            "download exceeded {MAX_DOWNLOAD_BYTES}-byte cap at {written} bytes"
+                        ));
+                    }
                     on_progress(written, expected_size);
                 }
                 Ok(None) => break,
