@@ -245,20 +245,22 @@ pub async fn finalize_onboarding(
     if !auth::store_server_config(&config, &token_store) {
         return Err("Failed to persist server credentials".into());
     }
+
+    // Open both DB handles before touching state.client so a failure during
+    // cache init doesn't leave the client carrying a token while
+    // state.cache / sync_engine / search_engine are still empty —
+    // is_authenticated would otherwise return true on a half-init state.
+    let cache_dir = ramus_core::plex::token_store::config_dir().map_err(|e| e.to_string())?;
+    let db_path = cache_dir.join("library_cache.db");
+    let db = CacheDatabase::open(&db_path).map_err(|e| e.to_string())?;
+    let db_arc = Arc::new(db);
+    let db2 = CacheDatabase::open(&db_path).map_err(|e| e.to_string())?;
+
     state
         .client
         .connect(url.clone(), server_token.clone())
         .await
         .map_err(|e| e.to_string())?;
-
-    let cache_dir = ramus_core::plex::token_store::config_dir().map_err(|e| e.to_string())?;
-    let db_path = cache_dir.join("library_cache.db");
-    let db = CacheDatabase::open(&db_path).map_err(|e| e.to_string())?;
-    let db_arc = Arc::new(db);
-
-    // Open the second DB handle before mutating shared state so a failure
-    // here doesn't leave sync_engine/search_engine half-initialised.
-    let db2 = CacheDatabase::open(&db_path).map_err(|e| e.to_string())?;
 
     let sync_engine = SyncEngine::new(db_arc.clone(), state.client.clone());
     *state.sync_engine.lock() = Some(sync_engine);
