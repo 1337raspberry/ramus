@@ -71,7 +71,7 @@ function IconDice() {
   );
 }
 
-function IconSave() {
+function IconBookmark() {
   return (
     <svg
       width="22"
@@ -83,9 +83,7 @@ function IconSave() {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-      <polyline points="17 21 17 13 7 13 7 21" />
-      <polyline points="7 3 7 8 15 8 15 3" />
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
     </svg>
   );
 }
@@ -295,7 +293,7 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
           <IconDice />
         </button>
         <button className="mobile-toolbar-btn" aria-label="Bookmarks" onClick={handleBookmarksTap}>
-          <IconSave />
+          <IconBookmark />
         </button>
         <button
           className={`mobile-toolbar-btn${filterActive ? " active" : ""}`}
