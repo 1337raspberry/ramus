@@ -338,22 +338,32 @@ pub async fn logout(state: State<'_, AppState>) -> CmdResult<()> {
     state.client.set_token(None);
     state.client.set_server_url(None);
 
-    match TokenStore::new() {
+    let store_err = match TokenStore::new() {
         Ok(token_store) => {
             token_store.delete(TokenKey::AuthToken);
             token_store.delete(TokenKey::ServerToken);
             auth::delete_server_config(&token_store);
+            None
         }
         Err(e) => {
             log::error!("logout: token store unavailable, persisted tokens not deleted: {e}");
+            Some(e.to_string())
         }
-    }
+    };
 
     *state.cache.lock() = None;
     *state.sync_engine.lock() = None;
     *state.search_engine.write() = None;
     *state.genre_mapper.write() = None;
     state.discovered_servers.lock().clear();
+
+    // If the token store wasn't reachable, persisted credentials survive on
+    // disk (and in the iOS Keychain) — surface that to the caller rather
+    // than reporting a clean logout. On next launch the startup probe chain
+    // would otherwise auto-restore the session.
+    if let Some(e) = store_err {
+        return Err(format!("logout incomplete — persisted credentials not removed: {e}"));
+    }
 
     Ok(())
 }
