@@ -16,6 +16,24 @@ pub use super::models::{
 };
 use super::models::*;
 
+/// Join a relative or absolute path onto a Plex base URI while preserving
+/// any path prefix on the base. `Url::join` uses RFC 3986 reference
+/// resolution: a base without a trailing slash treats its last path segment
+/// as a file (so `https://host/plex` + `identity` → `https://host/identity`,
+/// dropping `/plex`), and an absolute path replaces the base path entirely.
+/// Reverse-proxy Plex deployments (e.g. behind `/plex`) need the prefix
+/// preserved on every request, so we normalise the base to end in `/` and
+/// strip any leading `/` from the path.
+fn join_path(base: &Url, path: &str) -> Result<Url, url::ParseError> {
+    let path = path.trim_start_matches('/');
+    let s = base.as_str();
+    if s.ends_with('/') {
+        base.join(path)
+    } else {
+        Url::parse(&format!("{s}/"))?.join(path)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum PlexClientError {
     #[error("not connected to a Plex server")]
@@ -157,7 +175,7 @@ impl PlexClient {
     async fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Vec<u8>, PlexClientError> {
         self.with_retry(|| async {
             let (base, token) = self.read_state()?;
-            let url = base.join(path).map_err(|_| PlexClientError::InvalidResponse)?;
+            let url = join_path(&base, path).map_err(|_| PlexClientError::InvalidResponse)?;
             let builder = self.http.get(url).query(query);
             let builder = self.apply_standard_headers(builder, Some(&token));
 
@@ -189,7 +207,7 @@ impl PlexClient {
     async fn put(&self, path: &str, query: &[(&str, &str)]) -> Result<(), PlexClientError> {
         self.with_retry(|| async {
             let (base, token) = self.read_state()?;
-            let url = base.join(path).map_err(|_| PlexClientError::InvalidResponse)?;
+            let url = join_path(&base, path).map_err(|_| PlexClientError::InvalidResponse)?;
 
             let pairs: Vec<(String, String)> =
                 query.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
@@ -321,7 +339,7 @@ impl PlexClient {
                 if scheme != "http" && scheme != "https" {
                     return false;
                 }
-                match u.join("identity") {
+                match join_path(&u, "identity") {
                     Ok(u) => u,
                     Err(_) => return false,
                 }
@@ -393,7 +411,7 @@ impl PlexClient {
 
             join_set.spawn(async move {
                 let url = match Url::parse(&uri) {
-                    Ok(u) => match u.join("identity") {
+                    Ok(u) => match join_path(&u, "identity") {
                         Ok(u) => u,
                         Err(_) => {
                             log::debug!("  [{}] {} — bad URL join", i, uri);
@@ -479,8 +497,7 @@ impl PlexClient {
     /// `/identity` returns a successful response. A failed connect leaves
     /// previously-stored credentials untouched.
     pub async fn connect(&self, server_url: Url, token: String) -> Result<(), PlexClientError> {
-        let url = server_url
-            .join("identity")
+        let url = join_path(&server_url, "identity")
             .map_err(|_| PlexClientError::ConnectionFailed)?;
         let builder = self.http.get(url);
         let builder = self.apply_standard_headers(builder, Some(&token));
@@ -632,9 +649,7 @@ impl PlexClient {
     /// Download raw lyrics data from a Plex stream path.
     pub async fn download_lyrics_data(&self, path: &str) -> Result<Vec<u8>, PlexClientError> {
         let (base, token) = self.read_state()?;
-        let url = base
-            .join(path)
-            .map_err(|_| PlexClientError::InvalidResponse)?;
+        let url = join_path(&base, path).map_err(|_| PlexClientError::InvalidResponse)?;
 
         let builder = self
             .http
@@ -697,7 +712,7 @@ impl PlexClient {
             Err(_) => return,
         };
 
-        let url = match base.join("/:/timeline") {
+        let url = match join_path(&base, "/:/timeline") {
             Ok(u) => u,
             Err(_) => return,
         };
@@ -736,7 +751,7 @@ impl PlexClient {
             Err(_) => return,
         };
 
-        let url = match base.join("/:/scrobble") {
+        let url = match join_path(&base, "/:/scrobble") {
             Ok(u) => u,
             Err(_) => return,
         };
@@ -1169,5 +1184,25 @@ mod tests {
         assert_eq!(levels.len(), 3);
         assert!((levels[0] - 0.5).abs() < f32::EPSILON);
         assert!((levels[1] - 0.8).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_join_path_preserves_reverse_proxy_prefix() {
+        let cases = [
+            // (base, path, expected)
+            ("https://host:32400", "identity", "https://host:32400/identity"),
+            ("https://host:32400/", "identity", "https://host:32400/identity"),
+            ("https://host/plex", "identity", "https://host/plex/identity"),
+            ("https://host/plex/", "identity", "https://host/plex/identity"),
+            ("https://host:32400", "/:/timeline", "https://host:32400/:/timeline"),
+            ("https://host/plex", "/:/timeline", "https://host/plex/:/timeline"),
+            ("https://host/plex/", "/:/scrobble", "https://host/plex/:/scrobble"),
+            ("https://host/plex", "library/sections", "https://host/plex/library/sections"),
+        ];
+        for (base, path, expected) in cases {
+            let base_url = Url::parse(base).unwrap();
+            let got = join_path(&base_url, path).unwrap();
+            assert_eq!(got.as_str(), expected, "base={base} path={path}");
+        }
     }
 }
