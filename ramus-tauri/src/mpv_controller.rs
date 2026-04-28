@@ -111,8 +111,25 @@ impl MpvController {
     }
 
     fn command(&self, args: &[&str]) {
+        // CString::new errors on interior NULs. Args here include URLs and
+        // file paths sourced from Plex responses, so a malformed entry
+        // would otherwise panic the calling thread. Skip the command and
+        // log only the position to avoid leaking token-bearing URLs.
+        let c_args: Vec<CString> = match args
+            .iter()
+            .map(|s| CString::new(*s))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(v) => v,
+            Err(e) => {
+                log::error!(
+                    "mpv command rejected: argument contains NUL byte at position {}",
+                    e.nul_position()
+                );
+                return;
+            }
+        };
         unsafe {
-            let c_args: Vec<CString> = args.iter().map(|s| CString::new(*s).unwrap()).collect();
             let mut ptrs: Vec<*const c_char> = c_args.iter().map(|s| s.as_ptr()).collect();
             ptrs.push(std::ptr::null());
             self.lib.command(self.handle.ptr(), ptrs.as_ptr());
@@ -229,9 +246,15 @@ impl MpvPlayer for MpvController {
     }
 
     fn set_audio_filters(&self, value: &str) {
+        let val = match CString::new(value) {
+            Ok(v) => v,
+            Err(_) => {
+                log::error!("mpv set_audio_filters rejected: value contains NUL byte");
+                return;
+            }
+        };
         unsafe {
             let name = CString::new("af").unwrap();
-            let val = CString::new(value).unwrap();
             self.lib
                 .set_property_string(self.handle.ptr(), name.as_ptr(), val.as_ptr());
         }
