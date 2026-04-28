@@ -145,17 +145,24 @@ impl MpvController {
         }
     }
 
-    fn get_property_double(&self, name: &str) -> f64 {
+    fn get_property_double(&self, name: &str) -> Option<f64> {
         unsafe {
-            let n = CString::new(name).unwrap();
+            let n = CString::new(name).ok()?;
             let mut v: f64 = 0.0;
-            self.lib.get_property(
+            // libmpv leaves the out-buffer in an unspecified state on error
+            // (return < 0). Without this check, get_volume() would silently
+            // return 0.0 on any read failure and the caller could commit it
+            // back as the real volume — silent mute on a transient error.
+            let ret = self.lib.get_property(
                 self.handle.ptr(),
                 n.as_ptr(),
                 MPV_FORMAT_DOUBLE,
                 &mut v as *mut f64 as *mut c_void,
             );
-            v
+            if ret < 0 {
+                return None;
+            }
+            Some(v)
         }
     }
 }
@@ -215,7 +222,10 @@ impl MpvPlayer for MpvController {
     }
 
     fn get_volume(&self) -> f64 {
-        self.get_property_double("volume")
+        // 100.0 is libmpv's default volume; safer fallback than 0 because the
+        // caller may write this value back via set_volume() during state
+        // restoration and a 0 reading would silently mute audio.
+        self.get_property_double("volume").unwrap_or(100.0)
     }
 
     fn set_audio_filters(&self, value: &str) {
