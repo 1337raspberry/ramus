@@ -170,6 +170,7 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
   const [showEditor, setShowEditor] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
+  const [showShuffleConfirm, setShowShuffleConfirm] = useState(false);
   const filterActive = hasActiveFilters(albumFilters);
 
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -257,6 +258,14 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
     });
   }, [showPicker]);
 
+  useEffect(() => {
+    if (!showShuffleConfirm) return;
+    return pushBackHandler(() => {
+      setShowShuffleConfirm(false);
+      return true;
+    });
+  }, [showShuffleConfirm]);
+
   const handleBrainTap = () => {
     if (savedSearches.length === 0) {
       setShowEditor(true);
@@ -308,7 +317,7 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
         <button
           className="mobile-toolbar-btn"
           aria-label="Shuffle favourite tracks"
-          onClick={shuffleFavourites}
+          onClick={() => setShowShuffleConfirm(true)}
         >
           <IconShuffleStar />
         </button>
@@ -333,6 +342,35 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
 
       {showEditor && <SavedSearchEditor onDismiss={() => setShowEditor(false)} />}
       {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
+
+      {showShuffleConfirm && (
+        <div
+          className="mobile-action-sheet-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowShuffleConfirm(false);
+          }}
+        >
+          <div className="mobile-action-sheet">
+            <div className="mobile-action-sheet-group">
+              <div className="mobile-action-sheet-header">Play all favourite tracks?</div>
+              <button
+                onClick={() => {
+                  setShowShuffleConfirm(false);
+                  shuffleFavourites();
+                }}
+              >
+                Shuffle
+              </button>
+            </div>
+            <button
+              className="mobile-action-sheet-cancel"
+              onClick={() => setShowShuffleConfirm(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
