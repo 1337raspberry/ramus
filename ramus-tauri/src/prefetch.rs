@@ -888,14 +888,23 @@ async fn run_user_download(
         codec: job.codec.clone(),
         downloaded_at: now,
     };
-    {
+    // Persist the DB row BEFORE pinning the file in memory or registering
+    // it for local-first playback. If the DB write fails, the file would
+    // otherwise stay on disk forever (no rehydrate row on next launch) and
+    // the in-memory pin would lie about offline availability for one
+    // session. Fail hard and clean up.
+    let insert_result = {
         let state = app.state::<crate::state::AppState>();
         let cache_guard = state.cache.lock();
-        if let Some(cache) = cache_guard.as_ref() {
-            if let Err(e) = cache.insert_download(&row) {
-                log::warn!("downloads: insert_download failed: {e}");
-            }
+        match cache_guard.as_ref() {
+            Some(cache) => cache.insert_download(&row).map_err(|e| e.to_string()),
+            None => Err("downloads cache not ready".to_string()),
         }
+    };
+    if let Err(e) = insert_result {
+        log::error!("downloads: insert_download failed, removing partial file: {e}");
+        let _ = tokio::fs::remove_file(&file_path).await;
+        return Err(format!("download persist failed: {e}"));
     }
 
     // Register for local-first playback and skip iOS backup.
