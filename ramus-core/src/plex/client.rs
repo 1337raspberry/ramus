@@ -675,6 +675,9 @@ impl PlexClient {
             .bytes()
             .await
             .map_err(|_| PlexClientError::InvalidResponse)?;
+        if body.len() > MAX_RESPONSE_BYTES {
+            return Err(PlexClientError::InvalidResponse);
+        }
         Ok(body.to_vec())
     }
 
