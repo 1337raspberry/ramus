@@ -5878,6 +5878,16 @@ body.is-fullscreen .focus-body {
   padding-top: 12px;
   color: rgba(255, 255, 255, 0.3);
   animation: mobile-hint-bob 2s ease-in-out infinite;
+  background: transparent;
+  border: 0;
+  margin: 0 auto;
+  display: block;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-sheet-scroll-hint:active {
+  color: rgba(255, 255, 255, 0.55);
 }
 
 @keyframes mobile-hint-bob {

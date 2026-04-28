@@ -731,9 +731,22 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                 <span>{codecParts?.detail ?? ""}</span>
               </div>
               {queue.length > queueIndex + 1 && (
-                <div className="mobile-sheet-scroll-hint" style={{ paddingTop: 24 }}>
+                <button
+                  type="button"
+                  className="mobile-sheet-scroll-hint"
+                  style={{ paddingTop: 24 }}
+                  onClick={() => {
+                    const el = sheetBodyRef.current;
+                    if (!el) return;
+                    el.scrollTo({ top: 90, behavior: "smooth" });
+                    window.setTimeout(() => {
+                      el.scrollTo({ top: 0, behavior: "smooth" });
+                    }, 450);
+                  }}
+                  aria-label="Show up next"
+                >
                   <IconChevronDown size={20} />
-                </div>
+                </button>
               )}
             </div>
           </div>
