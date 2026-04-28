@@ -1042,11 +1042,6 @@ async fn download_http_to_file(
     file_path: &Path,
     mut on_progress: impl FnMut(u64, Option<u64>) + Send,
 ) -> Result<u64, String> {
-    let mut written: u64 = tokio::fs::metadata(file_path)
-        .await
-        .map(|m| m.len())
-        .unwrap_or(0);
-
     let mut file = tokio::fs::OpenOptions::new()
         .create(true)
         .write(true)
@@ -1054,11 +1049,15 @@ async fn download_http_to_file(
         .open(file_path)
         .await
         .map_err(|e| format!("create file: {e}"))?;
-    if written > 0 {
-        file.seek(std::io::SeekFrom::Start(written))
-            .await
-            .map_err(|e| format!("seek partial: {e}"))?;
-    }
+    // Resume offset is whatever the OPENED file's end is. Querying
+    // tokio::fs::metadata before opening would race: another task could
+    // truncate the partial between the two syscalls, leaving `written`
+    // larger than the actual file and producing a sparse zero-padded gap
+    // when subsequent write_all calls land at the stale offset.
+    let mut written: u64 = file
+        .seek(std::io::SeekFrom::End(0))
+        .await
+        .map_err(|e| format!("seek end: {e}"))?;
 
     let mut expected_size: Option<u64> = None;
     let mut retries: u32 = 0;
@@ -1198,5 +1197,10 @@ async fn download_http_to_file(
     }
 
     file.flush().await.map_err(|e| format!("flush: {e}"))?;
+    // sync_all forces the kernel to durably write the data + metadata
+    // before we report success. Without this, an iOS/Android process
+    // suspension immediately after flush could leave the file zero-length
+    // on disk while the DB row + persistent_cache pin claim it's complete.
+    file.sync_all().await.map_err(|e| format!("sync: {e}"))?;
     Ok(written)
 }
