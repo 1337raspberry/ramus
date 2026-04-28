@@ -375,9 +375,13 @@ impl SyncEngine {
                 if let Some(info) = cached.get(&item.rating_key) {
                     let timestamp_changed = info.updated_at != item.updated_at;
                     let cached_genre = info.first_genre.as_ref().map(|g| g.to_lowercase());
-                    let genre_changed = cached_genre.is_some() && api_genre != cached_genre;
+                    // Compare Option<String> directly: a cached None vs an
+                    // api Some("Rock") (a genre added since the previous
+                    // sync) MUST be detected as changed; any is_some() guard
+                    // on the cached side would silently skip those albums.
+                    let genre_changed = api_genre != cached_genre;
                     let cached_col = info.first_collection.as_ref().map(|c| c.to_lowercase());
-                    let col_changed = cached_col.is_some() && api_collection != cached_col;
+                    let col_changed = api_collection != cached_col;
                     timestamp_changed || genre_changed || col_changed
                 } else {
                     true
