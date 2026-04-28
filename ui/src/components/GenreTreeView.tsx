@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { GenreNode } from "../lib/types";
-import { useLibraryStore } from "../stores/libraryStore";
+import { useLibraryStore, hasActiveFilters } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useGenreDebugStore } from "./GenreDebugPanel";
 import { IconTriangleFilled, IconChevronOpenDown } from "./Icons";
@@ -78,6 +78,7 @@ export default function GenreTreeView() {
     useGenreDebugStore();
   const libraryPadding = useSettingsStore((s) => s.libraryPadding);
   const flatGenres = useSettingsStore((s) => s.flatGenres);
+  const albumFilters = useLibraryStore((s) => s.albumFilters);
   const effectiveRowHeight = Math.max(12, rowHeight + libraryPadding * 2);
 
   const rows = useMemo(
@@ -123,7 +124,10 @@ export default function GenreTreeView() {
   }, [selectedGenreId, rows, virtualizer]);
 
   if (!genreTree.length) {
-    return <div className="empty-state">{"No genres loaded"}</div>;
+    const message = hasActiveFilters(albumFilters)
+      ? "No results found, please reduce your filters"
+      : "No genres loaded";
+    return <div className="empty-state">{message}</div>;
   }
 
   const rowStyle: React.CSSProperties = {

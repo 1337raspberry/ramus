@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import type { GenreNode } from "../lib/types";
-import { useLibraryStore } from "../stores/libraryStore";
+import { useLibraryStore, hasActiveFilters } from "../stores/libraryStore";
 import { IconTriangleFilled, IconChevronOpenDown } from "../components/Icons";
 import MobileSettingsRow from "./MobileSettingsRow";
 
@@ -139,6 +139,7 @@ export default function MobileGenreTree({ onOpenSettings }: Props) {
   const expandAll = useLibraryStore((s) => s.expandAll);
   const collapseAll = useLibraryStore((s) => s.collapseAll);
   const loadAllAlbums = useLibraryStore((s) => s.loadAllAlbums);
+  const albumFilters = useLibraryStore((s) => s.albumFilters);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastSelectedGenreId = useLibraryStore((s) => s.lastSelectedGenreId);
@@ -175,7 +176,10 @@ export default function MobileGenreTree({ onOpenSettings }: Props) {
   };
 
   if (!genreTree.length) {
-    return <div className="mobile-empty">No genres loaded</div>;
+    const message = hasActiveFilters(albumFilters)
+      ? "No results found, please reduce your filters"
+      : "No genres loaded";
+    return <div className="mobile-empty">{message}</div>;
   }
 
   return (

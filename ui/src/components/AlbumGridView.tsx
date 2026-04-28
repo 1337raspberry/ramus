@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useLibraryStore, type AlbumSortOrder } from "../stores/libraryStore";
+import { useLibraryStore, hasActiveFilters, type AlbumSortOrder } from "../stores/libraryStore";
 import type { Album } from "../lib/types";
 import { ART_SIZE, getArtUrl } from "../lib/commands";
 import { useQueueAlbum } from "../lib/useQueueAlbum";
@@ -175,6 +175,7 @@ export default function AlbumGridView() {
   const setAlbumSortOrder = useLibraryStore((s) => s.setAlbumSortOrder);
   const searchQuery = useLibraryStore((s) => s.searchQuery);
   const clearSearchResults = useLibraryStore((s) => s.clearSearchResults);
+  const albumFilters = useLibraryStore((s) => s.albumFilters);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const { cols, cardWidth, callbackRef } = useGridLayout();
@@ -264,6 +265,8 @@ export default function AlbumGridView() {
                 Clear
               </button>
             </>
+          ) : hasActiveFilters(albumFilters) ? (
+            "No results found, please reduce your filters"
           ) : (
             "Select a genre to browse albums"
           )}
