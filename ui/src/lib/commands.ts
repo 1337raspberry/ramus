@@ -270,6 +270,8 @@ export const getDebugInfo = () => invoke<DebugInfo>("get_debug_info");
 export const getAcknowledgementsText = () =>
   invoke<AcknowledgementsText>("get_acknowledgements_text");
 
+export const openExternalUrl = (url: string) => invoke<void>("open_external_url", { url });
+
 // --- Platform ---
 
 export const dismissKeyboard = () => invoke<void>("dismiss_keyboard");

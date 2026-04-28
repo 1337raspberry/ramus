@@ -1183,6 +1183,7 @@ pub fn run() {
             commands::platform::hide_native_search_bar,
             // acknowledgements / licenses
             commands::acknowledgements::get_acknowledgements_text,
+            commands::acknowledgements::open_external_url,
             // downloads
             commands::downloads::download_track,
             commands::downloads::download_album,

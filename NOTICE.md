@@ -5,14 +5,19 @@ repository root). It incorporates the following third-party components.
 
 ## Music genre hierarchy data (`ramus-tauri/data/open.json`)
 
-The genre tree bundled with ramus is adapted from the
-[beets](https://github.com/beetbox/beets) project, specifically
-`beetsplug/lastgenre/genres-tree.yaml`.
+The genre tree bundled with ramus was initially based on the
+[beets](https://github.com/beetbox/beets) project's
+`beetsplug/lastgenre/genres-tree.yaml`. It has since been substantially
+extended and restructured: many genres have been added, the hierarchy
+has been reorganised (with some genres appearing under multiple parents),
+and a large set of aliases (AKAs) is layered on top via
+`ramus-tauri/data/aka.txt`. The current tree is roughly twice the size
+of the original beets source.
 
-- Copyright (c) 2010-2016 Adrian Sampson
+- Original beets data: Copyright (c) 2010-2016 Adrian Sampson
 - Licensed under the MIT License
 
-The hierarchy was compiled by the beets project primarily from Wikipedia;
+The original beets hierarchy was compiled primarily from Wikipedia;
 Wikipedia text content is available under CC BY-SA 3.0.
 
 ## Runtime-linked native library: libmpv
