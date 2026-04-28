@@ -15,9 +15,12 @@ use crate::state::AppState;
 use super::CmdResult;
 
 /// RAII guard for the `sync_in_progress` atomic flag. The flag is set to
-/// `true` on construction and reset to `false` on drop. The spawned background
-/// task takes ownership of the guard and forgets it on completion, so the
-/// drop path only runs for the early-return error cases on the command thread.
+/// `true` by `acquire_sync_guard` and reset to `false` when the guard is
+/// dropped. The spawned background task takes ownership of the guard so the
+/// drop path runs on every exit — normal completion, early `?` return,
+/// panic unwind, or runtime cancellation. Callers must move the guard into
+/// the spawned future, not forget it: a bare end-of-task atomic store would
+/// leave the flag stuck on `true` forever if the task didn't reach it.
 struct SyncGuard(Arc<AtomicBool>);
 
 impl Drop for SyncGuard {
@@ -71,12 +74,11 @@ pub async fn start_full_sync(app: AppHandle, state: State<'_, AppState>) -> CmdR
     let settings = state.settings.clone();
     let include_styles = settings.read().include_plex_styles;
 
-    // Hand ownership of the flag to the background task; forgetting the guard
-    // prevents its drop from racing the task clearing the flag.
-    std::mem::forget(guard);
-    let flag = state.sync_in_progress.clone();
-
     tokio::spawn(async move {
+        // Move the guard in so its Drop fires on every exit path —
+        // including panic unwind or runtime cancellation. Without this,
+        // an unexpected panic would leave sync_in_progress stuck on true.
+        let _guard = guard;
         let result = sync
             .full_sync(&library_key, include_styles, move |progress| {
                 events::emit_sync_progress(&app_handle, progress);
@@ -85,7 +87,6 @@ pub async fn start_full_sync(app: AppHandle, state: State<'_, AppState>) -> CmdR
         if result.is_ok() {
             update_last_sync_time(&settings);
         }
-        flag.store(false, Ordering::Release);
     });
 
     Ok(())
@@ -108,10 +109,8 @@ pub async fn start_incremental_sync(app: AppHandle, state: State<'_, AppState>) 
     let settings = state.settings.clone();
     let include_styles = settings.read().include_plex_styles;
 
-    std::mem::forget(guard);
-    let flag = state.sync_in_progress.clone();
-
     tokio::spawn(async move {
+        let _guard = guard;
         let result = sync
             .incremental_sync(&library_key, include_styles, move |progress| {
                 events::emit_sync_progress(&app_handle, progress);
@@ -120,7 +119,6 @@ pub async fn start_incremental_sync(app: AppHandle, state: State<'_, AppState>) 
         if result.is_ok() {
             update_last_sync_time(&settings);
         }
-        flag.store(false, Ordering::Release);
     });
 
     Ok(())
@@ -142,10 +140,8 @@ pub async fn start_genre_sync(app: AppHandle, state: State<'_, AppState>) -> Cmd
     let settings = state.settings.clone();
     let include_styles = settings.read().include_plex_styles;
 
-    std::mem::forget(guard);
-    let flag = state.sync_in_progress.clone();
-
     tokio::spawn(async move {
+        let _guard = guard;
         let result = sync
             .genre_sync(include_styles, move |progress| {
                 events::emit_sync_progress(&app_handle, progress);
@@ -154,7 +150,6 @@ pub async fn start_genre_sync(app: AppHandle, state: State<'_, AppState>) -> Cmd
         if result.is_ok() {
             update_last_sync_time(&settings);
         }
-        flag.store(false, Ordering::Release);
     });
 
     Ok(())
