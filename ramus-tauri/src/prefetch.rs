@@ -826,7 +826,19 @@ async fn run_user_download(
             extension_from_url(&job.url)
         }
     };
-    let filename = format!("{}.{}", sanitize_filename(&job.rating_key), ext);
+    // sanitize_filename whitelists [a-zA-Z0-9_-]; a ratingKey composed
+    // entirely of stripped characters (e.g. "../" or "/") would produce
+    // an empty stem and the filename `.{ext}` — a hidden dotfile that
+    // every such track would collide on. Guard against it explicitly so
+    // we surface the error instead of silently corrupting downloads.
+    let stem = sanitize_filename(&job.rating_key);
+    if stem.is_empty() {
+        return Err(format!(
+            "download rejected: ratingKey {:?} has no filesystem-safe characters",
+            job.rating_key
+        ));
+    }
+    let filename = format!("{stem}.{ext}");
     let file_path = downloads_dir.join(&filename);
 
     // Mark in-flight and emit a zero-byte "downloading" start event.
