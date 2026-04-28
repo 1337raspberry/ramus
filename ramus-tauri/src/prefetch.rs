@@ -1079,6 +1079,11 @@ async fn download_http_to_file(
         .open(file_path)
         .await
         .map_err(|e| format!("create file: {e}"))?;
+    // Set NSURLIsExcludedFromBackupKey as soon as the file exists, not
+    // only after a successful download. A cancelled or interrupted
+    // partial sitting in downloads/ would otherwise be eligible for
+    // iCloud backup until the next retry succeeds.
+    ios_backup::exclude_from_backup(file_path);
     // Resume offset is whatever the OPENED file's end is. Querying
     // tokio::fs::metadata before opening would race: another task could
     // truncate the partial between the two syscalls, leaving `written`
