@@ -2,6 +2,8 @@
 use std::collections::HashMap;
 #[cfg(not(target_os = "ios"))]
 use std::fs;
+#[cfg(not(target_os = "ios"))]
+use std::io::Write;
 use std::path::PathBuf;
 
 #[cfg(not(target_os = "ios"))]
@@ -221,13 +223,25 @@ impl TokenStore {
         blob.extend_from_slice(&nonce_bytes);
         blob.extend_from_slice(&ciphertext);
 
-        fs::write(&path, &blob)?;
-
+        // Atomic write: stage to a sibling tmp file (created with 0o600 on
+        // Unix so there's no permission window), fsync, then rename. A crash
+        // between write and rename leaves the existing token blob intact
+        // rather than truncating it to zero bytes and silently losing the
+        // other key on the next read.
+        let tmp_path = path.with_extension("enc.tmp");
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).truncate(true).create(true);
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
         }
+        let mut f = opts.open(&tmp_path)?;
+        f.write_all(&blob)?;
+        f.sync_all()?;
+        drop(f);
+
+        fs::rename(&tmp_path, &path)?;
 
         Ok(())
     }
