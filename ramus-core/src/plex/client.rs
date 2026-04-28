@@ -54,9 +54,17 @@ pub struct PlexClient {
 
 impl PlexClient {
     pub fn new(client_identifier: String) -> Self {
+        // Disable HTTP redirects: reqwest forwards custom headers (e.g.
+        // X-Plex-Token) across origin on 3xx, which would exfiltrate the
+        // token to a hostile or MITM'd target. Plex's API does not issue
+        // redirects in normal operation; any 3xx surfaces as ConnectionFailed.
+        let http = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("reqwest client init");
         Self {
             client_identifier,
-            http: Client::new(),
+            http,
             state: RwLock::new(ConnectionState {
                 server_url: None,
                 token: None,
