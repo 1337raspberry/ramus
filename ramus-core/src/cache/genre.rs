@@ -198,11 +198,14 @@ impl CacheDatabase {
         }
         let conn = self.conn.lock();
         let placeholders = genre_names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        // Explicit COLLATE NOCASE because SQLite IN doesn't inherit the
+        // column-level NOCASE collation on `genres.name`. Mirrors the same
+        // fix in `album_ids_for_collection_names`.
         let sql = format!(
             "SELECT DISTINCT ag.albumId
              FROM album_genres ag
              JOIN genres g ON g.id = ag.genreId
-             WHERE g.name IN ({})",
+             WHERE g.name COLLATE NOCASE IN ({})",
             placeholders
         );
         let mut stmt = conn.prepare(&sql)?;

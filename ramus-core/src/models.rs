@@ -109,21 +109,36 @@ pub struct AlbumColorInfo {
 pub struct AlbumFilterParams {
     #[serde(default)]
     pub unplayed: bool,
+    /// Album-level favourite — `albums.rating >= 10.0`.
     #[serde(default)]
-    pub favourite: bool,
+    pub favourite_albums: bool,
+    /// Track-level favourite — at least one track on the album has
+    /// `tracks.userRating >= 10.0`. Independent of `favourite_albums`; both
+    /// can be active simultaneously and combine with AND.
+    #[serde(default)]
+    pub favourite_tracks: bool,
     pub year_min: Option<i32>,
     pub year_max: Option<i32>,
-    pub country: Option<String>,
+    /// OR semantics — match albums whose artist country contains any of these
+    /// values (the column is comma-joined when an artist has multiple tags).
+    #[serde(default)]
+    pub countries: Vec<String>,
+    /// AND semantics — album must be tagged with every selected genre, where
+    /// each chip is expanded to its subtree via `GenreMapper::expand_genre`.
+    #[serde(default)]
+    pub genres: Vec<String>,
     pub collection: Option<String>,
 }
 
 impl AlbumFilterParams {
     pub fn is_empty(&self) -> bool {
         !self.unplayed
-            && !self.favourite
+            && !self.favourite_albums
+            && !self.favourite_tracks
             && self.year_min.is_none()
             && self.year_max.is_none()
-            && self.country.is_none()
+            && self.countries.is_empty()
+            && self.genres.is_empty()
             && self.collection.is_none()
     }
 }
@@ -144,6 +159,11 @@ pub struct Album {
     pub collections: Vec<String>,
     #[serde(default)]
     pub is_favourite: bool,
+    /// True iff at least one track on this album has `tracks.userRating >= 10.0`.
+    /// Populated by `CacheDatabase::populate_album_favourite_tracks` alongside
+    /// the genre/collection passes.
+    #[serde(default)]
+    pub has_favourite_track: bool,
     pub studio: Option<String>,
     pub added_at: Option<i64>,
     pub last_viewed_at: Option<i64>,

@@ -142,6 +142,7 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
           genres: [],
           collections: [],
           isFavourite: result.isFavourite,
+          hasFavouriteTrack: false,
           studio: null,
           addedAt: null,
           lastViewedAt: null,

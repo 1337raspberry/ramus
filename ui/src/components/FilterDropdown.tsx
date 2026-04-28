@@ -6,9 +6,12 @@ import {
   DEFAULT_FILTERS,
   type AlbumFilters,
 } from "../stores/libraryStore";
-import { getDistinctCountries, getAllCollectionNames } from "../lib/commands";
+import { getDistinctCountries, getAllCollectionNames, getGenreSuggestions } from "../lib/commands";
 import { IconFilter } from "./Icons";
 import { countryToFlag } from "../lib/countryFlag";
+import { filterCountrySuggestions } from "../lib/filterSuggestions";
+import ChipAutocompleteInput from "./ChipAutocompleteInput";
+import FilterPanelMenu from "./FilterPanelMenu";
 
 export default function FilterDropdown() {
   const filters = useLibraryStore((s) => s.albumFilters);
@@ -46,6 +49,17 @@ export default function FilterDropdown() {
     [filters, setFilters],
   );
 
+  // Stable references prevent ChipAutocompleteInput's debounce effect from
+  // re-firing on every parent render. Genre suggestions are IPC-backed and
+  // don't depend on local state, so the closure has no deps. Country
+  // suggestions close over `countries` so they bust when the cached country
+  // list arrives.
+  const fetchGenres = useCallback((q: string) => getGenreSuggestions(q), []);
+  const fetchCountries = useCallback(
+    (q: string) => filterCountrySuggestions(countries, q, 200),
+    [countries],
+  );
+
   const activeCount = countActiveFilters(filters);
   const canClear = hasActiveFilters(filters);
 
@@ -61,6 +75,9 @@ export default function FilterDropdown() {
       </button>
       {open && (
         <div className="filter-dropdown-panel">
+          <div className="filter-panel-header">
+            <FilterPanelMenu onAfterAction={() => setOpen(false)} />
+          </div>
           <div className="filter-section">
             <label className="filter-check-row">
               <input
@@ -73,10 +90,18 @@ export default function FilterDropdown() {
             <label className="filter-check-row">
               <input
                 type="checkbox"
-                checked={filters.favourite}
-                onChange={(e) => update({ favourite: e.target.checked })}
+                checked={filters.favouriteAlbums}
+                onChange={(e) => update({ favouriteAlbums: e.target.checked })}
               />
-              <span>Favourite</span>
+              <span>Favourite Albums</span>
+            </label>
+            <label className="filter-check-row">
+              <input
+                type="checkbox"
+                checked={filters.favouriteTracks}
+                onChange={(e) => update({ favouriteTracks: e.target.checked })}
+              />
+              <span>Favourite Tracks</span>
             </label>
           </div>
 
@@ -108,22 +133,27 @@ export default function FilterDropdown() {
           </div>
 
           <div className="filter-section">
-            <label className="filter-field-label">Country</label>
-            <select
-              className="filter-select"
-              value={filters.country}
-              onChange={(e) => update({ country: e.target.value })}
-            >
-              <option value="">All</option>
-              {countries.map((c) => {
-                const flag = countryToFlag(c);
-                return (
-                  <option key={c} value={c}>
-                    {flag ? `${flag} ${c}` : c}
-                  </option>
-                );
-              })}
-            </select>
+            <label className="filter-field-label">Genres</label>
+            <ChipAutocompleteInput
+              value={filters.genres}
+              onChange={(genres) => update({ genres })}
+              fetchSuggestions={fetchGenres}
+              placeholder="Type a genre…"
+              ariaLabel="Genre filter"
+            />
+          </div>
+
+          <div className="filter-section">
+            <label className="filter-field-label">Countries</label>
+            <ChipAutocompleteInput
+              value={filters.countries}
+              onChange={(countries) => update({ countries })}
+              fetchSuggestions={fetchCountries}
+              renderChipPrefix={(c) => countryToFlag(c) ?? null}
+              renderSuggestionPrefix={(c) => countryToFlag(c) ?? null}
+              placeholder="Type a country…"
+              ariaLabel="Country filter"
+            />
           </div>
 
           <div className="filter-section">

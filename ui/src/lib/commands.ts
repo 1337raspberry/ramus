@@ -84,10 +84,12 @@ export const getAllArtists = () => invoke<ArtistInfo[]>("get_all_artists");
 
 export interface AlbumFilterParamsIPC {
   unplayed: boolean;
-  favourite: boolean;
+  favouriteAlbums: boolean;
+  favouriteTracks: boolean;
   yearMin: number | null;
   yearMax: number | null;
-  country: string | null;
+  countries: string[];
+  genres: string[];
   collection: string | null;
 }
 
@@ -143,6 +145,12 @@ export const getCacheStats = () => invoke<CacheStats>("get_cache_stats");
 export const getDistinctCountries = () => invoke<string[]>("get_distinct_countries");
 
 export const getAllCollectionNames = () => invoke<string[]>("get_all_collection_names");
+
+export const getGenreSuggestions = (query: string, limit = 200) =>
+  invoke<string[]>("get_genre_suggestions", { query, limit });
+
+export const expandGenreToLibraryTags = (genre: string) =>
+  invoke<string[]>("expand_genre_to_library_tags", { genre });
 
 // --- Playback ---
 

@@ -147,6 +147,18 @@ impl GenreMapper {
         f64::from_bits(self.threshold_bits.load(Ordering::Relaxed))
     }
 
+    /// Lowercased AKAs that resolve to the given canonical name. Used by the
+    /// genre-filter autocomplete to match user-typed AKAs (e.g. "alt rock")
+    /// against canonical names ("Alternative Rock") that exist in the library.
+    pub fn akas_for_canonical(&self, canonical: &str) -> Vec<String> {
+        let canonical_lower = canonical.to_lowercase();
+        self.aka_lookup
+            .iter()
+            .filter(|(_, canonicals)| canonicals.iter().any(|c| c == &canonical_lower))
+            .map(|(aka, _)| aka.clone())
+            .collect()
+    }
+
     /// Match a Plex genre string to the genre hierarchy.
     /// Tries exact (case-insensitive) first, then fuzzy via strsim.
     ///

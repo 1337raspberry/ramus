@@ -7,9 +7,12 @@ import {
   DEFAULT_FILTERS,
   type AlbumFilters,
 } from "../stores/libraryStore";
-import { getDistinctCountries, getAllCollectionNames } from "../lib/commands";
+import { getDistinctCountries, getAllCollectionNames, getGenreSuggestions } from "../lib/commands";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { countryToFlag } from "../lib/countryFlag";
+import { filterCountrySuggestions } from "../lib/filterSuggestions";
+import ChipAutocompleteInput from "../components/ChipAutocompleteInput";
+import FilterPanelMenu from "../components/FilterPanelMenu";
 
 interface Props {
   onDismiss: () => void;
@@ -37,6 +40,14 @@ export default function MobileFilterPanel({ onDismiss }: Props) {
     [filters, setFilters],
   );
 
+  // Stable refs so ChipAutocompleteInput's debounce effect isn't reset on
+  // every parent render. See the equivalent block in FilterDropdown.
+  const fetchGenres = useCallback((q: string) => getGenreSuggestions(q), []);
+  const fetchCountries = useCallback(
+    (q: string) => filterCountrySuggestions(countries, q, 200),
+    [countries],
+  );
+
   const activeCount = countActiveFilters(filters);
 
   const hasTrack = !!usePlaybackStore((s) => s.currentTrack);
@@ -48,9 +59,13 @@ export default function MobileFilterPanel({ onDismiss }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mobile-filter-header">
-          <span className="mobile-filter-title">
-            Filters{activeCount > 0 && <span className="mobile-filter-count">{activeCount}</span>}
-          </span>
+          <div className="mobile-filter-title-group">
+            <span className="mobile-filter-title">
+              Filters
+              {activeCount > 0 && <span className="mobile-filter-count">{activeCount}</span>}
+            </span>
+            <FilterPanelMenu onAfterAction={onDismiss} />
+          </div>
           <button className="mobile-filter-done" onClick={onDismiss}>
             Done
           </button>
@@ -67,11 +82,19 @@ export default function MobileFilterPanel({ onDismiss }: Props) {
               />
             </label>
             <label className="mobile-filter-toggle-row">
-              <span>Favourite</span>
+              <span>Favourite Albums</span>
               <input
                 type="checkbox"
-                checked={filters.favourite}
-                onChange={(e) => update({ favourite: e.target.checked })}
+                checked={filters.favouriteAlbums}
+                onChange={(e) => update({ favouriteAlbums: e.target.checked })}
+              />
+            </label>
+            <label className="mobile-filter-toggle-row">
+              <span>Favourite Tracks</span>
+              <input
+                type="checkbox"
+                checked={filters.favouriteTracks}
+                onChange={(e) => update({ favouriteTracks: e.target.checked })}
               />
             </label>
           </div>
@@ -120,22 +143,29 @@ export default function MobileFilterPanel({ onDismiss }: Props) {
           </div>
 
           <div className="mobile-filter-section">
-            <label className="mobile-filter-label">Country</label>
-            <select
-              className="mobile-filter-select"
-              value={filters.country}
-              onChange={(e) => update({ country: e.target.value })}
-            >
-              <option value="">All</option>
-              {countries.map((c) => {
-                const flag = countryToFlag(c);
-                return (
-                  <option key={c} value={c}>
-                    {flag ? `${flag} ${c}` : c}
-                  </option>
-                );
-              })}
-            </select>
+            <label className="mobile-filter-label">Genres</label>
+            <ChipAutocompleteInput
+              value={filters.genres}
+              onChange={(genres) => update({ genres })}
+              fetchSuggestions={fetchGenres}
+              placeholder="Type a genre…"
+              ariaLabel="Genre filter"
+              inlineSuggestions
+            />
+          </div>
+
+          <div className="mobile-filter-section">
+            <label className="mobile-filter-label">Countries</label>
+            <ChipAutocompleteInput
+              value={filters.countries}
+              onChange={(countries) => update({ countries })}
+              fetchSuggestions={fetchCountries}
+              renderChipPrefix={(c) => countryToFlag(c) ?? null}
+              renderSuggestionPrefix={(c) => countryToFlag(c) ?? null}
+              placeholder="Type a country…"
+              ariaLabel="Country filter"
+              inlineSuggestions
+            />
           </div>
 
           <div className="mobile-filter-section">

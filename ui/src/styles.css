@@ -613,7 +613,7 @@ textarea {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   padding: 12px;
-  min-width: 220px;
+  min-width: 260px;
   z-index: 100;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   display: flex;
@@ -708,6 +708,234 @@ textarea {
 
 .filter-clear-btn:hover {
   color: var(--text-primary);
+}
+
+/* --- Filter panel "..." menu (shared by desktop + mobile filter panels) --- */
+
+.filter-panel-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin: -4px -4px 0 0;
+}
+
+.filter-panel-menu {
+  position: relative;
+}
+
+/* Prominent accent-coloured trigger — used both in the desktop filter
+   dropdown header and in the mobile bottom-sheet header. Big enough to be
+   tappable on mobile and visible on desktop without dominating the panel. */
+.filter-panel-menu-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 8px;
+  transition:
+    color 0.12s,
+    background 0.12s;
+}
+
+.filter-panel-menu-btn:hover,
+.filter-panel-menu-btn:active {
+  color: var(--accent);
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.16);
+}
+
+.filter-panel-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  z-index: 220;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+/* Right-anchor when the trigger sits in the desktop panel's top-right corner.
+   The opt-in flag lives on the parent header so we don't need to thread a
+   prop through the component. */
+.filter-panel-header .filter-panel-menu-dropdown {
+  left: auto;
+  right: 0;
+}
+
+.filter-panel-menu-dropdown button {
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 10px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.filter-panel-menu-dropdown button:hover {
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.18);
+}
+
+.mobile-filter-title-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* --- Chip autocomplete (shared by desktop FilterDropdown + MobileFilterPanel) --- */
+
+.chip-autocomplete {
+  position: relative;
+  width: 100%;
+}
+
+.chip-autocomplete-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 4px 6px;
+  cursor: text;
+  min-height: 28px;
+  box-sizing: border-box;
+}
+
+.chip-autocomplete-row:focus-within {
+  border-color: var(--accent);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.18);
+  color: var(--text-primary);
+  border: 1px solid rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.35);
+  border-radius: 12px;
+  padding: 1px 4px 1px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.chip-prefix {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+}
+
+.chip-label {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chip-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  border-radius: 50%;
+  transition:
+    color 0.12s,
+    background 0.12s;
+}
+
+.chip-remove:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.chip-autocomplete-input {
+  flex: 1;
+  min-width: 60px;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 2px 2px;
+}
+
+.chip-autocomplete-input::placeholder {
+  color: var(--text-muted);
+}
+
+.chip-autocomplete-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  z-index: 200;
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.chip-autocomplete-suggestions.inline {
+  position: static;
+  margin-top: 4px;
+  box-shadow: none;
+  max-height: 180px;
+}
+
+.chip-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.chip-suggestion.highlighted {
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.18);
+}
+
+.chip-suggestion.empty {
+  color: var(--text-muted);
+  font-style: italic;
+  cursor: default;
+}
+
+.chip-suggestion-prefix {
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+}
+
+.chip-suggestion-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
 
 .shuffle-confirm-popover {
@@ -3893,14 +4121,19 @@ body.is-fullscreen .focus-body {
   max-width: 500px;
   background: var(--bg-secondary);
   border-radius: 16px 16px 0 0;
-  padding: 0 0 env(safe-area-inset-bottom, 16px);
+  /* Buffer the system safe-area inset (iOS home indicator) so the last button
+     isn't clipped. The +24px gives a comfortable margin above the indicator. */
+  padding: 0 0 calc(env(safe-area-inset-bottom, 16px) + 24px);
   max-height: 80vh;
+  /* Always scroll when content overflows — without this the non-mini variant
+     just clipped the bottom of the panel. */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .mobile-filter-panel.with-mini {
+  /* Lift the scroll content above the persistent mini-player. */
   padding-bottom: calc(env(safe-area-inset-bottom, 16px) + 96px);
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
 }
 
 .mobile-filter-header {
@@ -3948,23 +4181,23 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-filter-body {
-  padding: 8px 20px;
+  padding: 4px 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 .mobile-filter-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .mobile-filter-toggle-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 0;
+  padding: 8px 0;
   font-size: 16px;
   color: var(--text-primary);
   cursor: pointer;
@@ -3992,7 +4225,7 @@ body.is-fullscreen .focus-body {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  padding: 12px 14px;
+  padding: 9px 14px;
   font-size: 16px;
   color: var(--text-primary);
   outline: none;
@@ -4014,7 +4247,7 @@ body.is-fullscreen .focus-body {
   color: var(--text-primary);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  padding: 12px 14px;
+  padding: 9px 14px;
   font-size: 16px;
   cursor: pointer;
   outline: none;
@@ -4032,11 +4265,11 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-filter-clear {
-  margin: 8px 20px 16px;
+  margin: 6px 20px 4px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  padding: 14px;
+  padding: 10px;
   color: var(--text-muted);
   font-size: 15px;
   cursor: pointer;
@@ -4051,15 +4284,21 @@ body.is-fullscreen .focus-body {
 .mobile-filter-decades {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: 6px;
 }
 
 .mobile-filter-decade {
+  /* min-height meets the iOS 44pt / Android 48dp touch-target floor —
+     padding-only isn't enough at 13px font, the button measured ~28px. */
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 10px 0;
-  font-size: 14px;
+  border-radius: 7px;
+  padding: 6px 0;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;

@@ -23,6 +23,7 @@ export interface Album {
   genres: string[];
   collections: string[];
   isFavourite: boolean;
+  hasFavouriteTrack: boolean;
   studio: string | null;
   addedAt: number | null;
   lastViewedAt: number | null;

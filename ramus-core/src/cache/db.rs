@@ -4,8 +4,6 @@ use std::path::Path;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 
-use rand::seq::SliceRandom;
-
 use crate::models::{Album, AlbumFilterParams, Track};
 
 pub use super::upsert::{AlbumUpsertRow, ArtistRow, ArtistUpsertRow, TrackUpsertRow};
@@ -281,7 +279,9 @@ impl CacheDatabase {
         if genre_names.len() <= CHUNK_SIZE {
             let mut albums = Self::albums_for_genres_query(&conn, genre_names)?;
             drop(conn);
-            self.populate_album_collections(&mut albums)?;
+            self.populate_album_genres(&mut albums)?;
+        self.populate_album_collections(&mut albums)?;
+        self.populate_album_favourite_tracks(&mut albums)?;
             return Ok(albums);
         }
 
@@ -303,7 +303,9 @@ impl CacheDatabase {
                 .then_with(|| a.year.cmp(&b.year))
         });
         drop(conn);
+        self.populate_album_genres(&mut all)?;
         self.populate_album_collections(&mut all)?;
+        self.populate_album_favourite_tracks(&mut all)?;
         Ok(all)
     }
 
@@ -346,7 +348,9 @@ impl CacheDatabase {
         let mut albums = Self::map_album_rows(&mut stmt, params![source_id], &conn)?;
         drop(stmt);
         drop(conn);
+        self.populate_album_genres(&mut albums)?;
         self.populate_album_collections(&mut albums)?;
+        self.populate_album_favourite_tracks(&mut albums)?;
         Ok(albums.pop())
     }
 
@@ -365,7 +369,9 @@ impl CacheDatabase {
         let mut albums = Self::map_album_rows(&mut stmt, params![year], &conn)?;
         drop(stmt);
         drop(conn);
+        self.populate_album_genres(&mut albums)?;
         self.populate_album_collections(&mut albums)?;
+        self.populate_album_favourite_tracks(&mut albums)?;
         Ok(albums)
     }
 
@@ -384,7 +390,9 @@ impl CacheDatabase {
         let mut albums = Self::map_album_rows(&mut stmt, params![artist_name], &conn)?;
         drop(stmt);
         drop(conn);
+        self.populate_album_genres(&mut albums)?;
         self.populate_album_collections(&mut albums)?;
+        self.populate_album_favourite_tracks(&mut albums)?;
         Ok(albums)
     }
 
@@ -403,7 +411,9 @@ impl CacheDatabase {
         let mut albums = Self::map_album_rows(&mut stmt, params![artist_source_id], &conn)?;
         drop(stmt);
         drop(conn);
+        self.populate_album_genres(&mut albums)?;
         self.populate_album_collections(&mut albums)?;
+        self.populate_album_favourite_tracks(&mut albums)?;
         Ok(albums)
     }
 
@@ -481,7 +491,9 @@ impl CacheDatabase {
         let mut albums = Self::map_album_rows(&mut stmt, params![], &conn)?;
         drop(stmt);
         drop(conn);
+        self.populate_album_genres(&mut albums)?;
         self.populate_album_collections(&mut albums)?;
+        self.populate_album_favourite_tracks(&mut albums)?;
         Ok(albums)
     }
 
@@ -499,7 +511,9 @@ impl CacheDatabase {
         let mut albums = Self::map_album_rows(&mut stmt, params![], &conn)?;
         drop(stmt);
         drop(conn);
+        self.populate_album_genres(&mut albums)?;
         self.populate_album_collections(&mut albums)?;
+        self.populate_album_favourite_tracks(&mut albums)?;
         Ok(albums)
     }
 
@@ -537,26 +551,10 @@ impl CacheDatabase {
         let mut albums = Self::map_album_rows(&mut stmt, params![], &conn)?;
         drop(stmt);
         drop(conn);
+        self.populate_album_genres(&mut albums)?;
         self.populate_album_collections(&mut albums)?;
+        self.populate_album_favourite_tracks(&mut albums)?;
         Ok(albums.pop())
-    }
-
-    /// Random album from a filtered pool.
-    pub fn filtered_random_album(
-        &self,
-        filter_params: &AlbumFilterParams,
-    ) -> Result<Option<Album>, CacheError> {
-        let ids = self.filtered_album_internal_ids(filter_params)?;
-        if ids.is_empty() {
-            return Ok(None);
-        }
-        let id_vec: Vec<i64> = ids.into_iter().collect();
-        let mut rng = rand::thread_rng();
-        let Some(&chosen) = id_vec.choose(&mut rng) else {
-            return Ok(None);
-        };
-        let albums = self.albums_by_internal_ids(&HashSet::from([chosen]))?;
-        Ok(albums.into_iter().next())
     }
 
     /// Albums by internal rowid, returning full Album objects.
@@ -600,7 +598,9 @@ impl CacheDatabase {
             });
         }
         drop(conn);
+        self.populate_album_genres(&mut all)?;
         self.populate_album_collections(&mut all)?;
+        self.populate_album_favourite_tracks(&mut all)?;
         Ok(all)
     }
 
@@ -647,6 +647,10 @@ impl CacheDatabase {
         Ok(())
     }
 
+    /// Album IDs matching the SQL-resolvable parts of a filter set: unplayed,
+    /// favourite, year range, country (OR), and collection. Genre filtering
+    /// requires `GenreMapper` (lives in `ramus-tauri` state) so it's applied
+    /// by the command layer on top of this result set, not here.
     pub fn filtered_album_internal_ids(
         &self,
         params: &AlbumFilterParams,
@@ -656,8 +660,17 @@ impl CacheDatabase {
         let mut conditions = Vec::new();
         let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-        if params.favourite {
+        if params.favourite_albums {
             conditions.push("a.rating >= 10.0");
+        }
+        if params.favourite_tracks {
+            // Reuses the idx_tracks_userRating index; EXISTS short-circuits
+            // on the first matching track per album.
+            conditions.push(
+                "EXISTS (SELECT 1 FROM tracks t \
+                 WHERE t.albumId = a.id \
+                 AND t.userRating IS NOT NULL AND t.userRating >= 10.0)",
+            );
         }
         if params.unplayed {
             conditions.push("(a.viewCount IS NULL OR a.viewCount = 0)");
@@ -673,9 +686,13 @@ impl CacheDatabase {
         if params.year_min.is_some() || params.year_max.is_some() {
             conditions.push("a.year IS NOT NULL");
         }
-        if let Some(ref country) = params.country {
-            bind_values.push(Box::new(country.clone()));
-            conditions.push("ar.country = ?");
+
+        let need_country_post_filter = !params.countries.is_empty();
+        if need_country_post_filter {
+            // `country` is selected so it can be tokenised in Rust (the column
+            // is comma-joined when an artist has multiple country tags), but
+            // require non-null at the SQL boundary to skip uncountried artists.
+            conditions.push("ar.country IS NOT NULL AND ar.country != ''");
         }
 
         let where_clause = if conditions.is_empty() {
@@ -684,16 +701,50 @@ impl CacheDatabase {
             format!(" WHERE {}", conditions.join(" AND "))
         };
 
+        let select_clause = if need_country_post_filter {
+            "SELECT a.id, ar.country"
+        } else {
+            "SELECT a.id, NULL"
+        };
         let base_sql = format!(
-            "SELECT a.id FROM albums a JOIN artists ar ON ar.id = a.artistId{}",
-            where_clause
+            "{} FROM albums a JOIN artists ar ON ar.id = a.artistId{}",
+            select_clause, where_clause
         );
 
         let mut stmt = conn.prepare(&base_sql)?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             bind_values.iter().map(|b| b.as_ref()).collect();
-        let rows = stmt.query_map(param_refs.as_slice(), |row| row.get::<_, i64>(0))?;
-        let mut ids: HashSet<i64> = rows.collect::<Result<_, _>>()?;
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
+
+        let mut ids: HashSet<i64> = if need_country_post_filter {
+            // Build a lowercased filter set so the per-row token comparison is
+            // a hashtable lookup rather than O(N*M) nested string compares.
+            let filter_set: HashSet<String> = params
+                .countries
+                .iter()
+                .map(|c| c.trim().to_lowercase())
+                .filter(|c| !c.is_empty())
+                .collect();
+            let mut kept = HashSet::new();
+            for row in rows {
+                let (id, country) = row?;
+                let Some(country) = country else { continue };
+                if country
+                    .split(',')
+                    .map(|s| s.trim().to_lowercase())
+                    .filter(|s| !s.is_empty())
+                    .any(|tok| filter_set.contains(&tok))
+                {
+                    kept.insert(id);
+                }
+            }
+            kept
+        } else {
+            rows.map(|r| r.map(|(id, _)| id))
+                .collect::<Result<_, _>>()?
+        };
         drop(stmt);
         drop(conn);
 
@@ -705,17 +756,124 @@ impl CacheDatabase {
         Ok(ids)
     }
 
+    /// Distinct, individual country tags across all artists. Plex sometimes
+    /// hands back a comma-joined string for artists with multiple country
+    /// tags (e.g. `"Scotland, United Kingdom"`); the sync stores it as-is,
+    /// so we tokenise here before deduping. Sort is case-insensitive
+    /// alphabetical.
     pub fn distinct_artist_countries(&self) -> Result<Vec<String>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT DISTINCT country FROM artists
-             WHERE country IS NOT NULL AND country != ''
-             ORDER BY country COLLATE NOCASE",
+             WHERE country IS NOT NULL AND country != ''",
         )?;
-        let names = stmt
+        let raw = stmt
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
+
+        // Dedupe case-insensitively but keep the first cased spelling we see
+        // so the UI gets `"Canada"` rather than `"canada"`.
+        let mut seen: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        for entry in raw {
+            for tok in entry.split(',') {
+                let trimmed = tok.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                seen.entry(trimmed.to_lowercase()).or_insert_with(|| trimmed.to_string());
+            }
+        }
+        let mut names: Vec<String> = seen.into_values().collect();
+        names.sort_by_key(|s| s.to_lowercase());
         Ok(names)
+    }
+
+    /// Mark `Album.has_favourite_track` for any album in `albums` that has at
+    /// least one track with `userRating >= 10.0`. Same batched lookup pattern
+    /// as `populate_album_genres` / `populate_album_collections`.
+    pub fn populate_album_favourite_tracks(
+        &self,
+        albums: &mut [Album],
+    ) -> Result<(), CacheError> {
+        if albums.is_empty() {
+            return Ok(());
+        }
+        let conn = self.conn.lock();
+        let source_ids: Vec<&str> = albums.iter().map(|a| a.rating_key.as_str()).collect();
+
+        const CHUNK: usize = 500;
+        let mut hit: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for chunk in source_ids.chunks(CHUNK) {
+            let placeholders: Vec<String> = (1..=chunk.len()).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "SELECT DISTINCT a.sourceId
+                 FROM tracks t
+                 JOIN albums a ON a.id = t.albumId
+                 WHERE t.userRating IS NOT NULL AND t.userRating >= 10.0
+                   AND a.sourceId IN ({})",
+                placeholders.join(", ")
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let params: Vec<&dyn rusqlite::types::ToSql> =
+                chunk.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            let rows = stmt.query_map(params.as_slice(), |row| row.get::<_, String>(0))?;
+            for row in rows {
+                hit.insert(row?);
+            }
+        }
+
+        for album in albums.iter_mut() {
+            if hit.contains(&album.rating_key) {
+                album.has_favourite_track = true;
+            }
+        }
+        Ok(())
+    }
+
+    /// Fill in `Album.genres` for a batch of albums via the `album_genres`
+    /// junction. Mirrors `populate_album_collections`. Mutex re-entrancy:
+    /// callers must `drop(conn)` before invoking this if they hold the lock.
+    pub fn populate_album_genres(&self, albums: &mut [Album]) -> Result<(), CacheError> {
+        if albums.is_empty() {
+            return Ok(());
+        }
+        let conn = self.conn.lock();
+        let source_ids: Vec<&str> = albums.iter().map(|a| a.rating_key.as_str()).collect();
+
+        const CHUNK: usize = 500;
+        let mut map: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+
+        for chunk in source_ids.chunks(CHUNK) {
+            let placeholders: Vec<String> = (1..=chunk.len()).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "SELECT a.sourceId, g.name
+                 FROM album_genres ag
+                 JOIN albums a ON a.id = ag.albumId
+                 JOIN genres g ON g.id = ag.genreId
+                 WHERE a.sourceId IN ({})",
+                placeholders.join(", ")
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let params: Vec<&dyn rusqlite::types::ToSql> =
+                chunk.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            let rows = stmt.query_map(params.as_slice(), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (sid, gname) = row?;
+                map.entry(sid).or_default().push(gname);
+            }
+        }
+
+        for album in albums.iter_mut() {
+            if let Some(genres) = map.remove(&album.rating_key) {
+                album.genres = genres;
+            }
+        }
+        Ok(())
     }
 
     pub fn populate_album_collections(&self, albums: &mut [Album]) -> Result<(), CacheError> {
@@ -777,6 +935,7 @@ impl CacheDatabase {
                     genres: Vec::new(),
                     collections: Vec::new(),
                     is_favourite: rating.map(|r| r >= 10.0).unwrap_or(false),
+                    has_favourite_track: false,
                     studio: row.get(6)?,
                     added_at: row.get(7)?,
                     last_viewed_at: row.get(8)?,
@@ -1327,5 +1486,260 @@ mod tests {
         let album = db.random_album().unwrap();
         assert!(album.is_some());
         assert_eq!(album.unwrap().title, "OK Computer");
+    }
+
+    fn seed_artist_with_country(
+        db: &CacheDatabase,
+        source_id: &str,
+        name: &str,
+        country: &str,
+    ) -> i64 {
+        let map = db
+            .batch_upsert_artists(&[(
+                name.into(),
+                None,
+                source_id.into(),
+                None,
+                None,
+                Some(country.into()),
+                Some(1000),
+            )])
+            .unwrap();
+        *map.get(source_id).unwrap()
+    }
+
+    #[test]
+    fn test_filter_countries_single_chip() {
+        let db = setup();
+        let ca = seed_artist_with_country(&db, "ar1", "Arcade Fire", "Canada");
+        let uk = seed_artist_with_country(&db, "ar2", "Radiohead", "United Kingdom");
+        seed_album(&db, "al1", "Funeral", ca, Some(2004));
+        seed_album(&db, "al2", "OK Computer", uk, Some(1997));
+
+        let params = AlbumFilterParams {
+            countries: vec!["Canada".into()],
+            ..Default::default()
+        };
+        let ids = db.filtered_album_internal_ids(&params).unwrap();
+        let title: Vec<String> = db
+            .albums_by_internal_ids(&ids)
+            .unwrap()
+            .into_iter()
+            .map(|a| a.title)
+            .collect();
+        assert_eq!(title, vec!["Funeral".to_string()]);
+    }
+
+    #[test]
+    fn test_filter_countries_or_semantics() {
+        let db = setup();
+        let ca = seed_artist_with_country(&db, "ar1", "Arcade Fire", "Canada");
+        let uk = seed_artist_with_country(&db, "ar2", "Radiohead", "United Kingdom");
+        let us = seed_artist_with_country(&db, "ar3", "The Strokes", "United States");
+        seed_album(&db, "al1", "Funeral", ca, Some(2004));
+        seed_album(&db, "al2", "OK Computer", uk, Some(1997));
+        seed_album(&db, "al3", "Is This It", us, Some(2001));
+
+        let params = AlbumFilterParams {
+            countries: vec!["Canada".into(), "United Kingdom".into()],
+            ..Default::default()
+        };
+        let ids = db.filtered_album_internal_ids(&params).unwrap();
+        let mut titles: Vec<String> = db
+            .albums_by_internal_ids(&ids)
+            .unwrap()
+            .into_iter()
+            .map(|a| a.title)
+            .collect();
+        titles.sort();
+        assert_eq!(titles, vec!["Funeral".to_string(), "OK Computer".to_string()]);
+    }
+
+    #[test]
+    fn test_filter_countries_handles_comma_joined() {
+        let db = setup();
+        // Plex sometimes hands us multiple country tags per artist; the sync
+        // joins them with ", ". A chip for any one of them should still match.
+        let scot = seed_artist_with_country(&db, "ar1", "Mogwai", "Scotland, United Kingdom");
+        seed_album(&db, "al1", "Hardcore Will Never Die", scot, Some(2011));
+
+        let scotland_only = AlbumFilterParams {
+            countries: vec!["Scotland".into()],
+            ..Default::default()
+        };
+        assert_eq!(db.filtered_album_internal_ids(&scotland_only).unwrap().len(), 1);
+
+        let uk_only = AlbumFilterParams {
+            countries: vec!["United Kingdom".into()],
+            ..Default::default()
+        };
+        assert_eq!(db.filtered_album_internal_ids(&uk_only).unwrap().len(), 1);
+
+        let ireland_only = AlbumFilterParams {
+            countries: vec!["Ireland".into()],
+            ..Default::default()
+        };
+        assert!(db.filtered_album_internal_ids(&ireland_only).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_filter_countries_case_insensitive() {
+        let db = setup();
+        let ca = seed_artist_with_country(&db, "ar1", "Arcade Fire", "Canada");
+        seed_album(&db, "al1", "Funeral", ca, Some(2004));
+
+        let params = AlbumFilterParams {
+            countries: vec!["canada".into()],
+            ..Default::default()
+        };
+        assert_eq!(db.filtered_album_internal_ids(&params).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_filter_empty_countries_returns_all() {
+        let db = setup();
+        let ca = seed_artist_with_country(&db, "ar1", "Arcade Fire", "Canada");
+        let uk = seed_artist_with_country(&db, "ar2", "Radiohead", "United Kingdom");
+        seed_album(&db, "al1", "Funeral", ca, Some(2004));
+        seed_album(&db, "al2", "OK Computer", uk, Some(1997));
+
+        let params = AlbumFilterParams::default();
+        assert_eq!(db.filtered_album_internal_ids(&params).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_filter_skips_uncountried_when_country_chips_set() {
+        let db = setup();
+        let ca = seed_artist_with_country(&db, "ar1", "Arcade Fire", "Canada");
+        // Artist with no country tag — should be excluded once any country chip is set.
+        let unknown = seed_artist(&db, "ar2", "Mystery Artist");
+        seed_album(&db, "al1", "Funeral", ca, Some(2004));
+        seed_album(&db, "al2", "Untitled", unknown, Some(2010));
+
+        let params = AlbumFilterParams {
+            countries: vec!["Canada".into()],
+            ..Default::default()
+        };
+        assert_eq!(db.filtered_album_internal_ids(&params).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_filter_favourite_albums_unchanged() {
+        let db = setup();
+        let artist = seed_artist(&db, "ar1", "Radiohead");
+        let fav = seed_album(&db, "al1", "OK Computer", artist, Some(1997));
+        let _normal = seed_album(&db, "al2", "Kid A", artist, Some(2000));
+        db.update_album_rating("al1", Some(10.0)).unwrap();
+
+        let params = AlbumFilterParams {
+            favourite_albums: true,
+            ..Default::default()
+        };
+        let ids = db.filtered_album_internal_ids(&params).unwrap();
+        assert_eq!(ids.len(), 1);
+        assert!(ids.contains(&fav));
+    }
+
+    #[test]
+    fn test_filter_favourite_tracks_matches_albums_with_starred_track() {
+        let db = setup();
+        let artist = seed_artist(&db, "ar1", "Radiohead");
+        let with_fav = seed_album(&db, "al1", "OK Computer", artist, Some(1997));
+        let without_fav = seed_album(&db, "al2", "Kid A", artist, Some(2000));
+        seed_track(&db, "tr1", "Paranoid Android", with_fav, artist);
+        seed_track(&db, "tr2", "Karma Police", with_fav, artist);
+        seed_track(&db, "tr3", "Idioteque", without_fav, artist);
+        db.update_track_rating("tr2", Some(10.0)).unwrap();
+
+        let params = AlbumFilterParams {
+            favourite_tracks: true,
+            ..Default::default()
+        };
+        let ids = db.filtered_album_internal_ids(&params).unwrap();
+        assert_eq!(ids.len(), 1);
+        assert!(ids.contains(&with_fav));
+    }
+
+    #[test]
+    fn test_filter_favourite_albums_and_tracks_combine_with_and() {
+        let db = setup();
+        let artist = seed_artist(&db, "ar1", "Radiohead");
+        // Album-fav AND track-fav: matches.
+        let both = seed_album(&db, "al1", "OK Computer", artist, Some(1997));
+        seed_track(&db, "tr1", "Paranoid Android", both, artist);
+        db.update_album_rating("al1", Some(10.0)).unwrap();
+        db.update_track_rating("tr1", Some(10.0)).unwrap();
+
+        // Album-fav only: excluded when both filters active.
+        let album_only = seed_album(&db, "al2", "Kid A", artist, Some(2000));
+        seed_track(&db, "tr2", "Idioteque", album_only, artist);
+        db.update_album_rating("al2", Some(10.0)).unwrap();
+
+        // Track-fav only: excluded when both filters active.
+        let track_only = seed_album(&db, "al3", "In Rainbows", artist, Some(2007));
+        seed_track(&db, "tr3", "Reckoner", track_only, artist);
+        db.update_track_rating("tr3", Some(10.0)).unwrap();
+
+        let params = AlbumFilterParams {
+            favourite_albums: true,
+            favourite_tracks: true,
+            ..Default::default()
+        };
+        let ids = db.filtered_album_internal_ids(&params).unwrap();
+        assert_eq!(ids.len(), 1);
+        assert!(ids.contains(&both));
+    }
+
+    #[test]
+    fn test_populate_album_favourite_tracks_marks_album() {
+        let db = setup();
+        let artist = seed_artist(&db, "ar1", "Radiohead");
+        seed_album(&db, "al1", "OK Computer", artist, Some(1997));
+        seed_track(&db, "tr1", "Paranoid Android", db.album_id("al1").unwrap().unwrap(), artist);
+        db.update_track_rating("tr1", Some(10.0)).unwrap();
+
+        let albums = db.all_albums().unwrap();
+        let target = albums.iter().find(|a| a.rating_key == "al1").unwrap();
+        assert!(target.has_favourite_track);
+    }
+
+    #[test]
+    fn test_filter_genres_field_is_ignored_at_db_layer() {
+        // The DB function intentionally ignores `genres` — that intersection
+        // lives in the command layer where the GenreMapper is available.
+        // This test just guards against accidentally reintroducing genre
+        // filtering here without the mapper context.
+        let db = setup();
+        let ca = seed_artist_with_country(&db, "ar1", "Arcade Fire", "Canada");
+        seed_album(&db, "al1", "Funeral", ca, Some(2004));
+
+        let params = AlbumFilterParams {
+            genres: vec!["Indie Rock".into()],
+            ..Default::default()
+        };
+        // Album has no genres tagged but the DB function should still return it
+        // (filter is a no-op at this layer — caller is expected to apply genre
+        // intersection on top).
+        assert_eq!(db.filtered_album_internal_ids(&params).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_distinct_artist_countries_tokenises_comma_joined() {
+        let db = setup();
+        seed_artist_with_country(&db, "ar1", "Mogwai", "Scotland, United Kingdom");
+        seed_artist_with_country(&db, "ar2", "Arcade Fire", "Canada");
+        // Same canonical country in a different case shouldn't produce a
+        // duplicate entry.
+        seed_artist_with_country(&db, "ar3", "Other", "canada");
+
+        let names = db.distinct_artist_countries().unwrap();
+        // Must be tokenised: "Scotland, United Kingdom" → two separate entries.
+        assert!(names.iter().any(|n| n == "Scotland"));
+        assert!(names.iter().any(|n| n == "United Kingdom"));
+        // Case-insensitive dedupe.
+        let canada_count = names.iter().filter(|n| n.eq_ignore_ascii_case("Canada")).count();
+        assert_eq!(canada_count, 1);
+        // No raw "Scotland, United Kingdom" compound left over.
+        assert!(!names.iter().any(|n| n.contains(',')));
     }
 }

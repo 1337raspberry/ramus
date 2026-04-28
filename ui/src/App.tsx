@@ -79,6 +79,15 @@ export default function App() {
     lib.loadGenreTree?.();
   }, [authed, connection.effectiveOffline]);
 
+  // Hydrate genre-chip expansions once at boot (after auth). Separate from
+  // the offline-toggle effect because re-hydrating on every connection flip
+  // is wasted work — `ensureGenreExpansions` is idempotent but each call
+  // still re-walks the persisted chip array.
+  useEffect(() => {
+    if (authed !== true) return;
+    useLibraryStore.getState().hydrateGenreExpansions?.();
+  }, [authed]);
+
   // Toggle a body class rather than conditionally rendering: the compact
   // NowPlayingView must stay mounted because its image onLoad handler extracts
   // the Vibrant palette on track change.

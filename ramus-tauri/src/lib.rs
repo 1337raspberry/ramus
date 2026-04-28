@@ -1139,6 +1139,8 @@ pub fn run() {
             commands::library::get_cache_stats,
             commands::library::get_distinct_countries,
             commands::library::get_all_collection_names,
+            commands::library::get_genre_suggestions,
+            commands::library::expand_genre_to_library_tags,
             // playback
             commands::playback::play_tracks,
             commands::playback::toggle_play_pause,

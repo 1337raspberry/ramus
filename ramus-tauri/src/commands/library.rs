@@ -7,10 +7,57 @@ use ramus_core::search::engine::GenreExpander;
 use ramus_core::util::plex_art_url;
 use rand::seq::SliceRandom;
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 
 use crate::state::AppState;
 
 use super::{with_cache, CmdResult};
+
+/// Apply the genre-AND chips on top of the SQL-filtered album-id set: each
+/// chip is expanded via `GenreMapper::expand_genre` (with the same
+/// case-insensitive fall-back guard that `get_albums_for_genre` uses), the
+/// expansion is resolved to album IDs via `album_ids_for_genre_names`, and
+/// the running set is intersected. An empty `genres` list is a no-op.
+fn intersect_genre_chips(
+    state: &State<'_, AppState>,
+    base: HashSet<i64>,
+    genres: &[String],
+) -> CmdResult<HashSet<i64>> {
+    if genres.is_empty() {
+        return Ok(base);
+    }
+    let mapper_guard = state.genre_mapper.read();
+    let mut current = base;
+    for chip in genres {
+        let names: Vec<String> = match mapper_guard.as_ref() {
+            Some(mapper) => match mapper.expand_genre(chip) {
+                Some(expanded) if expanded.iter().any(|n| n.eq_ignore_ascii_case(chip)) => {
+                    expanded.into_iter().collect()
+                }
+                _ => vec![chip.clone()],
+            },
+            None => vec![chip.clone()],
+        };
+        let chip_ids = with_cache(state, |db| db.album_ids_for_genre_names(&names))?;
+        current.retain(|id| chip_ids.contains(id));
+        if current.is_empty() {
+            break;
+        }
+    }
+    Ok(current)
+}
+
+/// Build the full filtered album-id set for the active filter state, applying
+/// SQL-resolvable filters then the genre-AND chips. Pure `HashSet` — no
+/// offline-mode intersection here; callers add that layer themselves so the
+/// downloaded-id query can be skipped when not in offline mode.
+fn compute_filtered_album_ids(
+    state: &State<'_, AppState>,
+    filters: &AlbumFilterParams,
+) -> CmdResult<HashSet<i64>> {
+    let base = with_cache(state, |db| db.filtered_album_internal_ids(filters))?;
+    intersect_genre_chips(state, base, &filters.genres)
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -244,7 +291,7 @@ pub async fn get_filtered_genre_tree(
     state: State<'_, AppState>,
     filters: AlbumFilterParams,
 ) -> CmdResult<GenreTreeResponse> {
-    let mut filtered_ids = with_cache(&state, |db| db.filtered_album_internal_ids(&filters))?;
+    let mut filtered_ids = compute_filtered_album_ids(&state, &filters)?;
     if state.effective_offline() {
         let downloaded = with_cache(&state, |db| db.downloaded_album_internal_ids())?;
         filtered_ids = filtered_ids.intersection(&downloaded).copied().collect();
@@ -365,24 +412,23 @@ pub async fn get_filtered_random_album(
     state: State<'_, AppState>,
     filters: AlbumFilterParams,
 ) -> CmdResult<Option<Album>> {
+    let mut filtered_ids = compute_filtered_album_ids(&state, &filters)?;
     if state.effective_offline() {
-        let mut filtered_ids = with_cache(&state, |db| db.filtered_album_internal_ids(&filters))?;
         let downloaded = with_cache(&state, |db| db.downloaded_album_internal_ids())?;
         filtered_ids.retain(|id| downloaded.contains(id));
-        if filtered_ids.is_empty() {
-            return Ok(None);
-        }
-        let id_vec: Vec<i64> = filtered_ids.into_iter().collect();
-        let mut rng = rand::thread_rng();
-        let Some(&chosen) = id_vec.choose(&mut rng) else {
-            return Ok(None);
-        };
-        let albums = with_cache(&state, |db| {
-            db.albums_by_internal_ids(&std::collections::HashSet::from([chosen]))
-        })?;
-        return Ok(albums.into_iter().next());
     }
-    with_cache(&state, |db| db.filtered_random_album(&filters))
+    if filtered_ids.is_empty() {
+        return Ok(None);
+    }
+    let id_vec: Vec<i64> = filtered_ids.into_iter().collect();
+    let mut rng = rand::thread_rng();
+    let Some(&chosen) = id_vec.choose(&mut rng) else {
+        return Ok(None);
+    };
+    let albums = with_cache(&state, |db| {
+        db.albums_by_internal_ids(&HashSet::from([chosen]))
+    })?;
+    Ok(albums.into_iter().next())
 }
 
 #[tauri::command]
@@ -502,6 +548,115 @@ pub async fn get_cache_stats(state: State<'_, AppState>) -> CmdResult<CacheStats
 #[tauri::command]
 pub async fn get_distinct_countries(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
     with_cache(&state, |db| db.distinct_artist_countries())
+}
+
+/// Expand a genre chip into the set of lowercased library tag names that
+/// belong to its subtree (via `GenreMapper::expand_genre`, with the same
+/// case-insensitive fall-back used elsewhere). Result is filtered down to
+/// tags that actually exist in the user's library so the frontend can
+/// intersect against `Album.genres` without ferrying canonical names that
+/// would never match anyway.
+#[tauri::command]
+pub async fn expand_genre_to_library_tags(
+    state: State<'_, AppState>,
+    genre: String,
+) -> CmdResult<Vec<String>> {
+    let mapper_guard = state.genre_mapper.read();
+    let expanded: HashSet<String> = match mapper_guard.as_ref() {
+        Some(mapper) => match mapper.expand_genre(&genre) {
+            Some(set) if set.iter().any(|n| n.eq_ignore_ascii_case(&genre)) => {
+                set.into_iter().map(|s| s.to_lowercase()).collect()
+            }
+            _ => HashSet::from([genre.to_lowercase()]),
+        },
+        None => HashSet::from([genre.to_lowercase()]),
+    };
+    drop(mapper_guard);
+
+    let library_tags: Vec<String> = with_cache(&state, |db| db.genre_album_sets())?
+        .into_keys()
+        .map(|tag| tag.to_lowercase())
+        .filter(|tag| expanded.contains(tag))
+        .collect();
+    Ok(library_tags)
+}
+
+/// Suggest library genre tags for the chip-filter autocomplete. Matches when
+/// the tag's lowercased name contains `query`, or when any AKA for a canonical
+/// the tag resolves to contains `query`. Ranking: exact > prefix > substring >
+/// AKA-only > alphabetical tiebreaker. Truncated to `limit`.
+#[tauri::command]
+pub async fn get_genre_suggestions(
+    state: State<'_, AppState>,
+    query: String,
+    limit: u32,
+) -> CmdResult<Vec<String>> {
+    let limit = limit.max(1) as usize;
+    let query_lower = query.trim().to_lowercase();
+
+    let library_tags: Vec<String> = with_cache(&state, |db| db.genre_album_sets())?
+        .into_keys()
+        .collect();
+
+    // Empty query → top library tags alphabetically. Useful for opening the
+    // dropdown without typing.
+    if query_lower.is_empty() {
+        let mut sorted = library_tags;
+        sorted.sort_by_key(|a| a.to_lowercase());
+        sorted.truncate(limit);
+        return Ok(sorted);
+    }
+
+    let mapper_guard = state.genre_mapper.read();
+    let mapper = mapper_guard.as_ref();
+
+    // Cache canonical→AKAs lookups so a tag with multiple canonical matches
+    // doesn't re-walk the AKA table on every miss.
+    let mut aka_cache: HashMap<String, Vec<String>> = HashMap::new();
+
+    let mut scored: Vec<(u8, String)> = Vec::new();
+    for tag in &library_tags {
+        let tag_lower = tag.to_lowercase();
+        let direct_score = if tag_lower == query_lower {
+            Some(0u8)
+        } else if tag_lower.starts_with(&query_lower) {
+            Some(1u8)
+        } else if tag_lower.contains(&query_lower) {
+            Some(2u8)
+        } else {
+            None
+        };
+
+        if let Some(score) = direct_score {
+            scored.push((score, tag.clone()));
+            continue;
+        }
+
+        // No direct hit — try AKA fan-out. Skip when the mapper isn't loaded
+        // (e.g. very early in startup); substring-only is still useful.
+        let Some(mapper) = mapper else { continue };
+
+        let mut aka_hit = false;
+        for canonical in mapper.match_all(tag) {
+            let akas = aka_cache
+                .entry(canonical.name.clone())
+                .or_insert_with(|| mapper.akas_for_canonical(&canonical.name));
+            if akas.iter().any(|a| a.contains(&query_lower)) {
+                aka_hit = true;
+                break;
+            }
+        }
+        if aka_hit {
+            scored.push((3, tag.clone()));
+        }
+    }
+
+    scored.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase()))
+    });
+    scored.truncate(limit);
+    Ok(scored.into_iter().map(|(_, name)| name).collect())
 }
 
 #[tauri::command]

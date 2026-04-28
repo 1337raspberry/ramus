@@ -18,6 +18,7 @@ import {
   toggleAlbumFavourite,
   toggleTrackFavourite,
   playTracks,
+  expandGenreToLibraryTags,
   type AlbumFilterParamsIPC,
 } from "../lib/commands";
 import { usePlaybackStore } from "./playbackStore";
@@ -29,24 +30,66 @@ export type AlbumSortOrder = "alphabetical" | "latestAdded" | "recentlyPlayed" |
 
 export interface AlbumFilters {
   unplayed: boolean;
-  favourite: boolean;
+  /** Album-level favourite — `albums.rating >= 10.0`. */
+  favouriteAlbums: boolean;
+  /** Track-level favourite — at least one track on the album has
+   * `tracks.userRating >= 10.0`. Independent of `favouriteAlbums`; both can
+   * be active and combine with AND. */
+  favouriteTracks: boolean;
   year: string;
-  country: string;
+  /** OR semantics — match any selected country. */
+  countries: string[];
+  /** AND semantics — album must be tagged with every selected genre (each chip
+   * is expanded to its subtree on the Rust side). */
+  genres: string[];
   collection: string;
 }
 
 export const DEFAULT_FILTERS: AlbumFilters = {
   unplayed: false,
-  favourite: false,
+  favouriteAlbums: false,
+  favouriteTracks: false,
   year: "",
-  country: "",
+  countries: [],
+  genres: [],
   collection: "",
 };
+
+// Migrate the pre-chip shape (`country: string`, single `favourite` toggle) to
+// the current shape (`countries: string[]`, split favourite booleans, `genres`
+// array). Keeps existing users' filter preferences working on first load after
+// each upgrade.
+function migrateLegacyShape(parsed: unknown): Partial<AlbumFilters> {
+  if (!parsed || typeof parsed !== "object") return {};
+  const obj = parsed as Record<string, unknown>;
+  const out: Partial<AlbumFilters> = {};
+  if (typeof obj.unplayed === "boolean") out.unplayed = obj.unplayed;
+  if (typeof obj.favouriteAlbums === "boolean") {
+    out.favouriteAlbums = obj.favouriteAlbums;
+  } else if (typeof obj.favourite === "boolean") {
+    // Old single `favourite` toggle = album-level favourites (track-level didn't exist).
+    out.favouriteAlbums = obj.favourite;
+  }
+  if (typeof obj.favouriteTracks === "boolean") {
+    out.favouriteTracks = obj.favouriteTracks;
+  }
+  if (typeof obj.year === "string") out.year = obj.year;
+  if (typeof obj.collection === "string") out.collection = obj.collection;
+  if (Array.isArray(obj.countries)) {
+    out.countries = obj.countries.filter((v): v is string => typeof v === "string");
+  } else if (typeof obj.country === "string" && obj.country) {
+    out.countries = [obj.country];
+  }
+  if (Array.isArray(obj.genres)) {
+    out.genres = obj.genres.filter((v): v is string => typeof v === "string");
+  }
+  return out;
+}
 
 function loadPersistedFilters(): AlbumFilters {
   try {
     const raw = localStorage.getItem("ramus-album-filters");
-    if (raw) return { ...DEFAULT_FILTERS, ...JSON.parse(raw) };
+    if (raw) return { ...DEFAULT_FILTERS, ...migrateLegacyShape(JSON.parse(raw)) };
   } catch {}
   return { ...DEFAULT_FILTERS };
 }
@@ -106,13 +149,56 @@ export function parseYearFilter(input: string): YearPredicate | null {
   };
 }
 
-function filterAlbums(albums: Album[], filters: AlbumFilters): Album[] {
+// Match an album's `artistCountry` against a list of selected country chips
+// (OR semantics, case-insensitive, comma-tokenised because Plex sometimes
+// serves multi-country artists as a comma-joined string).
+function albumMatchesCountries(album: Album, countries: string[]): boolean {
+  if (countries.length === 0) return true;
+  if (!album.artistCountry) return false;
+  const tokens = album.artistCountry
+    .split(",")
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean);
+  if (tokens.length === 0) return false;
+  const wanted = new Set(countries.map((c) => c.toLowerCase()));
+  return tokens.some((t) => wanted.has(t));
+}
+
+// AND semantics — album must overlap with every chip's expansion. A chip whose
+// expansion hasn't been fetched yet (key absent from the map) passes through,
+// otherwise we'd flash an empty grid on every new chip. Once the expansion
+// lands the predicate is re-evaluated and the grid prunes correctly. An
+// expansion of `[]` is a legitimate "this chip matches no library tag" and
+// is correctly restrictive — distinct from "still loading".
+function albumMatchesGenres(
+  album: Album,
+  chips: string[],
+  expansions: Record<string, string[]>,
+): boolean {
+  if (chips.length === 0) return true;
+  const albumTagsLower = album.genres.map((g) => g.toLowerCase());
+  for (const chip of chips) {
+    const key = chip.toLowerCase();
+    if (!(key in expansions)) continue; // pending; treat as not-yet-restrictive
+    const expansionSet = new Set(expansions[key]);
+    if (!albumTagsLower.some((g) => expansionSet.has(g))) return false;
+  }
+  return true;
+}
+
+function filterAlbums(
+  albums: Album[],
+  filters: AlbumFilters,
+  genreExpansions: Record<string, string[]>,
+): Album[] {
   const yearPred = parseYearFilter(filters.year);
   return albums.filter((a) => {
     if (filters.unplayed && (a.viewCount ?? 0) > 0) return false;
-    if (filters.favourite && !a.isFavourite) return false;
+    if (filters.favouriteAlbums && !a.isFavourite) return false;
+    if (filters.favouriteTracks && !a.hasFavouriteTrack) return false;
     if (yearPred && !yearPred(a.year)) return false;
-    if (filters.country && a.artistCountry !== filters.country) return false;
+    if (!albumMatchesCountries(a, filters.countries)) return false;
+    if (!albumMatchesGenres(a, filters.genres, genreExpansions)) return false;
     if (
       filters.collection &&
       !a.collections.some((c) => c.toLowerCase() === filters.collection.toLowerCase())
@@ -125,9 +211,11 @@ function filterAlbums(albums: Album[], filters: AlbumFilters): Album[] {
 export function hasActiveFilters(filters: AlbumFilters): boolean {
   return (
     filters.unplayed ||
-    filters.favourite ||
+    filters.favouriteAlbums ||
+    filters.favouriteTracks ||
     parseYearRange(filters.year) !== null ||
-    filters.country !== "" ||
+    filters.countries.length > 0 ||
+    filters.genres.length > 0 ||
     filters.collection !== ""
   );
 }
@@ -135,9 +223,11 @@ export function hasActiveFilters(filters: AlbumFilters): boolean {
 export function countActiveFilters(filters: AlbumFilters): number {
   return [
     filters.unplayed,
-    filters.favourite,
+    filters.favouriteAlbums,
+    filters.favouriteTracks,
     parseYearRange(filters.year) !== null,
-    filters.country !== "",
+    filters.countries.length > 0,
+    filters.genres.length > 0,
     filters.collection !== "",
   ].filter(Boolean).length;
 }
@@ -146,10 +236,12 @@ function filtersToIPC(filters: AlbumFilters): AlbumFilterParamsIPC {
   const yr = parseYearRange(filters.year);
   return {
     unplayed: filters.unplayed,
-    favourite: filters.favourite,
+    favouriteAlbums: filters.favouriteAlbums,
+    favouriteTracks: filters.favouriteTracks,
     yearMin: yr?.min ?? null,
     yearMax: yr?.max ?? null,
-    country: filters.country || null,
+    countries: filters.countries,
+    genres: filters.genres,
     collection: filters.collection || null,
   };
 }
@@ -158,9 +250,10 @@ function sortAndFilter(
   albums: Album[],
   order: AlbumSortOrder,
   filters: AlbumFilters,
+  genreExpansions: Record<string, string[]>,
 ): { sorted: Album[]; filtered: Album[] } {
   const sorted = sortAlbums(albums, order);
-  return { sorted, filtered: filterAlbums(sorted, filters) };
+  return { sorted, filtered: filterAlbums(sorted, filters, genreExpansions) };
 }
 
 interface LibraryState {
@@ -194,8 +287,17 @@ interface LibraryState {
   unfilteredAlbums: Album[];
   albumSortOrder: AlbumSortOrder;
   albumFilters: AlbumFilters;
+  /// Per-chip cache of "lowercased library tag names this chip's subtree
+  /// covers" — populated lazily by `setAlbumFilters`. Drives the AND-filter
+  /// for the album grid: see `albumMatchesGenres`. Persists for the session
+  /// only; not written to localStorage (the source IPC is cheap to repeat).
+  genreExpansions: Record<string, string[]>;
   setAlbumSortOrder: (order: AlbumSortOrder) => void;
   setAlbumFilters: (filters: AlbumFilters) => void;
+  /// Lazy-load expansions for any current genre chips that haven't been
+  /// fetched yet. Call this once at boot so chips restored from localStorage
+  /// get their library-tag sets without the user having to re-toggle them.
+  hydrateGenreExpansions: () => void;
   loadAlbumsForGenre: (genre: string) => void;
   loadAllAlbums: () => Promise<void>;
   loadAlbumsForArtist: (sourceId: string) => Promise<void>;
@@ -286,6 +388,44 @@ function findDeepestNodeByName(nodes: GenreNode[], name: string): GenreNode | nu
 
 let genreFetchGen = 0;
 
+// Module-level so the dedupe survives `set()` calls without polluting state.
+// Cleared on success or failure of the IPC.
+const inFlightGenreExpansions = new Set<string>();
+
+/**
+ * Lazy-load each chip's library-tag expansion. Idempotent — already-cached or
+ * already-in-flight chips are no-ops. As each expansion lands, re-applies the
+ * album filter so the grid prunes once the data is in hand. Used both by
+ * `setAlbumFilters` (for newly added chips) and at app start (for chips
+ * restored from localStorage).
+ */
+function ensureGenreExpansions(
+  chips: string[],
+  set: (fn: (s: LibraryState) => Partial<LibraryState>) => void,
+  get: () => LibraryState,
+) {
+  for (const chip of chips) {
+    const key = chip.toLowerCase();
+    if (key in get().genreExpansions) continue;
+    if (inFlightGenreExpansions.has(key)) continue;
+    inFlightGenreExpansions.add(key);
+    expandGenreToLibraryTags(chip)
+      .then((tags) => {
+        inFlightGenreExpansions.delete(key);
+        set((state) => {
+          const nextExpansions = { ...state.genreExpansions, [key]: tags };
+          return {
+            genreExpansions: nextExpansions,
+            albums: filterAlbums(state.unfilteredAlbums, state.albumFilters, nextExpansions),
+          };
+        });
+      })
+      .catch(() => {
+        inFlightGenreExpansions.delete(key);
+      });
+  }
+}
+
 function genreSelectionState(node: GenreNode, currentExpanded: Set<string>): Partial<LibraryState> {
   const segments = node.id.split("/");
   const ancestorIds = segments.slice(0, -1).map((_, i) => segments.slice(0, i + 1).join("/"));
@@ -317,6 +457,7 @@ function fetchGenreAlbums(
           albums,
           state.albumSortOrder,
           state.albumFilters,
+          state.genreExpansions,
         );
         return { unfilteredAlbums: sorted, albums: filtered };
       });
@@ -472,11 +613,17 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   unfilteredAlbums: [],
   albumSortOrder: (localStorage.getItem("ramus-album-sort") as AlbumSortOrder) || "alphabetical",
   albumFilters: loadPersistedFilters(),
+  genreExpansions: {},
 
   setAlbumSortOrder: (order) => {
     localStorage.setItem("ramus-album-sort", order);
     set((state) => {
-      const { sorted, filtered } = sortAndFilter(state.unfilteredAlbums, order, state.albumFilters);
+      const { sorted, filtered } = sortAndFilter(
+        state.unfilteredAlbums,
+        order,
+        state.albumFilters,
+        state.genreExpansions,
+      );
       return { albumSortOrder: order, unfilteredAlbums: sorted, albums: filtered };
     });
   },
@@ -485,11 +632,16 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     persistFilters(filters);
     set((state) => ({
       albumFilters: filters,
-      albums: filterAlbums(state.unfilteredAlbums, filters),
+      albums: filterAlbums(state.unfilteredAlbums, filters, state.genreExpansions),
     }));
     if (get().sidebarMode === "genres") {
       get().reloadGenreTree();
     }
+    ensureGenreExpansions(filters.genres, set, get);
+  },
+
+  hydrateGenreExpansions: () => {
+    ensureGenreExpansions(get().albumFilters.genres, set, get);
   },
 
   loadAlbumsForGenre: (genre) => {
@@ -504,6 +656,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           albums,
           state.albumSortOrder,
           state.albumFilters,
+          state.genreExpansions,
         );
         return { unfilteredAlbums: sorted, albums: filtered };
       });
@@ -518,6 +671,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           albums,
           state.albumSortOrder,
           state.albumFilters,
+          state.genreExpansions,
         );
         return { unfilteredAlbums: sorted, albums: filtered };
       });
@@ -542,6 +696,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           albums,
           state.albumSortOrder,
           state.albumFilters,
+          state.genreExpansions,
         );
         return { unfilteredAlbums: sorted, albums: filtered };
       });
@@ -565,6 +720,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           albums,
           state.albumSortOrder,
           state.albumFilters,
+          state.genreExpansions,
         );
         return { unfilteredAlbums: sorted, albums: filtered };
       });
@@ -574,7 +730,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   shuffleAlbums: () =>
     set((state) => {
       const shuffled = sortAlbums(state.unfilteredAlbums, "random");
-      return { unfilteredAlbums: shuffled, albums: filterAlbums(shuffled, state.albumFilters) };
+      return {
+        unfilteredAlbums: shuffled,
+        albums: filterAlbums(shuffled, state.albumFilters, state.genreExpansions),
+      };
     }),
 
   // --- Browse context (from album detail clicks) ---
@@ -593,6 +752,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           albums,
           state.albumSortOrder,
           state.albumFilters,
+          state.genreExpansions,
         );
         return {
           unfilteredAlbums: sorted,
@@ -627,6 +787,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           albums,
           state.albumSortOrder,
           state.albumFilters,
+          state.genreExpansions,
         );
         return {
           unfilteredAlbums: sorted,
@@ -745,7 +906,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         );
         return {
           unfilteredAlbums: nextUnfiltered,
-          albums: filterAlbums(nextUnfiltered, state.albumFilters),
+          albums: filterAlbums(nextUnfiltered, state.albumFilters, state.genreExpansions),
           selectedAlbum:
             state.selectedAlbum?.ratingKey === album.ratingKey
               ? { ...state.selectedAlbum, isFavourite: next }
@@ -774,14 +935,47 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     const next = !track.isFavourite;
     try {
       await toggleTrackFavourite(track.ratingKey, next);
-      set((state) => ({
-        tracks: state.tracks.map((t) =>
+      set((state) => {
+        const nextTracks = state.tracks.map((t) =>
           t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t,
-        ),
-        detailTracks: state.detailTracks.map((t) =>
+        );
+        const nextDetailTracks = state.detailTracks.map((t) =>
           t.ratingKey === track.ratingKey ? { ...t, isFavourite: next } : t,
-        ),
-      }));
+        );
+
+        // Re-derive `Album.hasFavouriteTrack` for the affected album so the
+        // `favouriteTracks` chip filter prunes correctly when the user
+        // unstars the last starred track on an album. We only need to look
+        // at `selectedAlbum`/`detailAlbum` because the local `tracks` list
+        // is what ratings are toggled from. Falls back to skipping the
+        // patch when we can't infer the album key.
+        const albumKey =
+          track.albumKey ?? state.selectedAlbum?.ratingKey ?? state.detailAlbum?.ratingKey ?? null;
+
+        let nextUnfiltered = state.unfilteredAlbums;
+        let nextAlbums = state.albums;
+        if (albumKey) {
+          const stillHasFav = nextTracks.some(
+            (t) => t.isFavourite && (t.albumKey ?? state.selectedAlbum?.ratingKey) === albumKey,
+          );
+          // Only patch when the album currently shows the opposite state —
+          // avoids creating new array references on every track-fav toggle.
+          const target = state.unfilteredAlbums.find((a) => a.ratingKey === albumKey);
+          if (target && target.hasFavouriteTrack !== stillHasFav) {
+            nextUnfiltered = state.unfilteredAlbums.map((a) =>
+              a.ratingKey === albumKey ? { ...a, hasFavouriteTrack: stillHasFav } : a,
+            );
+            nextAlbums = filterAlbums(nextUnfiltered, state.albumFilters, state.genreExpansions);
+          }
+        }
+
+        return {
+          tracks: nextTracks,
+          detailTracks: nextDetailTracks,
+          unfilteredAlbums: nextUnfiltered,
+          albums: nextAlbums,
+        };
+      });
       // Source-of-truth sync: patch currentTrack + queue when ratingKey
       // matches. Components must call this action rather than the
       // toggle_track_favourite IPC directly.
