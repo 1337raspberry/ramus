@@ -30,6 +30,15 @@ use ramus_core::playback::spectrum::{
     analyse_samples, write_spec_file, SpectrumConfig, SpectrumFrames, SpectrumState,
 };
 
+/// Hard ceiling on the mono PCM buffer assembled during analysis. 300M
+/// f32 samples ≈ 1.2 GB peak RAM — well above the legitimate music-track
+/// envelope (90 min at 96 kHz mono fits in 518M; 30 min at 192 kHz in
+/// 346M) but bounded so a hostile Plex server can't OOM the process by
+/// serving a multi-hour audiobook or a header-spoofed stream. Tracks
+/// past the cap return `DecodeFailed("track too long")` and persist as
+/// `Unavailable` so we don't retry.
+const MAX_MONO_SAMPLES: usize = 300_000_000;
+
 /// Errors the analyser surfaces to its caller. Variant names map directly to
 /// the `reason` string the frontend displays.
 #[derive(Debug)]
@@ -156,6 +165,9 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
                     sample_rate = audio_buf.spec().rate;
                 }
                 mix_to_mono(&audio_buf, &mut mono);
+                if mono.len() > MAX_MONO_SAMPLES {
+                    return Err(AnalyseError::DecodeFailed("track too long".into()));
+                }
             }
             Err(SymphoniaError::DecodeError(_)) => {
                 // Recoverable: skip the bad packet.
