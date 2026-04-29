@@ -18,6 +18,8 @@ pub enum CustomGenreParseError {
     UnmatchedBracket(usize),
     #[error("line {0}: indentation jumps from level {1} to {2}")]
     IndentationJump(usize, usize, usize),
+    #[error("line {0}: nesting too deep (depth {1}). Maximum is {2}")]
+    DepthTooDeep(usize, usize, usize),
     #[error("no root-level genres found")]
     NoRootGenresFound,
     #[error("JSON serialization error: {0}")]
@@ -29,6 +31,14 @@ pub enum CustomGenreParseError {
 pub const MAX_FILE_SIZE: usize = 1_048_576;
 pub const MAX_LINE_COUNT: usize = 50_000;
 pub const MAX_NAME_LENGTH: usize = 200;
+/// Maximum nesting depth for the genre tree. Bounds stack usage on the
+/// downstream recursive walks (`convert_raw_node`, `build_lookup`,
+/// `collect_akas`, `prune_node`, `compute_deduplicated_counts`,
+/// `collect_descendant_names`, `node_to_json`). The bundled `open.json`
+/// peaks at depth 6; 32 leaves generous headroom for hand-curated
+/// custom trees while keeping every recursive walk well inside an
+/// 8 MB thread stack.
+pub const MAX_DEPTH: usize = 32;
 
 // --- Parser ---
 
@@ -101,6 +111,14 @@ impl CustomGenreParser {
                     line_number,
                     previous_depth,
                     depth,
+                ));
+            }
+
+            if depth > MAX_DEPTH {
+                return Err(CustomGenreParseError::DepthTooDeep(
+                    line_number,
+                    depth,
+                    MAX_DEPTH,
                 ));
             }
 
@@ -507,6 +525,31 @@ mod tests {
         let long_name = "A".repeat(201);
         let err = CustomGenreParser::parse(&long_name).unwrap_err();
         assert!(matches!(err, CustomGenreParseError::NameTooLong(_, _)));
+    }
+
+    #[test]
+    fn test_depth_too_deep_rejected() {
+        // 33 levels of nesting (one above the cap) at one space per level.
+        let mut text = String::from("Root");
+        for i in 1..=MAX_DEPTH + 1 {
+            text.push('\n');
+            text.push_str(&" ".repeat(i));
+            text.push_str(&format!("L{}", i));
+        }
+        let err = CustomGenreParser::parse(&text).unwrap_err();
+        assert!(matches!(err, CustomGenreParseError::DepthTooDeep(_, _, _)));
+    }
+
+    #[test]
+    fn test_depth_at_cap_accepted() {
+        // Exactly MAX_DEPTH levels of nesting is allowed.
+        let mut text = String::from("Root");
+        for i in 1..=MAX_DEPTH {
+            text.push('\n');
+            text.push_str(&" ".repeat(i));
+            text.push_str(&format!("L{}", i));
+        }
+        assert!(CustomGenreParser::parse(&text).is_ok());
     }
 
     #[test]
