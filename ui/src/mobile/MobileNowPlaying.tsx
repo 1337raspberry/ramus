@@ -302,6 +302,17 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
 
   const [sheetDragY, setSheetDragY] = useState(0);
   const [dismissing, setDismissing] = useState(false);
+  // The drag-dismiss path sets `dismissing=true` and waits for the
+  // `transform` transitionend to fire `onCollapse()` and reset the flag.
+  // If `expanded` flips to false by an external path first (Android
+  // hardware back collapses the sheet directly), the transitionend may
+  // never arrive and `dismissing` stays stuck. Next open then renders the
+  // sheet with `dismissing=true`, transitionend fires on the open
+  // animation, and the sheet immediately re-collapses. Resetting on every
+  // collapse keeps the flag consistent with the rendered state.
+  useEffect(() => {
+    if (!expanded) setDismissing(false);
+  }, [expanded]);
   const sheetRef = useRef<HTMLDivElement>(null);
   const sheetBodyRef = useRef<HTMLDivElement>(null);
   const sheetHeaderRef = useRef<HTMLElement>(null);
