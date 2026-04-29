@@ -11,7 +11,7 @@ use crate::search::engine::GenreExpander;
 /// matching. Tunable at runtime via `Settings.genre_fuzzy_threshold` and
 /// `GenreMapper::set_threshold`. A value ≥1.0 disables fuzzy entirely
 /// because no Jaro-Winkler score exceeds 1.0.
-pub const DEFAULT_GENRE_FUZZY_THRESHOLD: f64 = 0.8;
+pub const DEFAULT_GENRE_FUZZY_THRESHOLD: f64 = 0.9;
 
 // --- Errors ---
 
@@ -978,8 +978,8 @@ mod tests {
 
     #[test]
     fn test_threshold_at_one_disables_fuzzy() {
-        // "Deth Metal" normally fuzzy-matches "Death Metal" at default 0.8.
-        // With threshold = 1.0, no JW score exceeds it — fuzzy is off.
+        // "Deth Metal" normally fuzzy-matches "Death Metal" at the default
+        // threshold. With threshold = 1.0, no JW score exceeds it — fuzzy is off.
         let mapper = make_mapper(SAMPLE_JSON);
         assert_eq!(mapper.match_genre("Deth Metal").unwrap().name, "Death Metal");
 
