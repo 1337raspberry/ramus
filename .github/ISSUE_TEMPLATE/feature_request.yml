@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest something ramus could do but doesn't.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Heads up: ramus is a focused Plex *music* client. Server-side features (metadata editing, scanning, transcoding settings) are out of scope — those belong in Plex itself. Movies / TV / photos are also out of scope.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the underlying problem?
+      description: Describe the use case before the solution. "I can't easily X" is more useful than "add a button that does Y".
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to see?
+      description: Your idea for solving it. Sketch UI / behaviour if it helps.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Other ways to solve the same problem, even if you ruled them out.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This is a music-client feature (not a server, library-management, or non-music feature).
+          required: true
+        - label: I searched existing issues / PRs for the same idea.
+          required: true

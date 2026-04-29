@@ -1,0 +1,81 @@
+name: Bug report
+description: Something is broken or behaving unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please include enough detail that I can reproduce it on my end — vague reports usually have to wait for a second user to hit the same thing before they get triaged.
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: macOS / Windows / Linux / iOS / Android — and OS version.
+      placeholder: "macOS 26.1 (Tahoe)"
+    validations:
+      required: true
+
+  - type: input
+    id: ramus-version
+    attributes:
+      label: ramus version
+      description: Visible in Settings → About, or the commit hash if you built from source.
+      placeholder: "0.x.y or commit abc1234"
+    validations:
+      required: true
+
+  - type: input
+    id: pms-version
+    attributes:
+      label: Plex Media Server version
+      description: PMS shows this in Settings → General. The exact build matters more often than you'd think.
+      placeholder: "1.40.5.x"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: A clear description of the actual behaviour.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What should have happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. The more concrete, the faster this gets fixed.
+      placeholder: |
+        1. Open ramus and sign in
+        2. Browse to a specific album with N tracks
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / console output
+      description: |
+        Anything in the dev console (browser inspector → Console) at the time of failure. On mobile, paste anything from the Xcode console / `adb logcat`. Redact any tokens or URLs you don't want public — leave the rest.
+      render: shell
+
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues for this bug.
+          required: true
+        - label: I'm not reporting a security vulnerability (those go via [Security Advisories](https://github.com/1337raspberry/ramus-xplat/security/advisories/new)).
+          required: true
