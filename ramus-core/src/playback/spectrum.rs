@@ -29,6 +29,13 @@ use realfft::RealFftPlanner;
 /// "Ramus SPectrum File".
 pub const SPEC_FILE_MAGIC: u32 = 0x52535046;
 
+/// Hard ceiling on `.spec` file size before deserialisation. A legitimate
+/// 5-min track produces ~1.15 MB; a 60-min track ~14 MB. 32 MB leaves
+/// generous headroom while bounding `read_to_end` (and the downstream
+/// postcard `Vec<u8>` allocation) so a hostile `.spec` planted in a
+/// shared cache directory can't force a multi-gigabyte allocation.
+pub const MAX_SPEC_FILE_SIZE: u64 = 32 * 1024 * 1024;
+
 /// FFT window size in samples. 2048 @ 48 kHz → ~42.7 ms analysis window.
 pub const DEFAULT_FFT_SIZE: usize = 2048;
 
@@ -377,6 +384,13 @@ pub fn write_spec_file(audio_path: &Path, state: &SpectrumState) -> std::io::Res
 pub fn read_spec_file(audio_path: &Path) -> Option<SpectrumState> {
     let spec_path = spec_file_path(audio_path);
     let mut file = File::open(&spec_path).ok()?;
+
+    // Reject pathologically large .spec files before reading them into
+    // memory. A planted multi-gigabyte file would otherwise force
+    // `read_to_end` to allocate the full size before any validation.
+    if file.metadata().ok()?.len() > MAX_SPEC_FILE_SIZE {
+        return None;
+    }
 
     let mut magic = [0u8; 4];
     file.read_exact(&mut magic).ok()?;

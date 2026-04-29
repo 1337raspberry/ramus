@@ -426,6 +426,19 @@ mod tests {
     }
 
     #[test]
+    fn spec_file_oversized_returns_none() {
+        // A planted file larger than MAX_SPEC_FILE_SIZE must short-circuit
+        // without read_to_end allocating the whole thing.
+        use ramus_core::playback::spectrum::MAX_SPEC_FILE_SIZE;
+        let dir = tempdir().unwrap();
+        let fake = dir.path().join("huge.flac");
+        let spec = spec_file_path(&fake);
+        let f = File::create(&spec).unwrap();
+        f.set_len(MAX_SPEC_FILE_SIZE + 1).unwrap();
+        assert!(read_spec_file(&fake).is_none());
+    }
+
+    #[test]
     fn write_spec_file_drops_analysing_state() {
         let dir = tempdir().unwrap();
         let fake = dir.path().join("track.flac");
