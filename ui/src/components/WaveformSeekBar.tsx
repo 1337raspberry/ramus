@@ -31,6 +31,20 @@ export default function WaveformSeekBar() {
   const displayPos = isSeeking ? seekPos : position;
   const fraction = duration > 0 ? displayPos / duration : 0;
 
+  // Tracks the AbortController for whichever drag is currently active
+  // (mouse OR touch). Stored on a ref so the unmount cleanup can abort
+  // it — a track change mid-drag tears down the component while the
+  // window listeners are still attached, and without this they'd leak
+  // forever with stale closures over `duration` and `seek`.
+  const activeDragAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      activeDragAbortRef.current?.abort();
+      activeDragAbortRef.current = null;
+    };
+  }, []);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -201,6 +215,10 @@ export default function WaveformSeekBar() {
 
       const rect = el.getBoundingClientRect();
 
+      activeDragAbortRef.current?.abort();
+      const ac = new AbortController();
+      activeDragAbortRef.current = ac;
+
       const onMove = (ev: MouseEvent) => {
         const frac = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
         setSeekPos(frac * duration);
@@ -209,11 +227,11 @@ export default function WaveformSeekBar() {
         const frac = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
         seek(frac * duration);
         setIsSeeking(false);
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
+        ac.abort();
+        if (activeDragAbortRef.current === ac) activeDragAbortRef.current = null;
       };
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
+      window.addEventListener("mousemove", onMove, { signal: ac.signal });
+      window.addEventListener("mouseup", onUp, { signal: ac.signal });
     },
     [duration, seek, handleSeekStart],
   );
@@ -229,6 +247,10 @@ export default function WaveformSeekBar() {
 
       const rect = el.getBoundingClientRect();
 
+      activeDragAbortRef.current?.abort();
+      const ac = new AbortController();
+      activeDragAbortRef.current = ac;
+
       const onMove = (ev: TouchEvent) => {
         const t = ev.touches[0];
         if (!t) return;
@@ -243,13 +265,12 @@ export default function WaveformSeekBar() {
           seek(frac * duration);
         }
         setIsSeeking(false);
-        window.removeEventListener("touchmove", onMove);
-        window.removeEventListener("touchend", onEnd);
-        window.removeEventListener("touchcancel", onEnd);
+        ac.abort();
+        if (activeDragAbortRef.current === ac) activeDragAbortRef.current = null;
       };
-      window.addEventListener("touchmove", onMove, { passive: false });
-      window.addEventListener("touchend", onEnd);
-      window.addEventListener("touchcancel", onEnd);
+      window.addEventListener("touchmove", onMove, { passive: false, signal: ac.signal });
+      window.addEventListener("touchend", onEnd, { signal: ac.signal });
+      window.addEventListener("touchcancel", onEnd, { signal: ac.signal });
     },
     [duration, seek, handleSeekStart],
   );
