@@ -97,9 +97,10 @@ async function loadFiles() {
     opt.textContent = `${f.name} (${(f.size / 1024).toFixed(1)} KB)`;
     els.fileSelect.appendChild(opt);
   }
-  // Prefer edittest.json if present.
-  const preferred = j.files.find((f) => f.name === "edittest.json");
-  if (preferred) els.fileSelect.value = "edittest.json";
+  // Default to open.json if it's in the list (it's the only checked-in
+  // tree today; users may keep extra working copies alongside it).
+  const preferred = j.files.find((f) => f.name === "open.json");
+  if (preferred) els.fileSelect.value = "open.json";
 }
 
 async function loadFile(name) {

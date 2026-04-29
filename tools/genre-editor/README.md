@@ -1,7 +1,7 @@
 # genre-editor
 
 local web UI for browsing/editing the genre tree files in `ramus-tauri/data/`
-(`open.json`, `edittest.json`, etc).
+(`open.json`, plus any extra working copies you keep alongside it).
 
 ## run
 
@@ -56,6 +56,7 @@ produces.
 
 ## files
 
-`edittest.json` is a working copy created from `open.json` for safe experimentation;
-it is gitignored. when you're happy with edits, `cp edittest.json open.json` (or save
-straight to `open.json` from the picker).
+`open.json` is the only checked-in tree. if you want to experiment without
+clobbering it, `cp open.json scratch.json` and select `scratch.json` from the
+picker; the editor lists every `*.json` in `ramus-tauri/data/`. when you're
+happy with the result, save back to `open.json`.

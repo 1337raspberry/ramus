@@ -52,7 +52,6 @@ signing.properties
 ramus-tauri/data/aka.txt
 scripts/merge-aka-into-open-json.py
 
-# Genre tree editor — scratch file + Playwright screenshots are local-only.
+# Genre tree editor — Playwright screenshots are local-only.
 # The tool source under tools/genre-editor/ stays trackable.
 tools/genre-editor/screenshots/
-ramus-tauri/data/edittest.json
