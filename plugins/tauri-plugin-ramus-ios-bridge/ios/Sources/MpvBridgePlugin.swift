@@ -61,7 +61,13 @@ class MpvBridgePlugin: Plugin {
             UIApplication.shared.beginReceivingRemoteControlEvents()
         }
 
-        if interruptionObserver != nil { return }
+        // Idempotent re-entry: setup is one-shot, but Rust may call us
+        // again on session-restore. Resolve so the awaiting IPC future
+        // doesn't hang.
+        if interruptionObserver != nil {
+            invoke.resolve([:])
+            return
+        }
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
             object: session,
