@@ -33,10 +33,15 @@ pub fn get_acknowledgements_text() -> CmdResult<AcknowledgementsText> {
 }
 
 // Routes through `tauri-plugin-opener` so iOS uses `UIApplication.open`
-// rather than the no-op `open` crate path. Callers should pass an
-// already-trusted URL (the frontend only links to fixed GitHub URLs).
+// rather than the no-op `open` crate path. Restricted to https URLs so a
+// hijacked renderer can't hand off `file://`, `mailto:`, or a custom
+// URI scheme registered on the user's machine — the in-app callers
+// only ever link to fixed GitHub URLs anyway.
 #[tauri::command]
 pub fn open_external_url(app: AppHandle, url: String) -> CmdResult<()> {
+    if !url.starts_with("https://") {
+        return Err("only https URLs are allowed".into());
+    }
     app.opener()
         .open_url(&url, None::<&str>)
         .map_err(|e| e.to_string())
