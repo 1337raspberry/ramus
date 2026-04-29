@@ -737,7 +737,12 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            Log.e(TAG, "ExoPlayer error: ${error.errorCodeName}", error)
+            // Don't pass the Throwable to Log.e — its cause chain typically
+            // wraps an HttpDataSourceException whose toString() embeds the
+            // failed request URI, and Plex direct-play URLs carry the
+            // X-Plex-Token query parameter. Mirrors the redaction applied
+            // to the Rust mpv error log in player.rs.
+            Log.e(TAG, "ExoPlayer error: ${error.errorCodeName} (${error.errorCode})")
             trigger("mpvFileEnded", JSObject().put("reason", "error"))
         }
     }
