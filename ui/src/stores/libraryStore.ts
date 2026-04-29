@@ -940,19 +940,25 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
         // Re-derive `Album.hasFavouriteTrack` for the affected album so the
         // `favouriteTracks` chip filter prunes correctly when the user
-        // unstars the last starred track on an album. We only need to look
-        // at `selectedAlbum`/`detailAlbum` because the local `tracks` list
-        // is what ratings are toggled from. Falls back to skipping the
-        // patch when we can't infer the album key.
+        // unstars the last starred track on an album. Pick the track list
+        // that actually owns the toggled track — `state.tracks` (selected
+        // album) and `state.detailTracks` (detail panel) can refer to
+        // different albums when both views are open at once, so a single
+        // shared albumKey fallback was prone to checking the wrong list.
+        const ownerList = state.tracks.some((t) => t.ratingKey === track.ratingKey)
+          ? nextTracks
+          : nextDetailTracks;
         const albumKey =
-          track.albumKey ?? state.selectedAlbum?.ratingKey ?? state.detailAlbum?.ratingKey ?? null;
+          track.albumKey ??
+          (ownerList === nextTracks
+            ? state.selectedAlbum?.ratingKey
+            : state.detailAlbum?.ratingKey) ??
+          null;
 
         let nextUnfiltered = state.unfilteredAlbums;
         let nextAlbums = state.albums;
         if (albumKey) {
-          const stillHasFav = nextTracks.some(
-            (t) => t.isFavourite && (t.albumKey ?? state.selectedAlbum?.ratingKey) === albumKey,
-          );
+          const stillHasFav = ownerList.some((t) => t.isFavourite);
           // Only patch when the album currently shows the opposite state —
           // avoids creating new array references on every track-fav toggle.
           const target = state.unfilteredAlbums.find((a) => a.ratingKey === albumKey);
