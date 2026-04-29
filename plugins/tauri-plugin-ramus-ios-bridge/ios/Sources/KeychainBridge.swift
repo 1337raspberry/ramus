@@ -10,9 +10,12 @@ private let log = Logger(subsystem: "com.raspsoft.ramus", category: "keychain")
 /// name ("plexAuthToken" / "plexServerToken") — matching the Rust-side
 /// `TokenKey::as_str()` values.
 ///
-/// Items are written with `kSecAttrAccessibleAfterFirstUnlock` so playback
-/// can read the token after a reboot before the user unlocks (required for
-/// background audio session restart).
+/// Items are written with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
+/// so playback can read the token after a reboot before the user unlocks
+/// (required for background audio session restart). The `ThisDeviceOnly`
+/// suffix opts the entry out of iCloud Keychain so a Plex auth token written
+/// on one signed-in device does not replicate to the user's other Apple-ID
+/// devices.
 final class KeychainBridge {
     static let shared = KeychainBridge()
 
@@ -50,7 +53,7 @@ final class KeychainBridge {
         // Try an update first; if nothing exists, fall through to add.
         let updateAttrs: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
         let updateStatus = SecItemUpdate(query as CFDictionary, updateAttrs as CFDictionary)
         if updateStatus == errSecSuccess {
@@ -63,7 +66,7 @@ final class KeychainBridge {
 
         var addQuery = query
         addQuery[kSecValueData as String] = data
-        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         if addStatus != errSecSuccess {
             log.warning("keychain add failed for '\(account, privacy: .public)': OSStatus \(addStatus)")
