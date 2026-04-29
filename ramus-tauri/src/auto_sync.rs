@@ -7,6 +7,19 @@ use parking_lot::{Mutex, RwLock};
 use ramus_core::cache::sync::SyncEngine;
 use ramus_core::models::Settings;
 
+/// RAII guard that resets the shared `sync_in_progress` atomic on drop —
+/// covering panic-unwind in addition to normal completion. A bare
+/// `store(false)` after the `await` would leak the flag forever if the
+/// sync future panicked, blocking every subsequent auto-sync.
+/// Mirrors the guard in `commands/sync.rs`.
+struct SyncGuard(Arc<AtomicBool>);
+
+impl Drop for SyncGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
 /// Spawns a background task that periodically runs incremental sync
 /// based on the `sync_interval_hours` setting.
 pub fn spawn(
@@ -71,6 +84,7 @@ async fn auto_sync_loop(
             log::info!("auto-sync: skipping, sync already in progress");
             continue;
         }
+        let _guard = SyncGuard(sync_in_progress.clone());
 
         let sync = SyncEngine::new(cache, client);
 
@@ -83,7 +97,6 @@ async fn auto_sync_loop(
         let result = sync
             .incremental_sync(&library_key, include_styles, |_| {})
             .await;
-        sync_in_progress.store(false, Ordering::Release);
 
         match result {
             Ok(_) => log::info!("auto-sync: completed successfully"),
