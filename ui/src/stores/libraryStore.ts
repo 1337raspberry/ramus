@@ -28,6 +28,20 @@ import { useDownloadsStore } from "./downloadsStore";
 export type SidebarMode = "genres" | "artists";
 export type AlbumSortOrder = "alphabetical" | "latestAdded" | "recentlyPlayed" | "random";
 
+const ALBUM_SORT_ORDERS: readonly AlbumSortOrder[] = [
+  "alphabetical",
+  "latestAdded",
+  "recentlyPlayed",
+  "random",
+];
+
+function loadPersistedAlbumSort(): AlbumSortOrder {
+  const stored = localStorage.getItem("ramus-album-sort");
+  return ALBUM_SORT_ORDERS.includes(stored as AlbumSortOrder)
+    ? (stored as AlbumSortOrder)
+    : "alphabetical";
+}
+
 export interface AlbumFilters {
   unplayed: boolean;
   /** Album-level favourite — `albums.rating >= 10.0`. */
@@ -605,7 +619,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   // --- Albums ---
   albums: [],
   unfilteredAlbums: [],
-  albumSortOrder: (localStorage.getItem("ramus-album-sort") as AlbumSortOrder) || "alphabetical",
+  albumSortOrder: loadPersistedAlbumSort(),
   albumFilters: loadPersistedFilters(),
   genreExpansions: {},
 
