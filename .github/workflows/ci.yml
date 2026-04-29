@@ -113,9 +113,37 @@ jobs:
         working-directory: ui
         run: npm ci
 
+      # vite build runs tsc internally, but a standalone --noEmit pass
+      # surfaces type errors without paying for the bundling step and
+      # lets the failure name something other than "vite build failed".
+      - name: TypeScript check
+        working-directory: ui
+        run: npx tsc --noEmit
+
       - name: Build frontend
         working-directory: ui
         run: npm run build
+
+  # Runs cargo audit against the committed Cargo.lock. Same
+  # workflow_dispatch trigger as the other jobs so it doesn't burn
+  # GitHub Actions minutes; run manually before a release to confirm
+  # no transitive RUSTSEC advisories have appeared since the last
+  # audit.
+  audit:
+    name: Cargo audit
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: cargo audit
+        run: cargo audit
 
   # Regenerates THIRD_PARTY_LICENSES.md from the current Cargo.lock +
   # ui/package-lock.json and fails if the committed copy is stale. Keeps
