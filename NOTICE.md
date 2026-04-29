@@ -35,6 +35,24 @@ libmpv is loaded dynamically (not statically linked), and the user may
 substitute their own copy by placing it on the library search path — see
 `ramus-tauri/src/mpv_ffi.rs` for the search paths.
 
+## Bundled fonts
+
+Three font files are bundled in the frontend (`ui/src/fonts/`) and
+loaded by the renderer:
+
+- **Inter** (`InterVariable.ttf`) — Copyright (c) The Inter Project
+  Authors (https://github.com/rsms/inter). Licensed under the
+  [SIL Open Font License 1.1](https://openfontlicense.org/).
+- **JetBrains Mono** (`JetBrainsMono-Variable.ttf`) — Copyright (c)
+  JetBrains s.r.o. Licensed under the
+  [SIL Open Font License 1.1](https://openfontlicense.org/). Used for
+  the monospace UI surfaces (debug panel, technical detail rows).
+- **Twemoji Country Flags** (`TwemojiCountryFlags.woff2`) — built from
+  the [country-flag-emoji-polyfill](https://github.com/talkjs/country-flag-emoji-polyfill)
+  project (MIT) and Twitter's Twemoji glyphs, which are licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Used to
+  render flag emoji on platforms whose system fonts don't include them.
+
 ## Mozilla Public License 2.0 components
 
 Several bundled Rust crates are distributed under MPL-2.0, most notably
