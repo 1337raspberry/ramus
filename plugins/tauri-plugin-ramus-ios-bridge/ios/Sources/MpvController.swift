@@ -5,9 +5,7 @@ import os
 private let log = Logger(subsystem: "com.raspsoft.ramus", category: "MpvController")
 
 /// Thin Swift wrapper around libmpv's C API for iOS audio-only playback.
-/// Ported from the reference Swift app at
-/// /Users/sam/projects/ramus-ios/RamusMusicCore/Sources/Playback/MPVController.swift
-/// — trimmed of buffering/cache observers we don't surface yet, and
+/// Trimmed of buffering/cache observers that aren't yet surfaced, and
 /// de-`@MainActor`-ified because Tauri plugin callbacks already run off
 /// the UI thread.
 ///
