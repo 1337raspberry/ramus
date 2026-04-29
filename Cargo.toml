@@ -9,7 +9,7 @@ resolver = "2"
 # env!("CARGO_PKG_VERSION"). ui/package.json is marked `"private": true`
 # and deliberately carries no version field.
 [workspace.package]
-version = "0.9.1"
+version = "0.9.8"
 edition = "2021"
 license = "MIT"
 authors = ["raspberry1337"]

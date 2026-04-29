@@ -64,8 +64,12 @@ targets:
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
-        CFBundleShortVersionString: 1.0.0
-        CFBundleVersion: "1.0.0"
+        # Substituted by xcodegen at generate-time from the RAMUS_VERSION
+        # env var, which scripts/regen-ios-project.sh reads out of the
+        # workspace Cargo.toml so iOS tracks the single-source-of-truth
+        # version. Re-run the script after bumping the workspace version.
+        CFBundleShortVersionString: ${RAMUS_VERSION}
+        CFBundleVersion: ${RAMUS_VERSION}
         # audio: keeps the mpv decoder alive while the device is locked
         # or the app is backgrounded, which is how iOS knows to hand
         # control over to MPNowPlayingInfoCenter / MPRemoteCommandCenter.

@@ -3564,7 +3564,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "ramus-core"
-version = "0.9.1"
+version = "0.9.8"
 dependencies = [
  "aes-gcm",
  "core-foundation 0.10.1",
@@ -3592,7 +3592,7 @@ dependencies = [
 
 [[package]]
 name = "ramus-tauri"
-version = "0.9.1"
+version = "0.9.8"
 dependencies = [
  "dispatch2",
  "env_logger",
