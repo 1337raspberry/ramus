@@ -111,6 +111,10 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
     if (!trimmed || /^[/@!%#]$/.test(trimmed) || trimmed.toLowerCase() === "col:") {
       setResults([]);
       setSelectedIndex(0);
+      // Reset the spinner — clearing the input cancels the pending
+      // timeout that would otherwise have flipped it back to false,
+      // leaving it stuck on after a fast type-then-clear sequence.
+      setSearching(false);
       return;
     }
     setSearching(true);
