@@ -55,3 +55,11 @@ scripts/merge-aka-into-open-json.py
 # Genre tree editor — Playwright screenshots are local-only.
 # The tool source under tools/genre-editor/ stays trackable.
 tools/genre-editor/screenshots/
+
+# Tauri ACL manifests + per-platform capability schemas. Auto-generated
+# by `tauri-build` from each plugin's permission list at compile time;
+# the contents flip every time you switch between desktop and mobile
+# builds (window-state plugin is desktop-only, etc.), so committing
+# them just means a perpetually dirty working tree. Hand-written
+# capability files under `ramus-tauri/capabilities/` ARE tracked.
+ramus-tauri/gen/schemas/
