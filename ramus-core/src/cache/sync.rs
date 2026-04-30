@@ -382,7 +382,12 @@ impl SyncEngine {
                     let genre_changed = api_genre != cached_genre;
                     let cached_col = info.first_collection.as_ref().map(|c| c.to_lowercase());
                     let col_changed = api_collection != cached_col;
-                    timestamp_changed || genre_changed || col_changed
+                    // Plex thumb paths carry a timestamp suffix that bumps
+                    // when the user replaces album art. `updatedAt` does not
+                    // always move on art-only edits, so compare the stored
+                    // path directly to catch those.
+                    let thumb_changed = info.art_url != item.thumb;
+                    timestamp_changed || genre_changed || col_changed || thumb_changed
                 } else {
                     true
                 }
@@ -959,6 +964,150 @@ mod tests {
         let genres = cache.album_genres("al1").unwrap();
         assert!(genres.contains(&"Electronic".into()));
         assert!(genres.contains(&"Experimental".into()));
+    }
+
+    /// Plex bumps the timestamp suffix on the `thumb` path when album art is
+    /// replaced, but does not always touch `updatedAt`. Incremental sync must
+    /// pick up that change so the cached `artUrl` (and therefore the URL we
+    /// fetch) reflects the new image.
+    #[tokio::test]
+    async fn test_art_change_detection() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "8"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": {
+                    "Metadata": [media_item_json("ar1", "Radiohead", 1000, None, None)]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "9"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": {
+                    "Metadata": [{
+                        "ratingKey": "al1",
+                        "title": "OK Computer",
+                        "updatedAt": 1000,
+                        "parentRatingKey": "ar1",
+                        "thumb": "/library/metadata/al1/thumb/1000",
+                        "Genre": [{"tag": "Rock"}]
+                    }]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "10"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": {
+                    "Metadata": [track_item_json("tr1", "Paranoid Android", 1000, "al1", "ar1")]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/library/metadata/al1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": {
+                    "Metadata": [{
+                        "ratingKey": "al1",
+                        "title": "OK Computer",
+                        "Genre": [{"tag": "Rock"}]
+                    }]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let cache = Arc::new(CacheDatabase::open_in_memory().unwrap());
+        let client = setup_client(&server.uri());
+        let engine = SyncEngine::new(cache.clone(), client);
+
+        engine.full_sync("1", true, |_| {}).await.unwrap();
+
+        let cached = cache.all_album_timestamps().unwrap();
+        assert_eq!(
+            cached.get("al1").unwrap().art_url.as_deref(),
+            Some("/library/metadata/al1/thumb/1000")
+        );
+
+        // Server2: same updatedAt, same genre, BUT a bumped thumb timestamp
+        // (the user replaced the album art on Plex).
+        let server2 = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "8"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": {
+                    "Metadata": [media_item_json("ar1", "Radiohead", 1000, None, None)]
+                }
+            })))
+            .mount(&server2)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "9"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": {
+                    "Metadata": [{
+                        "ratingKey": "al1",
+                        "title": "OK Computer",
+                        "updatedAt": 1000,
+                        "parentRatingKey": "ar1",
+                        "thumb": "/library/metadata/al1/thumb/2000",
+                        "Genre": [{"tag": "Rock"}]
+                    }]
+                }
+            })))
+            .mount(&server2)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "10"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": {
+                    "Metadata": [track_item_json("tr1", "Paranoid Android", 1000, "al1", "ar1")]
+                }
+            })))
+            .mount(&server2)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/library/metadata/al1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": {
+                    "Metadata": [{
+                        "ratingKey": "al1",
+                        "title": "OK Computer",
+                        "Genre": [{"tag": "Rock"}]
+                    }]
+                }
+            })))
+            .mount(&server2)
+            .await;
+
+        let client2 = setup_client(&server2.uri());
+        let engine2 = SyncEngine::new(cache.clone(), client2);
+        engine2.incremental_sync("1", true, |_| {}).await.unwrap();
+
+        let cached_after = cache.all_album_timestamps().unwrap();
+        assert_eq!(
+            cached_after.get("al1").unwrap().art_url.as_deref(),
+            Some("/library/metadata/al1/thumb/2000"),
+            "incremental sync must pick up art-only edits when updatedAt is unchanged"
+        );
     }
 
     /// Mounts a library where the album has `Genre: [Rock, Pop]` and

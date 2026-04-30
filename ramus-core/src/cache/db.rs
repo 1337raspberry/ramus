@@ -28,6 +28,7 @@ pub struct CachedAlbumInfo {
     pub updated_at: Option<i64>,
     pub first_genre: Option<String>,
     pub first_collection: Option<String>,
+    pub art_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]

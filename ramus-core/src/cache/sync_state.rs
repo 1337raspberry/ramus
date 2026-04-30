@@ -32,8 +32,11 @@ impl CacheDatabase {
         // first genre to catch genre-only edits. Do not substitute
         // `MIN(g.name)` — that is alphabetical order, and mismatches would
         // trigger false-positive re-fetches.
+        // `artUrl` is included so incremental sync can detect art-only edits
+        // (Plex bumps the timestamp suffix on the thumb path but does not
+        // always touch `updatedAt`).
         let mut stmt = conn.prepare(
-            "SELECT sourceId, id, updatedAt, firstGenre, firstCollection FROM albums",
+            "SELECT sourceId, id, updatedAt, firstGenre, firstCollection, artUrl FROM albums",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((
@@ -43,6 +46,7 @@ impl CacheDatabase {
                     updated_at: row.get(2)?,
                     first_genre: row.get(3)?,
                     first_collection: row.get(4)?,
+                    art_url: row.get(5)?,
                 },
             ))
         })?;
