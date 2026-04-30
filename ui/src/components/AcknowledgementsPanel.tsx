@@ -5,7 +5,7 @@ interface Props {
   onDismiss: () => void;
 }
 
-const REPO_BASE = "https://github.com/1337raspberry/ramus-xplat/blob/main";
+const REPO_BASE = "https://github.com/1337raspberry/ramus/blob/main";
 const THIRD_PARTY_URL = `${REPO_BASE}/THIRD_PARTY_LICENSES.md`;
 const NOTICE_URL = `${REPO_BASE}/NOTICE.md`;
 const LICENSE_URL = `${REPO_BASE}/LICENSE`;

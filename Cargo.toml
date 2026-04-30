@@ -13,7 +13,7 @@ version = "0.9.8"
 edition = "2021"
 license = "MIT"
 authors = ["raspberry1337"]
-repository = "https://github.com/1337raspberry/ramus-xplat"
+repository = "https://github.com/1337raspberry/ramus"
 
 # Optimise the CPU-heavy spectrum-analyser deps even in debug builds.
 # Symphonia, rustfft and realfft are pure-Rust numerical code that runs

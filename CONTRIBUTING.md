@@ -5,7 +5,7 @@ Thanks for taking the time. ramus is a small project; the bar for contributions 
 ## Ground rules
 
 - Be kind. This project follows the [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
-- Don't open a PR for security findings — use [GitHub Security Advisories](https://github.com/1337raspberry/ramus-xplat/security/advisories/new). See [SECURITY.md](SECURITY.md).
+- Don't open a PR for security findings — use [GitHub Security Advisories](https://github.com/1337raspberry/ramus/security/advisories/new). See [SECURITY.md](SECURITY.md).
 - For larger features (anything that touches sync, the database schema, or playback timing), open an issue first so we can sketch the approach before you write a thousand lines.
 
 ## Getting started

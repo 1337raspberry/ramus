@@ -211,7 +211,7 @@ jobs:
           echo ""
           echo "To fix (locally):"
           echo ""
-          echo "  1. cd /path/to/ramus-xplat"
+          echo "  1. cd /path/to/ramus"
           echo "  2. cargo install cargo-about --locked --version '^0.6'  # if not installed"
           echo "  3. python3 scripts/generate-third-party-licenses.py"
           echo "  4. git add THIRD_PARTY_LICENSES.md licenses/THIRD_PARTY_LICENSES.md"

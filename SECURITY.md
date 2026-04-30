@@ -4,7 +4,7 @@
 
 **Please don't open a public issue for security findings.**
 
-Use [GitHub Security Advisories](https://github.com/1337raspberry/ramus-xplat/security/advisories/new) — that's a private channel between you and the maintainers, with a built-in workflow for assigning a CVE if one's warranted.
+Use [GitHub Security Advisories](https://github.com/1337raspberry/ramus/security/advisories/new) — that's a private channel between you and the maintainers, with a built-in workflow for assigning a CVE if one's warranted.
 
 I'll acknowledge receipt within **7 days** and aim to publish a fix within **90 days** of the report. If a fix is going to take longer (because it depends on an upstream library, or because the right fix is structural), I'll keep you in the loop.
 

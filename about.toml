@@ -1,4 +1,4 @@
-# cargo-about configuration for ramus-xplat.
+# cargo-about configuration for ramus.
 #
 # Runs via scripts/generate-third-party-licenses.py to emit the Rust
 # portion of THIRD_PARTY_LICENSES.md. Keep the `accepted` list in sync

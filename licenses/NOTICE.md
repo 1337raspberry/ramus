@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-ramus-xplat is distributed under the MIT License (see `LICENSE` at the
+ramus is distributed under the MIT License (see `LICENSE` at the
 repository root). It incorporates the following third-party components.
 
 ## Music genre hierarchy data (`ramus-tauri/data/open.json`)
