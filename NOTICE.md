@@ -10,8 +10,7 @@ The genre tree bundled with ramus was initially based on the
 `beetsplug/lastgenre/genres-tree.yaml`. It has since been substantially
 extended and restructured: many genres have been added, the hierarchy
 has been reorganised (with some genres appearing under multiple parents),
-and a large set of aliases (AKAs) is layered on top via
-`ramus-tauri/data/aka.txt`. The current tree is roughly twice the size
+and a large set of aliases (AKAs). The current tree is roughly twice the size
 of the original beets source.
 
 - Original beets data: Copyright (c) 2010-2016 Adrian Sampson
