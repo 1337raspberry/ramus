@@ -8,9 +8,9 @@ use crate::genre::node::GenreNode;
 use crate::search::engine::GenreExpander;
 
 /// Default Jaro-Winkler threshold for the fuzzy fallback step in genre
-/// matching. Tunable at runtime via `Settings.genre_fuzzy_threshold` and
-/// `GenreMapper::set_threshold`. A value ≥1.0 disables fuzzy entirely
-/// because no Jaro-Winkler score exceeds 1.0.
+/// matching. `GenreMapper::set_threshold` overrides for tests; production
+/// keeps this default. A value ≥1.0 disables fuzzy entirely because no
+/// Jaro-Winkler score exceeds 1.0.
 pub const DEFAULT_GENRE_FUZZY_THRESHOLD: f64 = 0.9;
 
 // --- Errors ---

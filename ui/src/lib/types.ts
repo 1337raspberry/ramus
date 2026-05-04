@@ -118,7 +118,6 @@ export interface Settings {
   lastSyncTimeSecs: number;
   disableSpectrum: boolean;
   flatGenres: boolean;
-  genreFuzzyThreshold: number;
   eqEnabled: boolean;
   eqBands: number[];
   bookmarks: Bookmark[];

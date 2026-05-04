@@ -287,7 +287,6 @@ pub async fn finalize_onboarding(
 
     let open_json_bytes = include_bytes!("../../data/open.json");
     if let Ok(mapper) = GenreMapper::from_json_bytes(open_json_bytes) {
-        mapper.set_threshold(state.settings.read().genre_fuzzy_threshold);
         *state.genre_mapper.write() = Some(mapper);
     }
 

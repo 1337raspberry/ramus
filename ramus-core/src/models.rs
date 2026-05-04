@@ -515,9 +515,6 @@ pub struct Settings {
     pub last_sync_time_secs: i64,
     pub disable_spectrum: bool,
     pub flat_genres: bool,
-    /// Jaro-Winkler threshold for genre fuzzy fallback. Range 0.7..=1.0.
-    /// At 1.0 fuzzy is effectively off (no Jaro-Winkler score reaches >1.0).
-    pub genre_fuzzy_threshold: f64,
     pub eq_enabled: bool,
     pub eq_bands: Vec<f32>,
     pub bookmarks: Vec<Bookmark>,
@@ -545,7 +542,6 @@ impl Default for Settings {
             last_sync_time_secs: 0,
             disable_spectrum: true,
             flat_genres: false,
-            genre_fuzzy_threshold: crate::genre::mapper::DEFAULT_GENRE_FUZZY_THRESHOLD,
             eq_enabled: false,
             eq_bands: vec![0.0; 10],
             bookmarks: Vec::new(),

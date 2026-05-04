@@ -13,7 +13,6 @@ import {
 } from "../lib/commands";
 import type { Settings, CacheStats } from "../lib/types";
 import { listen } from "@tauri-apps/api/event";
-import { isHDR } from "../lib/hdr";
 import type { SyncProgress } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -405,24 +404,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
             />
           </label>
 
-          <label className="settings-row">
-            <span>
-              Fuzzy match threshold (
-              {settings.genreFuzzyThreshold >= 1 ? "off" : settings.genreFuzzyThreshold.toFixed(2)})
-            </span>
-            <input
-              type="range"
-              min={0.7}
-              max={1.0}
-              step={0.01}
-              value={settings.genreFuzzyThreshold}
-              onChange={(e) => save({ genreFuzzyThreshold: Number(e.target.value) })}
-              onMouseUp={() => useLibraryStore.getState().loadGenreTree()}
-              onTouchEnd={() => useLibraryStore.getState().loadGenreTree()}
-              onKeyUp={() => useLibraryStore.getState().loadGenreTree()}
-            />
-          </label>
-
           <div className="settings-row">
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button
@@ -490,14 +471,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
               onChange={(e) => save({ showArtistFlags: e.target.checked })}
             />
           </label>
-
-          <div className="settings-row">
-            <span>Colour mode</span>
-            <span className={`settings-color-mode ${isHDR ? "hdr" : "sdr"}`}>
-              <span className="settings-color-mode-dot" />
-              {isHDR ? "HDR" : "SDR"}
-            </span>
-          </div>
 
           <div className="settings-section-header">SECURITY</div>
 

@@ -6548,44 +6548,6 @@ body.is-fullscreen .focus-body {
   background: transparent !important;
 }
 
-/* --- Colour mode indicator --- */
-
-.settings-color-mode {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  letter-spacing: 0.04em;
-  padding: 3px 10px;
-  border-radius: 4px;
-}
-
-.settings-color-mode-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-
-.settings-color-mode.hdr {
-  color: #a8e6cf;
-  background: rgba(168, 230, 207, 0.1);
-}
-.settings-color-mode.hdr .settings-color-mode-dot {
-  background: #a8e6cf;
-  box-shadow: 0 0 6px rgba(168, 230, 207, 0.6);
-}
-
-.settings-color-mode.sdr {
-  color: #ffd3a8;
-  background: rgba(255, 211, 168, 0.1);
-}
-.settings-color-mode.sdr .settings-color-mode-dot {
-  background: #ffd3a8;
-  box-shadow: 0 0 6px rgba(255, 211, 168, 0.6);
-}
-
 /* --- SDR display fallback ---
  * On standard dynamic-range displays the stacked opacity layers,
  * dark palette swatches and low-alpha accents compound into a

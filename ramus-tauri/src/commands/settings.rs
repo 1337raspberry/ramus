@@ -45,7 +45,6 @@ pub async fn update_settings(
 
     let prev_genre_source = state.settings.read().genre_source;
     let prev_offline_mode = state.settings.read().offline_mode;
-    let prev_fuzzy_threshold = state.settings.read().genre_fuzzy_threshold;
 
     let config = settings.to_playback_config();
     state.player.update_config(config);
@@ -85,7 +84,6 @@ pub async fn update_settings(
             ramus_core::models::GenreSource::Custom => {
                 if let Some(data) = ramus_core::settings::load_custom_genres() {
                     if let Ok(mapper) = GenreMapper::from_json_bytes(&data) {
-                        mapper.set_threshold(settings.genre_fuzzy_threshold);
                         *state.genre_mapper.write() = Some(mapper);
                     }
                 }
@@ -93,17 +91,11 @@ pub async fn update_settings(
             ramus_core::models::GenreSource::Open => {
                 let open_json = include_bytes!("../../data/open.json");
                 if let Ok(mapper) = GenreMapper::from_json_bytes(open_json) {
-                    mapper.set_threshold(settings.genre_fuzzy_threshold);
                     *state.genre_mapper.write() = Some(mapper);
                 } else {
                     *state.genre_mapper.write() = None;
                 }
             }
-        }
-    } else if (settings.genre_fuzzy_threshold - prev_fuzzy_threshold).abs() > f64::EPSILON {
-        // Fuzzy threshold changed without a mapper reload — push to live mapper.
-        if let Some(mapper) = state.genre_mapper.read().as_ref() {
-            mapper.set_threshold(settings.genre_fuzzy_threshold);
         }
     }
 
@@ -145,7 +137,6 @@ pub async fn import_custom_genres(
     let mut settings = state.settings.read().clone();
     settings.genre_source = ramus_core::models::GenreSource::Custom;
     ramus_core::settings::save(&settings).map_err(|e| e.to_string())?;
-    mapper.set_threshold(settings.genre_fuzzy_threshold);
     *state.settings.write() = settings;
     *state.genre_mapper.write() = Some(mapper);
     Ok(warnings)
@@ -161,7 +152,6 @@ pub async fn remove_custom_genres(state: State<'_, AppState>) -> CmdResult<()> {
     *state.settings.write() = settings;
     let open_json = include_bytes!("../../data/open.json");
     if let Ok(mapper) = GenreMapper::from_json_bytes(open_json) {
-        mapper.set_threshold(state.settings.read().genre_fuzzy_threshold);
         *state.genre_mapper.write() = Some(mapper);
     } else {
         *state.genre_mapper.write() = None;

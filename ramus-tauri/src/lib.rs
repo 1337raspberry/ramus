@@ -716,7 +716,6 @@ pub fn run() {
                                     GenreMapper::from_json_bytes(open_json).ok()
                                 });
                                 if let Some(m) = mapper {
-                                    m.set_threshold(settings.genre_fuzzy_threshold);
                                     *state.genre_mapper.write() = Some(m);
                                 }
 
