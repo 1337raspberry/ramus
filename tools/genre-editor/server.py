@@ -67,17 +67,27 @@ def validate_tree(data: object) -> None:
 
 
 def canonicalise_node(node: dict) -> OrderedDict:
-    """Rebuild a node with stable field order: name, short_summary, aka, children."""
+    """Rebuild a node with stable field order: name, short_summary, aka, children.
+
+    Optional fields are emitted only when they carry information:
+      - `short_summary` is dropped when missing OR null
+      - `aka` is dropped when missing OR empty
+      - `children` is dropped when missing OR empty
+    Padding redundant `null`/`[]` would inflate diffs every time the editor
+    saves; the Rust deserializer treats omitted ≡ null/[] for these fields,
+    so the compact form is semantically identical.
+    """
     rebuilt: OrderedDict = OrderedDict()
     rebuilt["name"] = node["name"]
-    if "short_summary" in node:
-        rebuilt["short_summary"] = node["short_summary"]
-    else:
-        rebuilt["short_summary"] = None
+    short_summary = node.get("short_summary")
+    if short_summary is not None:
+        rebuilt["short_summary"] = short_summary
     aka = node.get("aka")
     if aka:
         rebuilt["aka"] = list(aka)
-    rebuilt["children"] = [canonicalise_node(c) for c in (node.get("children") or [])]
+    children = node.get("children") or []
+    if children:
+        rebuilt["children"] = [canonicalise_node(c) for c in children]
     return rebuilt
 
 
