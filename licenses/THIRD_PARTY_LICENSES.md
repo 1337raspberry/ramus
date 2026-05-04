@@ -962,7 +962,7 @@ CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ### ISC License (ISC) (variant 3)
 
 Used by:
-- `rustls-webpki` 0.103.10 — https://github.com/rustls/webpki
+- `rustls-webpki` 0.103.13 — https://github.com/rustls/webpki
 
 ```
 Except as otherwise noted, this project is licensed under the following
@@ -1665,8 +1665,8 @@ Used by:
 - `phf_shared` 0.8.0 — https://github.com/sfackler/rust-phf
 - `r-efi` 5.3.0 — https://github.com/r-efi/r-efi
 - `r-efi` 6.0.0 — https://github.com/r-efi/r-efi
-- `ramus-core` 0.9.1 — https://github.com/1337raspberry/ramus
-- `ramus-tauri` 0.9.1 — https://github.com/1337raspberry/ramus
+- `ramus-core` 0.9.8 — https://github.com/1337raspberry/ramus
+- `ramus-tauri` 0.9.8 — https://github.com/1337raspberry/ramus
 - `realfft` 3.5.0 — https://github.com/HEnquist/realfft
 - `siphasher` 0.3.11 — https://github.com/jedisct1/rust-siphash
 - `siphasher` 1.0.2 — https://github.com/jedisct1/rust-siphash
