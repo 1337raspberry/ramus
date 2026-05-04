@@ -318,11 +318,7 @@ pub fn analyse_samples(
     // reported `duration` and Plex's `duration_ms` within encoder padding;
     // divergence implicates VBR / priming / demuxer bugs.
     let native_duration_s = samples.len() as f64 / sample_rate as f64;
-    let emit_frame_count = if bands > 0 {
-        emit_frames.len() / bands
-    } else {
-        0
-    };
+    let emit_frame_count = emit_frames.len().checked_div(bands).unwrap_or(0);
     let emit_duration_s = emit_frame_count as f64 * emit_hop_ms / 1000.0;
     log::debug!(
         "spectrum: sr={}Hz, samples={}, native_duration={:.3}s, \

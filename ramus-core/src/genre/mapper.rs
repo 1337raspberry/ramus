@@ -301,7 +301,7 @@ impl GenreMapper {
                     )
                 })
                 .collect();
-            other_children.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            other_children.sort_by_key(|c| c.name.to_lowercase());
 
             let other_union: HashSet<i64> = unmatched
                 .values()
