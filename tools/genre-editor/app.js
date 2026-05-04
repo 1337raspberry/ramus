@@ -33,6 +33,7 @@ const els = {
   reloadBtn: $("#reload-btn"),
   fileMeta: $("#file-meta"),
   saveBtn: $("#save-btn"),
+  exportTxtBtn: $("#export-txt-btn"),
   dirtyFlag: $("#dirty-flag"),
   search: $("#search"),
   expandAllBtn: $("#expand-all-btn"),
@@ -143,6 +144,52 @@ async function save() {
   setDirty(false);
   setStatus(`saved ${j.bytes} bytes`, "ok");
   els.fileMeta.textContent = `${countNodes(state.data.genres)} nodes`;
+}
+
+// --- export ---------------------------------------------------------------
+
+// Convert the in-memory tree to the indented .txt format that ramus-core's
+// CustomGenreParser accepts. Format spec: `Name | aka1 | aka2`, one genre
+// per line, indented with two spaces per nesting level. `short_summary`
+// is intentionally NOT exported — the parser ignores descriptions, and
+// keeping it out of the round-trip avoids the bracket-disambiguation
+// edge cases that would otherwise come back to bite us.
+function treeToTxt(genres) {
+  const lines = [];
+  const walk = (node, depth) => {
+    const indent = "  ".repeat(depth);
+    let line = indent + (node.name || "");
+    const akas = (node.aka || [])
+      .map((a) => (a || "").trim())
+      .filter((a) => a.length > 0);
+    if (akas.length) line += " | " + akas.join(" | ");
+    lines.push(line);
+    for (const c of node.children || []) walk(c, depth + 1);
+  };
+  for (const root of genres || []) walk(root, 0);
+  return lines.join("\n") + "\n";
+}
+
+function exportTxt() {
+  if (!state.data || !state.data.genres) {
+    setStatus("nothing to export", "err");
+    return;
+  }
+  const text = treeToTxt(state.data.genres);
+  const base = (state.path || "genres.json").replace(/\.json$/i, "");
+  // Browser-native save — anchor with `download` triggers the standard save
+  // dialog (Chromium honours user prompts when downloads.always_ask is set).
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = base + ".txt";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Revoke after the navigation has had time to start.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setStatus(`exported ${countNodes(state.data.genres)} nodes`, "ok");
 }
 
 // --- rendering ------------------------------------------------------------
@@ -745,6 +792,7 @@ els.reloadBtn.addEventListener("click", () => {
 });
 
 els.saveBtn.addEventListener("click", save);
+els.exportTxtBtn.addEventListener("click", exportTxt);
 
 els.search.addEventListener("input", () => {
   applyFilter(els.search.value);

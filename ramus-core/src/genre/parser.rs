@@ -14,8 +14,6 @@ pub enum CustomGenreParseError {
     TooManyLines(usize),
     #[error("line {0}: genre name is too long ({1}…). Maximum is 200 characters")]
     NameTooLong(usize, String),
-    #[error("line {0}: opening '[' without a closing ']'")]
-    UnmatchedBracket(usize),
     #[error("line {0}: indentation jumps from level {1} to {2}")]
     IndentationJump(usize, usize, usize),
     #[error("line {0}: nesting too deep (depth {1}). Maximum is {2}")]
@@ -41,6 +39,9 @@ pub const MAX_NAME_LENGTH: usize = 200;
 pub const MAX_DEPTH: usize = 32;
 
 // --- Parser ---
+
+/// Per-line parse result before tree-building: (depth, name, akas, line_number).
+type ParseEntry = (usize, String, Vec<String>, usize);
 
 pub struct CustomGenreParser;
 
@@ -88,15 +89,14 @@ impl CustomGenreParser {
 
         let indent_unit = detect_indent_unit(&indexed_lines);
 
-        // (depth, name, desc, line_number)
-        let mut entries: Vec<(usize, String, Option<String>, usize)> = Vec::new();
+        let mut entries: Vec<ParseEntry> = Vec::new();
         let mut warnings: Vec<String> = Vec::new();
         let mut previous_depth: usize = 0;
 
         for &(line_number, line_text) in &indexed_lines {
             let (depth, content) = measure_indent(line_text, &indent_unit);
 
-            let (name, desc) = parse_line(content, line_number)?;
+            let (name, akas) = parse_line(content);
 
             if name.is_empty() {
                 warnings.push(format!(
@@ -130,7 +130,7 @@ impl CustomGenreParser {
             }
 
             previous_depth = depth;
-            entries.push((depth, name, desc, line_number));
+            entries.push((depth, name, akas, line_number));
         }
 
         if !entries.iter().any(|(depth, _, _, _)| *depth == 0) {
@@ -198,32 +198,19 @@ fn measure_indent<'a>(line: &'a str, unit: &IndentUnit) -> (usize, &'a str) {
 
 // --- Line Parsing ---
 
-fn parse_line(content: &str, line_number: usize) -> Result<(String, Option<String>), CustomGenreParseError> {
-    let bracket_start = match content.find('[') {
-        Some(pos) => pos,
-        None => {
-            return Ok((content.trim().to_string(), None));
-        }
-    };
-
-    let name = content[..bracket_start].trim().to_string();
-    let after_bracket = &content[bracket_start + 1..];
-
-    let bracket_end = match after_bracket.rfind(']') {
-        Some(pos) => pos,
-        None => {
-            return Err(CustomGenreParseError::UnmatchedBracket(line_number));
-        }
-    };
-
-    let raw_description = after_bracket[..bracket_end].trim();
-    let description = if raw_description.is_empty() {
-        None
-    } else {
-        Some(raw_description.chars().take(500).collect::<String>())
-    };
-
-    Ok((name, description))
+/// Parse a single content line into (name, akas).
+///
+/// Format: `Name | aka1 | aka2 …`. AKAs are pipe-separated after the name;
+/// empty segments are dropped, and whitespace around each is trimmed. The
+/// `name` may be empty — the caller decides whether that's fatal.
+fn parse_line(content: &str) -> (String, Vec<String>) {
+    let mut parts = content.split('|');
+    let name = parts.next().unwrap_or("").trim().to_string();
+    let akas: Vec<String> = parts
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    (name, akas)
 }
 
 // --- Tree Building ---
@@ -231,23 +218,21 @@ fn parse_line(content: &str, line_number: usize) -> Result<(String, Option<Strin
 #[derive(Debug)]
 struct ParseNode {
     name: String,
-    description: Option<String>,
+    aka: Vec<String>,
     children: Vec<ParseNode>,
 }
 
-fn build_tree(
-    entries: &[(usize, String, Option<String>, usize)],
-) -> (Vec<ParseNode>, Vec<String>) {
+fn build_tree(entries: &[ParseEntry]) -> (Vec<ParseNode>, Vec<String>) {
     let mut warnings: Vec<String> = Vec::new();
     let mut dupe_sets: Vec<HashSet<String>> = vec![HashSet::new()];
 
     let mut stack: Vec<(usize, ParseNode)> = Vec::new();
     let mut roots: Vec<ParseNode> = Vec::new();
 
-    for (depth, name, desc, line_number) in entries {
+    for (depth, name, akas, line_number) in entries {
         let new_node = ParseNode {
             name: name.clone(),
-            description: desc.clone(),
+            aka: akas.clone(),
             children: Vec::new(),
         };
 
@@ -338,7 +323,7 @@ struct GenreFileJson {
 struct GenreRawJson {
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    short_summary: Option<String>,
+    aka: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     children: Option<Vec<GenreRawJson>>,
 }
@@ -346,7 +331,11 @@ struct GenreRawJson {
 fn node_to_json(node: &ParseNode) -> GenreRawJson {
     GenreRawJson {
         name: node.name.clone(),
-        short_summary: node.description.clone(),
+        aka: if node.aka.is_empty() {
+            None
+        } else {
+            Some(node.aka.clone())
+        },
         children: if node.children.is_empty() {
             None
         } else {
@@ -438,37 +427,6 @@ mod tests {
         );
     }
 
-    // --- Descriptions ---
-
-    #[test]
-    fn test_optional_descriptions() {
-        let text =
-            "Rock[Guitar-driven music]\n  Shoegaze[Wall of sound with ethereal vocals]\n  Punk Rock\nJazz";
-        let (mapper, warnings) = parse_and_load(text);
-        assert!(warnings.is_empty());
-        assert_eq!(
-            mapper.root_nodes[0].short_summary.as_deref(),
-            Some("Guitar-driven music")
-        );
-        assert_eq!(
-            mapper.root_nodes[0].children.as_ref().unwrap()[0]
-                .short_summary
-                .as_deref(),
-            Some("Wall of sound with ethereal vocals")
-        );
-        assert!(mapper.root_nodes[0].children.as_ref().unwrap()[1]
-            .short_summary
-            .is_none());
-        assert!(mapper.root_nodes[1].short_summary.is_none());
-    }
-
-    #[test]
-    fn test_empty_brackets_no_description() {
-        let text = "Rock[]\n  Punk Rock";
-        let (mapper, _) = parse_and_load(text);
-        assert!(mapper.root_nodes[0].short_summary.is_none());
-    }
-
     #[test]
     fn test_leaf_nodes_have_none_children() {
         let text = "Rock\n  Shoegaze";
@@ -511,13 +469,6 @@ mod tests {
         let text = "Rock\n        Deep Nested"; // 8 spaces → 4-space unit → depth 2, jump from 0 to 2
         let err = CustomGenreParser::parse(text).unwrap_err();
         assert!(matches!(err, CustomGenreParseError::IndentationJump(_, _, _)));
-    }
-
-    #[test]
-    fn test_unmatched_bracket() {
-        let text = "Rock[missing close bracket";
-        let err = CustomGenreParser::parse(text).unwrap_err();
-        assert!(matches!(err, CustomGenreParseError::UnmatchedBracket(_)));
     }
 
     #[test]
@@ -679,27 +630,13 @@ mod tests {
     }
 
     #[test]
-    fn test_description_with_brackets_inside() {
-        let text = "Rock[includes [sub]genres]";
+    fn test_brackets_in_name_are_passed_through() {
+        // Bracket characters carry no special meaning now that description
+        // syntax is gone — they read as ordinary name/AKA characters.
+        let text = "Rock[includes sub]\n  Punk Rock";
         let (mapper, _) = parse_and_load(text);
-        assert_eq!(mapper.root_nodes[0].name, "Rock");
-        assert_eq!(
-            mapper.root_nodes[0].short_summary.as_deref(),
-            Some("includes [sub]genres")
-        );
-    }
-
-    #[test]
-    fn test_description_only_line_skipped() {
-        let text = "Rock\n  [just a description]\n  Punk Rock";
-        let (mapper, warnings) = parse_and_load(text);
-        assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("no genre name"));
-        assert_eq!(mapper.root_nodes[0].children.as_ref().unwrap().len(), 1);
-        assert_eq!(
-            mapper.root_nodes[0].children.as_ref().unwrap()[0].name,
-            "Punk Rock"
-        );
+        assert_eq!(mapper.root_nodes[0].name, "Rock[includes Sub]");
+        assert!(mapper.root_nodes[0].short_summary.is_none());
     }
 
     #[test]
@@ -720,9 +657,74 @@ mod tests {
         assert!(warnings[0].contains("Rock"));
     }
 
+    // --- AKA Syntax ---
+
+    #[test]
+    fn test_pipe_separated_akas() {
+        let text = "Alternative Rock | alt rock | alt-rock | altrock\n  Britpop | brit pop";
+        let (mapper, _) = parse_and_load(text);
+        // Exact AKA hits resolve to the canonical via match_genre.
+        assert_eq!(
+            mapper.match_genre("alt rock").unwrap().name,
+            "Alternative Rock"
+        );
+        assert_eq!(mapper.match_genre("altrock").unwrap().name, "Alternative Rock");
+        assert_eq!(mapper.match_genre("brit pop").unwrap().name, "Britpop");
+    }
+
+    #[test]
+    fn test_aka_containing_brackets_round_trips() {
+        // Bracket characters in AKAs (e.g. "Hardcore [EDM]") survive
+        // verbatim — they have no special parser meaning.
+        let text = "Electronic | hardcore techno | Hardcore [EDM]";
+        let (mapper, _) = parse_and_load(text);
+        let nodes = mapper.match_all("Hardcore [EDM]");
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].name, "Electronic");
+        assert!(mapper.root_nodes[0].short_summary.is_none());
+    }
+
+    #[test]
+    fn test_empty_aka_segments_dropped() {
+        let text = "Rock | | alt rock |   | rok";
+        let (mapper, _) = parse_and_load(text);
+        // Two valid AKAs survive; empty segments are dropped silently.
+        assert_eq!(mapper.match_genre("alt rock").unwrap().name, "Rock");
+        assert_eq!(mapper.match_genre("rok").unwrap().name, "Rock");
+    }
+
+    #[test]
+    fn test_aka_whitespace_trimmed() {
+        let text = "Rock |   alt rock   |  rok ";
+        let (mapper, _) = parse_and_load(text);
+        // Stored AKAs are trimmed; lookup is case-insensitive on already-trimmed input.
+        assert_eq!(mapper.match_genre("alt rock").unwrap().name, "Rock");
+    }
+
+    #[test]
+    fn test_no_aka_field_when_no_pipes() {
+        let text = "Rock";
+        let (data, _) = CustomGenreParser::parse(text).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&data).unwrap();
+        let first = &json["genres"][0];
+        assert!(first.get("aka").is_none());
+        assert!(first.get("short_summary").is_none());
+    }
+
+    #[test]
+    fn test_aka_serialised_as_array() {
+        let text = "Rock | rok | rocky";
+        let (data, _) = CustomGenreParser::parse(text).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&data).unwrap();
+        let akas = json["genres"][0]["aka"].as_array().unwrap();
+        assert_eq!(akas.len(), 2);
+        assert_eq!(akas[0], "rok");
+        assert_eq!(akas[1], "rocky");
+    }
+
     #[test]
     fn test_round_trip_through_genre_mapper() {
-        let text = "Metal[Heavy guitar music]\n  Thrash Metal[Fast and aggressive]\n    Crossover Thrash\n  Death Metal\n  Black Metal\nRock\n  Progressive Rock";
+        let text = "Metal\n  Thrash Metal\n    Crossover Thrash\n  Death Metal\n  Black Metal\nRock\n  Progressive Rock";
         let (data, _) = CustomGenreParser::parse(text).unwrap();
         let mapper = GenreMapper::from_json_bytes(&data).unwrap();
 

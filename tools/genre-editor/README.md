@@ -45,6 +45,26 @@ no dependencies — stdlib only.
   original's descendants — useful for stamping out repeating patterns).
 - search box filters by name or AKA, showing the ancestor chain
 - Cmd/Ctrl+S saves; "● unsaved" indicator + browser unload warning protect dirty state
+- `export .txt` (toolbar) downloads the current in-memory tree (incl. unsaved
+  edits) as a .txt file in the format ramus-core's `CustomGenreParser`
+  accepts, so you can round-trip a tree built here back into the app via
+  Settings → Genres → Import. AKAs and descriptions are preserved.
+
+## .txt format
+
+The exported file is a plain indented list, one genre per line. Each line is:
+
+```
+Name | aka1 | aka2
+```
+
+- Indent with 2 spaces or 1 tab per nesting level (the parser auto-detects).
+- AKAs are pipe-separated and optional; empty pipe segments are dropped.
+- Bracket characters (`[`, `]`) have no special meaning — they read as
+  ordinary name/AKA characters, so AKAs like `Hardcore [EDM]` pass through
+  verbatim.
+- Descriptions (`short_summary`) are not part of the .txt round-trip; edit
+  them directly in the JSON if you need to preserve them.
 
 ## save format
 
