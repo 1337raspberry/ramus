@@ -141,7 +141,7 @@ pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeRe
                 deduplicated_total_count: ids.len(),
             })
             .collect();
-        nodes.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        nodes.sort_by_key(|n| n.name.to_lowercase());
         nodes
     };
 
@@ -334,7 +334,7 @@ pub async fn get_filtered_genre_tree(
                 deduplicated_total_count: ids.len(),
             })
             .collect();
-        nodes.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        nodes.sort_by_key(|n| n.name.to_lowercase());
         nodes
     };
 

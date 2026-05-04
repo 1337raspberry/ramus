@@ -327,45 +327,41 @@ fn event_loop(
                 }
 
                 match id {
-                    id if id == ObserverID::TimePos as u64 => {
-                        if prop.format == MPV_FORMAT_DOUBLE {
-                            let val = unsafe { *(prop.data as *const f64) };
-                            if let Some(ref cb) = callbacks.on_position_change {
-                                safe_invoke("on_position_change", || cb(val));
-                            }
+                    id if id == ObserverID::TimePos as u64 && prop.format == MPV_FORMAT_DOUBLE => {
+                        let val = unsafe { *(prop.data as *const f64) };
+                        if let Some(ref cb) = callbacks.on_position_change {
+                            safe_invoke("on_position_change", || cb(val));
                         }
                     }
-                    id if id == ObserverID::Duration as u64 => {
-                        if prop.format == MPV_FORMAT_DOUBLE {
-                            let val = unsafe { *(prop.data as *const f64) };
-                            if let Some(ref cb) = callbacks.on_duration_change {
-                                safe_invoke("on_duration_change", || cb(val));
-                            }
+                    id if id == ObserverID::Duration as u64
+                        && prop.format == MPV_FORMAT_DOUBLE =>
+                    {
+                        let val = unsafe { *(prop.data as *const f64) };
+                        if let Some(ref cb) = callbacks.on_duration_change {
+                            safe_invoke("on_duration_change", || cb(val));
                         }
                     }
-                    id if id == ObserverID::PlaylistPos as u64 => {
-                        if prop.format == MPV_FORMAT_INT64 {
-                            let val = unsafe { *(prop.data as *const i64) };
-                            if let Some(ref cb) = callbacks.on_playlist_pos_change {
-                                safe_invoke("on_playlist_pos_change", || cb(val));
-                            }
+                    id if id == ObserverID::PlaylistPos as u64
+                        && prop.format == MPV_FORMAT_INT64 =>
+                    {
+                        let val = unsafe { *(prop.data as *const i64) };
+                        if let Some(ref cb) = callbacks.on_playlist_pos_change {
+                            safe_invoke("on_playlist_pos_change", || cb(val));
                         }
                     }
-                    id if id == ObserverID::Pause as u64 => {
-                        if prop.format == MPV_FORMAT_FLAG {
-                            let val = unsafe { *(prop.data as *const c_int) };
-                            if let Some(ref cb) = callbacks.on_pause_change {
-                                safe_invoke("on_pause_change", || cb(val != 0));
-                            }
+                    id if id == ObserverID::Pause as u64 && prop.format == MPV_FORMAT_FLAG => {
+                        let val = unsafe { *(prop.data as *const c_int) };
+                        if let Some(ref cb) = callbacks.on_pause_change {
+                            safe_invoke("on_pause_change", || cb(val != 0));
                         }
                     }
-                    id if id == ObserverID::IdleActive as u64 => {
-                        if prop.format == MPV_FORMAT_FLAG {
-                            let val = unsafe { *(prop.data as *const c_int) };
-                            if val != 0 {
-                                if let Some(ref cb) = callbacks.on_idle_active {
-                                    safe_invoke("on_idle_active", cb);
-                                }
+                    id if id == ObserverID::IdleActive as u64
+                        && prop.format == MPV_FORMAT_FLAG =>
+                    {
+                        let val = unsafe { *(prop.data as *const c_int) };
+                        if val != 0 {
+                            if let Some(ref cb) = callbacks.on_idle_active {
+                                safe_invoke("on_idle_active", cb);
                             }
                         }
                     }
@@ -379,27 +375,25 @@ fn event_loop(
                 }
             }
 
-            MPV_EVENT_END_FILE => {
-                if !event.data.is_null() {
-                    let ef = unsafe { &*(event.data as *const mpv_event_end_file) };
-                    let reason = match ef.reason {
-                        MPV_END_FILE_REASON_EOF => FileEndReason::Eof,
-                        MPV_END_FILE_REASON_STOP => FileEndReason::Stop,
-                        MPV_END_FILE_REASON_QUIT => FileEndReason::Quit,
-                        MPV_END_FILE_REASON_ERROR => {
-                            let msg = unsafe {
-                                CStr::from_ptr(lib.error_string(ef.error))
-                                    .to_string_lossy()
-                                    .into_owned()
-                            };
-                            FileEndReason::Error(msg)
-                        }
-                        MPV_END_FILE_REASON_REDIRECT => FileEndReason::Redirect,
-                        _ => FileEndReason::Unknown,
-                    };
-                    if let Some(ref cb) = callbacks.on_file_ended {
-                        safe_invoke("on_file_ended", || cb(reason));
+            MPV_EVENT_END_FILE if !event.data.is_null() => {
+                let ef = unsafe { &*(event.data as *const mpv_event_end_file) };
+                let reason = match ef.reason {
+                    MPV_END_FILE_REASON_EOF => FileEndReason::Eof,
+                    MPV_END_FILE_REASON_STOP => FileEndReason::Stop,
+                    MPV_END_FILE_REASON_QUIT => FileEndReason::Quit,
+                    MPV_END_FILE_REASON_ERROR => {
+                        let msg = unsafe {
+                            CStr::from_ptr(lib.error_string(ef.error))
+                                .to_string_lossy()
+                                .into_owned()
+                        };
+                        FileEndReason::Error(msg)
                     }
+                    MPV_END_FILE_REASON_REDIRECT => FileEndReason::Redirect,
+                    _ => FileEndReason::Unknown,
+                };
+                if let Some(ref cb) = callbacks.on_file_ended {
+                    safe_invoke("on_file_ended", || cb(reason));
                 }
             }
 
