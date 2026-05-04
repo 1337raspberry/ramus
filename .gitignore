@@ -29,6 +29,9 @@ ramus-tauri/tauri.linux.conf.json
 # Keep CLAUDE.md local only — not tracked in the repo
 CLAUDE.md
 
+# Personal release runbook — local-only, mirrors the Actions workflow.
+RELEASING.md
+
 # Personal TODO scratch pad — CI-verification steps to run once GH
 # Actions minutes return. Not meaningful to other contributors.
 CI-check-to-do.md
