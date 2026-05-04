@@ -200,6 +200,16 @@ jobs:
       - name: Install cargo-about
         run: cargo install cargo-about --locked --version '^0.6'
 
+      # Populate the registry index so the next step's `cargo about
+      # generate --frozen` (= --locked --offline) can resolve every crate
+      # in Cargo.lock without hitting the network. Without this priming
+      # step the licenses job fails on a fresh runner with
+      # "no matching package named X found, location searched: crates.io
+      # index" — the rust job above primes its own cache under a
+      # different key, so this job needs its own fetch.
+      - name: Prime cargo registry
+        run: cargo fetch --locked
+
       - name: Regenerate THIRD_PARTY_LICENSES.md
         run: python3 scripts/generate-third-party-licenses.py
 
