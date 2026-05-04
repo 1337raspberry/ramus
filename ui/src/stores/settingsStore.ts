@@ -31,6 +31,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   offlineMode: false,
   popularityDisplay: "hot",
   includePlexStyles: true,
+  showArtistFlags: true,
 
   loadSettings: async () => {
     try {

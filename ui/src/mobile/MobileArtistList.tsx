@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore } from "../stores/libraryStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { IconChevronRight } from "../components/Icons";
 import { countryToFlag } from "../lib/countryFlag";
 import MobileSettingsRow from "./MobileSettingsRow";
@@ -14,6 +15,7 @@ const ROW_HEIGHT = 49;
 export default function MobileArtistList({ onOpenSettings }: Props) {
   const artists = useLibraryStore((s) => s.artists);
   const selectArtist = useLibraryStore((s) => s.selectArtist);
+  const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const estimateSize = useCallback(() => ROW_HEIGHT, []);
@@ -60,7 +62,7 @@ export default function MobileArtistList({ onOpenSettings }: Props) {
               onClick={() => selectArtist(a.sourceId)}
             >
               <span className="mobile-artist-flag">
-                {a.country ? (countryToFlag(a.country) ?? "") : ""}
+                {showArtistFlags && a.country ? (countryToFlag(a.country) ?? "") : ""}
               </span>
               <span className="mobile-artist-name">{a.name}</span>
               <IconChevronRight />

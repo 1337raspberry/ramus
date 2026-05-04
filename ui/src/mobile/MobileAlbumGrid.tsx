@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Album, GenreNode } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { IconChevronLeft, IconChevronDown, IconFilter } from "../components/Icons";
 import { type AlbumSortOrder, hasActiveFilters } from "../stores/libraryStore";
 import MobileAlbumCard from "./MobileAlbumCard";
@@ -92,6 +93,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
   const selectGenre = useLibraryStore((s) => s.selectGenre);
   const albumFilters = useLibraryStore((s) => s.albumFilters);
   const activeBookmarkName = useLibraryStore((s) => s.activeBookmarkName);
+  const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
 
   const [showBreadcrumb, setShowBreadcrumb] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
@@ -125,6 +127,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
   ]);
 
   const artistCountryFlag = useMemo(() => {
+    if (!showArtistFlags) return null;
     if (browseArtistName) {
       const match = artists.find((a) => a.name === browseArtistName);
       return match?.country ? countryToFlag(match.country) : null;
@@ -134,7 +137,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
       return artist?.country ? countryToFlag(artist.country) : null;
     }
     return null;
-  }, [browseArtistName, sidebarMode, selectedArtistId, artists]);
+  }, [browseArtistName, sidebarMode, selectedArtistId, artists, showArtistFlags]);
 
   const isGenreContext =
     !searchQuery &&

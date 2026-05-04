@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import {
   ART_SIZE,
   getArtUrl,
@@ -28,6 +29,7 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
   const clearSuggestion = useLibraryStore((s) => s.clearSuggestion);
   const selectGenreByName = useLibraryStore((s) => s.selectGenreByName);
   const loadAlbumsForArtistName = useLibraryStore((s) => s.loadAlbumsForArtistName);
+  const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
 
   const albumFilters = useLibraryStore((s) => s.albumFilters);
   const [showFilter, setShowFilter] = useState(false);
@@ -204,7 +206,8 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
         >
           {album.artistName}
           {(() => {
-            const flag = album.artistCountry ? countryToFlag(album.artistCountry) : null;
+            const flag =
+              showArtistFlags && album.artistCountry ? countryToFlag(album.artistCountry) : null;
             return flag ? (
               <span className="adv-country-flag" title={album.artistCountry!}>
                 {flag}

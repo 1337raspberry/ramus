@@ -43,6 +43,7 @@ export default function BreadcrumbBar() {
   const selectGenre = useLibraryStore((s) => s.selectGenre);
   const clearSearchResults = useLibraryStore((s) => s.clearSearchResults);
   const flatGenres = useSettingsStore((s) => s.flatGenres);
+  const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
 
   // Read sidebarMode at call-time to avoid stale closures.
   const selectAll = useCallback(() => {
@@ -61,7 +62,7 @@ export default function BreadcrumbBar() {
 
     if (browseArtistName) {
       const match = artists.find((a) => a.name === browseArtistName);
-      const flag = match?.country ? countryToFlag(match.country) : null;
+      const flag = showArtistFlags && match?.country ? countryToFlag(match.country) : null;
       return [{ label: browseArtistName, flag }];
     }
 
@@ -71,7 +72,7 @@ export default function BreadcrumbBar() {
 
     if (sidebarMode === "artists" && selectedArtistId) {
       const artist = artists.find((a) => a.sourceId === selectedArtistId);
-      const flag = artist?.country ? countryToFlag(artist.country) : null;
+      const flag = showArtistFlags && artist?.country ? countryToFlag(artist.country) : null;
       return [{ label: artist?.name ?? "Artist", flag }];
     }
 
@@ -118,6 +119,7 @@ export default function BreadcrumbBar() {
     genreTree,
     selectGenre,
     selectAll,
+    showArtistFlags,
   ]);
 
   return (

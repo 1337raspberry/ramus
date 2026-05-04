@@ -482,6 +482,15 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
 
           <div className="settings-section-header">DISPLAY</div>
 
+          <label className="settings-row">
+            <span>Show artist flags</span>
+            <input
+              type="checkbox"
+              checked={settings.showArtistFlags}
+              onChange={(e) => save({ showArtistFlags: e.target.checked })}
+            />
+          </label>
+
           <div className="settings-row">
             <span>Colour mode</span>
             <span className={`settings-color-mode ${isHDR ? "hdr" : "sdr"}`}>

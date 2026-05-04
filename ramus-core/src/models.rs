@@ -527,6 +527,8 @@ pub struct Settings {
     pub popularity_display: PopularityDisplay,
     /// Merge Plex `Style` tags into the genre table during sync when true.
     pub include_plex_styles: bool,
+    /// Show country-of-origin flags next to artist names. Defaults true.
+    pub show_artist_flags: bool,
 }
 
 impl Default for Settings {
@@ -550,6 +552,7 @@ impl Default for Settings {
             offline_mode: false,
             popularity_display: PopularityDisplay::default(),
             include_plex_styles: true,
+            show_artist_flags: true,
         }
     }
 }

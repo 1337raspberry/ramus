@@ -33,6 +33,7 @@ function ArtistList({
   selectArtist: (id: string) => void;
 }) {
   const libraryPadding = useSettingsStore((s) => s.libraryPadding);
+  const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
   const effectiveRowHeight = Math.max(12, ROW_HEIGHT + libraryPadding * 2);
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -92,7 +93,7 @@ function ArtistList({
                   fontSize: TEXT_SIZE,
                 }}
               >
-                {artist.country ? (countryToFlag(artist.country) ?? "") : ""}
+                {showArtistFlags && artist.country ? (countryToFlag(artist.country) ?? "") : ""}
               </span>
               <span className="genre-name">{artist.name}</span>
             </div>

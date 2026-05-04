@@ -37,6 +37,7 @@ export default function AlbumDetailView() {
   const loadAlbumsForYear = useLibraryStore((s) => s.loadAlbumsForYear);
   const selectGenreByName = useLibraryStore((s) => s.selectGenreByName);
   const popularityDisplay = useSettingsStore((s) => s.popularityDisplay);
+  const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
 
   const handleGenreClick = useCallback(
     (genre: string) => {
@@ -180,7 +181,8 @@ export default function AlbumDetailView() {
           >
             {album.artistName}
             {(() => {
-              const flag = album.artistCountry ? countryToFlag(album.artistCountry) : null;
+              const flag =
+                showArtistFlags && album.artistCountry ? countryToFlag(album.artistCountry) : null;
               return flag ? (
                 <span className="adv-country-flag" title={album.artistCountry!}>
                   {flag}

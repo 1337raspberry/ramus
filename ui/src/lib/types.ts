@@ -126,6 +126,8 @@ export interface Settings {
   popularityDisplay: "off" | "hot" | "chart";
   /** When true, Plex `Style` tags are merged into the genre table at sync. */
   includePlexStyles: boolean;
+  /** When true, country-of-origin flags render next to artist names. */
+  showArtistFlags: boolean;
 }
 
 export interface CacheStats {

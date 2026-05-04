@@ -9,6 +9,7 @@ import {
 } from "../stores/libraryStore";
 import { getDistinctCountries, getAllCollectionNames, getGenreSuggestions } from "../lib/commands";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { countryToFlag } from "../lib/countryFlag";
 import { filterCountrySuggestions } from "../lib/filterSuggestions";
 import ChipAutocompleteInput from "../components/ChipAutocompleteInput";
@@ -21,6 +22,7 @@ interface Props {
 export default function MobileFilterPanel({ onDismiss }: Props) {
   const filters = useLibraryStore((s) => s.albumFilters);
   const setFilters = useLibraryStore((s) => s.setAlbumFilters);
+  const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
   const [countries, setCountries] = useState<string[]>([]);
   const [collections, setCollections] = useState<string[]>([]);
 
@@ -160,8 +162,8 @@ export default function MobileFilterPanel({ onDismiss }: Props) {
               value={filters.countries}
               onChange={(countries) => update({ countries })}
               fetchSuggestions={fetchCountries}
-              renderChipPrefix={(c) => countryToFlag(c) ?? null}
-              renderSuggestionPrefix={(c) => countryToFlag(c) ?? null}
+              renderChipPrefix={(c) => (showArtistFlags ? (countryToFlag(c) ?? null) : null)}
+              renderSuggestionPrefix={(c) => (showArtistFlags ? (countryToFlag(c) ?? null) : null)}
               placeholder="Type a country…"
               ariaLabel="Country filter"
               inlineSuggestions

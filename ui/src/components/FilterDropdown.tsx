@@ -7,6 +7,7 @@ import {
   type AlbumFilters,
 } from "../stores/libraryStore";
 import { getDistinctCountries, getAllCollectionNames, getGenreSuggestions } from "../lib/commands";
+import { useSettingsStore } from "../stores/settingsStore";
 import { IconFilter } from "./Icons";
 import { countryToFlag } from "../lib/countryFlag";
 import { filterCountrySuggestions } from "../lib/filterSuggestions";
@@ -16,6 +17,7 @@ import FilterPanelMenu from "./FilterPanelMenu";
 export default function FilterDropdown() {
   const filters = useLibraryStore((s) => s.albumFilters);
   const setFilters = useLibraryStore((s) => s.setAlbumFilters);
+  const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
   const [open, setOpen] = useState(false);
   const [countries, setCountries] = useState<string[]>([]);
   const [collections, setCollections] = useState<string[]>([]);
@@ -156,8 +158,8 @@ export default function FilterDropdown() {
               value={filters.countries}
               onChange={(countries) => update({ countries })}
               fetchSuggestions={fetchCountries}
-              renderChipPrefix={(c) => countryToFlag(c) ?? null}
-              renderSuggestionPrefix={(c) => countryToFlag(c) ?? null}
+              renderChipPrefix={(c) => (showArtistFlags ? (countryToFlag(c) ?? null) : null)}
+              renderSuggestionPrefix={(c) => (showArtistFlags ? (countryToFlag(c) ?? null) : null)}
               placeholder="Type a country…"
               ariaLabel="Country filter"
             />
