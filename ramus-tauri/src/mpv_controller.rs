@@ -83,9 +83,15 @@ impl MpvController {
             // diagnostics, etc.) are completely invisible — the only
             // signal we get is `mpv_event_end_file.error`, which translates
             // to coarse strings like "loading failed" with no context.
-            // `warn` covers the failure modes we care about without
-            // flooding logs during normal playback.
-            let level = CString::new("warn").unwrap();
+            // `info` covers HTTP/lavf connection lifecycle (connect, open,
+            // status code, premature close) which mpv emits at info-level,
+            // not warn — without it the actual failure reason for a slow-
+            // connection transcode bail is invisible. Override via
+            // `RAMUS_MPV_LOG_LEVEL` env var if more / less is needed
+            // (valid values: no, fatal, error, warn, info, v, debug, trace).
+            let level_str = std::env::var("RAMUS_MPV_LOG_LEVEL")
+                .unwrap_or_else(|_| "info".into());
+            let level = CString::new(level_str).unwrap();
             lib.request_log_messages(ctx, level.as_ptr());
 
             // 100 = unity gain.
@@ -400,7 +406,15 @@ fn event_loop(
                     // own logger doesn't emit blank lines.
                     let text = text.trim_end_matches('\n');
                     if !text.is_empty() {
-                        log::warn!("mpv[{prefix}]: {text}");
+                        // mpv log_level constants (from client.h):
+                        // 10=FATAL, 20=ERROR, 30=WARN, 40=INFO, 50=V, 60=DEBUG, 70=TRACE.
+                        match msg.log_level {
+                            l if l <= 20 => log::error!("mpv[{prefix}]: {text}"),
+                            l if l <= 30 => log::warn!("mpv[{prefix}]: {text}"),
+                            l if l <= 40 => log::info!("mpv[{prefix}]: {text}"),
+                            l if l <= 60 => log::debug!("mpv[{prefix}]: {text}"),
+                            _ => log::trace!("mpv[{prefix}]: {text}"),
+                        }
                     }
                 }
             }

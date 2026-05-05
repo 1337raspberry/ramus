@@ -27,9 +27,9 @@ pub const MPV_FORMAT_BYTE_ARRAY: c_int = 9;
 // Event IDs
 pub const MPV_EVENT_NONE: c_int = 0;
 pub const MPV_EVENT_SHUTDOWN: c_int = 1;
+pub const MPV_EVENT_LOG_MESSAGE: c_int = 2;
 pub const MPV_EVENT_FILE_LOADED: c_int = 8;
 pub const MPV_EVENT_END_FILE: c_int = 7;
-pub const MPV_EVENT_LOG_MESSAGE: c_int = 21;
 pub const MPV_EVENT_PROPERTY_CHANGE: c_int = 22;
 
 // End-file reasons
