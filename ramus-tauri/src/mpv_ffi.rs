@@ -29,6 +29,7 @@ pub const MPV_EVENT_NONE: c_int = 0;
 pub const MPV_EVENT_SHUTDOWN: c_int = 1;
 pub const MPV_EVENT_FILE_LOADED: c_int = 8;
 pub const MPV_EVENT_END_FILE: c_int = 7;
+pub const MPV_EVENT_LOG_MESSAGE: c_int = 21;
 pub const MPV_EVENT_PROPERTY_CHANGE: c_int = 22;
 
 // End-file reasons
@@ -57,6 +58,14 @@ pub struct mpv_event_property {
 pub struct mpv_event_end_file {
     pub reason: c_int,
     pub error: c_int,
+}
+
+#[repr(C)]
+pub struct mpv_event_log_message {
+    pub prefix: *const c_char,
+    pub level: *const c_char,
+    pub text: *const c_char,
+    pub log_level: c_int,
 }
 
 // Node format (for complex properties like af-metadata/<label>).
@@ -107,6 +116,7 @@ type FnGetProperty =
 type FnObserveProperty = unsafe extern "C" fn(*mut mpv_handle, u64, *const c_char, c_int) -> c_int;
 type FnWaitEvent = unsafe extern "C" fn(*mut mpv_handle, f64) -> *mut mpv_event;
 type FnErrorString = unsafe extern "C" fn(c_int) -> *const c_char;
+type FnRequestLogMessages = unsafe extern "C" fn(*mut mpv_handle, *const c_char) -> c_int;
 
 /// Runtime-loaded libmpv.
 ///
@@ -127,6 +137,7 @@ pub struct MpvLib {
     observe_property: FnObserveProperty,
     wait_event: FnWaitEvent,
     error_string: FnErrorString,
+    request_log_messages: FnRequestLogMessages,
     _lib: Library,
 }
 
@@ -164,6 +175,8 @@ impl MpvLib {
                 resolve(&lib, b"mpv_observe_property\0")?;
             let wait_event: Symbol<FnWaitEvent> = resolve(&lib, b"mpv_wait_event\0")?;
             let error_string: Symbol<FnErrorString> = resolve(&lib, b"mpv_error_string\0")?;
+            let request_log_messages: Symbol<FnRequestLogMessages> =
+                resolve(&lib, b"mpv_request_log_messages\0")?;
 
             // Copy each fn pointer out of its Symbol<'_>. The pointers remain
             // valid as long as `_lib` is alive, guaranteed by struct field
@@ -180,6 +193,7 @@ impl MpvLib {
                 observe_property: *observe_property,
                 wait_event: *wait_event,
                 error_string: *error_string,
+                request_log_messages: *request_log_messages,
                 _lib: lib,
             })
         }
@@ -269,6 +283,15 @@ impl MpvLib {
     #[inline]
     pub unsafe fn error_string(&self, error: c_int) -> *const c_char {
         (self.error_string)(error)
+    }
+
+    #[inline]
+    pub unsafe fn request_log_messages(
+        &self,
+        ctx: *mut mpv_handle,
+        min_level: *const c_char,
+    ) -> c_int {
+        (self.request_log_messages)(ctx, min_level)
     }
 }
 

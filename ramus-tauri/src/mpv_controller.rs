@@ -78,6 +78,16 @@ impl MpvController {
                 lib.observe_property(ctx, *id as u64, n.as_ptr(), fmt);
             }
 
+            // Route mpv's own log messages into our log facade. Without
+            // this, mpv-side errors (HTTP failures, demuxer issues, lavf
+            // diagnostics, etc.) are completely invisible — the only
+            // signal we get is `mpv_event_end_file.error`, which translates
+            // to coarse strings like "loading failed" with no context.
+            // `warn` covers the failure modes we care about without
+            // flooding logs during normal playback.
+            let level = CString::new("warn").unwrap();
+            lib.request_log_messages(ctx, level.as_ptr());
+
             // 100 = unity gain.
             let vol_name = CString::new("volume").unwrap();
             let mut vol: f64 = 100.0;
@@ -376,6 +386,22 @@ fn event_loop(
             MPV_EVENT_FILE_LOADED => {
                 if let Some(ref cb) = callbacks.on_file_loaded {
                     safe_invoke("on_file_loaded", cb);
+                }
+            }
+
+            MPV_EVENT_LOG_MESSAGE if !event.data.is_null() => {
+                let msg = unsafe { &*(event.data as *const mpv_event_log_message) };
+                if !msg.prefix.is_null() && !msg.text.is_null() {
+                    let prefix = unsafe { CStr::from_ptr(msg.prefix) }
+                        .to_string_lossy();
+                    let text = unsafe { CStr::from_ptr(msg.text) }
+                        .to_string_lossy();
+                    // mpv terminates lines with `\n` itself; trim so our
+                    // own logger doesn't emit blank lines.
+                    let text = text.trim_end_matches('\n');
+                    if !text.is_empty() {
+                        log::warn!("mpv[{prefix}]: {text}");
+                    }
                 }
             }
 
