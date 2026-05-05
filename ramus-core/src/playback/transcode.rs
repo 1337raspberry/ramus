@@ -25,6 +25,12 @@ pub fn should_transcode(codec: Option<&str>, mode: PlaybackMode, is_remote: bool
 /// Validates that `part_key` starts with `/library/` and contains no path
 /// traversal sequences (checked after percent-decoding). Returns `None`
 /// on invalid input.
+///
+/// `download=1` makes the server treat the request as a download rather
+/// than a stream: it sets `Content-Disposition: attachment` on the
+/// response and surfaces the request on the PMS dashboard as a "Media
+/// download by …" entry. Used on every part fetch (player and prefetch).
+/// It does NOT raise the per-client concurrency cap.
 pub fn build_direct_play_url(server_url: &Url, part_key: &str, token: &str) -> Option<Url> {
     let decoded = percent_decode(part_key);
     if !decoded.starts_with("/library/") || decoded.contains("..") {
@@ -32,7 +38,12 @@ pub fn build_direct_play_url(server_url: &Url, part_key: &str, token: &str) -> O
     }
 
     let base = server_url.as_str().trim_end_matches('/');
-    let url_str = format!("{}{}?X-Plex-Token={}", base, part_key, percent_encode(token));
+    let url_str = format!(
+        "{}{}?download=1&X-Plex-Token={}",
+        base,
+        part_key,
+        percent_encode(token)
+    );
     Url::parse(&url_str).ok()
 }
 
@@ -145,6 +156,17 @@ mod tests {
         let url_str = url.unwrap().to_string();
         assert!(url_str.contains("X-Plex-Token=abc123"));
         assert!(url_str.contains("/library/parts/12345/file.flac"));
+    }
+
+    #[test]
+    fn test_direct_play_url_includes_download_flag() {
+        let server = Url::parse("http://192.168.1.100:32400").unwrap();
+        let url = build_direct_play_url(&server, "/library/parts/12345/file.flac", "abc123");
+        let url_str = url.unwrap().to_string();
+        assert!(
+            url_str.contains("download=1"),
+            "URL must carry download=1 for PMS dashboard tracking; got {url_str}"
+        );
     }
 
     #[test]
