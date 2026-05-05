@@ -943,6 +943,59 @@ impl AudioPlayer {
         true
     }
 
+    /// Force-reload the currently-playing track using the current
+    /// `server_url` and `token`. Called after a connection failover so
+    /// transcode (HLS) tracks don't keep mpv hung on the dead manifest URL
+    /// for the full `network-timeout=15` before the file-ended retry path
+    /// kicks in. Returns `true` if a reload was issued.
+    ///
+    /// Differs from `try_recover_current_track` in two ways:
+    /// 1. **Not gated on `last_retried_track`** — connection just changed,
+    ///    so a previous retry on the same track is no longer informative.
+    /// 2. **Skipped when stopped** — there's nothing to reload if the
+    ///    queue isn't actively playing.
+    ///
+    /// Direct-play tracks that are happily buffering will see a brief
+    /// audio gap, but the alternative is a 15s hang the next time mpv
+    /// needs to reach the demuxer source. Cached tracks (LRU and
+    /// persistent downloads) are skipped — their `file://` URL is
+    /// unaffected by server changes.
+    pub fn force_reload_current_track(&self) -> bool {
+        let (idx, new_url) = {
+            let persistent = self.persistent_cache.read();
+            let inner = self.inner.lock();
+            if inner.state.status == PlaybackStatus::Stopped {
+                return false;
+            }
+            let idx = inner.state.queue_index;
+            let Some(track) = inner.state.queue.get(idx) else {
+                return false;
+            };
+            if persistent.contains_key(&track.rating_key) {
+                return false;
+            }
+            if inner.cache.get(&track.rating_key).is_some() {
+                return false;
+            }
+            let Some(url) = resolve_url(track, &inner, &persistent) else {
+                return false;
+            };
+            if url.starts_with("file://") {
+                return false;
+            }
+            (idx, url)
+        };
+
+        log::info!("force-reloading current track after connection change");
+        // Same insert/play/remove dance as try_recover_current_track —
+        // can't playlist_remove the active index, so shift it to idx+1
+        // by inserting fresh, playing fresh, then removing the stale.
+        self.mpv.load_file_at(&new_url, idx as i64, None);
+        self.mpv.playlist_play_index(idx as i64);
+        self.mpv.playlist_remove((idx + 1) as i64);
+        true
+    }
+
     /// Handle mpv idle-active (queue completed).
     pub fn handle_idle_active(&self) {
         let mut inner = self.inner.lock();
@@ -2304,5 +2357,90 @@ mod tests {
 
         // Only track "3" (index 2) rewritten; "1" is current, "2" has persistent download
         assert_eq!(removes.len(), 1);
+    }
+
+    #[test]
+    fn test_force_reload_current_replaces_active_entry() {
+        let (player, mpv) = make_player();
+        player.load_queue(
+            vec![make_test_track("1"), make_test_track("2")],
+            0,
+        );
+        mpv.calls.lock().clear();
+
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        let reloaded = player.force_reload_current_track();
+        assert!(reloaded);
+
+        let calls = mpv.calls();
+        // Insert fresh URL at idx 0, play it, then remove the stale (now at idx 1).
+        assert!(calls
+            .iter()
+            .any(|c| matches!(c, MockCall::LoadFileAt { index: 0, url, .. } if url.contains("new.server:32400") && url.contains("new-token"))));
+        assert!(calls
+            .iter()
+            .any(|c| matches!(c, MockCall::PlaylistPlayIndex(0))));
+        assert!(calls
+            .iter()
+            .any(|c| matches!(c, MockCall::PlaylistRemove(1))));
+    }
+
+    #[test]
+    fn test_force_reload_current_skips_cached() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+        player.with_cache(|cache| {
+            cache.insert("1".into(), PathBuf::from("/tmp/cached_1.flac"), 1000);
+        });
+        mpv.calls.lock().clear();
+
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        let reloaded = player.force_reload_current_track();
+
+        assert!(!reloaded);
+        assert!(mpv.calls().is_empty());
+    }
+
+    #[test]
+    fn test_force_reload_current_skips_persistent_download() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+        player.register_persistent_download("1".into(), PathBuf::from("/downloads/1.flac"));
+        mpv.calls.lock().clear();
+
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        let reloaded = player.force_reload_current_track();
+
+        assert!(!reloaded);
+        assert!(mpv.calls().is_empty());
+    }
+
+    #[test]
+    fn test_force_reload_current_skips_when_stopped() {
+        let (player, mpv) = make_player();
+        // No load_queue — status stays Stopped.
+        mpv.calls.lock().clear();
+
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        let reloaded = player.force_reload_current_track();
+
+        assert!(!reloaded);
+        assert!(mpv.calls().is_empty());
     }
 }

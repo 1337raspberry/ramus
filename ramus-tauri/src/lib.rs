@@ -741,6 +741,13 @@ pub fn run() {
                                         let is_remote = !is_local;
                                         monitor_player.update_server_connection(url, token, is_remote);
                                         monitor_player.rewrite_stale_playlist_urls();
+                                        // rewrite_stale_playlist_urls skips the current entry to avoid
+                                        // disrupting playback, but for transcode (HLS) tracks the dead
+                                        // manifest URL stays loaded — mpv hangs for the full
+                                        // `network-timeout=15` before file-ended retry kicks in. This
+                                        // forces a fresh load of the current track too. Cached and
+                                        // stopped paths no-op internally.
+                                        monitor_player.force_reload_current_track();
                                         monitor_prefetch.notify_skip();
                                         monitor_reachable
                                             .store(true, std::sync::atomic::Ordering::Release);
