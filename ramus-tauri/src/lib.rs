@@ -156,16 +156,18 @@ pub fn create_mpv_player(
             if let Some(ref p) = *pr2.lock() {
                 let old_dur = p.duration();
                 p.handle_duration_change(dur);
-                // Emit immediately so the frontend gets the new duration without
-                // waiting for the next time-pos tick. Use position 0 on a track
-                // boundary (previous duration 0) to avoid pairing the old track's
-                // position with the new track's duration during prefetch transitions.
+                // Read back from the player AFTER handle_duration_change —
+                // mpv's report is rejected when we have a metadata duration
+                // (Plex tag is stable; mpv's chunked-Opus estimate flutters).
+                // Emitting the raw `dur` here would bypass that gating and
+                // ship the jitter straight to the frontend's seek bar.
+                let effective_dur = p.duration();
                 let pos = if old_dur == 0.0 { 0.0 } else { p.position() };
                 emit_playback_position(
                     &app2,
                     PlaybackPositionPayload {
                         position: pos,
-                        duration: dur,
+                        duration: effective_dur,
                     },
                 );
 
@@ -173,7 +175,7 @@ pub fn create_mpv_player(
                 // is known (fires shortly after track change).
                 if let Some(ref mc) = *mc1.lock() {
                     if let Some(ref track) = p.state().current_track {
-                        let meta = MediaMetadata::from_track(track, pos, dur, true);
+                        let meta = MediaMetadata::from_track(track, pos, effective_dur, true);
                         mc.update_metadata(&meta);
                     }
                 }
