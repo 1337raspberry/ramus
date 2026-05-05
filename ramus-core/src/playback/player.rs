@@ -786,6 +786,15 @@ impl AudioPlayer {
         let mut inner = self.inner.lock();
         inner.position = pos;
         inner.last_position_update = Some(Instant::now());
+        // Audio is actually flowing — clear the retry guard so a *later*
+        // failure on this same track (e.g. a network blip mid-song) can
+        // get a fresh retry. Was previously cleared in `handle_file_loaded`
+        // but mpv fires file-loaded the moment the URL opens, BEFORE
+        // knowing whether the body will succeed; on slow-connection
+        // single-file transcode failures we'd see file-loaded → file-ended
+        // → retry → file-loaded → file-ended → retry forever, never
+        // converging because the guard kept clearing.
+        inner.last_retried_track = None;
     }
 
     /// Handle mpv duration change.
@@ -900,7 +909,10 @@ impl AudioPlayer {
     pub fn handle_file_loaded(&self) {
         let mut inner = self.inner.lock();
         inner.is_loading = false;
-        inner.last_retried_track = None;
+        // NOTE: deliberately do NOT clear `last_retried_track` here. mpv
+        // fires file-loaded as soon as the URL opens — the body may still
+        // die mid-stream. The retry guard is cleared in
+        // `handle_position_change` once audio is actually flowing.
         inner.last_load_error = None;
     }
 
@@ -915,13 +927,10 @@ impl AudioPlayer {
                 let redacted = redact_urls(msg);
                 self.inner.lock().last_load_error = Some(redacted.clone());
                 if self.try_recover_current_track() {
-                    log::info!("handle_file_ended: recovered stale URL, retrying");
+                    log::warn!("handle_file_ended: load error, retrying once: {redacted}");
                     return;
                 }
-                log::warn!(
-                    "handle_file_ended: unrecoverable error, skipping: {}",
-                    redacted
-                );
+                log::warn!("handle_file_ended: unrecoverable error, skipping: {redacted}");
                 self.next();
             }
             _ => {}
