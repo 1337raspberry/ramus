@@ -267,6 +267,10 @@ impl MpvPlayer for MpvController {
     fn is_shutdown(&self) -> bool {
         self.shutdown.load(Ordering::Acquire)
     }
+
+    fn demuxer_cache_time(&self) -> Option<f64> {
+        self.get_property_double("demuxer-cache-time")
+    }
 }
 
 impl Drop for MpvController {

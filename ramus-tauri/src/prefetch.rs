@@ -65,17 +65,30 @@ const MIN_PROGRESS_BYTES: u64 = 4096;
 /// the device's disk before the time budget elapses.
 const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
 
-/// Delay before starting prefetch after a natural advance. Tuned to let
-/// the *live* transcode HTTP body fully drain before the prefetch worker
-/// opens a second transcode session — Plex enforces a per-client
-/// concurrent-transcode cap (~1) and will cut the prefetch session mid-
-/// stream if the live one hasn't released yet. 5s covers a typical 4-6
-/// minute Opus track at ~1 MB/s into mpv's forward buffer with margin.
-const NATURAL_GAP: Duration = Duration::from_secs(5);
+/// Minimum delay before starting prefetch after a natural advance, so
+/// mpv has a chance to issue its initial request and report some
+/// duration / position state. The actual wait extends past this if the
+/// live transcode HTTP body is still draining — see
+/// `wait_for_live_drain`.
+const NATURAL_GAP: Duration = Duration::from_secs(1);
 
-/// Delay after a user skip. Same logic as `NATURAL_GAP` plus a touch
-/// more so rapid skips don't fire pointless downloads.
-const SKIP_GAP: Duration = Duration::from_secs(6);
+/// Same idea after a user skip, with a touch more so rapid skips don't
+/// fire pointless downloads.
+const SKIP_GAP: Duration = Duration::from_secs(2);
+
+/// Hard ceiling on how long we'll wait for the live transcode body to
+/// drain before kicking off prefetch anyway. Covers the worst case where
+/// `demuxer_cache_time` is unavailable (mobile bridges), the connection
+/// is so slow we'd never see EOF, or the user has somehow paused mpv
+/// such that it never finishes pulling. After this, prefetch fires
+/// best-effort — if Plex cuts it, the existing retry/backoff loop will
+/// re-attempt within the per-download budget.
+const LIVE_DRAIN_CEILING: Duration = Duration::from_secs(120);
+
+/// Poll interval for the live-drain wait. Cheap (a single mpv property
+/// read per tick), so a tight cadence makes the post-drain prefetch
+/// fire promptly.
+const LIVE_DRAIN_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Emit progress events at most this often per in-flight download. Bytes
 /// ticks at chunk rate (>50Hz on LAN); throttling keeps the event bus quiet.
@@ -556,6 +569,51 @@ fn spawn_cycle(
 
 // --- Cycle ---
 
+/// Block until the currently-playing track's live transcode body has
+/// drained into mpv's forward buffer (so opening a new transcode
+/// session won't get cut by Plex's per-client cap), or until
+/// `LIVE_DRAIN_CEILING` elapses, whichever comes first. Returns early
+/// if the cycle is superseded.
+async fn wait_for_live_drain(
+    player: &AudioPlayer,
+    shared_gen: &Arc<AtomicU64>,
+    my_gen: u64,
+) {
+    let started = Instant::now();
+    let mut last_log = started;
+    loop {
+        if shared_gen.load(Ordering::SeqCst) != my_gen {
+            return;
+        }
+        if player.current_track_buffered_for_prefetch() {
+            let waited = started.elapsed();
+            if waited > Duration::from_secs(1) {
+                log::debug!(
+                    "prefetch: live transcode drained after {:.1}s",
+                    waited.as_secs_f64()
+                );
+            }
+            return;
+        }
+        if started.elapsed() >= LIVE_DRAIN_CEILING {
+            log::warn!(
+                "prefetch: live transcode never reported buffered after {:.0}s, \
+                 firing prefetch anyway (will retry if cut)",
+                LIVE_DRAIN_CEILING.as_secs_f64()
+            );
+            return;
+        }
+        if last_log.elapsed() >= Duration::from_secs(15) {
+            log::debug!(
+                "prefetch: still waiting for live transcode to drain ({:.0}s elapsed)",
+                started.elapsed().as_secs_f64()
+            );
+            last_log = Instant::now();
+        }
+        tokio::time::sleep(LIVE_DRAIN_POLL_INTERVAL).await;
+    }
+}
+
 async fn run_cycle(
     player: Arc<AudioPlayer>,
     http: reqwest::Client,
@@ -565,10 +623,20 @@ async fn run_cycle(
     my_gen: u64,
     is_skip: bool,
 ) {
-    let gap = if is_skip { SKIP_GAP } else { NATURAL_GAP };
+    let initial_gap = if is_skip { SKIP_GAP } else { NATURAL_GAP };
 
-    // Safety gap so mpv issues its initial request first.
-    tokio::time::sleep(gap).await;
+    // Tiny initial sleep so mpv has issued its load request and started
+    // reporting duration before we ask "is the live download done?".
+    tokio::time::sleep(initial_gap).await;
+    if shared_gen.load(Ordering::SeqCst) != my_gen {
+        return;
+    }
+
+    // Wait for the currently-playing track's live transcode HTTP body to
+    // fully drain before opening any new transcode session. No-op when
+    // the current track is direct-play (no live transcode) or already
+    // cached locally.
+    wait_for_live_drain(&player, &shared_gen, my_gen).await;
     if shared_gen.load(Ordering::SeqCst) != my_gen {
         return;
     }

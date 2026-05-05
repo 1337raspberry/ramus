@@ -129,6 +129,20 @@ pub trait MpvPlayer: Send + Sync {
     fn set_audio_filters(&self, value: &str);
     fn stop(&self);
     fn is_shutdown(&self) -> bool;
+
+    /// Seconds of demuxer cache buffered ahead of the current playback
+    /// position. Used by the prefetch worker to detect when the live
+    /// transcode HTTP body has fully drained — Plex enforces a per-client
+    /// concurrent-transcode cap, so a prefetch session opened while the
+    /// live one is still reading from the network gets cut mid-stream.
+    ///
+    /// Default `None` covers backends without a libmpv property bridge
+    /// (Android ExoPlayer, iOS bridge until it grows the call). Callers
+    /// must treat `None` as "unknown" — typically waiting a fixed safety
+    /// ceiling instead of polling.
+    fn demuxer_cache_time(&self) -> Option<f64> {
+        None
+    }
 }
 
 /// Thread-safe shutdown flag shared between controller and event loop.
