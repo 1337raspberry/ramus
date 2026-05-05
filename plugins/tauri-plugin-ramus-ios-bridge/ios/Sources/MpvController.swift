@@ -235,11 +235,12 @@ final class MpvController {
         let err = mpv_command(mpv, &cArgs)
         cStrings.forEach { free($0) }
         if err < 0 {
-            // Redact tokens before logging.
+            // Redact tokens before logging. Transcode URLs nest the token
+            // inside `X-Plex-Headers=<base64>`, so redact both forms.
             let safe = args.map { arg in
                 arg.replacingOccurrences(
-                    of: #"X-Plex-Token=[^&]*"#,
-                    with: "X-Plex-Token=REDACTED",
+                    of: #"(X-Plex-Token|X-Plex-Headers)=[^&]*"#,
+                    with: "$1=REDACTED",
                     options: .regularExpression
                 )
             }
