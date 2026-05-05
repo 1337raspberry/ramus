@@ -29,16 +29,10 @@ ramus-tauri/tauri.linux.conf.json
 # Keep CLAUDE.md local only — not tracked in the repo
 CLAUDE.md
 
-# Personal release runbook — local-only, mirrors the Actions workflow.
-RELEASING.md
-
-# Personal TODO scratch pad — CI-verification steps to run once GH
-# Actions minutes return. Not meaningful to other contributors.
-CI-check-to-do.md
-
-# Drafted GitHub-issue bodies to file once the repo goes public.
-# Local scratch only — not part of the project.
-LAUNCH-ISSUES.md
+# Local-only notes, scratch pads, debug docs, draft issue bodies, and
+# anything else that's useful for working on the project but not part of
+# it. Anything dropped in here is invisible to git.
+localdev/
 
 # Android release signing — keystore + credentials never committed
 *.keystore
