@@ -65,13 +65,17 @@ const MIN_PROGRESS_BYTES: u64 = 4096;
 /// the device's disk before the time budget elapses.
 const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
 
-/// Delay before starting prefetch after a natural advance; enough for mpv
-/// to issue its initial request.
-const NATURAL_GAP: Duration = Duration::from_secs(1);
+/// Delay before starting prefetch after a natural advance. Tuned to let
+/// the *live* transcode HTTP body fully drain before the prefetch worker
+/// opens a second transcode session — Plex enforces a per-client
+/// concurrent-transcode cap (~1) and will cut the prefetch session mid-
+/// stream if the live one hasn't released yet. 5s covers a typical 4-6
+/// minute Opus track at ~1 MB/s into mpv's forward buffer with margin.
+const NATURAL_GAP: Duration = Duration::from_secs(5);
 
-/// Delay after a user skip. Slightly longer so rapid skips don't fire
-/// pointless downloads.
-const SKIP_GAP: Duration = Duration::from_secs(2);
+/// Delay after a user skip. Same logic as `NATURAL_GAP` plus a touch
+/// more so rapid skips don't fire pointless downloads.
+const SKIP_GAP: Duration = Duration::from_secs(6);
 
 /// Emit progress events at most this often per in-flight download. Bytes
 /// ticks at chunk rate (>50Hz on LAN); throttling keeps the event bus quiet.
@@ -1209,7 +1213,12 @@ async fn download_http_to_file(
 
         retries += 1;
         let now = Instant::now();
-        let bytes_this_attempt = written - written_before_attempt;
+        // saturating_sub guards against the resume-was-rejected case: if
+        // the server returned 200 on a Range request earlier in this
+        // iteration, `written` got reset to 0 while `written_before_attempt`
+        // is still the pre-reset value. We lost progress this attempt, so
+        // report 0 gained rather than underflowing.
+        let bytes_this_attempt = written.saturating_sub(written_before_attempt);
 
         if now >= deadline {
             return Err(format!(
