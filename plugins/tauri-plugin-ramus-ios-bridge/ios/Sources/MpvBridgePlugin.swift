@@ -286,6 +286,15 @@ class MpvBridgePlugin: Plugin {
         invoke.resolve(["volume": value])
     }
 
+    /// Forward `demuxer-cache-time` to Rust. Resolves with `-1.0` when the
+    /// property is unavailable (no stream loaded, or demuxer hasn't filled
+    /// yet); the Rust side translates that to `None`. We use a negative
+    /// sentinel because `JSObject` won't accept nil values.
+    @objc public func mpvGetDemuxerCacheTime(_ invoke: Invoke) throws {
+        let value = mpv?.getDemuxerCacheTime() ?? -1.0
+        invoke.resolve(["value": value])
+    }
+
     @objc public func mpvGetEqConfig(_ invoke: Invoke) throws {
         invoke.resolve([
             "frequencies": [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],

@@ -51,6 +51,9 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn mpv_get_volume(&self) -> crate::Result<f64> {
         Ok(100.0)
     }
+    pub fn mpv_demuxer_cache_time(&self) -> crate::Result<Option<f64>> {
+        Ok(None)
+    }
     pub fn mpv_get_eq_config(&self) -> crate::Result<EqConfigResponse> {
         Ok(EqConfigResponse {
             frequencies: vec![31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],

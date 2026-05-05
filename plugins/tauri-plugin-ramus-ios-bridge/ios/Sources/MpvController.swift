@@ -169,6 +169,21 @@ final class MpvController {
         return value
     }
 
+    /// Read mpv's `demuxer-cache-time` synchronously. Returns `nil` when
+    /// no stream is loaded or the demuxer hasn't reported cache yet — the
+    /// Rust prefetch worker uses that to fall back to a fixed safety
+    /// ceiling. The property is normally non-negative; we explicitly treat
+    /// negatives as missing too, since the bridge translates the absent
+    /// case via a negative sentinel.
+    func getDemuxerCacheTime() -> Double? {
+        guard let mpv else { return nil }
+        var value: Double = 0
+        let err = mpv_get_property(mpv, "demuxer-cache-time", MPV_FORMAT_DOUBLE, &value)
+        if err < 0 { return nil }
+        if value < 0 { return nil }
+        return value
+    }
+
     func setAudioFilters(_ value: String) {
         setPropertyString("af", value)
     }

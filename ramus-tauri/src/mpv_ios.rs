@@ -116,4 +116,17 @@ impl<R: Runtime> MpvPlayer for IosMpvPlayer<R> {
     fn is_shutdown(&self) -> bool {
         self.shutdown.load(std::sync::atomic::Ordering::Acquire)
     }
+
+    fn demuxer_cache_time(&self) -> Option<f64> {
+        // Synchronous IPC over the JS bridge (~1ms). Polled at 500ms while
+        // the prefetch worker waits for the live transcode session to
+        // drain — so worst case ~2/sec, negligible.
+        match self.bridge().mpv_demuxer_cache_time() {
+            Ok(v) => v,
+            Err(e) => {
+                log::debug!("mpv_demuxer_cache_time bridge call failed: {e}");
+                None
+            }
+        }
+    }
 }

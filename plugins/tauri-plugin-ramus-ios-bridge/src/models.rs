@@ -92,6 +92,17 @@ pub struct VolumeResponse {
     pub volume: f64,
 }
 
+/// Response shape for `mpvGetDemuxerCacheTime`. Negative `value` is the
+/// "property unavailable" sentinel (mpv hasn't loaded a stream, or the
+/// demuxer hasn't reported cache yet). The Rust side translates this to
+/// `None` so callers can match on `Option<f64>`. `JSObject` doesn't allow
+/// nil values, so a sentinel beats a separate availability flag.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DemuxerCacheTimeResponse {
+    pub value: f64,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KeychainAccountArgs {

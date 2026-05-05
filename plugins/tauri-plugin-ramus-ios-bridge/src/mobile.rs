@@ -106,6 +106,21 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(response.volume)
     }
 
+    /// Read mpv's `demuxer-cache-time` (seconds of forward-buffered audio
+    /// past the current playback position). Returns `None` when mpv hasn't
+    /// loaded a stream yet or the property is otherwise unavailable, so the
+    /// prefetch worker can fall back to its fixed safety ceiling.
+    pub fn mpv_demuxer_cache_time(&self) -> crate::Result<Option<f64>> {
+        let response: DemuxerCacheTimeResponse = self
+            .0
+            .run_mobile_plugin("mpvGetDemuxerCacheTime", Empty::default())?;
+        if response.value < 0.0 {
+            Ok(None)
+        } else {
+            Ok(Some(response.value))
+        }
+    }
+
     pub fn mpv_get_eq_config(&self) -> crate::Result<EqConfigResponse> {
         Ok(self
             .0
