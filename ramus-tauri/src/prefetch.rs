@@ -723,7 +723,7 @@ async fn run_serial_downloads(
                 spawn_analyse_task_from_cache(player, track_id, app.clone());
             }
             Err(e) => {
-                log::debug!("prefetch: serial download failed for {track_id}: {e}");
+                log::warn!("prefetch: serial download failed for {track_id}: {e}");
                 prefetch_failed.insert(track_id);
 
                 if is_network_error(&e) {

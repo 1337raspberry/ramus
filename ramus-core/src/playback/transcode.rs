@@ -75,6 +75,22 @@ pub fn build_transcode_download_url(
     let base = server_url.as_str().trim_end_matches('/');
     let endpoint = "/audio/:/transcode/universal/start";
 
+    // Device value mirrors what `plex::client::PlexClient::device()` would
+    // return — the server only uses it for dashboard labels, but sending
+    // something concrete keeps the request shape consistent with our other
+    // Plex calls.
+    let device = if cfg!(target_os = "macos") {
+        "macOS"
+    } else if cfg!(target_os = "windows") {
+        "Windows"
+    } else if cfg!(target_os = "ios") {
+        "iOS"
+    } else if cfg!(target_os = "android") {
+        "Android"
+    } else {
+        "Linux"
+    };
+
     let params = [
         "directPlay=0".into(),
         "musicBitrate=128".into(),
@@ -85,6 +101,13 @@ pub fn build_transcode_download_url(
         format!("X-Plex-Session-Identifier={}", percent_encode(session)),
         format!("X-Plex-Token={}", percent_encode(token)),
         format!("X-Plex-Client-Identifier={}", percent_encode(client_identifier)),
+        // Load-bearing — the server picks the transcode profile based on
+        // X-Plex-Platform. `Generic` is the value paired with the
+        // single-file Ogg/Opus output target above; without it, the server
+        // can't match the requested profile and rejects the request.
+        "X-Plex-Platform=Generic".into(),
+        "X-Plex-Product=ramus".into(),
+        format!("X-Plex-Device={device}"),
     ];
 
     let query = params.join("&");
@@ -313,6 +336,11 @@ mod tests {
         assert!(url_str.contains("X-Plex-Session-Identifier=session-99251"));
         assert!(url_str.contains("X-Plex-Token=abc123"));
         assert!(url_str.contains("X-Plex-Client-Identifier=test-client-id"));
+        // Identity params: server uses Platform=Generic to pick the
+        // single-file Ogg/Opus profile.
+        assert!(url_str.contains("X-Plex-Platform=Generic"));
+        assert!(url_str.contains("X-Plex-Product=ramus"));
+        assert!(url_str.contains("X-Plex-Device="));
     }
 
     #[test]
