@@ -38,3 +38,19 @@ rustflags = ["-C", "link-arg=-Wl,-undefined,dynamic_lookup"]
 
 [target.x86_64-apple-ios]
 rustflags = ["-C", "link-arg=-Wl,-undefined,dynamic_lookup"]
+
+# tauri-utils -> swift-rs hard-codes a 13.0 iOS deployment target unless
+# `IPHONEOS_DEPLOYMENT_TARGET` is set in the environment, which makes
+# swiftc reject iOS 14+ APIs (os.Logger, structured `\(…, privacy:)`
+# interpolation) used in `MpvController.swift` — even though the Swift
+# package declares `.iOS(.v15)` and `project.yml` is iOS 17.5. Pin it to
+# the project.yml floor so the plugin compiles against the same SDK the
+# final app links against.
+#
+# `force = false` lets a developer override (e.g. `IPHONEOS_DEPLOYMENT_TARGET=18.0 cargo build`)
+# without editing this file. Set in `[env]` (not in a build.rs `set_var`)
+# because cargo writes this into the environment of every subprocess —
+# including the swift-rs swiftc invocation, which a build.rs `set_var`
+# may not always reach.
+[env]
+IPHONEOS_DEPLOYMENT_TARGET = { value = "17.5", force = false }
