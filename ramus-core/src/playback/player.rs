@@ -1073,11 +1073,16 @@ impl AudioPlayer {
             );
 
             if needs_transcode {
-                // Per-track session id — the server uses it to dedupe its
-                // ffmpeg processes, and per-track sessions match what other
-                // clients do (and avoid one queue-wide session getting
-                // confused by interleaved fetches).
-                let session = format!("{}-{}-prefetch", inner.client_identifier, track.rating_key);
+                // Session shape is `<client-id>-<unique-id>` — Plex
+                // tokenises on `-` for session grouping, so any extra
+                // suffix risks the server conflating concurrent sessions
+                // for the same client and quietly dropping one. Live and
+                // prefetch for the same track use the same session value
+                // (rating-key dedupes), but they only ever overlap if
+                // the user is actively playing a track they're also
+                // about to prefetch — and `next_uncached_target_in_lookahead`
+                // already skips anything cached, so that's a no-op.
+                let session = format!("{}-{}", inner.client_identifier, track.rating_key);
                 let Some(url) = transcode::build_transcode_download_url(
                     server_url,
                     token,
@@ -1239,10 +1244,11 @@ fn resolve_url(
         // session for the next track. Single-file completes in seconds —
         // mpv slurps the whole 3-5 MB file into its forward buffer at
         // server-transcode speed, the session ends, and prefetch can run
-        // without competition. Use a per-track session id (matches what
-        // other clients do) and append `-live` so it's distinct from
-        // the prefetch worker's `-prefetch` sessions for the same track.
-        let session = format!("{}-{}-live", inner.client_identifier, track.rating_key);
+        // without competition. Session shape mirrors the prefetch path:
+        // `<client-id>-<rating-key>` — Plex tokenises on `-` for session
+        // grouping, so extra suffixes risk it conflating two sessions
+        // for the same client.
+        let session = format!("{}-{}", inner.client_identifier, track.rating_key);
         transcode::build_transcode_download_url(
             server_url,
             token,

@@ -82,9 +82,7 @@ pub fn build_transcode_download_url(
     let endpoint = "/audio/:/transcode/universal/start";
 
     // Device value mirrors what `plex::client::PlexClient::device()` would
-    // return — the server only uses it for dashboard labels, but sending
-    // something concrete keeps the request shape consistent with our other
-    // Plex calls.
+    // return — server uses it for dashboard labels.
     let device = if cfg!(target_os = "macos") {
         "macOS"
     } else if cfg!(target_os = "windows") {
@@ -97,23 +95,40 @@ pub fn build_transcode_download_url(
         "Linux"
     };
 
+    // Param order, encoding, and identity-param set mirror what other
+    // single-file Opus clients send. Notable choices:
+    // - `path` is fully percent-encoded (slashes too) — the literal-slash
+    //   form works on `/music/:/...m3u8` but the audio transcoder is
+    //   stricter and silently fails for some path shapes without it.
+    // - `session` is sent as just `<client-id>-<unique-id>` — the server
+    //   appears to tokenise on `-` and group sessions by client-id prefix,
+    //   so an extra suffix like `-prefetch` makes it conflate distinct
+    //   sessions for the same client and quietly drop the second one.
+    //   Caller must pass a session value already in `<client-id>-<id>`
+    //   shape (we use rating-key as the unique id).
+    // - X-Plex-Device-Name / Platform-Version / Version are sent for
+    //   parity even though they're informational; Plex's session
+    //   bookkeeping seems happier when they're present.
     let params = [
         "directPlay=0".into(),
         "musicBitrate=128".into(),
-        format!("path=/library/metadata/{}", percent_encode(track_rating_key)),
+        format!("path={}", percent_encode("/library/metadata/")) + &percent_encode(track_rating_key),
         format!("session={}", percent_encode(session)),
         "X-Plex-Chunked=1".into(),
+        format!("X-Plex-Client-Identifier={}", percent_encode(client_identifier)),
         "X-Plex-Client-Profile-Extra=add-transcode-target(replace%3Dtrue%26type%3DmusicProfile%26context%3Dstreaming%26protocol%3Dhttp%26container%3Dogg%26audioCodec%3Dopus)%2Badd-limitation(scope%3DmusicCodec%26scopeName%3Dopus%26type%3DupperBound%26name%3Daudio%2Echannels%26value%3D2%26onlyTranscodes%3Dtrue%26replace%3Dtrue)".into(),
+        format!("X-Plex-Device={device}"),
+        format!("X-Plex-Device-Name={}", percent_encode("ramus")),
+        // Load-bearing — server picks the transcode profile from
+        // X-Plex-Platform. `Generic` pairs with the single-file Ogg/Opus
+        // output target above; without it the server can't match the
+        // requested profile and rejects the request.
+        "X-Plex-Platform=Generic".into(),
+        format!("X-Plex-Platform-Version={}", percent_encode(std::env::consts::OS)),
+        "X-Plex-Product=ramus".into(),
         format!("X-Plex-Session-Identifier={}", percent_encode(session)),
         format!("X-Plex-Token={}", percent_encode(token)),
-        format!("X-Plex-Client-Identifier={}", percent_encode(client_identifier)),
-        // Load-bearing — the server picks the transcode profile based on
-        // X-Plex-Platform. `Generic` is the value paired with the
-        // single-file Ogg/Opus output target above; without it, the server
-        // can't match the requested profile and rejects the request.
-        "X-Plex-Platform=Generic".into(),
-        "X-Plex-Product=ramus".into(),
-        format!("X-Plex-Device={device}"),
+        format!("X-Plex-Version={}", percent_encode(env!("CARGO_PKG_VERSION"))),
     ];
 
     let query = params.join("&");
@@ -244,28 +259,33 @@ mod tests {
             "abc123",
             "99251",
             "test-client-id",
-            "session-99251",
+            "test-client-id-99251",
         );
         let url_str = url.unwrap().to_string();
-        // Endpoint differs from the HLS path: /audio/:/, no .m3u8.
+        // Endpoint must be /audio/:/, no .m3u8 — distinct from the
+        // (now-retired) /music/:/...m3u8 HLS endpoint.
         assert!(url_str.contains("/audio/:/transcode/universal/start?"));
         assert!(!url_str.contains("/music/:/"));
         assert!(!url_str.contains(".m3u8"));
-        // path param uses metadata key, not part key.
-        assert!(url_str.contains("path=/library/metadata/99251"));
-        // Plexamp-matching params.
+        // path param uses metadata key, not part key, fully URL-encoded.
+        assert!(url_str.contains("path=%2Flibrary%2Fmetadata%2F99251"));
+        assert!(!url_str.contains("path=/library"));
+        // Match Plexamp's call shape.
         assert!(url_str.contains("directPlay=0"));
         assert!(url_str.contains("musicBitrate=128"));
         assert!(url_str.contains("X-Plex-Chunked=1"));
-        assert!(url_str.contains("session=session-99251"));
-        assert!(url_str.contains("X-Plex-Session-Identifier=session-99251"));
+        assert!(url_str.contains("session=test-client-id-99251"));
+        assert!(url_str.contains("X-Plex-Session-Identifier=test-client-id-99251"));
         assert!(url_str.contains("X-Plex-Token=abc123"));
         assert!(url_str.contains("X-Plex-Client-Identifier=test-client-id"));
-        // Identity params: server uses Platform=Generic to pick the
+        // Identity params — server uses Platform=Generic to pick the
         // single-file Ogg/Opus profile.
         assert!(url_str.contains("X-Plex-Platform=Generic"));
         assert!(url_str.contains("X-Plex-Product=ramus"));
         assert!(url_str.contains("X-Plex-Device="));
+        assert!(url_str.contains("X-Plex-Device-Name="));
+        assert!(url_str.contains("X-Plex-Platform-Version="));
+        assert!(url_str.contains("X-Plex-Version="));
     }
 
     #[test]
