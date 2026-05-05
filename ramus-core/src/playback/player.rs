@@ -344,7 +344,11 @@ impl AudioPlayer {
             inner.state.status = PlaybackStatus::Playing;
             inner.play_session_id = uuid::Uuid::new_v4().to_string();
             inner.position = 0.0;
-            inner.duration = 0.0;
+            // Seed from Plex metadata. mpv's reported duration for our
+            // chunked-Opus transcode stream (no Content-Length) flutters
+            // as it reads ahead — the metadata value is stable and the
+            // user already trusts it everywhere else in the UI.
+            inner.duration = inner.state.queue[start_at].duration;
             inner.is_loading = false;
             inner.load_started_at = Some(Instant::now());
             inner.last_position_update = None;
@@ -494,7 +498,7 @@ impl AudioPlayer {
         inner.state.queue_index = index;
         inner.state.current_track = Some(inner.state.queue[index].clone());
         inner.position = 0.0;
-        inner.duration = 0.0;
+        inner.duration = inner.state.queue[index].duration;
         inner.state.status = PlaybackStatus::Playing;
         inner.load_started_at = Some(Instant::now());
         inner.last_position_update = None;
@@ -520,7 +524,7 @@ impl AudioPlayer {
         inner.state.queue_index += 1;
         inner.state.current_track = Some(inner.state.queue[inner.state.queue_index].clone());
         inner.position = 0.0;
-        inner.duration = 0.0;
+        inner.duration = inner.state.queue[inner.state.queue_index].duration;
         inner.load_started_at = Some(Instant::now());
         inner.last_position_update = None;
         inner.last_load_error = None;
@@ -550,7 +554,7 @@ impl AudioPlayer {
         inner.state.queue_index -= 1;
         inner.state.current_track = Some(inner.state.queue[inner.state.queue_index].clone());
         inner.position = 0.0;
-        inner.duration = 0.0;
+        inner.duration = inner.state.queue[inner.state.queue_index].duration;
         inner.load_started_at = Some(Instant::now());
         inner.last_position_update = None;
         inner.last_load_error = None;
@@ -798,8 +802,18 @@ impl AudioPlayer {
     }
 
     /// Handle mpv duration change.
+    ///
+    /// Only accepted when we don't already have a non-zero duration —
+    /// every track-load site seeds duration from Plex metadata, which is
+    /// stable across UI ticks. mpv's reported duration for our chunked
+    /// Opus transcode stream (no Content-Length) flutters as the demuxer
+    /// reads ahead, so accepting it would cause the seek-bar percentage
+    /// to jump. Falls back to mpv's value only when metadata is missing.
     pub fn handle_duration_change(&self, dur: f64) {
-        self.inner.lock().duration = dur;
+        let mut inner = self.inner.lock();
+        if inner.duration <= 0.0 && dur > 0.0 {
+            inner.duration = dur;
+        }
     }
 
     /// Handle mpv playlist-pos change (track advance).
@@ -836,6 +850,10 @@ impl AudioPlayer {
         inner.state.queue_index = pos;
         inner.state.current_track = Some(inner.state.queue[pos].clone());
         inner.position = 0.0;
+        // Reseed duration from metadata on every gapless advance — see
+        // load_queue's note. Stable across UI ticks regardless of mpv's
+        // streamed-source duration estimation.
+        inner.duration = inner.state.queue[pos].duration;
         inner.load_started_at = Some(Instant::now());
         inner.last_position_update = None;
         inner.last_load_error = None;
@@ -2049,9 +2067,26 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_duration_change() {
+    fn test_handle_duration_change_ignored_when_metadata_present() {
+        // load_queue seeds duration from track.duration (180.0) — mpv's
+        // own report is ignored to keep the seek bar stable on chunked
+        // streams that don't have a Content-Length.
         let (player, _) = make_player();
         player.load_queue(vec![make_test_track("1")], 0);
+        assert!((player.duration() - 180.0).abs() < 0.01);
+
+        player.handle_duration_change(200.0);
+        assert!((player.duration() - 180.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_handle_duration_change_accepted_when_no_metadata() {
+        // When metadata duration is 0 (rare), mpv's report fills in.
+        let (player, _) = make_player();
+        let mut track = make_test_track("1");
+        track.duration = 0.0;
+        player.load_queue(vec![track], 0);
+        assert_eq!(player.duration(), 0.0);
 
         player.handle_duration_change(200.0);
         assert!((player.duration() - 200.0).abs() < 0.01);
