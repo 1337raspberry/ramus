@@ -1049,9 +1049,6 @@ impl AudioPlayer {
             );
 
             if needs_transcode {
-                if !inner.config.greedy_transcode_prefetch {
-                    continue;
-                }
                 // Per-track session id — the server uses it to dedupe its
                 // ffmpeg processes, and per-track sessions match what other
                 // clients do (and avoid one queue-wide session getting

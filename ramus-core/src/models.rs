@@ -407,11 +407,6 @@ pub struct PlaybackConfig {
     pub playback_mode: PlaybackMode,
     pub lookahead_depth: u8,
     pub audio_cache_limit_bytes: i64,
-    /// When `true` and the next track in the lookahead window will transcode
-    /// under the current settings, the prefetch worker pulls a transcoded
-    /// (Ogg/Opus 128k) copy to disk via `/audio/:/transcode/universal/start`
-    /// instead of skipping the slot. No-op outside transcode modes.
-    pub greedy_transcode_prefetch: bool,
 }
 
 impl PlaybackConfig {
@@ -422,7 +417,6 @@ impl PlaybackConfig {
             playback_mode,
             lookahead_depth: lookahead_depth.clamp(1, 20),
             audio_cache_limit_bytes,
-            greedy_transcode_prefetch: true,
         }
     }
 }
@@ -532,10 +526,6 @@ pub struct Settings {
     pub include_plex_styles: bool,
     /// Show country-of-origin flags next to artist names. Defaults true.
     pub show_artist_flags: bool,
-    /// Pull a transcoded copy of upcoming tracks into the prefetch cache
-    /// while in a transcode mode (instead of letting them cold-buffer one
-    /// at a time). No effect in `DirectPlay`.
-    pub greedy_transcode_prefetch: bool,
 }
 
 impl Default for Settings {
@@ -559,7 +549,6 @@ impl Default for Settings {
             popularity_display: PopularityDisplay::default(),
             include_plex_styles: true,
             show_artist_flags: true,
-            greedy_transcode_prefetch: true,
         }
     }
 }
@@ -600,13 +589,11 @@ impl Bookmark {
 
 impl Settings {
     pub fn to_playback_config(&self) -> PlaybackConfig {
-        let mut cfg = PlaybackConfig::new(
+        PlaybackConfig::new(
             self.playback_mode,
             self.lookahead_depth,
             self.audio_cache_limit_bytes,
-        );
-        cfg.greedy_transcode_prefetch = self.greedy_transcode_prefetch;
-        cfg
+        )
     }
 }
 
