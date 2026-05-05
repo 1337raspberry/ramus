@@ -68,6 +68,17 @@ final class MpvController {
         setOption("terminal", "no")
         setOption("msg-level", "all=warn")
         setOption("load-scripts", "no")
+        // Without these, an unreachable host (e.g. a stored LAN URL when the
+        // device is on cellular) leaves mpv hanging on TCP indefinitely while
+        // the UI still shows "playing". 15s gives Plex's transcoder room to
+        // spin up on a slow link without making a healthy connection feel
+        // sluggish. The lavf reconnect chain auto-resumes interrupted HTTP
+        // segment fetches instead of failing the whole load.
+        setOption("network-timeout", "15")
+        setOption(
+            "stream-lavf-o",
+            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4"
+        )
 
         let err = mpv_initialize(handle)
         guard err >= 0 else {

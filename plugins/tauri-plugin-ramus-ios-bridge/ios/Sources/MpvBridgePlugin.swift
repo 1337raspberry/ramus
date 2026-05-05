@@ -1,5 +1,6 @@
 import AVFoundation
 import MediaPlayer
+import Network
 import Tauri
 import UIKit
 import WebKit
@@ -24,6 +25,12 @@ class MpvBridgePlugin: Plugin {
     private var searchBar: UISearchBar?
     private var allowEndEditing = false
     private var interruptionObserver: NSObjectProtocol?
+    private var pathMonitor: NWPathMonitor?
+    private let pathMonitorQueue = DispatchQueue(label: "com.raspsoft.ramus.path-monitor")
+    /// Snapshot of the most recent NWPath, polled by `getNetworkInfo`. The
+    /// debug panel reads this synchronously to label the current network
+    /// type without firing a fresh probe.
+    private var lastPathSnapshot: [String: Any] = [:]
 
     override func load(webview: WKWebView) {
         self.webView = webview
@@ -96,7 +103,59 @@ class MpvBridgePlugin: Plugin {
             }
         }
 
+        startPathMonitor()
+
         invoke.resolve([:])
+    }
+
+    /// Start NWPathMonitor and forward every interface change to Rust as a
+    /// `networkPathChange` event. Rust's `ConnectionMonitor::handle_path_update`
+    /// debounces and re-evaluates against the cached server connections — so
+    /// a Wi-Fi → cellular transition flips us off the now-unreachable LAN
+    /// URL and onto a remote / relay before mpv has a chance to hang on TCP.
+    private func startPathMonitor() {
+        guard pathMonitor == nil else { return }
+
+        let monitor = NWPathMonitor()
+        let handler: (NWPath) -> Void = { [weak self] path in
+            guard let self = self else { return }
+
+            // Map the path's available interfaces to a stable name list so
+            // Rust's `HashSet<String>` diff fires only on real transitions.
+            let interfaceNames: [String] = path.availableInterfaces.map { $0.name }.sorted()
+
+            let primaryType: String
+            if path.usesInterfaceType(.wifi) {
+                primaryType = "wifi"
+            } else if path.usesInterfaceType(.cellular) {
+                primaryType = "cellular"
+            } else if path.usesInterfaceType(.wiredEthernet) {
+                primaryType = "wired"
+            } else if path.usesInterfaceType(.loopback) {
+                primaryType = "loopback"
+            } else if path.status == .satisfied {
+                primaryType = "other"
+            } else {
+                primaryType = "none"
+            }
+
+            var payload: [String: Any] = [:]
+            payload["interfaces"] = interfaceNames
+            payload["type"] = primaryType
+            payload["isExpensive"] = path.isExpensive
+            payload["isConstrained"] = path.isConstrained
+            payload["satisfied"] = (path.status == .satisfied)
+
+            self.lastPathSnapshot = payload
+            DispatchQueue.main.async { self.trigger("networkPathChange", data: payload) }
+        }
+        monitor.pathUpdateHandler = handler
+        monitor.start(queue: pathMonitorQueue)
+        pathMonitor = monitor
+    }
+
+    @objc public func getNetworkInfo(_ invoke: Invoke) throws {
+        invoke.resolve(lastPathSnapshot.isEmpty ? ["satisfied": false] : lastPathSnapshot)
     }
 
     @objc public func mpvInit(_ invoke: Invoke) throws {

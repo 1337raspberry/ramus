@@ -94,6 +94,9 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn exclude_from_backup(&self, _path: &str) -> crate::Result<bool> {
         Ok(true)
     }
+    pub fn get_network_info(&self) -> crate::Result<NetworkInfoResponse> {
+        Ok(NetworkInfoResponse::default())
+    }
     pub fn register_listener(
         &self,
         _event: &str,

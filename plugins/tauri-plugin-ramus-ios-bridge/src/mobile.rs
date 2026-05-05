@@ -209,6 +209,16 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(response.ok)
     }
 
+    /// Snapshot of the most recent NWPathMonitor update. Returns the
+    /// `default` shape (everything false / empty) before NWPathMonitor has
+    /// fired its first event. The same payload arrives over the
+    /// `networkPathChange` channel on every subsequent transition.
+    pub fn get_network_info(&self) -> crate::Result<NetworkInfoResponse> {
+        Ok(self
+            .0
+            .run_mobile_plugin("getNetworkInfo", Empty::default())?)
+    }
+
     /// Set `NSURLIsExcludedFromBackupKey` on the given filesystem path so
     /// iCloud / iTunes backups skip the file. Called after a user download
     /// lands to keep tens of GB of music out of backups.

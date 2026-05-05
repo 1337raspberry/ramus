@@ -246,13 +246,14 @@ export const getAudioCacheStats = () =>
 
 // --- Debug ---
 
+export type DebugPhase = "stopped" | "paused" | "opening" | "buffering" | "playing" | "stalled";
+
 export interface DebugInfo {
   source: string;
   resolvedUrl: string | null;
   serverUrl: string | null;
   isRemote: boolean;
   playbackMode: string;
-  isLoading: boolean;
   queueLen: number;
   queueIndex: number;
   lookaheadDepth: number;
@@ -261,6 +262,13 @@ export interface DebugInfo {
   codec: string | null;
   bitrate: number | null;
   fileSizeBytes: number | null;
+  phase: DebugPhase;
+  /** Seconds since the last `time-pos` update, or `null` if none yet. */
+  secondsSincePositionUpdate: number | null;
+  /** Seconds since the current track was loaded. */
+  secondsSinceLoad: number | null;
+  /** Last unrecoverable mpv END_FILE error (already URL-redacted). */
+  lastLoadError: string | null;
 }
 
 export const getDebugInfo = () => invoke<DebugInfo>("get_debug_info");

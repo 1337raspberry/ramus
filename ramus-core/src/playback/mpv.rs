@@ -82,6 +82,15 @@ pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
         // gapless playback of large files.
         ("demuxer-max-bytes", "2GiB"),
         ("demuxer-readahead-secs", "1200"),
+        // Cap how long mpv will sit on a stalled HTTP request before erroring
+        // out — without this, an unreachable host hangs forever and our
+        // file-ended retry path never fires. Paired with lavf reconnect so
+        // transient drops auto-resume instead of dropping the whole track.
+        ("network-timeout", "15"),
+        (
+            "stream-lavf-o",
+            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4",
+        ),
         ("keep-open", "no"),
         ("idle", "yes"),
         ("input-default-bindings", "no"),
@@ -191,6 +200,12 @@ mod tests {
         assert!(opts.iter().any(|(k, v)| *k == "keep-open" && *v == "no"));
         // The `af` chain must start empty — EQ populates it on demand.
         assert!(!opts.iter().any(|(k, _)| *k == "af"));
+        // Stalled HTTP must error out, not hang forever — required for the
+        // file-ended retry path and the stall watchdog to kick in.
+        assert!(opts.iter().any(|(k, _)| *k == "network-timeout"));
+        assert!(opts
+            .iter()
+            .any(|(k, v)| *k == "stream-lavf-o" && v.contains("reconnect=1")));
     }
 
     #[test]

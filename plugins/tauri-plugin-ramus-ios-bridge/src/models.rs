@@ -152,3 +152,21 @@ pub struct MediaAccentArgs {
     pub g: u8,
     pub b: u8,
 }
+
+/// Snapshot of the device's current network path. Mirrors the payload the
+/// Swift NWPathMonitor handler emits via `networkPathChange`. `getNetworkInfo`
+/// returns the same shape on demand. Default-everything-false because the
+/// Swift side resolves with `["satisfied": false]` before the first path
+/// update lands.
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NetworkInfoResponse {
+    /// Sorted interface names (e.g. `["en0", "lo0"]`). Empty until the
+    /// first path update.
+    pub interfaces: Vec<String>,
+    /// `wifi` / `cellular` / `wired` / `loopback` / `other` / `none`.
+    pub r#type: Option<String>,
+    pub is_expensive: bool,
+    pub is_constrained: bool,
+    pub satisfied: bool,
+}

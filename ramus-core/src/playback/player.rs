@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use parking_lot::{Mutex, RwLock};
 use url::Url;
@@ -16,8 +17,35 @@ use crate::playback::mpv::{FileEndReason, LoadMode, MpvPlayer};
 use crate::playback::transcode;
 use crate::util::redact_urls;
 
+/// Time after a load with no `time-pos` updates before `derive_phase` flips
+/// from `Buffering` to `Stalled`. The frontend uses this to colour the row,
+/// the watchdog uses it to trigger a connection re-evaluation.
+pub const STALL_THRESHOLD_SECS: u64 = 12;
+
 /// 10-band EQ center frequencies in Hz.
 pub const EQ_FREQUENCIES: [u32; 10] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
+/// Derived playback phase shown in the debug panel. Captures what mpv is
+/// actually doing rather than the optimistic `PlaybackStatus` flag the rest
+/// of the app uses.
+///
+/// `Status::Playing` flips the moment `load_queue` runs, before mpv has even
+/// opened the URL — `Phase` distinguishes that from the post-`file-loaded`
+/// state where time-pos is actively advancing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Phase {
+    Stopped,
+    Paused,
+    /// `load_queue` ran, mpv hasn't fired `file-loaded` yet.
+    Opening,
+    /// mpv loaded the file but we haven't seen a position update yet.
+    Buffering,
+    /// position updates arriving normally.
+    Playing,
+    /// status is Playing but no progress for `STALL_THRESHOLD_SECS`.
+    Stalled,
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,7 +55,6 @@ pub struct DebugInfo {
     pub server_url: Option<String>,
     pub is_remote: bool,
     pub playback_mode: PlaybackMode,
-    pub is_loading: bool,
     pub queue_len: usize,
     pub queue_index: usize,
     pub lookahead_depth: u8,
@@ -36,6 +63,17 @@ pub struct DebugInfo {
     pub codec: Option<String>,
     pub bitrate: Option<i32>,
     pub file_size_bytes: Option<i64>,
+    /// Derived phase — preferred over `status` when reasoning about whether
+    /// audio is actually flowing.
+    pub phase: Phase,
+    /// Seconds since the last `time-pos` event, or `None` if the current
+    /// load hasn't produced one yet.
+    pub seconds_since_position_update: Option<u64>,
+    /// Seconds since the current track started loading.
+    pub seconds_since_load: Option<u64>,
+    /// Last `MPV_EVENT_END_FILE` reason seen with `Error`. Cleared on the
+    /// next successful `file-loaded`. Already URL-redacted.
+    pub last_load_error: Option<String>,
 }
 
 /// Allowed file extensions for cached audio files.
@@ -74,6 +112,39 @@ pub fn build_af_string(eq_enabled: bool, bands: &[f32]) -> String {
         build_eq_filter_string(bands)
     } else {
         String::new()
+    }
+}
+
+/// Derive a `Phase` from the optimistic `PlaybackStatus` plus the load-time
+/// and position-update timestamps. Encapsulated as a free function so the
+/// stall watchdog can call it without holding the player lock for any
+/// longer than it takes to copy three small values.
+pub fn derive_phase(
+    status: PlaybackStatus,
+    last_position_update: Option<Instant>,
+    load_started_at: Option<Instant>,
+    now: Instant,
+) -> Phase {
+    match status {
+        PlaybackStatus::Stopped => Phase::Stopped,
+        PlaybackStatus::Paused => Phase::Paused,
+        PlaybackStatus::Playing => match (last_position_update, load_started_at) {
+            (Some(t), _) => {
+                if now.saturating_duration_since(t).as_secs() >= STALL_THRESHOLD_SECS {
+                    Phase::Stalled
+                } else {
+                    Phase::Playing
+                }
+            }
+            (None, Some(load)) => {
+                if now.saturating_duration_since(load).as_secs() >= STALL_THRESHOLD_SECS {
+                    Phase::Stalled
+                } else {
+                    Phase::Buffering
+                }
+            }
+            (None, None) => Phase::Opening,
+        },
     }
 }
 
@@ -122,6 +193,19 @@ struct PlayerInner {
     /// to queue[0]. While this is `Some(target)` and the incoming pos
     /// doesn't match, `handle_playlist_pos_change` skips state mutation.
     pending_initial_pos: Option<usize>,
+    /// Wall-clock timestamp of the most recent `handle_position_change` call.
+    /// Used by the stall watchdog and the debug panel to surface "no
+    /// progress for N seconds" without comparing position values (which
+    /// can legitimately stay 0 on a freshly loaded track).
+    last_position_update: Option<Instant>,
+    /// Wall-clock timestamp of the most recent track load. Set whenever the
+    /// player intentionally swaps the active track (load_queue, jump,
+    /// next/prev, playlist_pos_change). Lets `derive_phase` distinguish a
+    /// fresh load from an established stream.
+    load_started_at: Option<Instant>,
+    /// Most recent unrecoverable mpv `END_FILE` error message (URL-redacted).
+    /// Cleared on `file-loaded`.
+    last_load_error: Option<String>,
 }
 
 /// Core audio player managing queue state, mpv commands, and track resolution.
@@ -154,6 +238,9 @@ impl AudioPlayer {
                 cache: DownloadCache::new(PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES as u64),
                 last_retried_track: None,
                 pending_initial_pos: None,
+                last_position_update: None,
+                load_started_at: None,
+                last_load_error: None,
             }),
             persistent_cache: RwLock::new(HashMap::new()),
         }
@@ -251,6 +338,9 @@ impl AudioPlayer {
             inner.position = 0.0;
             inner.duration = 0.0;
             inner.is_loading = false;
+            inner.load_started_at = Some(Instant::now());
+            inner.last_position_update = None;
+            inner.last_load_error = None;
             // Suppress the transient pos=0 event mpv fires from the first
             // loadfile Replace before our playlist_play_index(start_at) call.
             inner.pending_initial_pos = if start_at > 0 { Some(start_at) } else { None };
@@ -398,6 +488,9 @@ impl AudioPlayer {
         inner.position = 0.0;
         inner.duration = 0.0;
         inner.state.status = PlaybackStatus::Playing;
+        inner.load_started_at = Some(Instant::now());
+        inner.last_position_update = None;
+        inner.last_load_error = None;
         drop(inner);
         self.mpv.playlist_play_index(index as i64);
     }
@@ -409,6 +502,8 @@ impl AudioPlayer {
             inner.state.status = PlaybackStatus::Stopped;
             inner.state.current_track = None;
             inner.position = 0.0;
+            inner.load_started_at = None;
+            inner.last_position_update = None;
             drop(inner);
             self.mpv.stop();
             return;
@@ -418,6 +513,9 @@ impl AudioPlayer {
         inner.state.current_track = Some(inner.state.queue[inner.state.queue_index].clone());
         inner.position = 0.0;
         inner.duration = 0.0;
+        inner.load_started_at = Some(Instant::now());
+        inner.last_position_update = None;
+        inner.last_load_error = None;
         let idx = inner.state.queue_index;
         drop(inner);
         self.mpv.playlist_play_index(idx as i64);
@@ -445,6 +543,9 @@ impl AudioPlayer {
         inner.state.current_track = Some(inner.state.queue[inner.state.queue_index].clone());
         inner.position = 0.0;
         inner.duration = 0.0;
+        inner.load_started_at = Some(Instant::now());
+        inner.last_position_update = None;
+        inner.last_load_error = None;
         let idx = inner.state.queue_index;
         drop(inner);
         self.mpv.playlist_play_index(idx as i64);
@@ -461,6 +562,7 @@ impl AudioPlayer {
             }
             PlaybackStatus::Paused => {
                 inner.state.status = PlaybackStatus::Playing;
+                inner.last_position_update = Some(Instant::now());
                 drop(inner);
                 self.mpv.set_pause(false);
             }
@@ -483,6 +585,7 @@ impl AudioPlayer {
         let mut inner = self.inner.lock();
         if inner.state.status == PlaybackStatus::Paused {
             inner.state.status = PlaybackStatus::Playing;
+            inner.last_position_update = Some(Instant::now());
             drop(inner);
             self.mpv.set_pause(false);
         }
@@ -513,6 +616,9 @@ impl AudioPlayer {
         inner.state.queue_index = 0;
         inner.position = 0.0;
         inner.duration = 0.0;
+        inner.load_started_at = None;
+        inner.last_position_update = None;
+        inner.last_load_error = None;
         drop(inner);
         self.mpv.stop();
     }
@@ -604,13 +710,20 @@ impl AudioPlayer {
             }
         }
 
+        let now = Instant::now();
+        let phase = derive_phase(
+            inner.state.status,
+            inner.last_position_update,
+            inner.load_started_at,
+            now,
+        );
+
         DebugInfo {
             source,
             resolved_url,
             server_url: inner.server_url.as_ref().map(|u| u.to_string()),
             is_remote: inner.is_remote,
             playback_mode: inner.config.playback_mode,
-            is_loading: inner.is_loading,
             queue_len: inner.state.queue.len(),
             queue_index: inner.state.queue_index,
             lookahead_depth: inner.config.lookahead_depth,
@@ -619,12 +732,36 @@ impl AudioPlayer {
             codec: track.and_then(|t| t.codec.clone()),
             bitrate: track.and_then(|t| t.bitrate),
             file_size_bytes: track.and_then(|t| t.file_size_bytes),
+            phase,
+            seconds_since_position_update: inner
+                .last_position_update
+                .map(|t| now.saturating_duration_since(t).as_secs()),
+            seconds_since_load: inner
+                .load_started_at
+                .map(|t| now.saturating_duration_since(t).as_secs()),
+            last_load_error: inner.last_load_error.clone(),
         }
+    }
+
+    /// Whether mpv has had no `time-pos` activity for `STALL_THRESHOLD_SECS`
+    /// while we believe it should be playing. Used by the stall watchdog
+    /// to fire a connection re-evaluation (the only thing that might
+    /// recover a stuck transcode session against an unreachable host).
+    pub fn is_stalled(&self) -> bool {
+        let inner = self.inner.lock();
+        derive_phase(
+            inner.state.status,
+            inner.last_position_update,
+            inner.load_started_at,
+            Instant::now(),
+        ) == Phase::Stalled
     }
 
     /// Handle mpv position change (called by event loop, ~30fps).
     pub fn handle_position_change(&self, pos: f64) {
-        self.inner.lock().position = pos;
+        let mut inner = self.inner.lock();
+        inner.position = pos;
+        inner.last_position_update = Some(Instant::now());
     }
 
     /// Handle mpv duration change.
@@ -666,6 +803,9 @@ impl AudioPlayer {
         inner.state.queue_index = pos;
         inner.state.current_track = Some(inner.state.queue[pos].clone());
         inner.position = 0.0;
+        inner.load_started_at = Some(Instant::now());
+        inner.last_position_update = None;
+        inner.last_load_error = None;
         inner.last_retried_track = None;
     }
 
@@ -676,6 +816,11 @@ impl AudioPlayer {
             inner.state.status = PlaybackStatus::Paused;
         } else if !paused && inner.state.status == PlaybackStatus::Paused {
             inner.state.status = PlaybackStatus::Playing;
+            // Reset the progress timer so a long pause doesn't make the
+            // watchdog think we just stalled the moment we resume. The
+            // first real `time-pos` from mpv will overwrite this within
+            // ~50ms.
+            inner.last_position_update = Some(Instant::now());
         }
     }
 
@@ -732,6 +877,7 @@ impl AudioPlayer {
         let mut inner = self.inner.lock();
         inner.is_loading = false;
         inner.last_retried_track = None;
+        inner.last_load_error = None;
     }
 
     /// Handle mpv file-ended event.
@@ -742,13 +888,15 @@ impl AudioPlayer {
                 // if last track, idle-active will fire.
             }
             FileEndReason::Error(ref msg) => {
+                let redacted = redact_urls(msg);
+                self.inner.lock().last_load_error = Some(redacted.clone());
                 if self.try_recover_current_track() {
                     log::info!("handle_file_ended: recovered stale URL, retrying");
                     return;
                 }
                 log::warn!(
                     "handle_file_ended: unrecoverable error, skipping: {}",
-                    redact_urls(msg)
+                    redacted
                 );
                 self.next();
             }
@@ -801,6 +949,8 @@ impl AudioPlayer {
         inner.state.status = PlaybackStatus::Stopped;
         inner.state.current_track = None;
         inner.position = 0.0;
+        inner.load_started_at = None;
+        inner.last_position_update = None;
     }
 
     /// Access the download cache under the player lock.
@@ -1004,6 +1154,7 @@ mod tests {
     use crate::playback::mpv::MpvPlayer;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
 
     #[derive(Debug, Clone)]
     #[allow(dead_code)] // Fields read via Debug/pattern matching in assertions
@@ -1793,6 +1944,100 @@ mod tests {
 
         let snapshot = player.snapshot();
         assert!(!snapshot.is_loading);
+    }
+
+    #[test]
+    fn test_derive_phase_states() {
+        let now = Instant::now();
+        let recent = now - Duration::from_secs(1);
+        let stale = now - Duration::from_secs(STALL_THRESHOLD_SECS + 1);
+
+        // No load yet, status=Playing → Opening (shouldn't happen in practice
+        // but `derive_phase` shouldn't panic).
+        assert_eq!(
+            derive_phase(PlaybackStatus::Playing, None, None, now),
+            Phase::Opening,
+        );
+        // Load just kicked off, no time-pos yet → Buffering.
+        assert_eq!(
+            derive_phase(PlaybackStatus::Playing, None, Some(recent), now),
+            Phase::Buffering,
+        );
+        // Load happened, position has been arriving → Playing.
+        assert_eq!(
+            derive_phase(PlaybackStatus::Playing, Some(recent), Some(recent), now),
+            Phase::Playing,
+        );
+        // Load happened, no time-pos for ages → Stalled.
+        assert_eq!(
+            derive_phase(PlaybackStatus::Playing, None, Some(stale), now),
+            Phase::Stalled,
+        );
+        // Position events came in then dried up → Stalled.
+        assert_eq!(
+            derive_phase(PlaybackStatus::Playing, Some(stale), Some(stale), now),
+            Phase::Stalled,
+        );
+        // Paused / Stopped passthrough.
+        assert_eq!(
+            derive_phase(PlaybackStatus::Paused, Some(stale), Some(stale), now),
+            Phase::Paused,
+        );
+        assert_eq!(
+            derive_phase(PlaybackStatus::Stopped, None, None, now),
+            Phase::Stopped,
+        );
+    }
+
+    #[test]
+    fn test_load_queue_seeds_phase_timestamps() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+
+        // Fresh load → Buffering (load_started_at set, no position update yet).
+        let snap = player.debug_snapshot();
+        assert_eq!(snap.phase, Phase::Buffering);
+        assert!(snap.seconds_since_load.is_some());
+        assert!(snap.seconds_since_position_update.is_none());
+
+        // First time-pos lands → Playing.
+        player.handle_position_change(0.5);
+        let snap = player.debug_snapshot();
+        assert_eq!(snap.phase, Phase::Playing);
+        assert_eq!(snap.seconds_since_position_update, Some(0));
+    }
+
+    #[test]
+    fn test_resume_resets_progress_timer() {
+        // Long pause shouldn't make resumed playback look stalled.
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+        player.handle_position_change(10.0);
+
+        // Backdate the position timestamp to simulate a pause longer than
+        // the stall threshold.
+        {
+            let mut inner = player.inner.lock();
+            inner.last_position_update =
+                Some(Instant::now() - Duration::from_secs(STALL_THRESHOLD_SECS + 5));
+        }
+        player.handle_pause_change(true);
+        player.handle_pause_change(false);
+
+        assert_eq!(player.debug_snapshot().phase, Phase::Playing);
+        assert!(!player.is_stalled());
+    }
+
+    #[test]
+    fn test_file_ended_error_records_redacted_message() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+
+        let leaky = "GET https://srv:32400/x?X-Plex-Token=SECRET failed";
+        player.handle_file_ended(FileEndReason::Error(leaky.into()));
+
+        let err = player.debug_snapshot().last_load_error.unwrap();
+        assert!(!err.contains("SECRET"));
     }
 
     #[test]

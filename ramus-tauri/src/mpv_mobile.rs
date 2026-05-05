@@ -4,10 +4,11 @@
 //! real libmpv handle. This module owns the event-channel wiring so both
 //! platforms convert the same JSON payloads into `MpvCallbacks` calls.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use serde::Deserialize;
-use tauri::{ipc::Channel, AppHandle, Runtime};
+use tauri::{ipc::Channel, AppHandle, Manager, Runtime};
 use tauri_plugin_ramus_ios_bridge::RamusIosBridgeExt;
 
 use ramus_core::playback::mpv::{FileEndReason, MpvCallbacks};
@@ -40,6 +41,13 @@ struct PausePayload {
 #[serde(rename_all = "camelCase")]
 struct ReasonPayload {
     reason: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct NetworkPathPayload {
+    interfaces: Vec<String>,
+    r#type: Option<String>,
 }
 
 /// Register one `Channel` per mpv event and wire each channel's callback
@@ -144,6 +152,67 @@ pub fn register_mpv_listeners<R: Runtime>(
             Ok(())
         });
         bridge.register_listener("mpvFileEnded", channel)?;
+    }
+
+    Ok(())
+}
+
+/// Register the `networkPathChange` listener that drives connection
+/// failover. Called from `lib.rs::setup` AFTER `AppState` is managed —
+/// without that, the listener would have no `ConnectionMonitor` to call.
+///
+/// On every NWPathMonitor update (Wi-Fi → cellular, hotspot drop, etc.)
+/// the Swift side fires `networkPathChange` with the device's interface
+/// list. We forward it to `ConnectionMonitor::handle_path_update`, which
+/// debounces (500ms) and re-evaluates against the cached server
+/// connections. The on-connection-changed callback then swaps the
+/// player's `server_url` and rewrites stale playlist URLs — kicking us
+/// off a now-unreachable LAN address before mpv has a chance to hang on
+/// TCP for the full `network-timeout`.
+///
+/// Also seeds `ConnectionMonitor` with the current path via `getNetworkInfo`
+/// — Swift's NWPathMonitor fires its first event almost immediately after
+/// `init_audio()`, which runs before this listener is registered, so that
+/// initial event would otherwise be lost. The Swift side caches the latest
+/// snapshot in `lastPathSnapshot` for exactly this reason.
+pub fn register_network_listener<R: Runtime>(
+    app: &AppHandle<R>,
+) -> tauri_plugin_ramus_ios_bridge::Result<()> {
+    let app_for_handler = app.clone();
+    let channel = Channel::new(move |body| {
+        let payload = body.deserialize::<NetworkPathPayload>().unwrap_or_default();
+        let interfaces: HashSet<String> = payload.interfaces.iter().cloned().collect();
+
+        let label = payload.r#type.as_deref().unwrap_or("?");
+        log::info!(
+            "network path change: type={label} interfaces={:?}",
+            payload.interfaces,
+        );
+
+        let Some(state) = app_for_handler.try_state::<crate::state::AppState>() else {
+            return Ok(());
+        };
+        state.connection_monitor.handle_path_update(interfaces);
+        Ok(())
+    });
+    app.ramus_ios_bridge()
+        .register_listener("networkPathChange", channel)?;
+
+    // Seed with the current path. `handle_path_update` no-ops on an
+    // unchanged interface set, so calling this twice (here + the first
+    // real NWPathMonitor event) is safe.
+    if let Ok(info) = app.ramus_ios_bridge().get_network_info() {
+        if !info.interfaces.is_empty() {
+            let interfaces: HashSet<String> = info.interfaces.into_iter().collect();
+            log::info!(
+                "network monitor seeded: type={} interfaces={:?}",
+                info.r#type.as_deref().unwrap_or("?"),
+                interfaces,
+            );
+            if let Some(state) = app.try_state::<crate::state::AppState>() {
+                state.connection_monitor.handle_path_update(interfaces);
+            }
+        }
     }
 
     Ok(())

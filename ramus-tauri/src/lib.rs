@@ -36,6 +36,7 @@ pub mod ios_backup;
 pub mod prefetch;
 pub mod session_reporter;
 pub mod spectrum_analyzer;
+pub mod stall_watchdog;
 pub mod state;
 
 /// Cheap "is the internet reachable" probe. Races bare-TCP connects to
@@ -1096,6 +1097,22 @@ pub fn run() {
             session_reporter.ensure_loop_spawned();
 
             crate::auto_sync::spawn(auto_sync_settings, auto_sync_engine, auto_sync_flag);
+
+            // iOS: NWPathMonitor → ConnectionMonitor failover. Without this,
+            // moving from Wi-Fi to cellular leaves the app pointed at a now-
+            // unreachable LAN URL and mpv hangs on TCP. Listener registration
+            // requires `AppState`, so it has to land after `app.manage(state)`.
+            #[cfg(target_os = "ios")]
+            if let Err(e) = crate::mpv_mobile::register_network_listener(&app_handle) {
+                log::warn!("failed to register network path listener: {e}");
+            }
+
+            // Stall watchdog: if mpv reports `Playing` but no `time-pos`
+            // events arrive for STALL_THRESHOLD_SECS, fire a connection
+            // re-evaluation. Catches transcode hangs (where prefetch never
+            // runs to detect the failure itself) and any other case where
+            // mpv is silently stuck.
+            crate::stall_watchdog::spawn(app_handle.clone());
 
             Ok(())
         })
