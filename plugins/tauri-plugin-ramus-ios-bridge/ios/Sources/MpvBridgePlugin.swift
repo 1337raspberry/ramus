@@ -30,13 +30,30 @@ class MpvBridgePlugin: Plugin {
     /// Snapshot of the most recent NWPath, polled by `getNetworkInfo`. The
     /// debug panel reads this synchronously to label the current network
     /// type without firing a fresh probe.
-    private var lastPathSnapshot: [String: Any] = [:]
+    ///
+    /// `JSObject` is `[String: any JSValue]` — a Swift `Dictionary` backed
+    /// by a class. `handlePathUpdate` writes it on main; `getNetworkInfo`
+    /// reads it on whatever thread Tauri's IPC dispatch picks. Both
+    /// accesses must go through `lastPathSnapshotLock` to avoid UB.
+    private var lastPathSnapshot: JSObject = [:]
+    private let lastPathSnapshotLock = NSLock()
 
     override func load(webview: WKWebView) {
         self.webView = webview
         webview.scrollView.keyboardDismissMode = .interactive
         webview.overrideUserInterfaceStyle = .dark
         Self.removeInputAccessoryView()
+    }
+
+    deinit {
+        // NWPathMonitor must be explicitly cancelled before release;
+        // letting ARC drop it leaves the dispatch source live and leaks
+        // the kernel network-path subscription. Same for the audio
+        // session interruption observer.
+        pathMonitor?.cancel()
+        if let token = interruptionObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
     }
 
     /// Swizzle WKContentView's inputAccessoryView to return nil, removing
@@ -117,45 +134,60 @@ class MpvBridgePlugin: Plugin {
         guard pathMonitor == nil else { return }
 
         let monitor = NWPathMonitor()
-        let handler: (NWPath) -> Void = { [weak self] path in
-            guard let self = self else { return }
-
-            // Map the path's available interfaces to a stable name list so
-            // Rust's `HashSet<String>` diff fires only on real transitions.
-            let interfaceNames: [String] = path.availableInterfaces.map { $0.name }.sorted()
-
-            let primaryType: String
-            if path.usesInterfaceType(.wifi) {
-                primaryType = "wifi"
-            } else if path.usesInterfaceType(.cellular) {
-                primaryType = "cellular"
-            } else if path.usesInterfaceType(.wiredEthernet) {
-                primaryType = "wired"
-            } else if path.usesInterfaceType(.loopback) {
-                primaryType = "loopback"
-            } else if path.status == .satisfied {
-                primaryType = "other"
-            } else {
-                primaryType = "none"
+        monitor.pathUpdateHandler = { [weak self] path in
+            // NWPathMonitor's pathUpdateHandler is @Sendable in the iOS 17+
+            // SDK, so we can't touch self directly here. Hop to main and
+            // let the isolated method do the work — `path` is Sendable.
+            DispatchQueue.main.async {
+                self?.handlePathUpdate(path)
             }
-
-            var payload: [String: Any] = [:]
-            payload["interfaces"] = interfaceNames
-            payload["type"] = primaryType
-            payload["isExpensive"] = path.isExpensive
-            payload["isConstrained"] = path.isConstrained
-            payload["satisfied"] = (path.status == .satisfied)
-
-            self.lastPathSnapshot = payload
-            DispatchQueue.main.async { self.trigger("networkPathChange", data: payload) }
         }
-        monitor.pathUpdateHandler = handler
         monitor.start(queue: pathMonitorQueue)
         pathMonitor = monitor
     }
 
+    /// Body of the NWPathMonitor handler. Runs on main; called from the
+    /// monitor closure via `DispatchQueue.main.async` to keep the @Sendable
+    /// closure free of non-Sendable captures (`self`, `[String: Any]`).
+    private func handlePathUpdate(_ path: NWPath) {
+        // Map the path's available interfaces to a stable name list so
+        // Rust's `HashSet<String>` diff fires only on real transitions.
+        let interfaceNames: [String] = path.availableInterfaces.map { $0.name }.sorted()
+
+        let primaryType: String
+        if path.usesInterfaceType(.wifi) {
+            primaryType = "wifi"
+        } else if path.usesInterfaceType(.cellular) {
+            primaryType = "cellular"
+        } else if path.usesInterfaceType(.wiredEthernet) {
+            primaryType = "wired"
+        } else if path.usesInterfaceType(.loopback) {
+            primaryType = "loopback"
+        } else if path.status == .satisfied {
+            primaryType = "other"
+        } else {
+            primaryType = "none"
+        }
+
+        let payload: JSObject = [
+            "interfaces": interfaceNames,
+            "type": primaryType,
+            "isExpensive": path.isExpensive,
+            "isConstrained": path.isConstrained,
+            "satisfied": path.status == .satisfied,
+        ]
+
+        lastPathSnapshotLock.lock()
+        lastPathSnapshot = payload
+        lastPathSnapshotLock.unlock()
+        trigger("networkPathChange", data: payload)
+    }
+
     @objc public func getNetworkInfo(_ invoke: Invoke) throws {
-        invoke.resolve(lastPathSnapshot.isEmpty ? ["satisfied": false] : lastPathSnapshot)
+        lastPathSnapshotLock.lock()
+        let snapshot: JSObject = lastPathSnapshot.isEmpty ? ["satisfied": false] : lastPathSnapshot
+        lastPathSnapshotLock.unlock()
+        invoke.resolve(snapshot)
     }
 
     @objc public func mpvInit(_ invoke: Invoke) throws {
