@@ -192,7 +192,14 @@ pub fn register_network_listener<R: Runtime>(
         let Some(state) = app_for_handler.try_state::<crate::state::AppState>() else {
             return Ok(());
         };
-        state.connection_monitor.handle_path_update(interfaces);
+        // The Tauri IPC thread that delivers Channel callbacks has no Tokio
+        // runtime in scope, so calling `handle_path_update` directly panics
+        // ("there is no reactor running") on its internal `tokio::spawn`.
+        // Hop into Tauri's async runtime first.
+        let monitor = state.connection_monitor.clone();
+        tauri::async_runtime::spawn(async move {
+            monitor.handle_path_update(interfaces);
+        });
         Ok(())
     });
     app.ramus_ios_bridge()
@@ -210,7 +217,14 @@ pub fn register_network_listener<R: Runtime>(
                 interfaces,
             );
             if let Some(state) = app.try_state::<crate::state::AppState>() {
-                state.connection_monitor.handle_path_update(interfaces);
+                // Same Tokio-runtime caveat as the channel callback above:
+                // setup runs synchronously and may not have a runtime in
+                // scope. Hop into Tauri's async runtime before the inner
+                // `tokio::spawn` in `handle_path_update`.
+                let monitor = state.connection_monitor.clone();
+                tauri::async_runtime::spawn(async move {
+                    monitor.handle_path_update(interfaces);
+                });
             }
         }
     }

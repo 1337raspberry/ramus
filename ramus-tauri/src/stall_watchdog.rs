@@ -55,7 +55,11 @@ pub fn spawn(app: AppHandle) {
 
             log::info!("stall watchdog: no playback progress, re-evaluating connection");
             let monitor = Arc::clone(&state.connection_monitor);
-            tokio::spawn(async move {
+            // Use `tauri::async_runtime::spawn` (not raw `tokio::spawn`) for
+            // consistency with every other `evaluate_connection` call site.
+            // Works either way today since Tauri is Tokio-backed, but avoids
+            // a panic if Tauri ever swaps executors.
+            tauri::async_runtime::spawn(async move {
                 monitor.evaluate_connection().await;
             });
         }
