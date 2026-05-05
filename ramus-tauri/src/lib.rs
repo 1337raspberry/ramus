@@ -813,7 +813,22 @@ pub fn run() {
                                                 if bg_client.token().is_some() {
                                                     bg_client.set_server_url(Some(new_url.clone()));
                                                     let is_remote = !conn.local;
-                                                    bg_player.set_remote(is_remote);
+                                                    // Push the chosen URL into the player too —
+                                                    // the initial `configure()` runs against
+                                                    // whatever URL was cached at session-restore
+                                                    // time, which can be stale (e.g. a 127.0.0.1
+                                                    // probe from a previous failed attempt). Without
+                                                    // this, `resolve_url` keeps building transcode
+                                                    // URLs against the stale host and every
+                                                    // playback request hits "Connection refused".
+                                                    // ConnectionMonitor's on_connection_changed
+                                                    // covers later failovers; this covers initial
+                                                    // restore.
+                                                    bg_player.update_server_connection(
+                                                        new_url.clone(),
+                                                        bg_token.clone(),
+                                                        is_remote,
+                                                    );
                                                     log::info!(
                                                         "connected via {} (is_remote={})",
                                                         conn.uri, is_remote,
