@@ -50,11 +50,17 @@ pub fn build_direct_play_url(server_url: &Url, part_key: &str, token: &str) -> O
 /// Build a single-file transcode URL against `/audio/:/transcode/universal/start`,
 /// targeting Ogg/Opus at 128 kbps.
 ///
-/// Distinct from `build_hls_url`: that one returns an HLS manifest the player
-/// streams live; this one returns a single chunked Opus file the prefetch
-/// worker can write to disk and play locally on the next visit. Used only on
-/// the prefetch path — live playback still goes through `build_hls_url` so
-/// gapless / EQ behaviour stays on the well-tested code path.
+/// Used by both the live player path (`resolve_url` when `should_transcode`
+/// is true) and the prefetch worker. Plex enforces a per-client
+/// concurrent-transcode cap of ~1, and a single-file Opus session
+/// completes in seconds (mpv slurps the whole 3-5 MB file into its
+/// forward buffer at server-transcode speed and then plays from buffer
+/// for the song's full duration). Once that session ends, the prefetch
+/// worker can fire its own session for the next track without conflict.
+/// A previous incarnation of this code used `/music/:/transcode/universal/start.m3u8`
+/// (HLS) for live playback, but those sessions stay open in real time
+/// for the full song length and got killed the moment the prefetch
+/// worker tried to open a second transcode. Single-endpoint solves it.
 ///
 /// `path` carries the **metadata** key (`/library/metadata/<rk>`), not the
 /// part key — the server picks the right part itself. Each call should pass
@@ -120,42 +126,6 @@ pub fn build_transcode_download_url(
 /// extension to derive one from.
 pub fn is_transcode_download_url(url: &str) -> bool {
     url.contains("/audio/:/transcode/universal/start")
-}
-
-/// Build a Plex HLS transcode URL against `/music/:/transcode/universal/start.m3u8`.
-///
-/// The `X-Plex-Client-Profile-Extra` parameter contains pre-encoded values
-/// that must not be re-encoded.
-pub fn build_hls_url(
-    server_url: &Url,
-    token: &str,
-    track_rating_key: &str,
-    client_identifier: &str,
-    session: &str,
-) -> Option<Url> {
-    let base = server_url.as_str().trim_end_matches('/');
-    let endpoint = "/music/:/transcode/universal/start.m3u8";
-
-    let params = [
-        format!("path=/library/metadata/{}", percent_encode(track_rating_key)),
-        "mediaIndex=0".into(),
-        "partIndex=0".into(),
-        "fastSeek=1".into(),
-        "copyts=1".into(),
-        "offset=0".into(),
-        format!("session={}", percent_encode(session)),
-        "directPlay=0".into(),
-        "directStreamAudio=0".into(),
-        "maxAudioBitrate=256".into(),
-        "protocol=hls".into(),
-        "X-Plex-Platform=Chrome".into(),
-        "X-Plex-Client-Profile-Extra=add-transcode-target(type%3DmusicProfile%26context%3Dstreaming%26protocol%3Dhls%26container%3Dmpegts%26audioCodec%3Daac%2Cmp3)".into(),
-        format!("X-Plex-Token={}", percent_encode(token)),
-        format!("X-Plex-Client-Identifier={}", percent_encode(client_identifier)),
-    ];
-
-    let query = params.join("&");
-    Url::parse(&format!("{}{}?{}", base, endpoint, query)).ok()
 }
 
 #[cfg(test)]
@@ -267,51 +237,6 @@ mod tests {
     }
 
     #[test]
-    fn test_hls_url_has_required_parameters() {
-        let server = Url::parse("http://192.168.1.100:32400").unwrap();
-        let url = build_hls_url(&server, "abc123", "9876", "test-client-id", "fixed-session");
-        assert!(url.is_some());
-        let url_str = url.unwrap().to_string();
-        assert!(url_str.contains("/music/:/transcode/universal/start.m3u8?"));
-        assert!(url_str.contains("X-Plex-Token=abc123"));
-        assert!(url_str.contains("path=/library/metadata/9876"));
-        assert!(url_str.contains("X-Plex-Platform=Chrome"));
-        assert!(url_str.contains("protocol=hls"));
-    }
-
-    #[test]
-    fn test_hls_url_contains_client_profile() {
-        let server = Url::parse("http://192.168.1.100:32400").unwrap();
-        let url = build_hls_url(&server, "abc123", "9876", "test-client-id", "session");
-        assert!(url.is_some());
-        let url_str = url.unwrap().to_string();
-        assert!(url_str.contains("X-Plex-Client-Profile-Extra="));
-        assert!(url_str.contains("musicProfile"));
-        assert!(url_str.contains("mpegts"));
-    }
-
-    #[test]
-    fn test_hls_url_fixed_bitrate() {
-        let server = Url::parse("http://192.168.1.100:32400").unwrap();
-        let url = build_hls_url(&server, "abc123", "9876", "test-client-id", "session");
-        assert!(url.is_some());
-        let url_str = url.unwrap().to_string();
-        assert!(url_str.contains("maxAudioBitrate=256"));
-        assert!(url_str.contains("directPlay=0"));
-        assert!(url_str.contains("directStreamAudio=0"));
-    }
-
-    #[test]
-    fn test_hls_url_correct_endpoint() {
-        let server = Url::parse("http://192.168.1.100:32400").unwrap();
-        let url = build_hls_url(&server, "token", "123", "client", "session");
-        let url_str = url.unwrap().to_string();
-        // Must use /music/:/ not /audio/:/
-        assert!(url_str.contains("/music/:/transcode/universal/start.m3u8"));
-        assert!(!url_str.contains("/audio/:/"));
-    }
-
-    #[test]
     fn test_transcode_download_url_endpoint_and_params() {
         let server = Url::parse("http://192.168.1.100:32400").unwrap();
         let url = build_transcode_download_url(
@@ -365,11 +290,7 @@ mod tests {
         let direct = build_direct_play_url(&server, "/library/parts/12345/file.flac", "t")
             .unwrap()
             .to_string();
-        let hls = build_hls_url(&server, "t", "99251", "c", "s")
-            .unwrap()
-            .to_string();
         assert!(is_transcode_download_url(&tx));
         assert!(!is_transcode_download_url(&direct));
-        assert!(!is_transcode_download_url(&hls));
     }
 }

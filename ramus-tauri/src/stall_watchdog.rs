@@ -1,11 +1,10 @@
 //! Background task that watches the player for stalled playback and
 //! triggers a connection re-evaluation when it sees one.
 //!
-//! Plex's HLS transcode path runs entirely inside mpv — the Rust prefetch
+//! Live transcode playback runs entirely inside mpv — the Rust prefetch
 //! worker only fires `evaluate_connection` after two consecutive download
-//! failures, and `next_uncached_target_in_lookahead` deliberately skips
-//! transcode tracks. So when an unreachable host hangs mpv on TCP, nothing
-//! on the Rust side notices unless we watch for the stall ourselves.
+//! failures, so when an unreachable host hangs mpv on TCP, nothing on the
+//! Rust side notices unless we watch for the stall ourselves.
 //!
 //! `AudioPlayer::is_stalled` returns `true` when the player believes it
 //! should be `Playing` but no `time-pos` event has arrived for

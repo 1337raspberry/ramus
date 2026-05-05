@@ -21,7 +21,7 @@ function formatAge(seconds: number | null | undefined): string {
 const SOURCE_LABELS: Record<string, string> = {
   downloaded: "Downloaded file",
   cached: "Prefetch cache",
-  transcode: "HLS transcode",
+  transcode: "Live transcode",
   streaming: "Direct stream",
   none: "Nothing playing",
 };

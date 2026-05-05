@@ -689,7 +689,7 @@ impl AudioPlayer {
                     inner.is_remote,
                 ) {
                     ("transcode".into(), inner.server_url.as_ref().map(|u| {
-                        format!("{}/music/:/transcode/…", u.as_str().trim_end_matches('/'))
+                        format!("{}/audio/:/transcode/…", u.as_str().trim_end_matches('/'))
                     }))
                 } else {
                     ("streaming".into(), t.part_key.as_ref().and_then(|pk| {
@@ -1232,12 +1232,23 @@ fn resolve_url(
         inner.config.playback_mode,
         inner.is_remote,
     ) {
-        transcode::build_hls_url(
+        // Single-file Opus instead of HLS. Plex enforces a per-client
+        // concurrent-transcode cap of ~1, and a long-lived HLS session
+        // (which lasts the full real-time duration of the song) gets
+        // killed the moment the prefetch worker opens a second transcode
+        // session for the next track. Single-file completes in seconds —
+        // mpv slurps the whole 3-5 MB file into its forward buffer at
+        // server-transcode speed, the session ends, and prefetch can run
+        // without competition. Use a per-track session id (matches what
+        // other clients do) and append `-live` so it's distinct from
+        // the prefetch worker's `-prefetch` sessions for the same track.
+        let session = format!("{}-{}-live", inner.client_identifier, track.rating_key);
+        transcode::build_transcode_download_url(
             server_url,
             token,
             &track.rating_key,
             &inner.client_identifier,
-            &inner.play_session_id,
+            &session,
         )
         .map(|u| u.to_string())
     } else {
