@@ -47,6 +47,58 @@ pub fn build_direct_play_url(server_url: &Url, part_key: &str, token: &str) -> O
     Url::parse(&url_str).ok()
 }
 
+/// Build a single-file transcode URL against `/audio/:/transcode/universal/start`,
+/// targeting Ogg/Opus at 128 kbps.
+///
+/// Distinct from `build_hls_url`: that one returns an HLS manifest the player
+/// streams live; this one returns a single chunked Opus file the prefetch
+/// worker can write to disk and play locally on the next visit. Used only on
+/// the prefetch path — live playback still goes through `build_hls_url` so
+/// gapless / EQ behaviour stays on the well-tested code path.
+///
+/// `path` carries the **metadata** key (`/library/metadata/<rk>`), not the
+/// part key — the server picks the right part itself. Each call should pass
+/// a fresh `session` value (the same string is also sent as
+/// `X-Plex-Session-Identifier`); the server uses it to dedupe and to GC the
+/// ffmpeg process server-side. There is no client-issued `stop?session=…`
+/// teardown — abandoned sessions time out on their own.
+///
+/// The `X-Plex-Client-Profile-Extra` value contains pre-encoded chars and
+/// must not be re-encoded.
+pub fn build_transcode_download_url(
+    server_url: &Url,
+    token: &str,
+    track_rating_key: &str,
+    client_identifier: &str,
+    session: &str,
+) -> Option<Url> {
+    let base = server_url.as_str().trim_end_matches('/');
+    let endpoint = "/audio/:/transcode/universal/start";
+
+    let params = [
+        "directPlay=0".into(),
+        "musicBitrate=128".into(),
+        format!("path=/library/metadata/{}", percent_encode(track_rating_key)),
+        format!("session={}", percent_encode(session)),
+        "X-Plex-Chunked=1".into(),
+        "X-Plex-Client-Profile-Extra=add-transcode-target(replace%3Dtrue%26type%3DmusicProfile%26context%3Dstreaming%26protocol%3Dhttp%26container%3Dogg%26audioCodec%3Dopus)%2Badd-limitation(scope%3DmusicCodec%26scopeName%3Dopus%26type%3DupperBound%26name%3Daudio%2Echannels%26value%3D2%26onlyTranscodes%3Dtrue%26replace%3Dtrue)".into(),
+        format!("X-Plex-Session-Identifier={}", percent_encode(session)),
+        format!("X-Plex-Token={}", percent_encode(token)),
+        format!("X-Plex-Client-Identifier={}", percent_encode(client_identifier)),
+    ];
+
+    let query = params.join("&");
+    Url::parse(&format!("{}{}?{}", base, endpoint, query)).ok()
+}
+
+/// Returns true if `url` is a transcode-download URL (the kind built by
+/// `build_transcode_download_url`). Used by the prefetch worker to pick the
+/// right on-disk file extension for the cached output, since the URL has no
+/// extension to derive one from.
+pub fn is_transcode_download_url(url: &str) -> bool {
+    url.contains("/audio/:/transcode/universal/start")
+}
+
 /// Build a Plex HLS transcode URL against `/music/:/transcode/universal/start.m3u8`.
 ///
 /// The `X-Plex-Client-Profile-Extra` parameter contains pre-encoded values
@@ -234,5 +286,62 @@ mod tests {
         // Must use /music/:/ not /audio/:/
         assert!(url_str.contains("/music/:/transcode/universal/start.m3u8"));
         assert!(!url_str.contains("/audio/:/"));
+    }
+
+    #[test]
+    fn test_transcode_download_url_endpoint_and_params() {
+        let server = Url::parse("http://192.168.1.100:32400").unwrap();
+        let url = build_transcode_download_url(
+            &server,
+            "abc123",
+            "99251",
+            "test-client-id",
+            "session-99251",
+        );
+        let url_str = url.unwrap().to_string();
+        // Endpoint differs from the HLS path: /audio/:/, no .m3u8.
+        assert!(url_str.contains("/audio/:/transcode/universal/start?"));
+        assert!(!url_str.contains("/music/:/"));
+        assert!(!url_str.contains(".m3u8"));
+        // path param uses metadata key, not part key.
+        assert!(url_str.contains("path=/library/metadata/99251"));
+        // Plexamp-matching params.
+        assert!(url_str.contains("directPlay=0"));
+        assert!(url_str.contains("musicBitrate=128"));
+        assert!(url_str.contains("X-Plex-Chunked=1"));
+        assert!(url_str.contains("session=session-99251"));
+        assert!(url_str.contains("X-Plex-Session-Identifier=session-99251"));
+        assert!(url_str.contains("X-Plex-Token=abc123"));
+        assert!(url_str.contains("X-Plex-Client-Identifier=test-client-id"));
+    }
+
+    #[test]
+    fn test_transcode_download_url_carries_opus_profile() {
+        let server = Url::parse("http://192.168.1.100:32400").unwrap();
+        let url = build_transcode_download_url(&server, "t", "99251", "c", "s");
+        let url_str = url.unwrap().to_string();
+        // The Opus / Ogg target must survive into the final URL — these
+        // pre-encoded chars are what tells the server "give me an Opus stream".
+        assert!(url_str.contains("X-Plex-Client-Profile-Extra="));
+        assert!(url_str.contains("musicProfile"));
+        assert!(url_str.contains("audioCodec%3Dopus"));
+        assert!(url_str.contains("container%3Dogg"));
+    }
+
+    #[test]
+    fn test_is_transcode_download_url() {
+        let server = Url::parse("http://192.168.1.100:32400").unwrap();
+        let tx = build_transcode_download_url(&server, "t", "99251", "c", "s")
+            .unwrap()
+            .to_string();
+        let direct = build_direct_play_url(&server, "/library/parts/12345/file.flac", "t")
+            .unwrap()
+            .to_string();
+        let hls = build_hls_url(&server, "t", "99251", "c", "s")
+            .unwrap()
+            .to_string();
+        assert!(is_transcode_download_url(&tx));
+        assert!(!is_transcode_download_url(&direct));
+        assert!(!is_transcode_download_url(&hls));
     }
 }

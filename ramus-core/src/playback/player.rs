@@ -1041,12 +1041,36 @@ impl AudioPlayer {
             {
                 continue;
             }
-            if transcode::should_transcode(
+
+            let needs_transcode = transcode::should_transcode(
                 track.codec.as_deref(),
                 inner.config.playback_mode,
                 inner.is_remote,
-            ) {
-                continue;
+            );
+
+            if needs_transcode {
+                if !inner.config.greedy_transcode_prefetch {
+                    continue;
+                }
+                // Per-track session id — the server uses it to dedupe its
+                // ffmpeg processes, and per-track sessions match what other
+                // clients do (and avoid one queue-wide session getting
+                // confused by interleaved fetches).
+                let session = format!("{}-{}-prefetch", inner.client_identifier, track.rating_key);
+                let Some(url) = transcode::build_transcode_download_url(
+                    server_url,
+                    token,
+                    &track.rating_key,
+                    &inner.client_identifier,
+                    &session,
+                ) else {
+                    continue;
+                };
+                log::debug!(
+                    "next_uncached_target: idx={idx} rk={} (transcoded prefetch)",
+                    track.rating_key,
+                );
+                return Some((track.rating_key.clone(), url.to_string()));
             }
 
             let Some(part_key) = track.part_key.as_ref() else {

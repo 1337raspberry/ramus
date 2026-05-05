@@ -1032,6 +1032,12 @@ fn spawn_analyse_task_from_path(audio_path: PathBuf, track_id: String, app: AppH
 // --- Shared HTTP download core ---
 
 fn extension_from_url(url: &str) -> String {
+    // Single-file transcode URLs have no extension on the path
+    // (`/audio/:/transcode/universal/start`) but always return Ogg/Opus
+    // bytes — see `build_transcode_download_url`.
+    if ramus_core::playback::transcode::is_transcode_download_url(url) {
+        return "ogg".to_string();
+    }
     url::Url::parse(url)
         .ok()
         .and_then(|u| u.path().rsplit('.').next().map(|e| e.to_lowercase()))
