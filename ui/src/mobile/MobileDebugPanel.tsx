@@ -175,6 +175,12 @@ export default function MobileDebugPanel({ onDismiss }: { onDismiss: () => void 
                   : "…"
               }
             />
+            {info && info.cachedInLookahead > 0 && (
+              <Row
+                label="Cached split"
+                value={`${info.cachedInLookaheadDirect} direct, ${info.cachedInLookaheadTranscoded} transcoded`}
+              />
+            )}
           </Section>
 
           {info?.resolvedUrl && (

@@ -258,6 +258,8 @@ export interface DebugInfo {
   queueIndex: number;
   lookaheadDepth: number;
   cachedInLookahead: number;
+  cachedInLookaheadTranscoded: number;
+  cachedInLookaheadDirect: number;
   totalInLookahead: number;
   codec: string | null;
   bitrate: number | null;

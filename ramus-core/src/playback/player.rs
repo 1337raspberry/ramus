@@ -59,6 +59,14 @@ pub struct DebugInfo {
     pub queue_index: usize,
     pub lookahead_depth: u8,
     pub cached_in_lookahead: u32,
+    /// Subset of `cached_in_lookahead` whose on-disk file is a transcoded
+    /// (`.ogg`) prefetch — populated by `build_transcode_download_url` on
+    /// the prefetch path. Caveat: a track whose original codec is also Ogg
+    /// will mislabel here, but that's vanishingly rare in Plex libraries.
+    pub cached_in_lookahead_transcoded: u32,
+    /// Subset of `cached_in_lookahead` whose file is a direct-play copy
+    /// (anything other than `.ogg`).
+    pub cached_in_lookahead_direct: u32,
     pub total_in_lookahead: u32,
     pub codec: Option<String>,
     pub bitrate: Option<i32>,
@@ -697,16 +705,30 @@ impl AudioPlayer {
         let depth = inner.config.lookahead_depth as usize;
         let pos = inner.state.queue_index;
         let mut cached_in_lookahead = 0u32;
+        let mut cached_in_lookahead_transcoded = 0u32;
+        let mut cached_in_lookahead_direct = 0u32;
         let mut total_in_lookahead = 0u32;
         for offset in 1..=depth {
             let Some(t) = inner.state.queue.get(pos + offset) else {
                 break;
             };
             total_in_lookahead += 1;
-            if persistent.contains_key(&t.rating_key)
-                || inner.cache.get(&t.rating_key).is_some()
-            {
+            let path = persistent
+                .get(&t.rating_key)
+                .cloned()
+                .or_else(|| inner.cache.get(&t.rating_key).map(|p| p.to_path_buf()));
+            if let Some(p) = path {
                 cached_in_lookahead += 1;
+                let is_transcoded = p
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.eq_ignore_ascii_case("ogg"))
+                    .unwrap_or(false);
+                if is_transcoded {
+                    cached_in_lookahead_transcoded += 1;
+                } else {
+                    cached_in_lookahead_direct += 1;
+                }
             }
         }
 
@@ -728,6 +750,8 @@ impl AudioPlayer {
             queue_index: inner.state.queue_index,
             lookahead_depth: inner.config.lookahead_depth,
             cached_in_lookahead,
+            cached_in_lookahead_transcoded,
+            cached_in_lookahead_direct,
             total_in_lookahead,
             codec: track.and_then(|t| t.codec.clone()),
             bitrate: track.and_then(|t| t.bitrate),
