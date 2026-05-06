@@ -218,6 +218,13 @@ struct PlayerInner {
     /// Most recent unrecoverable mpv `END_FILE` error message (URL-redacted).
     /// Cleared on `file-loaded`.
     last_load_error: Option<String>,
+    /// Directory mpv writes `stream-record` output to (per-track files
+    /// named `<rating_key>.<ext>`). Set once at startup by the Tauri
+    /// layer; left `None` makes `stream_record_option_for` return `None`
+    /// so loadfile carries no per-track options. Captures the source
+    /// bytes mpv pulls during playback so the spectrum analyser can
+    /// process them without a second HTTP fetch.
+    stream_record_dir: Option<PathBuf>,
 }
 
 /// Core audio player managing queue state, mpv commands, and track resolution.
@@ -254,6 +261,7 @@ impl AudioPlayer {
                 last_position_update: None,
                 load_started_at: None,
                 last_load_error: None,
+                stream_record_dir: None,
             }),
             persistent_cache: RwLock::new(HashMap::new()),
         }
@@ -334,6 +342,23 @@ impl AudioPlayer {
         self.inner.lock().is_cellular
     }
 
+    /// Configure the directory mpv writes its `stream-record` output to.
+    /// Called once at startup by the Tauri layer with the audio cache
+    /// path; the core can't compute this itself because it doesn't know
+    /// the app's config directory layout. While set, every direct-play
+    /// `loadfile` carries a `stream-record=<dir>/<rating_key>.<ext>`
+    /// per-file option, so the symphonia analyser can run against the
+    /// captured file without a second HTTP fetch.
+    pub fn set_stream_record_dir(&self, dir: PathBuf) {
+        self.inner.lock().stream_record_dir = Some(dir);
+    }
+
+    /// Read back the configured stream-record directory. Used by the
+    /// prefetch worker to compute the on-disk path for an ingest pass.
+    pub fn stream_record_dir(&self) -> Option<PathBuf> {
+        self.inner.lock().stream_record_dir.clone()
+    }
+
     /// Update playback configuration.
     pub fn update_config(&self, config: PlaybackConfig) {
         let mut inner = self.inner.lock();
@@ -351,9 +376,10 @@ impl AudioPlayer {
             return;
         }
 
-        // Snapshot per-track URLs under the lock, then release before
-        // touching mpv (FFI calls may block briefly).
-        let loads: Vec<Option<String>> = {
+        // Snapshot the per-track (url, stream-record options) pairs under
+        // the lock, then release before touching mpv (FFI calls may block
+        // briefly).
+        let loads: Vec<Option<(String, Option<String>)>> = {
             let persistent = self.persistent_cache.read();
             let mut inner = self.inner.lock();
             inner.state.queue = tracks;
@@ -379,12 +405,17 @@ impl AudioPlayer {
                 .state
                 .queue
                 .iter()
-                .map(|t| resolve_url(t, &inner, &persistent))
+                .map(|t| {
+                    resolve_url(t, &inner, &persistent).map(|url| {
+                        let opts = stream_record_option_for(t, &url, &inner);
+                        (url, opts)
+                    })
+                })
                 .collect()
         };
 
         for (i, load) in loads.iter().enumerate() {
-            if let Some(url) = load {
+            if let Some((url, opts)) = load {
                 let mode = if i == 0 {
                     LoadMode::Replace
                 } else {
@@ -392,9 +423,9 @@ impl AudioPlayer {
                 };
                 // Track URLs contain `X-Plex-Token` in the query string —
                 // log only enough to correlate with mpv events, never the
-                // URL itself.
-                log::debug!("load_queue[{i}]: mode={mode:?}");
-                self.mpv.load_file(url, mode, None);
+                // URL itself. Stream-record paths are token-free.
+                log::debug!("load_queue[{i}]: mode={mode:?} stream_record={}", opts.is_some());
+                self.mpv.load_file(url, mode, opts.as_deref());
             }
         }
 
@@ -1343,6 +1374,51 @@ fn resolve_url(
         let part_key = track.part_key.as_ref()?;
         transcode::build_direct_play_url(server_url, part_key, token).map(|u| u.to_string())
     }
+}
+
+/// Build the per-file mpv `stream-record=<path>` option for a track being
+/// loaded into the playlist, or `None` if recording isn't applicable.
+///
+/// Returns `None` for:
+/// - Tracks without a configured `stream_record_dir` (feature off).
+/// - URLs already pointing at a local file (no point recording a copy).
+/// - Tracks that would transcode under current settings — handled by the
+///   prefetch worker's reqwest path; mpv's stream-record on a chunked
+///   server-side transcode hasn't been validated end-to-end.
+///
+/// Forward slashes in the path are required because mpv's options parser
+/// treats `\` as an escape character. The destination filename uses
+/// `<rating_key>.<ext>` so the spectrum analyser's symphonia probe gets
+/// a useful extension hint, and the file is unique per track.
+fn stream_record_option_for(track: &Track, url: &str, inner: &PlayerInner) -> Option<String> {
+    let dir = inner.stream_record_dir.as_ref()?;
+    if url.starts_with("file://") {
+        return None;
+    }
+    if transcode::should_transcode(
+        track.codec.as_deref(),
+        inner.config.playback_mode,
+        inner.is_remote,
+        inner.is_cellular,
+    ) {
+        return None;
+    }
+
+    // Try the URL extension first (Plex direct-play part keys carry a
+    // real audio extension); fall back to the codec field. Either is
+    // good enough for symphonia's `Hint::with_extension`.
+    let ext = url
+        .rsplit('?')
+        .next()
+        .and_then(|p| p.rsplit('.').next())
+        .filter(|e| !e.is_empty() && e.len() <= 5 && e.chars().all(|c| c.is_ascii_alphanumeric()))
+        .map(|s| s.to_ascii_lowercase())
+        .or_else(|| track.codec.as_ref().map(|c| c.to_ascii_lowercase()))
+        .unwrap_or_else(|| "audio".to_string());
+
+    let path = dir.join(format!("{}.{}", track.rating_key, ext));
+    let path_str = path.to_string_lossy().replace('\\', "/");
+    Some(format!("stream-record=\"{path_str}\""))
 }
 
 #[cfg(test)]

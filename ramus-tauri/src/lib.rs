@@ -569,6 +569,26 @@ pub fn run() {
             let (player, reporter_ref, media_controls_ref) =
                 create_mpv_player(app_handle.clone(), prefetch_handle_ref.clone());
 
+            // Capture mpv's source bytes to a sibling directory of the
+            // prefetch cache so the spectrum analyser can run against the
+            // captured file without a second HTTP fetch. Kept under its
+            // own subdir for the verification phase — once we trust the
+            // pipeline end-to-end we can collapse this into the main
+            // audio_cache and drop the second-download path entirely.
+            // Desktop only: spectrum is force-disabled on mobile.
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            if let Ok(cfg_dir) = ramus_core::plex::token_store::config_dir() {
+                let stream_record_dir = cfg_dir.join("audio_cache").join("stream_record");
+                if let Err(e) = std::fs::create_dir_all(&stream_record_dir) {
+                    log::warn!(
+                        "stream_record: failed to create dir {stream_record_dir:?}: {e} (recording disabled)"
+                    );
+                } else {
+                    log::info!("stream_record: writing to {stream_record_dir:?}");
+                    player.set_stream_record_dir(stream_record_dir);
+                }
+            }
+
             // Spawn the long-lived prefetch worker and wire its control handle
             // back into the callbacks.
             let prefetch_handle = crate::prefetch::spawn_worker(
