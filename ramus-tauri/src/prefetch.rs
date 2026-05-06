@@ -700,16 +700,15 @@ async fn run_cycle(
         .read()
         .disable_spectrum;
 
-    // Direct-play current track: skip the second download entirely.
-    // Wait until mpv has fully pulled the source into its demuxer cache,
-    // then issue `dump-cache` to write a finalised capture of the cache
-    // contents to disk. dump-cache produces a single, fully-written file
-    // (unlike `stream-record`, which patches headers at file-close and
-    // leaves a racy intermediate state), so the analyser can run on it
-    // immediately. From there `next_uncached_target_in_lookahead` skips
-    // the current track because cache.get(rk) returns Some.
+    // Direct-play current track: skip the second download entirely, ingest
+    // mpv's stream-record capture instead. We poll demuxer-cache-time
+    // until the source has fully drained (= the on-disk capture is a
+    // complete file, equivalent to the reqwest copy we used to fetch),
+    // then hand it to the analyser + DownloadCache via try_ingest. From
+    // that point `next_uncached_target_in_lookahead` skips the current
+    // track because cache.get(rk) returns Some.
     //
-    // Transcoded current track: dump-cache on chunked Plex transcode
+    // Transcoded current track: stream-record on chunked Plex transcode
     // bodies isn't validated end-to-end yet, so leave include_current
     // true for them — the worker keeps doing the reqwest download.
     if !spectrum_disabled
@@ -724,27 +723,8 @@ async fn run_cycle(
         if shared_gen.load(Ordering::SeqCst) != my_gen {
             return;
         }
-        if let (Some(track), Ok(cfg_dir)) = (
-            player.state().current_track,
-            ramus_core::plex::token_store::config_dir(),
-        ) {
-            let path = capture_path_for(&cfg_dir, &track.rating_key, track.codec.as_deref());
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            log::debug!("capture: dump-cache → {path:?} for rating_key={}", track.rating_key);
-            // Synchronous: blocks until mpv finishes writing + closes the
-            // output file. Cheap (~100s of ms for a 6-min track on SSD).
-            // Run on a blocking thread so we don't stall the tokio
-            // runtime if mpv's command takes longer than expected.
-            let path_clone = path.clone();
-            let p2 = player.clone();
-            tokio::task::spawn_blocking(move || {
-                p2.dump_cache_to(path_clone.to_string_lossy().as_ref());
-            })
-            .await
-            .ok();
-            try_ingest_capture(&player, app.clone(), track.rating_key, path);
+        if let Some(rk) = player.state().current_track.map(|t| t.rating_key) {
+            try_ingest_stream_record(&player, app.clone(), rk);
         }
     }
 
@@ -1158,59 +1138,74 @@ async fn run_user_download(
 
 // --- Spectrum analysis ---
 
-/// Hand a `dump-cache`-produced file (written atomically by mpv from its
-/// in-memory demuxer cache) to the spectrum analyser and register it in
-/// the prefetch `DownloadCache` so future `resolve_url` calls for this
-/// rating-key pick up the local file:// path instead of opening another
-/// HTTP fetch.
+/// Hand off a `stream-record`-captured file (produced by mpv during
+/// playback) to the spectrum analyser, and register it in the prefetch
+/// `DownloadCache` so subsequent `resolve_url` calls for this rating-key
+/// pick up the local file:// path instead of opening another HTTP fetch.
 ///
-/// Idempotent: bails if the rating-key is already cached (so two ingest
-/// attempts in quick succession don't double-insert), or if the file is
-/// missing / too small to be worth analysing (e.g. mpv's cache wasn't
-/// populated when dump-cache fired).
-pub fn try_ingest_capture(
+/// Called from `on_playlist_pos_change` for the track that just stopped
+/// being the active playlist entry — by that point mpv has finished
+/// writing its source bytes to the recorded file. Direct-play sources
+/// only; transcoded tracks keep the existing reqwest path until we've
+/// validated stream-record on chunked Plex transcode bodies.
+///
+/// Idempotent: bails early if the rating-key is already in DownloadCache
+/// (so a double-fire from rapid skips doesn't double-insert), or if the
+/// file is too small to be worth analysing (mpv may write a partial file
+/// if the user skipped before the source could drain).
+pub fn try_ingest_stream_record(
     player: &AudioPlayer,
     app: AppHandle,
     rating_key: String,
-    path: PathBuf,
 ) {
     if player.with_cache(|c| c.get(&rating_key).is_some()) {
         return;
     }
-    let size = match std::fs::metadata(&path) {
-        Ok(m) => m.len(),
+    let Some(dir) = player.stream_record_dir() else {
+        return;
+    };
+    // Files are named `<rating_key>.<ext>`; we don't know the extension
+    // ahead of time so glob by prefix. Take the largest match in case
+    // of stale entries.
+    let prefix = format!("{rating_key}.");
+    let mut best: Option<(PathBuf, u64)> = None;
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
         Err(e) => {
-            log::debug!("capture: stat({path:?}) failed: {e}");
+            log::debug!("stream_record: read_dir({dir:?}) failed: {e}");
             return;
         }
     };
-    // 32 KiB is generous — even a 5-second 96 kbps Opus snippet is ~60 KiB.
-    // Below that means mpv had nothing meaningful in its demuxer cache
-    // (e.g. user skipped before any data was pulled).
+    for entry in entries.flatten() {
+        let p = entry.path();
+        let Some(name) = p.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.starts_with(&prefix) {
+            continue;
+        }
+        let len = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        if best.as_ref().is_none_or(|(_, prev_len)| len > *prev_len) {
+            best = Some((p, len));
+        }
+    }
+    let Some((path, size)) = best else {
+        return;
+    };
+    // 32 KiB is generous — even a 5-second 96 kbps Opus snippet runs ~60
+    // KiB. Anything below that is mpv writing a header for a track the
+    // user skipped immediately.
     if size < 32_768 {
-        log::debug!("capture: skip ingest of {path:?} ({size} bytes) — too small to analyse");
+        log::debug!(
+            "stream_record: skip ingest of {path:?} ({size} bytes) — too small to analyse"
+        );
         return;
     }
-    log::info!("capture: ingesting {path:?} ({size} bytes) for rating_key={rating_key}");
+    log::info!(
+        "stream_record: ingesting {path:?} ({size} bytes) for rating_key={rating_key}"
+    );
     player.with_cache(|c| c.insert(rating_key.clone(), path.clone(), size));
     spawn_analyse_task_from_path(path, rating_key, app);
-}
-
-/// Build the on-disk path mpv's `dump-cache` writes to for a given track.
-/// Lives under `audio_cache/stream_record/<rating_key>.<ext>`. The
-/// extension matters for symphonia's probe hint — we use the track's
-/// codec name as the closest stable identifier the player has (mp4 / m4a
-/// distinction doesn't matter since symphonia's `isomp4` demuxer accepts
-/// either, FLAC and MP3 self-identify by magic).
-fn capture_path_for(cfg_dir: &std::path::Path, rating_key: &str, codec: Option<&str>) -> PathBuf {
-    let ext = codec
-        .map(|c| c.trim().to_ascii_lowercase())
-        .filter(|c| !c.is_empty() && c.chars().all(|ch| ch.is_ascii_alphanumeric()))
-        .unwrap_or_else(|| "audio".to_string());
-    cfg_dir
-        .join("audio_cache")
-        .join("stream_record")
-        .join(format!("{rating_key}.{ext}"))
 }
 
 fn spawn_analyse_task_from_cache(player: &AudioPlayer, track_id: String, app: AppHandle) {

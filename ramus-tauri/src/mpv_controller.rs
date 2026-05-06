@@ -287,15 +287,6 @@ impl MpvPlayer for MpvController {
     fn demuxer_cache_time(&self) -> Option<f64> {
         self.get_property_double("demuxer-cache-time")
     }
-
-    fn dump_cache_to(&self, path: &str) {
-        // `dump-cache <start> <end> <filename>` — start=0, end="no" (until
-        // end of cache) writes everything mpv has demuxed for the current
-        // track. Synchronous: returns once the file is fully written and
-        // closed. Unlike `stream-record`, output is finalised in one go,
-        // so the analyser doesn't race against header-patching writes.
-        self.command(&["dump-cache", "0", "no", path]);
-    }
 }
 
 impl Drop for MpvController {
