@@ -574,6 +574,44 @@ fn spawn_cycle(
 /// session won't get cut by Plex's per-client cap), or until
 /// `LIVE_DRAIN_CEILING` elapses, whichever comes first. Returns early
 /// if the cycle is superseded.
+/// Same shape as `wait_for_live_drain` but uses the uniform
+/// `current_source_fully_drained` predicate instead of the
+/// transcode-only one. Used before ingesting the current track's
+/// stream-record file: regardless of direct-play vs transcode, the
+/// file isn't safe to analyse until mpv reports its demuxer cache
+/// covers the full track. Same `LIVE_DRAIN_CEILING` ceiling so a
+/// missing demuxer-cache-time bridge can't deadlock the worker.
+async fn wait_for_source_drain(
+    player: &AudioPlayer,
+    shared_gen: &Arc<AtomicU64>,
+    my_gen: u64,
+) {
+    let started = Instant::now();
+    loop {
+        if shared_gen.load(Ordering::SeqCst) != my_gen {
+            return;
+        }
+        if player.current_source_fully_drained() {
+            let waited = started.elapsed();
+            if waited > Duration::from_secs(1) {
+                log::debug!(
+                    "stream_record: source drained after {:.1}s",
+                    waited.as_secs_f64()
+                );
+            }
+            return;
+        }
+        if started.elapsed() >= LIVE_DRAIN_CEILING {
+            log::warn!(
+                "stream_record: source never reported drained after {:.0}s, giving up on in-track ingest",
+                LIVE_DRAIN_CEILING.as_secs_f64()
+            );
+            return;
+        }
+        tokio::time::sleep(LIVE_DRAIN_POLL_INTERVAL).await;
+    }
+}
+
 async fn wait_for_live_drain(
     player: &AudioPlayer,
     shared_gen: &Arc<AtomicU64>,
@@ -656,15 +694,48 @@ async fn run_cycle(
         return;
     }
 
-    // Include the currently-playing track when spectrum analysis is enabled,
-    // since the download gives the FFT a clean file. When disabled, skip it
-    // (swap-to-local is a no-op for the active mpv index anyway).
     let spectrum_disabled = app
         .state::<crate::state::AppState>()
         .settings
         .read()
         .disable_spectrum;
-    let include_current = !spectrum_disabled;
+
+    // Direct-play current track: skip the second download entirely, ingest
+    // mpv's stream-record capture instead. We poll demuxer-cache-time
+    // until the source has fully drained (= the on-disk capture is a
+    // complete file, equivalent to the reqwest copy we used to fetch),
+    // then hand it to the analyser + DownloadCache via try_ingest. From
+    // that point `next_uncached_target_in_lookahead` skips the current
+    // track because cache.get(rk) returns Some.
+    //
+    // Transcoded current track: stream-record on chunked Plex transcode
+    // bodies isn't validated end-to-end yet, so leave include_current
+    // true for them — the worker keeps doing the reqwest download.
+    if !spectrum_disabled
+        && !player.current_track_is_transcoded()
+        && player
+            .state()
+            .current_track
+            .as_ref()
+            .is_some_and(|t| !player.with_cache(|c| c.get(&t.rating_key).is_some()))
+    {
+        wait_for_source_drain(&player, &shared_gen, my_gen).await;
+        if shared_gen.load(Ordering::SeqCst) != my_gen {
+            return;
+        }
+        if let Some(rk) = player.state().current_track.map(|t| t.rating_key) {
+            try_ingest_stream_record(&player, app.clone(), rk);
+        }
+    }
+
+    // After the ingest pass: include_current stays true only when the
+    // current track is transcoded. Direct-play current is either now in
+    // DownloadCache (ingest succeeded → worker skips it via the cache
+    // check in next_uncached_target_in_lookahead) or the ingest bailed
+    // (file too small / missing) and the user gets no spec for this
+    // track — acceptable degradation; subsequent plays will hit the
+    // cached file or re-trigger via on_playlist_pos_change.
+    let include_current = !spectrum_disabled && player.current_track_is_transcoded();
 
     // Ensure the current + lookahead tracks that are already on disk
     // (from a previous user download or prefetch) get spectrum analysed.

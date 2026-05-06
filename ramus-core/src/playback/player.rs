@@ -1326,6 +1326,53 @@ impl AudioPlayer {
         cache_time >= needed
     }
 
+    /// Whether the currently-playing track's source bytes have been fully
+    /// pulled by mpv (i.e. the source HTTP body has EOFed and mpv is
+    /// playing from its in-memory buffer the rest of the way through).
+    ///
+    /// Distinct from `current_track_buffered_for_prefetch` in that it
+    /// applies the same demuxer-cache check uniformly — direct-play
+    /// sources don't get a free pass. The stream-record file isn't
+    /// finalised on disk until mpv has finished pulling, regardless of
+    /// transcode vs direct-play.
+    ///
+    /// Returns `false` if the queue is empty, mpv hasn't reported
+    /// duration yet, or the bridge doesn't expose `demuxer-cache-time`.
+    pub fn current_source_fully_drained(&self) -> bool {
+        let inner = self.inner.lock();
+        if inner.state.queue.get(inner.state.queue_index).is_none() {
+            return false;
+        }
+        let Some(cache_time) = self.mpv.demuxer_cache_time() else {
+            return false;
+        };
+        let position = inner.position;
+        let duration = inner.duration;
+        if duration <= 0.0 {
+            return false;
+        }
+        let needed = (duration - position - 1.0).max(0.0);
+        cache_time >= needed
+    }
+
+    /// Whether the currently-playing track would transcode under the
+    /// active settings. Reads through the same `should_transcode`
+    /// predicate the URL builder uses, so the answer agrees with what
+    /// mpv is actually pulling.
+    ///
+    /// Returns `false` if the queue is empty.
+    pub fn current_track_is_transcoded(&self) -> bool {
+        let inner = self.inner.lock();
+        let Some(track) = inner.state.queue.get(inner.state.queue_index) else {
+            return false;
+        };
+        transcode::should_transcode(
+            track.codec.as_deref(),
+            inner.config.playback_mode,
+            inner.is_remote,
+            inner.is_cellular,
+        )
+    }
 }
 
 fn resolve_url(
