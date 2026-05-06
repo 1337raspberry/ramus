@@ -452,9 +452,14 @@ impl AudioPlayer {
             if was_stopped {
                 (true, Vec::new())
             } else {
-                let loads: Vec<Option<String>> = tracks
+                let loads: Vec<Option<(String, Option<String>)>> = tracks
                     .iter()
-                    .map(|t| resolve_url(t, &inner, &persistent))
+                    .map(|t| {
+                        resolve_url(t, &inner, &persistent).map(|url| {
+                            let opts = stream_record_option_for(t, &url, &inner);
+                            (url, opts)
+                        })
+                    })
                     .collect();
                 (false, loads)
             }
@@ -464,8 +469,8 @@ impl AudioPlayer {
             let queue = self.inner.lock().state.queue.clone();
             self.load_queue(queue, 0);
         } else {
-            for url in loads.into_iter().flatten() {
-                self.mpv.load_file(&url, LoadMode::Append, None);
+            for (url, opts) in loads.into_iter().flatten() {
+                self.mpv.load_file(&url, LoadMode::Append, opts.as_deref());
             }
         }
     }
@@ -499,17 +504,25 @@ impl AudioPlayer {
                     .insert(insert_base + offset, track.clone());
             }
 
-            let loads: Vec<Option<String>> = tracks
+            let loads: Vec<Option<(String, Option<String>)>> = tracks
                 .iter()
-                .map(|t| resolve_url(t, &inner, &persistent))
+                .map(|t| {
+                    resolve_url(t, &inner, &persistent).map(|url| {
+                        let opts = stream_record_option_for(t, &url, &inner);
+                        (url, opts)
+                    })
+                })
                 .collect();
             (insert_base, loads)
         };
 
         for (offset, load) in loads.iter().enumerate() {
-            if let Some(url) = load {
-                self.mpv
-                    .load_file_at(url, (insert_base + offset) as i64, None);
+            if let Some((url, opts)) = load {
+                self.mpv.load_file_at(
+                    url,
+                    (insert_base + offset) as i64,
+                    opts.as_deref(),
+                );
             }
         }
     }
@@ -929,7 +942,7 @@ impl AudioPlayer {
     /// current `server_url` and `token`. Called after connection failover
     /// so stale URLs don't cascade-fail when playback reaches them.
     pub fn rewrite_stale_playlist_urls(&self) {
-        let rewrites: Vec<(usize, String)> = {
+        let rewrites: Vec<(usize, String, Option<String>)> = {
             let persistent = self.persistent_cache.read();
             let inner = self.inner.lock();
             let current_idx = inner.state.queue_index;
@@ -953,7 +966,8 @@ impl AudioPlayer {
                     if url.starts_with("file://") {
                         return None;
                     }
-                    Some((idx, url))
+                    let opts = stream_record_option_for(track, &url, &inner);
+                    Some((idx, url, opts))
                 })
                 .collect()
         };
@@ -967,9 +981,9 @@ impl AudioPlayer {
             rewrites.len()
         );
 
-        for (idx, new_url) in rewrites.iter().rev() {
+        for (idx, new_url, opts) in rewrites.iter().rev() {
             self.mpv.playlist_remove(*idx as i64);
-            self.mpv.load_file_at(new_url, *idx as i64, None);
+            self.mpv.load_file_at(new_url, *idx as i64, opts.as_deref());
         }
     }
 
