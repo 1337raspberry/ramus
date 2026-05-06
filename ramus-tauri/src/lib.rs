@@ -235,6 +235,27 @@ pub fn create_mpv_player(
                         }
                     }
                 }
+
+                // The previous track's mpv stream-record file is now
+                // finalised (mpv stopped writing to it the moment it
+                // transitioned away). Hand it to the analyser + register
+                // in DownloadCache so future plays of this rating-key
+                // skip the second download. Desktop only; mobile spectrum
+                // is force-disabled and `stream_record_dir` stays unset.
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                if let Some(ref prev) = prev_track {
+                    let same_track = state
+                        .current_track
+                        .as_ref()
+                        .is_some_and(|cur| cur.rating_key == prev.rating_key);
+                    if !same_track {
+                        crate::prefetch::try_ingest_stream_record(
+                            p,
+                            app3.clone(),
+                            prev.rating_key.clone(),
+                        );
+                    }
+                }
             }
         })),
         on_pause_change: Some(Box::new(move |paused| {

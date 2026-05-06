@@ -1067,6 +1067,76 @@ async fn run_user_download(
 
 // --- Spectrum analysis ---
 
+/// Hand off a `stream-record`-captured file (produced by mpv during
+/// playback) to the spectrum analyser, and register it in the prefetch
+/// `DownloadCache` so subsequent `resolve_url` calls for this rating-key
+/// pick up the local file:// path instead of opening another HTTP fetch.
+///
+/// Called from `on_playlist_pos_change` for the track that just stopped
+/// being the active playlist entry — by that point mpv has finished
+/// writing its source bytes to the recorded file. Direct-play sources
+/// only; transcoded tracks keep the existing reqwest path until we've
+/// validated stream-record on chunked Plex transcode bodies.
+///
+/// Idempotent: bails early if the rating-key is already in DownloadCache
+/// (so a double-fire from rapid skips doesn't double-insert), or if the
+/// file is too small to be worth analysing (mpv may write a partial file
+/// if the user skipped before the source could drain).
+pub fn try_ingest_stream_record(
+    player: &AudioPlayer,
+    app: AppHandle,
+    rating_key: String,
+) {
+    if player.with_cache(|c| c.get(&rating_key).is_some()) {
+        return;
+    }
+    let Some(dir) = player.stream_record_dir() else {
+        return;
+    };
+    // Files are named `<rating_key>.<ext>`; we don't know the extension
+    // ahead of time so glob by prefix. Take the largest match in case
+    // of stale entries.
+    let prefix = format!("{rating_key}.");
+    let mut best: Option<(PathBuf, u64)> = None;
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(e) => {
+            log::debug!("stream_record: read_dir({dir:?}) failed: {e}");
+            return;
+        }
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        let Some(name) = p.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.starts_with(&prefix) {
+            continue;
+        }
+        let len = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        if best.as_ref().is_none_or(|(_, prev_len)| len > *prev_len) {
+            best = Some((p, len));
+        }
+    }
+    let Some((path, size)) = best else {
+        return;
+    };
+    // 32 KiB is generous — even a 5-second 96 kbps Opus snippet runs ~60
+    // KiB. Anything below that is mpv writing a header for a track the
+    // user skipped immediately.
+    if size < 32_768 {
+        log::debug!(
+            "stream_record: skip ingest of {path:?} ({size} bytes) — too small to analyse"
+        );
+        return;
+    }
+    log::info!(
+        "stream_record: ingesting {path:?} ({size} bytes) for rating_key={rating_key}"
+    );
+    player.with_cache(|c| c.insert(rating_key.clone(), path.clone(), size));
+    spawn_analyse_task_from_path(path, rating_key, app);
+}
+
 fn spawn_analyse_task_from_cache(player: &AudioPlayer, track_id: String, app: AppHandle) {
     if app
         .state::<crate::state::AppState>()
