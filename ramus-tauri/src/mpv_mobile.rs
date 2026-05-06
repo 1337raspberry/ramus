@@ -184,6 +184,7 @@ pub fn register_network_listener<R: Runtime>(
         let interfaces: HashSet<String> = payload.interfaces.iter().cloned().collect();
 
         let label = payload.r#type.as_deref().unwrap_or("?");
+        let is_cellular = payload.r#type.as_deref() == Some("cellular");
         log::info!(
             "network path change: type={label} interfaces={:?}",
             payload.interfaces,
@@ -192,6 +193,12 @@ pub fn register_network_listener<R: Runtime>(
         let Some(state) = app_for_handler.try_state::<crate::state::AppState>() else {
             return Ok(());
         };
+        // Push the cellular flag into the player synchronously — `set_cellular`
+        // just takes the parking_lot mutex, no async runtime needed. Drives
+        // the `Cellular` / `RemoteOrCellular` PlaybackMode arms of
+        // `should_transcode` so the next track-resolve picks up the change.
+        state.player.set_cellular(is_cellular);
+
         // The Tauri IPC thread that delivers Channel callbacks has no Tokio
         // runtime in scope, so calling `handle_path_update` directly panics
         // ("there is no reactor running") on its internal `tokio::spawn`.
@@ -210,6 +217,7 @@ pub fn register_network_listener<R: Runtime>(
     // real NWPathMonitor event) is safe.
     if let Ok(info) = app.ramus_ios_bridge().get_network_info() {
         if !info.interfaces.is_empty() {
+            let is_cellular = info.r#type.as_deref() == Some("cellular");
             let interfaces: HashSet<String> = info.interfaces.into_iter().collect();
             log::info!(
                 "network monitor seeded: type={} interfaces={:?}",
@@ -217,6 +225,10 @@ pub fn register_network_listener<R: Runtime>(
                 interfaces,
             );
             if let Some(state) = app.try_state::<crate::state::AppState>() {
+                // Seed the cellular flag too, so the very first track-resolve
+                // after launch sees the right value (NWPathMonitor's first
+                // event happens just before the listener above is wired).
+                state.player.set_cellular(is_cellular);
                 // Same Tokio-runtime caveat as the channel callback above:
                 // setup runs synchronously and may not have a runtime in
                 // scope. Hop into Tauri's async runtime before the inner

@@ -64,6 +64,18 @@ symphonia = { version = "0.5", default-features = false, features = [
     "wav",
     "pcm",
 ] }
+# Opus decoder for symphonia. symphonia 0.5 itself doesn't ship one —
+# this community adapter wraps libopus and registers an `OpusDecoder`
+# we plug into a custom `CodecRegistry`. Required for the focus
+# visualiser to analyse transcoded `.ogg` files (Plex's transcode
+# endpoint serves Ogg/Opus). Pre-skip / encoder-delay handling is
+# built into the adapter — no manual sample trimming needed downstream.
+#
+# Default `bundled` feature compiles libopus from vendored C source
+# via cmake — produces a self-contained build with no runtime libopus
+# dep, so the binary is portable across machines that don't happen to
+# have a system libopus. Requires `cmake` + `ninja` on the build host.
+symphonia-adapter-libopus = "0.2"
 
 # NB: cargo target-spec cfgs only understand standard `target_*` keys —
 # Tauri's `cfg(desktop)` / `cfg(mobile)` are set at Rust compile time by

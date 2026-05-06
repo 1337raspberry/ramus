@@ -27,9 +27,11 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 const MODE_LABELS: Record<string, string> = {
-  directPlay: "Direct Play",
-  transcodeLosslessRemote: "Transcode if Remote",
-  transcodeLossless: "Always Transcode",
+  never: "Never",
+  cellular: "When on cellular",
+  remote: "When remote",
+  remoteOrCellular: "When remote or on cellular",
+  always: "Always",
 };
 
 // Friendly labels for the derived `Phase`. Distinct from the optimistic

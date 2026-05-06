@@ -56,12 +56,44 @@ impl PlaybackStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Whether/when lossless audio should be sent through Plex's universal
+/// transcoder before reaching the player. The two `*Cellular` variants
+/// only make sense on iOS/Android where the player has a real cellular
+/// signal — on desktop they're equivalent to `Never` / `Remote` because
+/// `is_cellular` is always false there. The UI hides them on desktop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum PlaybackMode {
-    DirectPlay,
-    TranscodeLosslessRemote,
-    TranscodeLossless,
+    #[default]
+    Never,
+    Cellular,
+    Remote,
+    RemoteOrCellular,
+    Always,
+}
+
+/// Bitrate (kbps) the universal transcoder will target when transcoding
+/// lossless content. Modeled as an enum rather than a raw integer so the
+/// URL builder can't be passed an unsupported value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum TranscodeBitrate {
+    Kbps320,
+    Kbps256,
+    Kbps192,
+    #[default]
+    Kbps128,
+}
+
+impl TranscodeBitrate {
+    pub fn as_kbps(self) -> u16 {
+        match self {
+            Self::Kbps320 => 320,
+            Self::Kbps256 => 256,
+            Self::Kbps192 => 192,
+            Self::Kbps128 => 128,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -405,6 +437,7 @@ impl Default for PlayerState {
 #[serde(rename_all = "camelCase")]
 pub struct PlaybackConfig {
     pub playback_mode: PlaybackMode,
+    pub transcode_bitrate: TranscodeBitrate,
     pub lookahead_depth: u8,
     pub audio_cache_limit_bytes: i64,
 }
@@ -412,9 +445,15 @@ pub struct PlaybackConfig {
 impl PlaybackConfig {
     pub const DEFAULT_CACHE_LIMIT_BYTES: i64 = 2_147_483_648;
 
-    pub fn new(playback_mode: PlaybackMode, lookahead_depth: u8, audio_cache_limit_bytes: i64) -> Self {
+    pub fn new(
+        playback_mode: PlaybackMode,
+        transcode_bitrate: TranscodeBitrate,
+        lookahead_depth: u8,
+        audio_cache_limit_bytes: i64,
+    ) -> Self {
         Self {
             playback_mode,
+            transcode_bitrate,
             lookahead_depth: lookahead_depth.clamp(1, 20),
             audio_cache_limit_bytes,
         }
@@ -424,7 +463,8 @@ impl PlaybackConfig {
 impl Default for PlaybackConfig {
     fn default() -> Self {
         Self::new(
-            PlaybackMode::DirectPlay,
+            PlaybackMode::default(),
+            TranscodeBitrate::default(),
             10,
             Self::DEFAULT_CACHE_LIMIT_BYTES,
         )
@@ -505,6 +545,7 @@ pub const MAX_BOOKMARKS: usize = 50;
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub playback_mode: PlaybackMode,
+    pub transcode_bitrate: TranscodeBitrate,
     pub lookahead_depth: u8,
     pub audio_cache_limit_bytes: i64,
     pub image_cache_limit_bytes: i64,
@@ -531,7 +572,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            playback_mode: PlaybackMode::DirectPlay,
+            playback_mode: PlaybackMode::default(),
+            transcode_bitrate: TranscodeBitrate::default(),
             lookahead_depth: 10,
             audio_cache_limit_bytes: PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES,
             image_cache_limit_bytes: 1_073_741_824,
@@ -591,6 +633,7 @@ impl Settings {
     pub fn to_playback_config(&self) -> PlaybackConfig {
         PlaybackConfig::new(
             self.playback_mode,
+            self.transcode_bitrate,
             self.lookahead_depth,
             self.audio_cache_limit_bytes,
         )
@@ -799,20 +842,31 @@ mod tests {
 
     #[test]
     fn test_playback_config_clamps_low() {
-        let cfg = PlaybackConfig::new(PlaybackMode::DirectPlay, 0, PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES);
+        let cfg = PlaybackConfig::new(
+            PlaybackMode::Never,
+            TranscodeBitrate::Kbps128,
+            0,
+            PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES,
+        );
         assert_eq!(cfg.lookahead_depth, 1);
     }
 
     #[test]
     fn test_playback_config_clamps_high() {
-        let cfg = PlaybackConfig::new(PlaybackMode::DirectPlay, 50, PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES);
+        let cfg = PlaybackConfig::new(
+            PlaybackMode::Never,
+            TranscodeBitrate::Kbps128,
+            50,
+            PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES,
+        );
         assert_eq!(cfg.lookahead_depth, 20);
     }
 
     #[test]
     fn test_playback_config_default() {
         let cfg = PlaybackConfig::default();
-        assert_eq!(cfg.playback_mode, PlaybackMode::DirectPlay);
+        assert_eq!(cfg.playback_mode, PlaybackMode::Never);
+        assert_eq!(cfg.transcode_bitrate, TranscodeBitrate::Kbps128);
         assert_eq!(cfg.lookahead_depth, 10);
         assert_eq!(cfg.audio_cache_limit_bytes, 2_147_483_648);
     }

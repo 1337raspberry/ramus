@@ -352,6 +352,134 @@ textarea {
   border-bottom-color: var(--accent);
 }
 
+/* --- Generic TabBar (settings, future use) --- */
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  height: 36px;
+  flex-shrink: 0;
+}
+
+.tab {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  /* Line up the active underline with the .tabs bottom border so the two
+     don't double up visually. */
+  margin-bottom: -1px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+@media (pointer: coarse) {
+  .tabs {
+    height: 44px;
+  }
+  .tab {
+    font-size: 12px;
+  }
+}
+
+/* --- Settings helper text --- */
+
+.settings-helper {
+  font-size: 12px;
+  color: var(--text-muted);
+  /* Layered on top of the muted color so helper text visually recedes
+     from the main controls. Tune to taste. */
+  opacity: 0.7;
+  line-height: 1.45;
+  /* Negative top margin pulls the hint into the row above without
+     doubling the section gap. */
+  margin: -4px 0 6px;
+  padding: 0 2px;
+}
+
+.settings-helper strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* Two-control row for the playback mode + bitrate pair (and any future
+   side-by-side controls). On mobile / narrow screens the controls stack
+   under the label so the pair doesn't overflow. */
+.settings-row-multi {
+  flex-wrap: wrap;
+}
+
+.settings-controls-pair {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (pointer: coarse) {
+  .settings-row-multi {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .settings-controls-pair {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .settings-controls-pair > select {
+    flex: 1;
+    max-width: none;
+  }
+}
+
+/* --- Sync progress banner (anchored above the settings tab bar) --- */
+
+.sync-banner {
+  position: relative;
+  padding: 6px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.sync-banner-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 3px;
+  background: var(--accent);
+  transition:
+    width 0.25s ease,
+    background-color 0.4s ease;
+}
+
+.sync-banner.done .sync-banner-fill {
+  background: #4caf50;
+}
+
+.sync-banner-caption {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding-top: 4px;
+}
+
 /* --- Genre Tree --- */
 
 .genre-row {

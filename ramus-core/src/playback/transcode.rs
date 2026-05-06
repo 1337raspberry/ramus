@@ -1,22 +1,34 @@
 use url::Url;
 
-use crate::models::PlaybackMode;
+use crate::models::{PlaybackMode, TranscodeBitrate};
 use crate::util::{is_lossless_codec, percent_decode, percent_encode};
 
 /// Whether a track should be transcoded based on playback mode, codec,
-/// and connection type. With mpv, transcoding is only a bandwidth measure
-/// — never for codec compatibility.
-pub fn should_transcode(codec: Option<&str>, mode: PlaybackMode, is_remote: bool) -> bool {
-    let codec = match codec {
-        Some(c) => c,
-        None => return false,
-    };
-    let lossless = is_lossless_codec(codec);
-
+/// and connection signals. With mpv, transcoding is only a bandwidth
+/// measure — never for codec compatibility. Lossy codecs are always
+/// direct-played; the mode only controls whether *lossless* sources get
+/// re-encoded.
+///
+/// `is_remote` reflects whether the active Plex connection is non-local
+/// (relayed through plex.tv or a public IP). `is_cellular` reflects
+/// whether the device's primary network interface is cellular — a
+/// mobile-only signal that's permanently `false` on desktop.
+pub fn should_transcode(
+    codec: Option<&str>,
+    mode: PlaybackMode,
+    is_remote: bool,
+    is_cellular: bool,
+) -> bool {
+    let Some(codec) = codec else { return false };
+    if !is_lossless_codec(codec) {
+        return false;
+    }
     match mode {
-        PlaybackMode::DirectPlay => false,
-        PlaybackMode::TranscodeLosslessRemote => lossless && is_remote,
-        PlaybackMode::TranscodeLossless => lossless,
+        PlaybackMode::Never => false,
+        PlaybackMode::Cellular => is_cellular,
+        PlaybackMode::Remote => is_remote,
+        PlaybackMode::RemoteOrCellular => is_remote || is_cellular,
+        PlaybackMode::Always => true,
     }
 }
 
@@ -48,7 +60,7 @@ pub fn build_direct_play_url(server_url: &Url, part_key: &str, token: &str) -> O
 }
 
 /// Build a single-file transcode URL against `/audio/:/transcode/universal/start`,
-/// targeting Ogg/Opus at 128 kbps.
+/// targeting Ogg/Opus at the requested bitrate.
 ///
 /// Used by both the live player path (`resolve_url` when `should_transcode`
 /// is true) and the prefetch worker. Plex enforces a per-client
@@ -77,6 +89,7 @@ pub fn build_transcode_download_url(
     track_rating_key: &str,
     client_identifier: &str,
     session: &str,
+    bitrate: TranscodeBitrate,
 ) -> Option<Url> {
     let base = server_url.as_str().trim_end_matches('/');
     let endpoint = "/audio/:/transcode/universal/start";
@@ -111,7 +124,7 @@ pub fn build_transcode_download_url(
     //   bookkeeping seems happier when they're present.
     let params = [
         "directPlay=0".into(),
-        "musicBitrate=128".into(),
+        format!("musicBitrate={}", bitrate.as_kbps()),
         format!("path={}", percent_encode("/library/metadata/")) + &percent_encode(track_rating_key),
         format!("session={}", percent_encode(session)),
         "X-Plex-Chunked=1".into(),
@@ -147,65 +160,215 @@ pub fn is_transcode_download_url(url: &str) -> bool {
 mod tests {
     use super::*;
 
+    // Convenience: full grid of (is_remote, is_cellular) combos.
+    const FLAGS: [(bool, bool); 4] =
+        [(false, false), (false, true), (true, false), (true, true)];
+
     #[test]
-    fn test_direct_play_never_transcodes() {
-        assert!(!should_transcode(Some("flac"), PlaybackMode::DirectPlay, false));
-        assert!(!should_transcode(Some("flac"), PlaybackMode::DirectPlay, true));
-        assert!(!should_transcode(Some("mp3"), PlaybackMode::DirectPlay, false));
+    fn test_never_never_transcodes() {
+        for (is_remote, is_cellular) in FLAGS {
+            assert!(!should_transcode(
+                Some("flac"),
+                PlaybackMode::Never,
+                is_remote,
+                is_cellular
+            ));
+            assert!(!should_transcode(
+                Some("mp3"),
+                PlaybackMode::Never,
+                is_remote,
+                is_cellular
+            ));
+        }
     }
 
     #[test]
-    fn test_transcode_lossless_transcodes_lossless() {
-        assert!(should_transcode(Some("flac"), PlaybackMode::TranscodeLossless, false));
-        assert!(should_transcode(Some("flac"), PlaybackMode::TranscodeLossless, true));
-        assert!(should_transcode(Some("alac"), PlaybackMode::TranscodeLossless, false));
-        assert!(should_transcode(Some("wav"), PlaybackMode::TranscodeLossless, false));
-        assert!(should_transcode(Some("aiff"), PlaybackMode::TranscodeLossless, false));
-        assert!(should_transcode(Some("aif"), PlaybackMode::TranscodeLossless, false));
-        assert!(should_transcode(Some("pcm"), PlaybackMode::TranscodeLossless, false));
+    fn test_always_transcodes_lossless_under_any_flag() {
+        for (is_remote, is_cellular) in FLAGS {
+            assert!(should_transcode(
+                Some("flac"),
+                PlaybackMode::Always,
+                is_remote,
+                is_cellular
+            ));
+            assert!(should_transcode(
+                Some("alac"),
+                PlaybackMode::Always,
+                is_remote,
+                is_cellular
+            ));
+            assert!(should_transcode(
+                Some("wav"),
+                PlaybackMode::Always,
+                is_remote,
+                is_cellular
+            ));
+            assert!(should_transcode(
+                Some("aiff"),
+                PlaybackMode::Always,
+                is_remote,
+                is_cellular
+            ));
+            assert!(should_transcode(
+                Some("aif"),
+                PlaybackMode::Always,
+                is_remote,
+                is_cellular
+            ));
+            assert!(should_transcode(
+                Some("pcm"),
+                PlaybackMode::Always,
+                is_remote,
+                is_cellular
+            ));
+        }
     }
 
     #[test]
-    fn test_transcode_lossless_does_not_transcode_lossy() {
-        assert!(!should_transcode(Some("mp3"), PlaybackMode::TranscodeLossless, false));
-        assert!(!should_transcode(Some("aac"), PlaybackMode::TranscodeLossless, false));
-        assert!(!should_transcode(Some("opus"), PlaybackMode::TranscodeLossless, false));
-        assert!(!should_transcode(Some("ogg"), PlaybackMode::TranscodeLossless, false));
+    fn test_always_does_not_transcode_lossy() {
+        for (is_remote, is_cellular) in FLAGS {
+            assert!(!should_transcode(
+                Some("mp3"),
+                PlaybackMode::Always,
+                is_remote,
+                is_cellular
+            ));
+            assert!(!should_transcode(
+                Some("aac"),
+                PlaybackMode::Always,
+                is_remote,
+                is_cellular
+            ));
+            assert!(!should_transcode(
+                Some("opus"),
+                PlaybackMode::Always,
+                is_remote,
+                is_cellular
+            ));
+            assert!(!should_transcode(
+                Some("ogg"),
+                PlaybackMode::Always,
+                is_remote,
+                is_cellular
+            ));
+        }
     }
 
     #[test]
-    fn test_transcode_lossless_remote_only_when_remote() {
+    fn test_remote_only_when_remote() {
+        // True iff is_remote, regardless of is_cellular.
+        assert!(should_transcode(Some("flac"), PlaybackMode::Remote, true, false));
+        assert!(should_transcode(Some("flac"), PlaybackMode::Remote, true, true));
+        assert!(!should_transcode(Some("flac"), PlaybackMode::Remote, false, false));
+        assert!(!should_transcode(Some("flac"), PlaybackMode::Remote, false, true));
+    }
+
+    #[test]
+    fn test_cellular_only_when_cellular() {
+        // True iff is_cellular, regardless of is_remote.
+        assert!(should_transcode(Some("flac"), PlaybackMode::Cellular, false, true));
+        assert!(should_transcode(Some("flac"), PlaybackMode::Cellular, true, true));
+        assert!(!should_transcode(Some("flac"), PlaybackMode::Cellular, false, false));
+        assert!(!should_transcode(Some("flac"), PlaybackMode::Cellular, true, false));
+    }
+
+    #[test]
+    fn test_remote_or_cellular_disjunction() {
+        // True if either flag is set; false only when both are false.
         assert!(should_transcode(
             Some("flac"),
-            PlaybackMode::TranscodeLosslessRemote,
+            PlaybackMode::RemoteOrCellular,
+            true,
+            false
+        ));
+        assert!(should_transcode(
+            Some("flac"),
+            PlaybackMode::RemoteOrCellular,
+            false,
+            true
+        ));
+        assert!(should_transcode(
+            Some("flac"),
+            PlaybackMode::RemoteOrCellular,
+            true,
             true
         ));
         assert!(!should_transcode(
             Some("flac"),
-            PlaybackMode::TranscodeLosslessRemote,
+            PlaybackMode::RemoteOrCellular,
+            false,
             false
         ));
     }
 
     #[test]
-    fn test_transcode_lossless_remote_does_not_transcode_lossy() {
-        assert!(!should_transcode(
-            Some("mp3"),
-            PlaybackMode::TranscodeLosslessRemote,
-            true
-        ));
+    fn test_lossy_never_transcodes_under_any_mode() {
+        for mode in [
+            PlaybackMode::Never,
+            PlaybackMode::Cellular,
+            PlaybackMode::Remote,
+            PlaybackMode::RemoteOrCellular,
+            PlaybackMode::Always,
+        ] {
+            assert!(!should_transcode(Some("mp3"), mode, true, true));
+            assert!(!should_transcode(Some("aac"), mode, true, true));
+        }
     }
 
     #[test]
-    fn test_transcode_none_codec_returns_false() {
-        assert!(!should_transcode(None, PlaybackMode::TranscodeLossless, false));
-        assert!(!should_transcode(None, PlaybackMode::TranscodeLosslessRemote, true));
+    fn test_none_codec_returns_false() {
+        for mode in [
+            PlaybackMode::Never,
+            PlaybackMode::Cellular,
+            PlaybackMode::Remote,
+            PlaybackMode::RemoteOrCellular,
+            PlaybackMode::Always,
+        ] {
+            assert!(!should_transcode(None, mode, true, true));
+        }
     }
 
     #[test]
     fn test_transcode_case_insensitive() {
-        assert!(should_transcode(Some("FLAC"), PlaybackMode::TranscodeLossless, false));
-        assert!(should_transcode(Some("Alac"), PlaybackMode::TranscodeLossless, false));
+        assert!(should_transcode(Some("FLAC"), PlaybackMode::Always, false, false));
+        assert!(should_transcode(Some("Alac"), PlaybackMode::Always, false, false));
+    }
+
+    #[test]
+    fn test_playback_mode_serde_wire_names() {
+        // Disk format must match what the frontend sends.
+        assert_eq!(
+            serde_json::to_string(&PlaybackMode::Never).unwrap(),
+            "\"never\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PlaybackMode::Cellular).unwrap(),
+            "\"cellular\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PlaybackMode::Remote).unwrap(),
+            "\"remote\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PlaybackMode::RemoteOrCellular).unwrap(),
+            "\"remoteOrCellular\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PlaybackMode::Always).unwrap(),
+            "\"always\""
+        );
+    }
+
+    #[test]
+    fn test_transcode_bitrate_serde_wire_names() {
+        assert_eq!(
+            serde_json::to_string(&TranscodeBitrate::Kbps320).unwrap(),
+            "\"kbps320\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TranscodeBitrate::Kbps128).unwrap(),
+            "\"kbps128\""
+        );
     }
 
     #[test]
@@ -260,6 +423,7 @@ mod tests {
             "99251",
             "test-client-id",
             "test-client-id-99251",
+            TranscodeBitrate::Kbps128,
         );
         let url_str = url.unwrap().to_string();
         // Endpoint must be /audio/:/, no .m3u8 — distinct from the
@@ -291,7 +455,14 @@ mod tests {
     #[test]
     fn test_transcode_download_url_carries_opus_profile() {
         let server = Url::parse("http://192.168.1.100:32400").unwrap();
-        let url = build_transcode_download_url(&server, "t", "99251", "c", "s");
+        let url = build_transcode_download_url(
+            &server,
+            "t",
+            "99251",
+            "c",
+            "s",
+            TranscodeBitrate::Kbps128,
+        );
         let url_str = url.unwrap().to_string();
         // The Opus / Ogg target must survive into the final URL — these
         // pre-encoded chars are what tells the server "give me an Opus stream".
@@ -304,13 +475,39 @@ mod tests {
     #[test]
     fn test_is_transcode_download_url() {
         let server = Url::parse("http://192.168.1.100:32400").unwrap();
-        let tx = build_transcode_download_url(&server, "t", "99251", "c", "s")
-            .unwrap()
-            .to_string();
+        let tx = build_transcode_download_url(
+            &server,
+            "t",
+            "99251",
+            "c",
+            "s",
+            TranscodeBitrate::Kbps128,
+        )
+        .unwrap()
+        .to_string();
         let direct = build_direct_play_url(&server, "/library/parts/12345/file.flac", "t")
             .unwrap()
             .to_string();
         assert!(is_transcode_download_url(&tx));
         assert!(!is_transcode_download_url(&direct));
+    }
+
+    #[test]
+    fn test_transcode_url_includes_chosen_bitrate() {
+        let server = Url::parse("http://192.168.1.100:32400").unwrap();
+        for (bitrate, expected) in [
+            (TranscodeBitrate::Kbps320, "musicBitrate=320"),
+            (TranscodeBitrate::Kbps256, "musicBitrate=256"),
+            (TranscodeBitrate::Kbps192, "musicBitrate=192"),
+            (TranscodeBitrate::Kbps128, "musicBitrate=128"),
+        ] {
+            let url = build_transcode_download_url(&server, "t", "99251", "c", "s", bitrate)
+                .unwrap()
+                .to_string();
+            assert!(
+                url.contains(expected),
+                "URL must contain {expected}; got {url}"
+            );
+        }
     }
 }

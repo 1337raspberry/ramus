@@ -17,18 +17,34 @@
 
 use std::fs::File;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use symphonia::core::audio::{AudioBufferRef, Signal};
-use symphonia::core::codecs::DecoderOptions;
+use symphonia::core::codecs::{CodecRegistry, DecoderOptions};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
+use symphonia_adapter_libopus::OpusDecoder;
 
 use ramus_core::playback::spectrum::{
     analyse_samples, write_spec_file, SpectrumConfig, SpectrumFrames, SpectrumState,
 };
+
+/// Process-wide codec registry seeded with symphonia's defaults plus the
+/// libopus adapter. We can't mutate `symphonia::default::get_codecs()`
+/// (it's a `OnceLock`), so we hand-roll a registry once and reuse it for
+/// every `analyse_file` call.
+fn codec_registry() -> &'static CodecRegistry {
+    static REGISTRY: OnceLock<CodecRegistry> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let mut registry = CodecRegistry::new();
+        symphonia::default::register_enabled_codecs(&mut registry);
+        registry.register_all::<OpusDecoder>();
+        registry
+    })
+}
 
 /// Hard ceiling on the mono PCM buffer assembled during analysis. 300M
 /// f32 samples ≈ 1.2 GB peak RAM — well above the legitimate music-track
@@ -45,8 +61,9 @@ const MAX_MONO_SAMPLES: usize = 300_000_000;
 pub enum AnalyseError {
     /// File couldn't be opened (missing, permission, etc.).
     OpenFailed(std::io::Error),
-    /// symphonia couldn't identify the format. Usually HLS manifest text, a
-    /// partial download, or an unsupported codec.
+    /// symphonia couldn't identify the format. Usually a partial download,
+    /// a corrupted file, or a container we don't have the demuxer feature
+    /// flag for.
     UnsupportedFormat(String),
     /// File parsed but the codec isn't in our feature flags (e.g. DSD, WMA).
     /// Surfaces as `unavailable: "unsupported_codec"`.
@@ -123,7 +140,7 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
         .trim()
         .to_ascii_lowercase();
 
-    let mut decoder = symphonia::default::get_codecs()
+    let mut decoder = codec_registry()
         .make(&track.codec_params, &DecoderOptions::default())
         .map_err(|_| AnalyseError::UnsupportedCodec(codec_name.clone()))?;
 
@@ -146,7 +163,7 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
             Err(SymphoniaError::ResetRequired) => {
                 // New chained stream (e.g. Ogg chapter) — remake the decoder.
                 let track = format.default_track().ok_or(AnalyseError::NoAudioTrack)?;
-                decoder = symphonia::default::get_codecs()
+                decoder = codec_registry()
                     .make(&track.codec_params, &DecoderOptions::default())
                     .map_err(|_| AnalyseError::UnsupportedCodec(codec_name.clone()))?;
                 continue;
@@ -351,23 +368,6 @@ mod tests {
             AnalyseError::UnsupportedFormat(_) => {}
             other => panic!("expected UnsupportedFormat, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn analyse_file_fails_on_hls_manifest() {
-        // Simulates what Plex returns for a transcoded stream (HLS playlist).
-        // symphonia can't decode this and should surface UnsupportedFormat →
-        // "transcoding".
-        let dir = tempdir().unwrap();
-        let m3u8 = dir.path().join("stream.m3u8");
-        std::fs::write(
-            &m3u8,
-            b"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n",
-        )
-        .unwrap();
-
-        let err = analyse_file(&m3u8).expect_err("should fail");
-        assert_eq!(err.reason(), "transcoding");
     }
 
     #[test]

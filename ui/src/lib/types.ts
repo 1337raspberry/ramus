@@ -106,8 +106,14 @@ export interface Bookmark {
 /// User-requested cap; backend enforces the same value via `Bookmark::validate_batch`.
 export const MAX_BOOKMARKS = 50;
 
+export type PlaybackMode = "never" | "cellular" | "remote" | "remoteOrCellular" | "always";
+
+export type TranscodeBitrate = "kbps320" | "kbps256" | "kbps192" | "kbps128";
+
 export interface Settings {
-  playbackMode: "directPlay" | "transcodeLosslessRemote" | "transcodeLossless";
+  playbackMode: PlaybackMode;
+  /** Bitrate (kbps as enum) the universal transcoder targets when transcoding. */
+  transcodeBitrate: TranscodeBitrate;
   lookaheadDepth: number;
   audioCacheLimitBytes: number;
   imageCacheLimitBytes: number;

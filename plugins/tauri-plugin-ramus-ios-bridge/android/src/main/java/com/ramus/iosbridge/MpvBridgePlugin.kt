@@ -3,8 +3,13 @@ package com.ramus.iosbridge
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -25,6 +30,7 @@ import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import android.media.audiofx.Equalizer
@@ -164,6 +170,19 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     private val ioHandler = Handler(android.os.HandlerThread("MpvBridgeIO").apply { start() }.looper)
     private var equalizer: Equalizer? = null
 
+    // ConnectivityManager.NetworkCallback drives the cellular signal that
+    // feeds `should_transcode` on the Rust side. iOS gets the same data
+    // via NWPathMonitor in MpvBridgePlugin.swift; both emit identical
+    // `networkPathChange` events so `mpv_mobile.rs::register_network_listener`
+    // doesn't care which platform it's on. Snapshot is locked because
+    // `getNetworkInfo` reads it from whichever thread Tauri's IPC dispatch
+    // picks, while `handleCaps` writes it on the binder thread the callback
+    // fires on.
+    private var connectivityManager: ConnectivityManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var lastNetworkSnapshot: JSObject = JSObject().put("satisfied", false)
+    private val snapshotLock = Object()
+
     @Command
     fun mpvInit(invoke: Invoke) {
         // Always post (never inline-execute via `runOnMain`) — Tauri can
@@ -215,10 +234,87 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                 }
 
                 ensurePostNotificationsPermission()
+                startNetworkMonitor()
                 Log.i(TAG, "ExoPlayer initialised (mediaSession=${mediaSession != null})")
             }
             invoke.resolve()
         }
+    }
+
+    /// Register a ConnectivityManager.NetworkCallback that emits the same
+    /// `networkPathChange` event the iOS NWPathMonitor handler sends, plus
+    /// caches a snapshot for the synchronous `getNetworkInfo` reader. The
+    /// Rust side (`mpv_mobile.rs`) is platform-agnostic — both platforms
+    /// flow into the same `register_network_listener` path.
+    private fun startNetworkMonitor() {
+        if (networkCallback != null) return
+        val cm = activity.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        if (cm == null) {
+            Log.w(TAG, "ConnectivityManager unavailable; cellular detection disabled")
+            return
+        }
+        connectivityManager = cm
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                handleCaps(network, caps, satisfied = true)
+            }
+            override fun onLost(network: Network) {
+                handleCaps(network, null, satisfied = false)
+            }
+        }
+        try {
+            cm.registerDefaultNetworkCallback(cb)
+            networkCallback = cb
+            Log.i(TAG, "ConnectivityManager NetworkCallback registered")
+        } catch (e: Throwable) {
+            // SecurityException if ACCESS_NETWORK_STATE is missing from the
+            // merged manifest, or RuntimeException on some old vendors.
+            Log.w(TAG, "registerDefaultNetworkCallback failed", e)
+        }
+    }
+
+    private fun handleCaps(network: Network, caps: NetworkCapabilities?, satisfied: Boolean) {
+        // Map active transports to the same string vocabulary Swift emits
+        // ("wifi" / "cellular" / "wired" / "loopback" / "other" / "none").
+        // Match in priority order — a default cellular network with a
+        // bonded wifi STA could plausibly report both transports.
+        val type = when {
+            !satisfied || caps == null -> "none"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "wired"
+            else -> "other"
+        }
+        // Android exposes one bound interface name per Network, not iOS's
+        // sorted list of all available interfaces. Good enough for the
+        // `HashSet<String>` diff in `ConnectionMonitor::handle_path_update`
+        // — transport changes (wlan0 → rmnet0) flip the set; same-iface
+        // hotspot drops won't, which we accept for v1.
+        val ifaces = JSArray()
+        try {
+            val lp: LinkProperties? = connectivityManager?.getLinkProperties(network)
+            lp?.interfaceName?.let { ifaces.put(it) }
+        } catch (_: Throwable) {}
+
+        val isExpensive = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == false
+        val payload = JSObject()
+            .put("interfaces", ifaces)
+            .put("type", type)
+            .put("isExpensive", isExpensive)
+            .put("isConstrained", false)
+            .put("satisfied", satisfied)
+
+        synchronized(snapshotLock) { lastNetworkSnapshot = payload }
+        // Hop to main before triggering — keeps every event emission on
+        // the same thread the rest of the plugin uses, matches Swift's
+        // `DispatchQueue.main.async { trigger(...) }` pattern.
+        mainHandler.post { trigger("networkPathChange", payload) }
+    }
+
+    @Command
+    fun getNetworkInfo(invoke: Invoke) {
+        val snapshot = synchronized(snapshotLock) { lastNetworkSnapshot }
+        invoke.resolve(snapshot)
     }
 
     private fun mediaSessionEnabled(): Boolean {
@@ -773,6 +869,18 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
 
         equalizer?.release()
         equalizer = null
+
+        // Cancel the network monitor before nulling the manager — letting
+        // the kernel callback live on after release leaks the subscription.
+        networkCallback?.let { cb ->
+            try {
+                connectivityManager?.unregisterNetworkCallback(cb)
+            } catch (e: Throwable) {
+                Log.w(TAG, "unregisterNetworkCallback failed", e)
+            }
+        }
+        networkCallback = null
+        connectivityManager = null
 
         val p = player
         player = null

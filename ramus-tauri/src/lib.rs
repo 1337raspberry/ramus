@@ -582,7 +582,7 @@ pub fn run() {
                 crate::session_reporter::SessionReporter::new(client.clone(), player.clone());
             *reporter_ref.lock() = Some(session_reporter.clone());
 
-            // Load saved settings and apply playback config (defaults to DirectPlay).
+            // Load saved settings and apply playback config (defaults to Never).
             #[allow(unused_mut)]
             let mut saved_settings = ramus_core::settings::load();
             // Force-disable the spectrum analyser on mobile. The symphonia
@@ -1122,11 +1122,13 @@ pub fn run() {
 
             crate::auto_sync::spawn(auto_sync_settings, auto_sync_engine, auto_sync_flag);
 
-            // iOS: NWPathMonitor → ConnectionMonitor failover. Without this,
-            // moving from Wi-Fi to cellular leaves the app pointed at a now-
-            // unreachable LAN URL and mpv hangs on TCP. Listener registration
-            // requires `AppState`, so it has to land after `app.manage(state)`.
-            #[cfg(target_os = "ios")]
+            // Mobile: NWPathMonitor (iOS) / ConnectivityManager.NetworkCallback
+            // (Android) → ConnectionMonitor failover + cellular signal for
+            // `should_transcode`. Without this, moving from Wi-Fi to cellular
+            // leaves the app pointed at a now-unreachable LAN URL and mpv
+            // hangs on TCP. Listener registration requires `AppState`, so it
+            // has to land after `app.manage(state)`.
+            #[cfg(any(target_os = "ios", target_os = "android"))]
             if let Err(e) = crate::mpv_mobile::register_network_listener(&app_handle) {
                 log::warn!("failed to register network path listener: {e}");
             }

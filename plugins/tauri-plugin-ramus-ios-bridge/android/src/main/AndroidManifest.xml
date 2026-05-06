@@ -7,6 +7,10 @@
          widget. Audio still plays without it; the controls just won't
          render. We request it at first `mpvInit`. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Read-only access to the active network's transport type so the
+         player can flip into transcode mode automatically when the user
+         drops onto cellular. Non-runtime, no prompt. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application>
         <service

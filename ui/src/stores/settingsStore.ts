@@ -13,7 +13,8 @@ interface SettingsState extends Settings {
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  playbackMode: "directPlay",
+  playbackMode: "never",
+  transcodeBitrate: "kbps128",
   lookaheadDepth: 3,
   audioCacheLimitBytes: 2_147_483_648,
   imageCacheLimitBytes: 536_870_912,

@@ -191,6 +191,10 @@ struct PlayerInner {
     token: Option<String>,
     client_identifier: String,
     is_remote: bool,
+    /// Whether the device's primary network interface is cellular. Set by
+    /// the platform NetworkMonitor (NWPathMonitor on iOS, ConnectivityManager
+    /// on Android). Permanently `false` on desktop. Orthogonal to `is_remote`.
+    is_cellular: bool,
     play_session_id: String,
     cache: DownloadCache,
     last_retried_track: Option<String>,
@@ -242,6 +246,7 @@ impl AudioPlayer {
                 token: None,
                 client_identifier: String::new(),
                 is_remote: false,
+                is_cellular: false,
                 play_session_id: uuid::Uuid::new_v4().to_string(),
                 cache: DownloadCache::new(PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES as u64),
                 last_retried_track: None,
@@ -311,9 +316,22 @@ impl AudioPlayer {
     }
 
     /// Whether the current connection is remote. Feeds into
-    /// `should_transcode()` under `TranscodeLosslessRemote`.
+    /// `should_transcode()` under `Remote` / `RemoteOrCellular`.
     pub fn is_remote(&self) -> bool {
         self.inner.lock().is_remote
+    }
+
+    /// Update only the cellular flag. Driven by the platform NetworkMonitor
+    /// (NWPathMonitor on iOS, ConnectivityManager on Android). Desktop
+    /// never calls this, so `is_cellular` stays `false` on those platforms.
+    pub fn set_cellular(&self, is_cellular: bool) {
+        self.inner.lock().is_cellular = is_cellular;
+    }
+
+    /// Whether the device's primary network interface is cellular. Feeds
+    /// into `should_transcode()` under `Cellular` / `RemoteOrCellular`.
+    pub fn is_cellular(&self) -> bool {
+        self.inner.lock().is_cellular
     }
 
     /// Update playback configuration.
@@ -691,6 +709,7 @@ impl AudioPlayer {
                     t.codec.as_deref(),
                     inner.config.playback_mode,
                     inner.is_remote,
+                    inner.is_cellular,
                 ) {
                     ("transcode".into(), inner.server_url.as_ref().map(|u| {
                         format!("{}/audio/:/transcode/…", u.as_str().trim_end_matches('/'))
@@ -1097,6 +1116,7 @@ impl AudioPlayer {
                 track.codec.as_deref(),
                 inner.config.playback_mode,
                 inner.is_remote,
+                inner.is_cellular,
             );
 
             if needs_transcode {
@@ -1116,6 +1136,7 @@ impl AudioPlayer {
                     &track.rating_key,
                     &inner.client_identifier,
                     &session,
+                    inner.config.transcode_bitrate,
                 ) else {
                     continue;
                 };
@@ -1247,6 +1268,7 @@ impl AudioPlayer {
             track.codec.as_deref(),
             inner.config.playback_mode,
             inner.is_remote,
+            inner.is_cellular,
         );
         if !needs_transcode {
             return true;
@@ -1273,27 +1295,6 @@ impl AudioPlayer {
         cache_time >= needed
     }
 
-    /// Whether the given track would get transcoded under the current settings.
-    ///
-    /// Used by the focus-mode visualiser's placeholder logic: transcoded
-    /// tracks can't be analysed (symphonia can't decode HLS manifests),
-    /// so `get_spectrum` surfaces `Unavailable { reason: "transcoding" }`
-    /// immediately instead of stranding the UI on "Analysing…".
-    ///
-    /// Returns `false` for rating keys not in the current queue; the
-    /// caller falls through to the normal "analysis pending" path, which
-    /// self-corrects once the track joins the queue.
-    pub fn would_transcode(&self, rating_key: &str) -> bool {
-        let inner = self.inner.lock();
-        let Some(track) = inner.state.queue.iter().find(|t| t.rating_key == rating_key) else {
-            return false;
-        };
-        transcode::should_transcode(
-            track.codec.as_deref(),
-            inner.config.playback_mode,
-            inner.is_remote,
-        )
-    }
 }
 
 fn resolve_url(
@@ -1315,6 +1316,7 @@ fn resolve_url(
         track.codec.as_deref(),
         inner.config.playback_mode,
         inner.is_remote,
+        inner.is_cellular,
     ) {
         // Single-file Opus instead of HLS. Plex enforces a per-client
         // concurrent-transcode cap of ~1, and a long-lived HLS session
@@ -1334,6 +1336,7 @@ fn resolve_url(
             &track.rating_key,
             &inner.client_identifier,
             &session,
+            inner.config.transcode_bitrate,
         )
         .map(|u| u.to_string())
     } else {
