@@ -143,6 +143,17 @@ pub trait MpvPlayer: Send + Sync {
     fn demuxer_cache_time(&self) -> Option<f64> {
         None
     }
+
+    /// Atomically write the current track's demuxer cache to a file. mpv's
+    /// `dump-cache 0 no <path>` command — produces a fully-finalised
+    /// container in one shot, so callers can hand the file straight to
+    /// the analyser without racing mpv's writes (unlike `stream-record`,
+    /// which patches headers at file-close).
+    ///
+    /// Default no-op: mobile bridges (iOS MPVKit, Android ExoPlayer) don't
+    /// expose a cache-dump primitive, and spectrum is force-disabled on
+    /// mobile anyway. Desktop `MpvController` overrides via FFI.
+    fn dump_cache_to(&self, _path: &str) {}
 }
 
 /// Thread-safe shutdown flag shared between controller and event loop.
