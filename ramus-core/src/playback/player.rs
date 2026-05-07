@@ -1344,29 +1344,114 @@ impl AudioPlayer {
     /// pulled by mpv (i.e. the source HTTP body has EOFed and mpv is
     /// playing from its in-memory buffer the rest of the way through).
     ///
-    /// Distinct from `current_track_buffered_for_prefetch` in that it
-    /// applies the same demuxer-cache check uniformly — direct-play
-    /// sources don't get a free pass. The stream-record file isn't
-    /// finalised on disk until mpv has finished pulling, regardless of
-    /// transcode vs direct-play.
+    /// Compares `demuxer-cache-time` against the Plex-DB `Track.duration`
+    /// (immutable, set at sync time), NOT mpv's reported `inner.duration`.
+    /// mpv's estimate grows in step with `demuxer-cache-time` while
+    /// buffering a chunked Ogg stream, so checking against it always
+    /// returns true. The DB duration breaks that coupling. 0.25s slack
+    /// covers float jitter.
     ///
-    /// Returns `false` if the queue is empty, mpv hasn't reported
-    /// duration yet, or the bridge doesn't expose `demuxer-cache-time`.
+    /// Note: this is a "demuxer is at-or-near end" check, not a "file
+    /// on disk is structurally complete" check. The recorder's
+    /// libavformat may still hold tail packets in its internal page
+    /// buffer even after the demuxer reports drained — callers needing
+    /// a structurally valid file should clamp reads at the last
+    /// complete Ogg page boundary (see `bounded_ogg_source` in the
+    /// spectrum analyser) rather than relying on this predicate alone.
+    ///
+    /// Returns `false` if the queue is empty, the track has no DB
+    /// duration, or the bridge doesn't expose `demuxer-cache-time`.
     pub fn current_source_fully_drained(&self) -> bool {
         let inner = self.inner.lock();
-        if inner.state.queue.get(inner.state.queue_index).is_none() {
+        let Some(track) = inner.state.queue.get(inner.state.queue_index) else {
             return false;
-        }
+        };
         let Some(cache_time) = self.mpv.demuxer_cache_time() else {
             return false;
         };
         let position = inner.position;
-        let duration = inner.duration;
+        let duration = track.duration;
         if duration <= 0.0 {
             return false;
         }
-        let needed = (duration - position - 1.0).max(0.0);
+        let needed = (duration - position - 0.25).max(0.0);
         cache_time >= needed
+    }
+
+    /// Raw `demuxer-cache-time` from the underlying mpv bridge, exposed
+    /// for callers (the prefetch worker) that need to track changes
+    /// across polls — e.g. confirming the demuxer has actually stopped
+    /// pulling, not just "almost there".
+    ///
+    /// `None` when the bridge can't report the property (mobile bridges
+    /// that haven't grown the call yet) or mpv has nothing buffered.
+    pub fn demuxer_cache_time(&self) -> Option<f64> {
+        self.mpv.demuxer_cache_time()
+    }
+
+    /// Approximate expected on-disk size for the currently-playing
+    /// track's source body, in bytes. Drain detection compares this
+    /// against the actual stream-record file size to decide whether
+    /// Plex has finished sending the body.
+    ///
+    /// For transcoded tracks: `duration × transcode_bitrate / 8`. The
+    /// Opus encoder is VBR so this is approximate (callers should use a
+    /// 95% threshold). For direct-play: prefers the exact
+    /// `Track.file_size_bytes` populated at sync time, falling back to
+    /// `duration × Track.bitrate / 8` if the column wasn't populated.
+    ///
+    /// Returns `None` when the queue is empty, the track has no
+    /// duration, or no usable bitrate / size hint is available.
+    pub fn expected_source_bytes_for_current(&self) -> Option<u64> {
+        let inner = self.inner.lock();
+        let track = inner.state.queue.get(inner.state.queue_index)?;
+        if track.duration <= 0.0 {
+            return None;
+        }
+        let needs_transcode = transcode::should_transcode(
+            track.codec.as_deref(),
+            inner.config.playback_mode,
+            inner.is_remote,
+            inner.is_cellular,
+        );
+        if needs_transcode {
+            let kbps = inner.config.transcode_bitrate.as_kbps() as f64;
+            Some((track.duration * kbps * 1000.0 / 8.0) as u64)
+        } else if let Some(sz) = track.file_size_bytes.filter(|s| *s > 0) {
+            Some(sz as u64)
+        } else {
+            let kbps = track.bitrate.filter(|b| *b > 0)? as f64;
+            Some((track.duration * kbps * 1000.0 / 8.0) as u64)
+        }
+    }
+
+    /// Whether the currently-playing track is actively pulling from a
+    /// Plex transcode session — i.e. it would transcode under current
+    /// settings AND it's not already cached locally. The prefetch
+    /// worker uses this to decide whether to wait for the live track
+    /// to drain before opening sessions for upcoming tracks. False for
+    /// direct-play (no transcode session) and for tracks already on
+    /// disk (their playback is from the local file, no Plex session).
+    pub fn current_track_competes_for_transcode_slot(&self) -> bool {
+        let inner = self.inner.lock();
+        let Some(track) = inner.state.queue.get(inner.state.queue_index) else {
+            return false;
+        };
+        let needs_transcode = transcode::should_transcode(
+            track.codec.as_deref(),
+            inner.config.playback_mode,
+            inner.is_remote,
+            inner.is_cellular,
+        );
+        if !needs_transcode {
+            return false;
+        }
+        if self.persistent_cache.read().contains_key(&track.rating_key)
+            || inner.cache.get(&track.rating_key).is_some()
+        {
+            return false;
+        }
+        true
     }
 
     /// Whether the currently-playing track would transcode under the
@@ -1443,9 +1528,6 @@ fn resolve_url(
 /// Returns `None` for:
 /// - Tracks without a configured `stream_record_dir` (feature off).
 /// - URLs already pointing at a local file (no point recording a copy).
-/// - Tracks that would transcode under current settings — handled by the
-///   prefetch worker's reqwest path; mpv's stream-record on a chunked
-///   server-side transcode hasn't been validated end-to-end.
 ///
 /// Forward slashes in the path are required because mpv's options parser
 /// treats `\` as an escape character. The destination filename uses
@@ -1456,26 +1538,30 @@ fn stream_record_option_for(track: &Track, url: &str, inner: &PlayerInner) -> Op
     if url.starts_with("file://") {
         return None;
     }
-    if transcode::should_transcode(
+    let is_transcode = transcode::should_transcode(
         track.codec.as_deref(),
         inner.config.playback_mode,
         inner.is_remote,
         inner.is_cellular,
-    ) {
-        return None;
-    }
+    );
 
-    // Try the URL extension first (Plex direct-play part keys carry a
-    // real audio extension); fall back to the codec field. Either is
-    // good enough for symphonia's `Hint::with_extension`.
-    let ext = url
-        .rsplit('?')
-        .next()
-        .and_then(|p| p.rsplit('.').next())
-        .filter(|e| !e.is_empty() && e.len() <= 5 && e.chars().all(|c| c.is_ascii_alphanumeric()))
-        .map(|s| s.to_ascii_lowercase())
-        .or_else(|| track.codec.as_ref().map(|c| c.to_ascii_lowercase()))
-        .unwrap_or_else(|| "audio".to_string());
+    // Transcoded sources always come back as Ogg/Opus from Plex's
+    // `/audio/:/transcode/universal/start` endpoint. For direct-play,
+    // try the URL extension and fall back to the codec field — either
+    // is good enough for symphonia's `Hint::with_extension`.
+    let ext = if is_transcode {
+        "ogg".to_string()
+    } else {
+        url.rsplit('?')
+            .next()
+            .and_then(|p| p.rsplit('.').next())
+            .filter(|e| {
+                !e.is_empty() && e.len() <= 5 && e.chars().all(|c| c.is_ascii_alphanumeric())
+            })
+            .map(|s| s.to_ascii_lowercase())
+            .or_else(|| track.codec.as_ref().map(|c| c.to_ascii_lowercase()))
+            .unwrap_or_else(|| "audio".to_string())
+    };
 
     let path = dir.join(format!("{}.{}", track.rating_key, ext));
     let path_str = path.to_string_lossy().replace('\\', "/");

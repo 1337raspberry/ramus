@@ -66,6 +66,36 @@ pub struct MpvCallbacks {
 /// filter chain. Runtime EQ changes call `set_audio_filters()` with the
 /// EQ chain directly (or an empty string to clear it).
 pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
+    // mpv's `prefetch-playlist` is OFF by default because it's incompatible
+    // with per-file `stream-record` options: when prefetch-playlist=yes,
+    // mpv eagerly demuxes the next playlist entry's source bytes during
+    // the current track's playback, but the active recorder is still
+    // attached to the *current* entry's per-file path. mpv writes the
+    // pre-pulled bytes from the next track into the current track's
+    // stream-record file (verified empirically: a 6:31 fabienk track
+    // produced a stream-record file containing exactly track 2's full
+    // 6:09 audio under that path).
+    //
+    // The trade-off is acceptable for us: our own prefetch worker
+    // downloads upcoming tracks via reqwest and swaps mpv's playlist
+    // entries to `file://` URLs as soon as the bytes land on disk, so
+    // gapless transitions still work for any track our worker has
+    // managed to cache before the previous track ends. The only
+    // regression is on a fast forward-skip into a not-yet-cached track,
+    // where mpv has to open a fresh HTTP source from scratch — small
+    // audible gap, acceptable for an interactive skip.
+    //
+    // `RAMUS_ENABLE_MPV_PREFETCH=1` flips it back on for users who'd
+    // rather have smoother gapless transitions and accept that focus-
+    // mode visualisers will produce wrong specs on multi-track albums.
+    let prefetch_playlist: &'static str =
+        if std::env::var_os("RAMUS_ENABLE_MPV_PREFETCH").is_some() {
+            log::info!("mpv: RAMUS_ENABLE_MPV_PREFETCH set — prefetch-playlist=yes (visualisers may produce wrong specs on multi-track albums)");
+            "yes"
+        } else {
+            "no"
+        };
+
     vec![
         ("vo", "null"),
         ("vid", "no"),
@@ -76,7 +106,7 @@ pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
         #[cfg(target_os = "linux")]
         ("ao", "pipewire"),
         ("gapless-audio", "yes"),
-        ("prefetch-playlist", "yes"),
+        ("prefetch-playlist", prefetch_playlist),
         ("audio-buffer", "0.5"),
         // Eagerly pull whole files into the demuxer cache for reliable
         // gapless playback of large files.

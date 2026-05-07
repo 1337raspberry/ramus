@@ -69,7 +69,7 @@ const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
 /// mpv has a chance to issue its initial request and report some
 /// duration / position state. The actual wait extends past this if the
 /// live transcode HTTP body is still draining — see
-/// `wait_for_live_drain`.
+/// `wait_for_source_drain`.
 const NATURAL_GAP: Duration = Duration::from_secs(1);
 
 /// Same idea after a user skip, with a touch more so rapid skips don't
@@ -77,13 +77,17 @@ const NATURAL_GAP: Duration = Duration::from_secs(1);
 const SKIP_GAP: Duration = Duration::from_secs(2);
 
 /// Hard ceiling on how long we'll wait for the live transcode body to
-/// drain before kicking off prefetch anyway. Covers the worst case where
-/// `demuxer_cache_time` is unavailable (mobile bridges), the connection
-/// is so slow we'd never see EOF, or the user has somehow paused mpv
-/// such that it never finishes pulling. After this, prefetch fires
-/// best-effort — if Plex cuts it, the existing retry/backoff loop will
-/// re-attempt within the per-download budget.
-const LIVE_DRAIN_CEILING: Duration = Duration::from_secs(120);
+/// drain before proceeding. Plex transcodes that arrive faster than
+/// realtime drain in 5–15s; transcodes that arrive at near-realtime
+/// pace would never drain within ceiling because the source is
+/// actively delivering the whole way through, so a long ceiling just
+/// holds up the in-cycle ingest (and the visualiser the user is
+/// waiting on) for nothing. 30s is enough for fast bursts to land and
+/// short enough that slow-Plex cases proceed to a partial-file
+/// in-cycle ingest within a tolerable wait. After ceiling, the
+/// bounded Ogg reader handles whatever's on disk; the track-end
+/// re-ingest catches any later growth.
+const LIVE_DRAIN_CEILING: Duration = Duration::from_secs(30);
 
 /// Poll interval for the live-drain wait. Cheap (a single mpv property
 /// read per tick), so a tight cadence makes the post-drain prefetch
@@ -338,7 +342,15 @@ pub fn spawn_worker(
     app: AppHandle,
 ) -> PrefetchHandle {
     if let Ok(cfg_dir) = ramus_core::plex::token_store::config_dir() {
-        rehydrate_cache_from_disk(&player, &cfg_dir.join("audio_cache"));
+        let cache_dir = cfg_dir.join("audio_cache");
+        rehydrate_cache_from_disk(&player, &cache_dir);
+        // Stream-record files (subdirectory) get rehydrated AFTER the
+        // primary prefetch cache — if a track has both a prefetched
+        // copy and a stream-record copy, the prefetched one wins (it
+        // was downloaded as a complete file via reqwest, vs the
+        // stream-record which may be partial if the user skipped or
+        // closed the app before track-end finalisation).
+        rehydrate_stream_record_from_disk(&player, &cache_dir.join("stream_record"));
     }
 
     let (tx, rx) = mpsc::unbounded_channel();
@@ -402,6 +414,66 @@ fn rehydrate_cache_from_disk(player: &AudioPlayer, cache_dir: &std::path::Path) 
     }
     if count > 0 {
         log::info!("prefetch: rehydrated {count} cached track(s) from disk");
+    }
+}
+
+/// Scan `<config>/audio_cache/stream_record/` for `<rating_key>.<ext>`
+/// files and register them into the in-memory `DownloadCache` so that
+/// `resolve_url` finds the local file:// URL on next play instead of
+/// opening a fresh Plex transcode (which would overwrite the existing
+/// recording with a new partial one).
+///
+/// Skips entries already present in the cache — the primary
+/// `rehydrate_cache_from_disk` path runs first and registers any
+/// prefetch-worker-downloaded files, which are guaranteed complete (no
+/// libavformat tail-buffer issue). Stream-record files are a fallback
+/// that may be partial; preferring the prefetched copy avoids playing
+/// a song that cuts off short.
+///
+/// Note: a partial stream-record file (e.g. user skipped during first
+/// listen, or closed the app before track-end) will rehydrate at its
+/// short size and play short on next listen. The track-end re-ingest
+/// path doesn't help here because file:// URLs don't trigger
+/// stream-record, so the file never grows. Users wanting a complete
+/// recording would need to delete the partial file from
+/// `audio_cache/stream_record/` and re-play the track.
+fn rehydrate_stream_record_from_disk(player: &AudioPlayer, dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut count: usize = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(filename) = path.file_name().and_then(|f| f.to_str()) else {
+            continue;
+        };
+        if filename.ends_with(".spec") {
+            continue;
+        }
+        let Some((rating_key, _ext)) = filename.rsplit_once('.') else {
+            continue;
+        };
+        // Skip if a prefetched copy already won the rehydration race —
+        // we only fill in for tracks the prefetch cache doesn't cover.
+        if player.with_cache(|c| c.get(rating_key).is_some()) {
+            continue;
+        }
+        let Ok(meta) = path.metadata() else { continue };
+        let size = meta.len();
+        if size == 0 {
+            let _ = std::fs::remove_file(&path);
+            continue;
+        }
+        player.with_cache(|cache| {
+            cache.insert(rating_key.to_string(), path.clone(), size);
+        });
+        count += 1;
+    }
+    if count > 0 {
+        log::info!("stream_record: rehydrated {count} cached recording(s) from disk");
     }
 }
 
@@ -569,36 +641,54 @@ fn spawn_cycle(
 
 // --- Cycle ---
 
-/// Block until the currently-playing track's live transcode body has
-/// drained into mpv's forward buffer (so opening a new transcode
-/// session won't get cut by Plex's per-client cap), or until
+/// Block until the currently-playing track's source has fully drained
+/// into mpv AND the recorder has flushed its tail to disk, or until
 /// `LIVE_DRAIN_CEILING` elapses, whichever comes first. Returns early
 /// if the cycle is superseded.
-/// Same shape as `wait_for_live_drain` but uses the uniform
-/// `current_source_fully_drained` predicate instead of the
-/// transcode-only one. Used before ingesting the current track's
-/// stream-record file: regardless of direct-play vs transcode, the
-/// file isn't safe to analyse until mpv reports its demuxer cache
-/// covers the full track. Same `LIVE_DRAIN_CEILING` ceiling so a
-/// missing demuxer-cache-time bridge can't deadlock the worker.
+///
+/// "Drained" is a three-pronged check:
+/// 1. `current_source_fully_drained()` (tight 0.25s slack) — demuxer
+///    cache covers approximately the full track duration.
+/// 2. `demuxer_cache_time()` hasn't advanced between consecutive polls
+///    — proves mpv has actually stopped pulling, not "almost stopped".
+/// 3. The stream-record file size on disk hasn't grown between polls —
+///    proves the recorder's libavformat muxer has flushed its tail. The
+///    bound check alone fired prematurely on slower transcodes (the
+///    last 1–2% of source bytes can trickle in for several more seconds
+///    after `cache_time` first crosses the threshold), leaving the
+///    recorder mid-write on a page and producing torn-page files that
+///    broke symphonia's Ogg probe.
+///
+/// All three must hold for `STABLE_POLLS` consecutive checks before we
+/// declare drain. `LIVE_DRAIN_CEILING` caps total wait so a missing
+/// demuxer-cache-time bridge or stuck recorder can't deadlock the
+/// worker.
 async fn wait_for_source_drain(
     player: &AudioPlayer,
+    rating_key: Option<&str>,
     shared_gen: &Arc<AtomicU64>,
     my_gen: u64,
 ) {
+    /// Number of consecutive polls where ALL drain signals must hold
+    /// stable before we trust drain. 3 polls × 500 ms = 1.5 s of quiet.
+    const STABLE_POLLS: u32 = 3;
+    /// File size must reach this fraction of the expected bytes
+    /// (`duration × bitrate / 8`) before drain can fire. Opus VBR can
+    /// drop more than 10% below nominal on sparse / quiet content
+    /// (long fade-outs, ambient passages); 0.85 gives enough cushion
+    /// that fast-Plex drain still fires on those tracks. The remaining
+    /// gap to 1.0 is the slack the file_steady + cache_steady prongs
+    /// have to take up to prevent premature drain mid-stream.
+    const SOURCE_BYTES_FRACTION: f64 = 0.85;
+
     let started = Instant::now();
+    let mut steady_count = 0u32;
+    let mut prev_cache_time: Option<f64> = None;
+    let mut prev_file_size: Option<u64> = None;
+    let expected_bytes = player.expected_source_bytes_for_current();
+
     loop {
         if shared_gen.load(Ordering::SeqCst) != my_gen {
-            return;
-        }
-        if player.current_source_fully_drained() {
-            let waited = started.elapsed();
-            if waited > Duration::from_secs(1) {
-                log::debug!(
-                    "stream_record: source drained after {:.1}s",
-                    waited.as_secs_f64()
-                );
-            }
             return;
         }
         if started.elapsed() >= LIVE_DRAIN_CEILING {
@@ -608,50 +698,79 @@ async fn wait_for_source_drain(
             );
             return;
         }
-        tokio::time::sleep(LIVE_DRAIN_POLL_INTERVAL).await;
-    }
-}
 
-async fn wait_for_live_drain(
-    player: &AudioPlayer,
-    shared_gen: &Arc<AtomicU64>,
-    my_gen: u64,
-) {
-    let started = Instant::now();
-    let mut last_log = started;
-    loop {
-        if shared_gen.load(Ordering::SeqCst) != my_gen {
-            return;
-        }
-        if player.current_track_buffered_for_prefetch() {
-            let waited = started.elapsed();
-            if waited > Duration::from_secs(1) {
-                log::debug!(
-                    "prefetch: live transcode drained after {:.1}s",
-                    waited.as_secs_f64()
-                );
+        let drain_met = player.current_source_fully_drained();
+        let cur_cache = player.demuxer_cache_time();
+        // Re-glob the file each iteration: at run_cycle entry the file
+        // typically doesn't exist yet (mpv hasn't written anything).
+        // `find_stream_record_file` returns None until the first byte
+        // hits disk, then locks onto the same path for the rest of the
+        // wait. The file-size prong stays in "skip" mode while the file
+        // is absent and starts gating once we have something to size.
+        let cur_file = rating_key
+            .and_then(|rk| find_stream_record_file(player, rk))
+            .map(|(_, len)| len);
+
+        // Cache-time steady within 50 ms of jitter — mpv's reported
+        // demuxer-cache-time can wobble fractionally even when no new
+        // bytes are being pulled.
+        let cache_steady = match (cur_cache, prev_cache_time) {
+            (Some(c), Some(p)) => (c - p).abs() < 0.05,
+            _ => false,
+        };
+        // File-size steadiness: skipped while the file doesn't exist
+        // (caller may not have a rating_key, or mpv hasn't written
+        // anything yet). Once the file exists, two consecutive Some
+        // reads at the same size mean the recorder has flushed.
+        let file_steady = match (cur_file, prev_file_size) {
+            (None, _) => true,
+            (Some(c), Some(p)) => c == p,
+            (Some(_), None) => false,
+        };
+        // Source-completeness gate: cache_time + steadiness can both
+        // hit transient lulls when Plex's chunked transcode pauses
+        // mid-stream, before the body has actually finished. Compare
+        // file size against `duration × bitrate / 8`; only declare
+        // drain when the file has reached ~92% of expected. This is
+        // what keeps the prefetch worker from opening competing
+        // transcode sessions while Plex is still feeding the current
+        // track — opening another session cuts the live one mid-body
+        // because of Plex's per-client concurrent-transcode cap.
+        // Skipped (always true) when expected_bytes is unknown
+        // (missing duration or bitrate metadata) so we don't deadlock
+        // on tracks without enough info.
+        let bytes_met = match (expected_bytes, cur_file) {
+            (Some(exp), Some(have)) => {
+                have as f64 >= exp as f64 * SOURCE_BYTES_FRACTION
             }
-            return;
+            (None, _) => true,
+            (Some(_), None) => false,
+        };
+
+        if drain_met && cache_steady && file_steady && bytes_met {
+            steady_count += 1;
+            if steady_count >= STABLE_POLLS {
+                log::debug!(
+                    "stream_record: source drained after {:.1}s (cache_time={:?}, file_size={:?}, expected_bytes={:?})",
+                    started.elapsed().as_secs_f64(),
+                    cur_cache,
+                    cur_file,
+                    expected_bytes
+                );
+                return;
+            }
+        } else {
+            steady_count = 0;
         }
-        if started.elapsed() >= LIVE_DRAIN_CEILING {
-            log::warn!(
-                "prefetch: live transcode never reported buffered after {:.0}s, \
-                 firing prefetch anyway (will retry if cut)",
-                LIVE_DRAIN_CEILING.as_secs_f64()
-            );
-            return;
-        }
-        if last_log.elapsed() >= Duration::from_secs(15) {
-            log::debug!(
-                "prefetch: still waiting for live transcode to drain ({:.0}s elapsed)",
-                started.elapsed().as_secs_f64()
-            );
-            last_log = Instant::now();
-        }
+
+        prev_cache_time = cur_cache;
+        prev_file_size = cur_file;
         tokio::time::sleep(LIVE_DRAIN_POLL_INTERVAL).await;
     }
 }
 
+/// Block until the currently-playing track's live transcode HTTP body
+/// has fully drained, so opening a new transcode session for an
 async fn run_cycle(
     player: Arc<AudioPlayer>,
     http: reqwest::Client,
@@ -670,14 +789,13 @@ async fn run_cycle(
         return;
     }
 
-    // Wait for the currently-playing track's live transcode HTTP body to
-    // fully drain before opening any new transcode session. No-op when
-    // the current track is direct-play (no live transcode) or already
-    // cached locally.
-    wait_for_live_drain(&player, &shared_gen, my_gen).await;
-    if shared_gen.load(Ordering::SeqCst) != my_gen {
-        return;
-    }
+    // Single drain wait below (inside the in-cycle ingest gate) covers
+    // both purposes: gating the in-cycle stream-record analyser AND
+    // gating prefetch (which runs at the end of run_cycle in
+    // run_serial_downloads). The historical separate `wait_for_live_drain`
+    // pre-pass was redundant — it delegated to the same predicates and
+    // doubled the ceiling that user-visible visualiser appearance has
+    // to wait through.
 
     let cfg_dir = match ramus_core::plex::token_store::config_dir() {
         Ok(dir) => dir,
@@ -700,42 +818,42 @@ async fn run_cycle(
         .read()
         .disable_spectrum;
 
-    // Direct-play current track: skip the second download entirely, ingest
-    // mpv's stream-record capture instead. We poll demuxer-cache-time
-    // until the source has fully drained (= the on-disk capture is a
-    // complete file, equivalent to the reqwest copy we used to fetch),
-    // then hand it to the analyser + DownloadCache via try_ingest. From
-    // that point `next_uncached_target_in_lookahead` skips the current
-    // track because cache.get(rk) returns Some.
-    //
-    // Transcoded current track: stream-record on chunked Plex transcode
-    // bodies isn't validated end-to-end yet, so leave include_current
-    // true for them — the worker keeps doing the reqwest download.
-    if !spectrum_disabled
-        && !player.current_track_is_transcoded()
+    // Stream-record covers both direct-play and transcoded current
+    // tracks. The drain wait below guarantees mpv has fully drained the
+    // source AND the recorder has flushed before we ingest, so chunked
+    // Plex Ogg/Opus is just as safe to capture as direct-play FLAC/MP3.
+    let try_in_cycle = !spectrum_disabled;
+
+    // Skip the second download entirely, ingest mpv's stream-record
+    // capture instead. Poll demuxer-cache-time until the source has
+    // fully drained, then hand the file to the analyser + DownloadCache.
+    // From that point `next_uncached_target_in_lookahead` skips the
+    // current track because cache.get(rk) returns Some.
+    if try_in_cycle
         && player
             .state()
             .current_track
             .as_ref()
             .is_some_and(|t| !player.with_cache(|c| c.get(&t.rating_key).is_some()))
     {
-        wait_for_source_drain(&player, &shared_gen, my_gen).await;
+        // Pass the rating_key down so wait_for_source_drain can re-glob
+        // the file each iteration: at this point mpv has only just
+        // started loading and the stream-record file typically doesn't
+        // exist on disk yet.
+        let drain_rating_key = player.state().current_track.as_ref().map(|t| t.rating_key.clone());
+        wait_for_source_drain(&player, drain_rating_key.as_deref(), &shared_gen, my_gen).await;
         if shared_gen.load(Ordering::SeqCst) != my_gen {
             return;
         }
         if let Some(rk) = player.state().current_track.map(|t| t.rating_key) {
-            try_ingest_stream_record(&player, app.clone(), rk);
+            try_ingest_stream_record(player.clone(), app.clone(), rk);
         }
     }
 
-    // After the ingest pass: include_current stays true only when the
-    // current track is transcoded. Direct-play current is either now in
-    // DownloadCache (ingest succeeded → worker skips it via the cache
-    // check in next_uncached_target_in_lookahead) or the ingest bailed
-    // (file too small / missing) and the user gets no spec for this
-    // track — acceptable degradation; subsequent plays will hit the
-    // cached file or re-trigger via on_playlist_pos_change.
-    let include_current = !spectrum_disabled && player.current_track_is_transcoded();
+    // The in-cycle stream-record ingest above is now responsible for
+    // the current track on both direct-play and transcoded paths, so
+    // the serial download worker never needs to redownload it.
+    let include_current = false;
 
     // Ensure the current + lookahead tracks that are already on disk
     // (from a previous user download or prefetch) get spectrum analysed.
@@ -1143,39 +1261,35 @@ async fn run_user_download(
 /// `DownloadCache` so subsequent `resolve_url` calls for this rating-key
 /// pick up the local file:// path instead of opening another HTTP fetch.
 ///
-/// Called from `on_playlist_pos_change` for the track that just stopped
-/// being the active playlist entry — by that point mpv has finished
-/// writing its source bytes to the recorded file. Direct-play sources
-/// only; transcoded tracks keep the existing reqwest path until we've
-/// validated stream-record on chunked Plex transcode bodies.
-///
 /// Idempotent: bails early if the rating-key is already in DownloadCache
-/// (so a double-fire from rapid skips doesn't double-insert), or if the
-/// file is too small to be worth analysing (mpv may write a partial file
-/// if the user skipped before the source could drain).
-pub fn try_ingest_stream_record(
+/// (so a double-fire doesn't double-insert), or if the file is too small
+/// to be worth analysing (mpv may write a partial file if the user
+/// skipped before the source could drain).
+///
+/// Spawns a tokio task internally so the caller can return immediately
+/// — the task waits for the file to be byte-stable before firing the
+/// analyser. mpv's recorder flushes pages asymchronously: even after
+/// `wait_for_source_drain` reports the demuxer cache covers the full
+/// duration, the recorder may still be writing the tail few KB. Probing
+/// during that mid-page-write produces `UnexpectedEof` from symphonia's
+/// strict Ogg parser. Polling at 250 ms until the size doesn't grow for
+/// two consecutive checks is enough to land on a coherent page boundary
+/// without waiting for full file finalisation (which only happens on
+/// playlist transition).
+/// Locate the stream-record file produced by mpv for the given
+/// rating-key. Files are named `<rating_key>.<ext>` and we don't know
+/// the extension ahead of time, so glob by prefix. Returns the largest
+/// match (in case of stale leftovers from a prior session) along with
+/// its size, or `None` if no file exists yet / `stream_record_dir` is
+/// unset.
+pub fn find_stream_record_file(
     player: &AudioPlayer,
-    app: AppHandle,
-    rating_key: String,
-) {
-    if player.with_cache(|c| c.get(&rating_key).is_some()) {
-        return;
-    }
-    let Some(dir) = player.stream_record_dir() else {
-        return;
-    };
-    // Files are named `<rating_key>.<ext>`; we don't know the extension
-    // ahead of time so glob by prefix. Take the largest match in case
-    // of stale entries.
+    rating_key: &str,
+) -> Option<(PathBuf, u64)> {
+    let dir = player.stream_record_dir()?;
     let prefix = format!("{rating_key}.");
     let mut best: Option<(PathBuf, u64)> = None;
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(e) => e,
-        Err(e) => {
-            log::debug!("stream_record: read_dir({dir:?}) failed: {e}");
-            return;
-        }
-    };
+    let entries = std::fs::read_dir(&dir).ok()?;
     for entry in entries.flatten() {
         let p = entry.path();
         let Some(name) = p.file_name().and_then(|n| n.to_str()) else {
@@ -1189,23 +1303,133 @@ pub fn try_ingest_stream_record(
             best = Some((p, len));
         }
     }
-    let Some((path, size)) = best else {
+    best
+}
+
+pub fn try_ingest_stream_record(
+    player: Arc<AudioPlayer>,
+    app: AppHandle,
+    rating_key: String,
+) {
+    log::info!("stream_record: try_ingest invoked for rating_key={rating_key}");
+    let Some((path, initial_size)) = find_stream_record_file(&player, &rating_key) else {
+        log::info!(
+            "stream_record: no file found for rating_key={rating_key} — bailing (stream_record_dir set? {})",
+            player.stream_record_dir().is_some()
+        );
         return;
     };
     // 32 KiB is generous — even a 5-second 96 kbps Opus snippet runs ~60
     // KiB. Anything below that is mpv writing a header for a track the
     // user skipped immediately.
-    if size < 32_768 {
-        log::debug!(
-            "stream_record: skip ingest of {path:?} ({size} bytes) — too small to analyse"
+    if initial_size < 32_768 {
+        log::info!(
+            "stream_record: skip ingest of {path:?} ({initial_size} bytes) — too small to analyse"
         );
         return;
     }
+    let prev_cached_size = player.with_cache(|c| c.size(&rating_key));
     log::info!(
-        "stream_record: ingesting {path:?} ({size} bytes) for rating_key={rating_key}"
+        "stream_record: queued ingest of {path:?} ({initial_size} bytes, prev_cached_size={prev_cached_size:?}) for rating_key={rating_key}, awaiting byte-stability"
     );
-    player.with_cache(|c| c.insert(rating_key.clone(), path.clone(), size));
-    spawn_analyse_task_from_path(path, rating_key, app);
+
+    // tauri::async_runtime::spawn (NOT tokio::spawn) because this
+    // function is called from the mpv event-loop thread via the
+    // on_playlist_pos_change callback, which isn't itself a tokio
+    // runtime context. `tokio::spawn` panics with "no reactor running"
+    // there. tauri's async runtime wrapper picks up the right handle
+    // regardless of caller thread.
+    tauri::async_runtime::spawn(async move {
+        // Poll metadata until size is stable for two consecutive ticks
+        // (= ~500 ms of quiet). MAX_POLLS bounds the wait when the
+        // recorder is actively writing — for an actively-growing
+        // stream-record file (in-cycle ingest after a ceiling-fire),
+        // size keeps changing, stable_count keeps resetting, and we'd
+        // wait the full bound before proceeding. The bounded Ogg
+        // reader in `analyse_file` clamps reads to the last complete
+        // page boundary, so analysing a file mid-write is safe even
+        // without strict stability — keep the bound short so a
+        // visualiser appears promptly.
+        //
+        // The stability poll runs BEFORE the growth check against the
+        // cached size: at the moment on_playlist_pos_change fires for
+        // the next track, mpv's recorder for the previous track is
+        // closing but libavformat may not have finished flushing yet.
+        // `initial_size` could equal the in-cycle ingest's cached size
+        // even though the file is about to grow by ~10s of audio.
+        // Polling first lets the flush complete; then the growth check
+        // sees the real final_size.
+        const POLL_INTERVAL: Duration = Duration::from_millis(250);
+        const MAX_POLLS: u32 = 8; // 2 s upper bound
+        const STABLE_THRESHOLD: u32 = 2;
+        let mut last_size = initial_size;
+        let mut stable_count = 0u32;
+        let mut total_waited_ms = 0u64;
+        for _ in 0..MAX_POLLS {
+            tokio::time::sleep(POLL_INTERVAL).await;
+            total_waited_ms += POLL_INTERVAL.as_millis() as u64;
+            let cur = match std::fs::metadata(&path) {
+                Ok(m) => m.len(),
+                Err(e) => {
+                    log::warn!("stream_record: stat({path:?}) failed during stability poll: {e}");
+                    return;
+                }
+            };
+            if cur == last_size {
+                stable_count += 1;
+                if stable_count >= STABLE_THRESHOLD {
+                    log::debug!(
+                        "stream_record: file {path:?} stabilised at {cur} bytes after {total_waited_ms} ms"
+                    );
+                    break;
+                }
+            } else {
+                stable_count = 0;
+                last_size = cur;
+            }
+        }
+        let final_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(last_size);
+
+        // Already cached and the file hasn't grown meaningfully since
+        // first analysis: skip the redundant work. 64 KiB is well
+        // beyond Plex VBR jitter but tighter than a meaningful tail
+        // flush.
+        if let Some(prev) = prev_cached_size {
+            const REGROW_THRESHOLD: u64 = 64 * 1024;
+            if final_size < prev + REGROW_THRESHOLD {
+                log::info!(
+                    "stream_record: file {path:?} stable at {final_size} bytes, no growth since cached size {prev} — skipping re-analysis"
+                );
+                return;
+            }
+            log::info!(
+                "stream_record: file grew from {prev} to {final_size} bytes since last ingest, re-analysing"
+            );
+        }
+
+        log::info!(
+            "stream_record: ingesting {path:?} ({final_size} bytes) for rating_key={rating_key}"
+        );
+        player.with_cache(|c| c.insert(rating_key.clone(), path.clone(), final_size));
+        // Rewrite the mpv playlist entry to a file:// URL pointing at
+        // the recorder file. Without this, when the user skips back
+        // to this track mpv reloads the original network transcode URL
+        // (which is still in mpv's playlist memory) and starts a fresh
+        // transcode session, OVERWRITING the recorder file from byte 0
+        // and producing a new partial spec — undoing all the work we
+        // just did. `swap_playlist_entry_to_cached` no-ops when the
+        // track is the currently-playing entry (the `idx == queue_index`
+        // guard inside), so calling it from the in-cycle ingest path
+        // (where the track IS still playing) is harmless; it only
+        // takes effect for the track-end re-ingest path (where the
+        // track has just transitioned away).
+        player.swap_playlist_entry_to_cached(&rating_key);
+        // Force re-analysis: a previous in-cycle ingest may have
+        // written a partial spec on disk; without forcing, the
+        // analyser would short-circuit on the existing spec and never
+        // process the now-grown audio file.
+        spawn_analyse_task_force(path, rating_key, app);
+    });
 }
 
 fn spawn_analyse_task_from_cache(player: &AudioPlayer, track_id: String, app: AppHandle) {
@@ -1224,6 +1448,24 @@ fn spawn_analyse_task_from_cache(player: &AudioPlayer, track_id: String, app: Ap
 }
 
 fn spawn_analyse_task_from_path(audio_path: PathBuf, track_id: String, app: AppHandle) {
+    spawn_analyse_task_from_path_inner(audio_path, track_id, app, false);
+}
+
+/// Force-re-analyse variant. Used by the stream-record track-end
+/// re-ingest path to overwrite a partial in-cycle spec with a fresh
+/// one covering the now-finalised audio file. Without forcing, the
+/// existing partial spec would short-circuit `read_spec_file is_some`
+/// and the analyser would never run on the grown file.
+fn spawn_analyse_task_force(audio_path: PathBuf, track_id: String, app: AppHandle) {
+    spawn_analyse_task_from_path_inner(audio_path, track_id, app, true);
+}
+
+fn spawn_analyse_task_from_path_inner(
+    audio_path: PathBuf,
+    track_id: String,
+    app: AppHandle,
+    force: bool,
+) {
     if app
         .state::<crate::state::AppState>()
         .settings
@@ -1232,11 +1474,16 @@ fn spawn_analyse_task_from_path(audio_path: PathBuf, track_id: String, app: AppH
     {
         return;
     }
-    if read_spec_file(&audio_path).is_some() {
+    if !force && read_spec_file(&audio_path).is_some() {
         emit_spectrum_ready(&app, track_id);
         return;
     }
-    tokio::task::spawn_blocking(move || {
+    // tauri::async_runtime::spawn_blocking instead of tokio's: the
+    // call chain reaches here both from tokio-runtime contexts (the
+    // prefetch worker) and from spawned tasks under the tauri runtime
+    // wrapper. The tauri variant resolves to the right handle in
+    // either case.
+    tauri::async_runtime::spawn_blocking(move || {
         spectrum_analyzer::analyse_and_persist(&audio_path);
         emit_spectrum_ready(&app, track_id);
     });

@@ -16,6 +16,7 @@
 //! returns `None` and the prefetch path regenerates it.
 
 use std::fs::File;
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -23,7 +24,7 @@ use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{CodecRegistry, DecoderOptions};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::MediaSourceStream;
+use symphonia::core::io::{MediaSource, MediaSourceStream};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia_adapter_libopus::OpusDecoder;
@@ -113,11 +114,53 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
     // Extension hint lets symphonia pick the right demuxer first; it probes
     // and falls back if wrong.
     let mut hint = Hint::new();
-    if let Some(ext) = audio_path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
+    let ext = audio_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    if let Some(e) = ext.as_deref() {
+        hint.with_extension(e);
     }
 
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    // For Ogg files (transcoded current track via stream-record), clamp
+    // the symphonia source at the last structurally complete page so a
+    // torn trailing page can never trip the strict probe with
+    // UnexpectedEof. mpv's recorder commits page headers + lacing
+    // tables before the page data is fully written; a snapshot taken
+    // mid-write has a header advertising N bytes of payload but only
+    // K<N bytes on disk, and symphonia's reader bails when asked to
+    // read the missing bytes. Empirically: track 100796 at 15,204,352
+    // bytes had 383 complete pages plus a header at offset 15,166,809
+    // promising 43,002 bytes of payload, only 37,316 of which were
+    // present — probe failed. Truncated to 15,166,809 it probed
+    // cleanly. The bounded source reports its clamped length via
+    // `byte_len()` so symphonia's seek-to-end-and-rewind logic stops
+    // at the safe boundary.
+    let source: Box<dyn MediaSource> = if ext.as_deref() == Some("ogg") {
+        match find_last_complete_ogg_page_end(audio_path) {
+            Ok(Some(boundary)) => {
+                log::debug!(
+                    "spectrum: clamping ogg read at offset {boundary} (file size {})",
+                    file.metadata().map(|m| m.len()).unwrap_or(0)
+                );
+                Box::new(BoundedFileSource::new(file, boundary))
+            }
+            Ok(None) => {
+                log::debug!(
+                    "spectrum: no complete ogg pages found in {audio_path:?}, falling through to default reader"
+                );
+                Box::new(file)
+            }
+            Err(e) => {
+                log::debug!("spectrum: ogg page walk failed for {audio_path:?}: {e}");
+                Box::new(file)
+            }
+        }
+    } else {
+        Box::new(file)
+    };
+
+    let mss = MediaSourceStream::new(source, Default::default());
     let probed = symphonia::default::get_probe()
         .format(
             &hint,
@@ -125,9 +168,20 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
             &FormatOptions::default(),
             &MetadataOptions::default(),
         )
-        .map_err(|e| match e {
-            SymphoniaError::Unsupported(msg) => AnalyseError::UnsupportedFormat(msg.to_string()),
-            other => AnalyseError::UnsupportedFormat(other.to_string()),
+        .map_err(|e| {
+            // Surface the actual symphonia failure mode at info-level so a
+            // user-visible "Visualiser unavailable while transcoding"
+            // placeholder is debuggable from the dev console without a
+            // rebuild. The probe rejection reason is otherwise lost — we
+            // would only see the human-friendly placeholder.
+            log::warn!(
+                "spectrum: probe failed for {audio_path:?}: {e:?}",
+                audio_path = audio_path
+            );
+            match e {
+                SymphoniaError::Unsupported(msg) => AnalyseError::UnsupportedFormat(msg.to_string()),
+                other => AnalyseError::UnsupportedFormat(other.to_string()),
+            }
         })?;
 
     let mut format = probed.format;
@@ -140,9 +194,18 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
         .trim()
         .to_ascii_lowercase();
 
+    log::debug!(
+        "spectrum: probe ok for {audio_path:?} codec={codec_name} sr={:?} channels={:?}",
+        track.codec_params.sample_rate,
+        track.codec_params.channels.map(|c| c.count()),
+    );
+
     let mut decoder = codec_registry()
         .make(&track.codec_params, &DecoderOptions::default())
-        .map_err(|_| AnalyseError::UnsupportedCodec(codec_name.clone()))?;
+        .map_err(|e| {
+            log::warn!("spectrum: decoder make failed for codec={codec_name}: {e:?}");
+            AnalyseError::UnsupportedCodec(codec_name.clone())
+        })?;
 
     // Accumulate decoded samples as mono f32. A 5-min 48 kHz track is
     // 14.4M samples × 4 bytes = 57 MB peak RAM, acceptable for one-shot
@@ -210,6 +273,125 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
 /// float type the codec decodes into (FLAC: S16/S24/S32, MP3/AAC: F32, PCM
 /// WAV: U8/S16/S24/S32, Ogg Opus: F32).
 ///
+/// Walk Ogg page boundaries from the start of the file and return the
+/// byte offset just past the last structurally complete page. A page
+/// is "complete" when its 27-byte header, the lacing table it
+/// announces, AND every payload byte its lacing table promises are all
+/// present on disk. Returns `None` if the file isn't Ogg-shaped (no
+/// `OggS` magic at offset 0) so the caller can fall back to default
+/// reader behaviour.
+///
+/// Used to clamp symphonia's reads to a safe boundary when the source
+/// file is being concurrently written by mpv's recorder. mpv's
+/// libavformat muxer writes a page header + lacing table BEFORE all
+/// the payload bytes hit disk, so a snapshot taken mid-write has a
+/// torn trailing page that symphonia's strict probe rejects with
+/// `UnexpectedEof`.
+///
+/// Takes a path rather than a File handle: on POSIX `try_clone()`
+/// shares the file offset (dup(2) creates a new fd pointing at the
+/// same open file description), so seeking the clone moves the
+/// caller's File too. Opening a fresh file inside avoids that subtle
+/// contamination.
+fn find_last_complete_ogg_page_end(path: &Path) -> io::Result<Option<u64>> {
+    let mut f = File::open(path)?;
+    let file_len = f.metadata()?.len();
+
+    let mut last_end: u64 = 0;
+    let mut pos: u64 = 0;
+    let mut header = [0u8; 27];
+
+    loop {
+        if pos + 27 > file_len {
+            break;
+        }
+        f.seek(SeekFrom::Start(pos))?;
+        if f.read_exact(&mut header).is_err() {
+            break;
+        }
+        if &header[0..4] != b"OggS" {
+            // Mid-file corruption / non-Ogg → bail. If we haven't found
+            // any complete page yet, return None so the caller falls
+            // through to the unbounded reader.
+            return Ok(if last_end == 0 { None } else { Some(last_end) });
+        }
+        let n_segments = header[26] as u64;
+        if pos + 27 + n_segments > file_len {
+            break;
+        }
+        let mut lacing = vec![0u8; n_segments as usize];
+        f.seek(SeekFrom::Start(pos + 27))?;
+        if f.read_exact(&mut lacing).is_err() {
+            break;
+        }
+        let data_len: u64 = lacing.iter().map(|&b| b as u64).sum();
+        let page_end = pos + 27 + n_segments + data_len;
+        if page_end > file_len {
+            break;
+        }
+        last_end = page_end;
+        pos = page_end;
+    }
+
+    Ok(if last_end == 0 { None } else { Some(last_end) })
+}
+
+/// `MediaSource` wrapper that clamps reads and seeks to a fixed maximum
+/// byte length. Reports its clamped `byte_len` so symphonia's
+/// seek-to-end probes (used to find the last granule for duration
+/// estimation) hit our safe boundary instead of the live file's
+/// torn-page tail.
+struct BoundedFileSource {
+    file: File,
+    max_len: u64,
+}
+
+impl BoundedFileSource {
+    fn new(file: File, max_len: u64) -> Self {
+        Self { file, max_len }
+    }
+}
+
+impl Read for BoundedFileSource {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let pos = self.file.stream_position()?;
+        if pos >= self.max_len {
+            return Ok(0);
+        }
+        let remaining = self.max_len - pos;
+        let want = (buf.len() as u64).min(remaining) as usize;
+        self.file.read(&mut buf[..want])
+    }
+}
+
+impl Seek for BoundedFileSource {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let new_pos = match pos {
+            SeekFrom::Start(p) => p.min(self.max_len),
+            SeekFrom::End(o) => {
+                let base = self.max_len as i64;
+                let target = base.saturating_add(o).max(0) as u64;
+                target.min(self.max_len)
+            }
+            SeekFrom::Current(o) => {
+                let cur = self.file.stream_position()? as i64;
+                let target = cur.saturating_add(o).max(0) as u64;
+                target.min(self.max_len)
+            }
+        };
+        self.file.seek(SeekFrom::Start(new_pos))
+    }
+}
+
+impl MediaSource for BoundedFileSource {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+    fn byte_len(&self) -> Option<u64> {
+        Some(self.max_len)
+    }
+}
+
 /// Conversion convention:
 /// - signed `iN::MAX` maps to +1.0 (and `iN::MIN` to slightly below -1.0,
 ///   which the spectrum analyser clamps harmlessly)
@@ -368,6 +550,135 @@ mod tests {
             AnalyseError::UnsupportedFormat(_) => {}
             other => panic!("expected UnsupportedFormat, got {other:?}"),
         }
+    }
+
+    /// Build a single Ogg page header + lacing table + payload.
+    /// Lacing values describe payload sizes; sum is total payload bytes.
+    /// `header_type`: 0x02=BOS, 0x04=EOS, 0x01=continuation.
+    fn build_ogg_page(header_type: u8, sequence: u32, lacing: &[u8], payload: &[u8]) -> Vec<u8> {
+        let n_segments = lacing.len() as u8;
+        let mut page = Vec::with_capacity(27 + lacing.len() + payload.len());
+        page.extend_from_slice(b"OggS");
+        page.push(0); // stream version
+        page.push(header_type);
+        page.extend_from_slice(&0u64.to_le_bytes()); // granule position
+        page.extend_from_slice(&0xc0ffee_u32.to_le_bytes()); // bitstream serial
+        page.extend_from_slice(&sequence.to_le_bytes());
+        page.extend_from_slice(&0u32.to_le_bytes()); // CRC (not checked by walker)
+        page.push(n_segments);
+        page.extend_from_slice(lacing);
+        page.extend_from_slice(payload);
+        page
+    }
+
+    #[test]
+    fn find_last_complete_ogg_page_end_returns_none_for_non_ogg() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("not_ogg.bin");
+        std::fs::write(&path, b"some random bytes that aren't an ogg file").unwrap();
+        let result = find_last_complete_ogg_page_end(&path).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn find_last_complete_ogg_page_end_walks_clean_pages() {
+        // Three complete pages back to back; no torn trailing page.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("clean.ogg");
+        let mut bytes = Vec::new();
+        bytes.extend(build_ogg_page(0x02, 0, &[100], &[0xAA; 100]));
+        bytes.extend(build_ogg_page(0x00, 1, &[200], &[0xBB; 200]));
+        bytes.extend(build_ogg_page(0x00, 2, &[50], &[0xCC; 50]));
+        std::fs::write(&path, &bytes).unwrap();
+
+        let result = find_last_complete_ogg_page_end(&path).unwrap();
+        assert_eq!(result, Some(bytes.len() as u64));
+    }
+
+    #[test]
+    fn find_last_complete_ogg_page_end_stops_before_torn_payload() {
+        // Two complete pages, then a header advertising more payload
+        // than is present on disk (mimics mpv's recorder caught
+        // mid-page-write).
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("torn.ogg");
+        let page1 = build_ogg_page(0x02, 0, &[100], &[0xAA; 100]);
+        let page2 = build_ogg_page(0x00, 1, &[50], &[0xBB; 50]);
+        // Torn page: lacing claims 200 bytes of payload but we only
+        // write 80 of them.
+        let torn = build_ogg_page(0x00, 2, &[200], &[0xCC; 80]);
+        let clean_end = (page1.len() + page2.len()) as u64;
+        let mut bytes = Vec::new();
+        bytes.extend(&page1);
+        bytes.extend(&page2);
+        bytes.extend(&torn);
+        std::fs::write(&path, &bytes).unwrap();
+
+        let result = find_last_complete_ogg_page_end(&path).unwrap();
+        assert_eq!(result, Some(clean_end));
+    }
+
+    #[test]
+    fn find_last_complete_ogg_page_end_stops_before_torn_lacing() {
+        // One complete page, then a header whose declared n_segments
+        // would extend past EOF (we only wrote part of the lacing
+        // table).
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("torn_lacing.ogg");
+        let page1 = build_ogg_page(0x02, 0, &[100], &[0xAA; 100]);
+        let clean_end = page1.len() as u64;
+        let mut bytes = page1.clone();
+        // Synthetic torn page header: claims 50 lacing entries but we
+        // only write 5 of them and no payload.
+        bytes.extend_from_slice(b"OggS");
+        bytes.push(0);
+        bytes.push(0);
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        bytes.extend_from_slice(&0xc0ffee_u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.push(50); // n_segments = 50
+        bytes.extend_from_slice(&[10, 20, 30, 40, 50]); // only 5 lacing bytes written
+        std::fs::write(&path, &bytes).unwrap();
+
+        let result = find_last_complete_ogg_page_end(&path).unwrap();
+        assert_eq!(result, Some(clean_end));
+    }
+
+    #[test]
+    fn bounded_file_source_clamps_reads_and_seeks() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("clamp.bin");
+        let data = (0u8..=255).cycle().take(1024).collect::<Vec<u8>>();
+        std::fs::write(&path, &data).unwrap();
+
+        let f = File::open(&path).unwrap();
+        let mut bounded = BoundedFileSource::new(f, 100);
+
+        // byte_len reports the clamp, not the underlying file size.
+        assert_eq!(bounded.byte_len(), Some(100));
+
+        // Read past the clamp returns clamped count.
+        let mut buf = [0u8; 200];
+        let n = bounded.read(&mut buf).unwrap();
+        assert_eq!(n, 100);
+        assert_eq!(&buf[..100], &data[..100]);
+        // Subsequent read returns 0 (EOF).
+        let n2 = bounded.read(&mut buf).unwrap();
+        assert_eq!(n2, 0);
+
+        // Seek-from-end is relative to the clamp.
+        let pos = bounded.seek(SeekFrom::End(0)).unwrap();
+        assert_eq!(pos, 100);
+        // Seek-from-start past the clamp gets pulled back.
+        let pos = bounded.seek(SeekFrom::Start(500)).unwrap();
+        assert_eq!(pos, 100);
+        let pos = bounded.seek(SeekFrom::Start(50)).unwrap();
+        assert_eq!(pos, 50);
+        let mut small = [0u8; 10];
+        let n = bounded.read(&mut small).unwrap();
+        assert_eq!(n, 10);
+        assert_eq!(&small[..], &data[50..60]);
     }
 
     #[test]

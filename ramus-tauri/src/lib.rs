@@ -249,10 +249,19 @@ pub fn create_mpv_player(
                         .as_ref()
                         .is_some_and(|cur| cur.rating_key == prev.rating_key);
                     if !same_track {
+                        log::info!(
+                            "playlist_pos_change: triggering stream_record re-ingest for previous track rating_key={}",
+                            prev.rating_key
+                        );
                         crate::prefetch::try_ingest_stream_record(
-                            p,
+                            p.clone(),
                             app3.clone(),
                             prev.rating_key.clone(),
+                        );
+                    } else {
+                        log::debug!(
+                            "playlist_pos_change: same track ({}), no re-ingest",
+                            prev.rating_key
                         );
                     }
                 }

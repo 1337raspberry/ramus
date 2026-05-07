@@ -27,6 +27,17 @@ impl DownloadCache {
         self.entries.get(track_id).map(|p| p.as_path())
     }
 
+    /// Get the recorded size of a cached entry (the size at insert
+    /// time). Used by the stream-record re-ingest path to detect when
+    /// the on-disk file has grown since first analysis — mpv's
+    /// recorder buffers tail packets in libavformat RAM and only
+    /// flushes them to disk when the file closes (track-end), so a
+    /// file may grow significantly between the in-cycle ingest and
+    /// the track-end re-ingest.
+    pub fn size(&self, track_id: &str) -> Option<u64> {
+        self.sizes.get(track_id).copied()
+    }
+
     /// Insert a cached file entry.
     pub fn insert(&mut self, track_id: String, path: PathBuf, size: u64) {
         self.access_order.retain(|k| k != &track_id);
