@@ -111,6 +111,11 @@ fn progress_payload(
     total_bytes: Option<u64>,
     error: Option<String>,
 ) -> DownloadProgressPayload {
+    // Defense-in-depth: every current caller passes an already-redacted
+    // string (via redact_reqwest_err), but the renderer surfaces this
+    // verbatim in download toasts and the debug panel — wrap once more
+    // here so a future error path that forgets can't leak a token.
+    let error = error.map(|e| ramus_core::util::redact_urls(&e));
     DownloadProgressPayload {
         rating_key: job.rating_key.clone(),
         album_rating_key: job.album_rating_key.clone(),

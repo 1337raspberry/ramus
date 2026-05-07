@@ -119,7 +119,11 @@ export default function MobileDebugPanel({ onDismiss }: { onDismiss: () => void 
               <Row label="Loading for" value={formatAge(info.secondsSinceLoad)} />
             ) : null}
             {info?.lastLoadError ? (
-              <Row label="Last error" value={info.lastLoadError} tag="red" mono />
+              // Defense-in-depth: the Rust side already calls
+              // redact_urls before populating last_load_error, but a
+              // future code path that bypasses that helper would
+              // surface a token here. Wrapping again costs nothing.
+              <Row label="Last error" value={redactUrl(info.lastLoadError)} tag="red" mono />
             ) : null}
           </Section>
 

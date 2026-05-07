@@ -107,7 +107,7 @@ pub fn create_mpv_player(
     let app2 = app_handle.clone();
     let app3 = app_handle.clone();
     let app4 = app_handle.clone();
-    let app7 = app_handle.clone();
+    let app5 = app_handle.clone();
 
     // The player is needed inside callbacks but owns the MpvController. A
     // shared Arc populated after construction breaks the cycle.
@@ -118,9 +118,9 @@ pub fn create_mpv_player(
     let pr2 = player_ref.clone();
     let pr3 = player_ref.clone();
     let pr4 = player_ref.clone();
+    let pr5 = player_ref.clone();
+    let pr6 = player_ref.clone();
     let pr7 = player_ref.clone();
-    let pr8 = player_ref.clone();
-    let pr9 = player_ref.clone();
 
     // Deferred session reporter; populated after player construction.
     let reporter_ref: ReporterRef = Arc::new(parking_lot::Mutex::new(None));
@@ -298,7 +298,7 @@ pub fn create_mpv_player(
             }
         })),
         on_idle_active: Some(Box::new(move || {
-            if let Some(ref p) = *pr7.lock() {
+            if let Some(ref p) = *pr5.lock() {
                 // Scrobble the last playing track before transitioning to stopped.
                 if let Some(ref reporter) = *sr3.lock() {
                     if let Some(ref track) = p.state().current_track {
@@ -308,7 +308,7 @@ pub fn create_mpv_player(
 
                 p.handle_idle_active();
                 emit_playback_state(
-                    &app7,
+                    &app5,
                     PlaybackStatePayload {
                         status: "stopped".to_string(),
                         current_track: None,
@@ -331,12 +331,12 @@ pub fn create_mpv_player(
             }
         })),
         on_file_loaded: Some(Box::new(move || {
-            if let Some(ref p) = *pr8.lock() {
+            if let Some(ref p) = *pr6.lock() {
                 p.handle_file_loaded();
             }
         })),
         on_file_ended: Some(Box::new(move |reason| {
-            if let Some(ref p) = *pr9.lock() {
+            if let Some(ref p) = *pr7.lock() {
                 p.handle_file_ended(reason);
             }
         })),

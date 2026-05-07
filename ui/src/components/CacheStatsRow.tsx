@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
+import {
+  clearAudioCache,
+  flushImageCache,
+  getAudioCacheStats,
+  getImageCacheStats,
+} from "../lib/commands";
 import { HelperText } from "./HelperText";
 
 interface CacheRowProps {
@@ -33,11 +39,9 @@ export function ImageCacheRow({ limitBytes, onLimitChange }: CacheRowProps) {
     pinnedSizeBytes: number;
   } | null>(null);
   const refresh = useCallback(() => {
-    import("../lib/commands").then(({ getImageCacheStats }) =>
-      getImageCacheStats()
-        .then(setStats)
-        .catch(() => {}),
-    );
+    getImageCacheStats()
+      .then(setStats)
+      .catch(() => {});
   }, []);
   useEffect(() => {
     refresh();
@@ -64,11 +68,9 @@ export function ImageCacheRow({ limitBytes, onLimitChange }: CacheRowProps) {
           <button
             className="settings-btn"
             onClick={() => {
-              import("../lib/commands").then(({ flushImageCache }) =>
-                flushImageCache()
-                  .then(refresh)
-                  .catch(() => {}),
-              );
+              flushImageCache()
+                .then(refresh)
+                .catch(() => {});
             }}
           >
             Clear
@@ -94,11 +96,9 @@ export function AudioCacheRow({ limitBytes, onLimitChange }: CacheRowProps) {
     totalSizeBytes: number;
   } | null>(null);
   const refresh = useCallback(() => {
-    import("../lib/commands").then(({ getAudioCacheStats }) =>
-      getAudioCacheStats()
-        .then(setStats)
-        .catch(() => {}),
-    );
+    getAudioCacheStats()
+      .then(setStats)
+      .catch(() => {});
   }, []);
   useEffect(() => {
     refresh();
@@ -123,11 +123,9 @@ export function AudioCacheRow({ limitBytes, onLimitChange }: CacheRowProps) {
           <button
             className="settings-btn"
             onClick={() => {
-              import("../lib/commands").then(({ clearAudioCache }) =>
-                clearAudioCache()
-                  .then(refresh)
-                  .catch(() => {}),
-              );
+              clearAudioCache()
+                .then(refresh)
+                .catch(() => {});
             }}
           >
             Clear

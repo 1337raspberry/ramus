@@ -232,7 +232,12 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
   // Skip when a nested overlay (acknowledgements or confirm dialog) is open
   // so Escape only dismisses the topmost layer. Both panels attach to
   // `window`; the nested listener alone can't stop this one from firing first.
+  // Also skip while settings is still loading — the panel renders nothing
+  // visible until then, so dismissing on Escape would feel like the open
+  // gesture was a no-op.
+  const settingsLoaded = settings != null;
   useEffect(() => {
+    if (!settingsLoaded) return;
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !showAcknowledgements && !showSpectrumConfirm) {
         e.preventDefault();
@@ -241,7 +246,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onDismiss, showAcknowledgements, showSpectrumConfirm]);
+  }, [onDismiss, showAcknowledgements, showSpectrumConfirm, settingsLoaded]);
 
   if (!settings) return null;
 
@@ -271,9 +276,23 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
             regardless of which tab the user moves to mid-sync. */}
         {syncProgress && <SyncProgressBanner progress={syncProgress} />}
 
-        <TabBar tabs={tabs} active={activeTab} onChange={setActiveTab} />
+        <TabBar
+          tabs={tabs}
+          active={activeTab}
+          onChange={setActiveTab}
+          ariaLabel="Settings sections"
+          panelId="settings-panel-content"
+        />
 
-        <div className="settings-body">
+        {/* aria-label rather than aria-labelledby because TabBar generates
+            its own internal id prefix via useId(); referencing the active
+            tab button by id from outside would dangle. */}
+        <div
+          className="settings-body"
+          role="tabpanel"
+          id="settings-panel-content"
+          aria-label={`${activeTab} settings`}
+        >
           {error && <div className="settings-error">{error}</div>}
 
           {activeTab === "playback" && (

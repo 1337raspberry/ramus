@@ -169,6 +169,12 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     // when nowPlayingUpdate fires several times per track.
     private val ioHandler = Handler(android.os.HandlerThread("MpvBridgeIO").apply { start() }.looper)
     private var equalizer: Equalizer? = null
+    // Cache of the most recent mpvSetAudioFilters payload. The system
+    // Equalizer can't attach until ExoPlayer reports a real
+    // audioSessionId (which only happens once audio rendering starts),
+    // so any user-initiated EQ change before that point lands here and
+    // is replayed in onAudioSessionIdChanged.
+    private var pendingAudioFilters: String? = null
 
     // ConnectivityManager.NetworkCallback drives the cellular signal that
     // feeds `should_transcode` on the Rust side. iOS gets the same data
@@ -225,13 +231,12 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                     Log.w(TAG, "MediaSession disabled via $MEDIA_SESSION_PROP")
                 }
 
-                try {
-                    val eq = Equalizer(0, p.audioSessionId).apply { enabled = false }
-                    equalizer = eq
-                    Log.i(TAG, "System Equalizer attached (${eq.numberOfBands} bands)")
-                } catch (e: Exception) {
-                    Log.w(TAG, "System Equalizer unavailable", e)
-                }
+                // Equalizer attach is deferred to onAudioSessionIdChanged.
+                // Constructing it now would bind to audioSessionId == 0
+                // (AUDIO_SESSION_ID_UNSET, since prepare() hasn't run),
+                // which the AudioFlinger treats as "the global output
+                // mix" — meaning EQ adjustments would affect every app's
+                // audio on the device, not just Ramus.
 
                 ensurePostNotificationsPermission()
                 startNetworkMonitor()
@@ -529,30 +534,10 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     fun mpvSetAudioFilters(invoke: Invoke) {
         val args = invoke.parseArgs(AudioFiltersArgs::class.java)
         runOnMain {
-            val eq = equalizer
-            if (eq == null) {
-                invoke.resolve()
-                return@runOnMain
-            }
-
-            if (args.value.isEmpty()) {
-                eq.enabled = false
-                invoke.resolve()
-                return@runOnMain
-            }
-
-            val gains = GAIN_REGEX.findAll(args.value)
-                .map { it.groupValues[1].toFloatOrNull() ?: 0f }
-                .toList()
-            val numBands = eq.numberOfBands.toInt()
-            val range = eq.bandLevelRange
-
-            for (band in 0 until numBands) {
-                val gainDb = if (band < gains.size) gains[band] else 0f
-                val level = (gainDb * 100).toInt().coerceIn(range[0].toInt(), range[1].toInt()).toShort()
-                eq.setBandLevel(band.toShort(), level)
-            }
-            eq.enabled = true
+            // Cache regardless of whether the equalizer is attached yet
+            // — attachEqualizer replays this on first audio session.
+            pendingAudioFilters = args.value
+            equalizer?.let { applyAudioFiltersToEqualizer(it, args.value) }
             invoke.resolve()
         }
     }
@@ -735,7 +720,17 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         if (coverUrl.isNullOrEmpty()) return null
         return try {
             val uri = Uri.parse(coverUrl)
-            val path = if (uri.scheme == "file") uri.path else coverUrl
+            // Only handle local files. The Rust side always passes a
+            // file:// path from the image cache, but the scheme guard
+            // is defensive: an HTTPS Plex art URL would carry an
+            // ?X-Plex-Token=... query param, and falling through would
+            // both attempt a doomed file read and (worse) leak the
+            // token to logcat in the catch arm below.
+            if (uri.scheme != "file") {
+                Log.w(TAG, "loadArtworkBytes: refusing non-file scheme '${uri.scheme}'")
+                return null
+            }
+            val path = uri.path
             if (path.isNullOrEmpty()) return null
             val file = File(path)
             if (!file.exists()) return null
@@ -743,7 +738,10 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             if (!file.canonicalPath.startsWith(appDataDir)) return null
             file.readBytes()
         } catch (e: Exception) {
-            Log.w(TAG, "loadArtworkBytes failed for $coverUrl", e)
+            // Strip any query string before logging in case a future
+            // code path slips a non-file URL past the guard above.
+            val safe = coverUrl.substringBefore('?')
+            Log.w(TAG, "loadArtworkBytes failed for $safe", e)
             null
         }
     }
@@ -767,10 +765,56 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    // Attach (or re-attach) the system Equalizer to a real audio session
+    // id. Releases any previous instance — switching session id with a
+    // live attachment leaves the old AudioFlinger binding in place,
+    // which in practice means the EQ keeps affecting whichever output
+    // mix it was originally bound to. Replays the most recent
+    // mpvSetAudioFilters payload so a user-configured EQ doesn't fall
+    // off when audio rendering starts for the first time.
+    private fun attachEqualizer(audioSessionId: Int) {
+        if (audioSessionId == 0) return
+        equalizer?.runCatching { release() }
+        try {
+            val eq = Equalizer(0, audioSessionId).apply { enabled = false }
+            equalizer = eq
+            Log.i(
+                TAG,
+                "System Equalizer attached to session $audioSessionId (${eq.numberOfBands} bands)"
+            )
+            pendingAudioFilters?.let { applyAudioFiltersToEqualizer(eq, it) }
+        } catch (e: Exception) {
+            equalizer = null
+            Log.w(TAG, "System Equalizer unavailable", e)
+        }
+    }
+
+    private fun applyAudioFiltersToEqualizer(eq: Equalizer, value: String) {
+        if (value.isEmpty()) {
+            eq.enabled = false
+            return
+        }
+        val gains = GAIN_REGEX.findAll(value)
+            .map { it.groupValues[1].toFloatOrNull() ?: 0f }
+            .toList()
+        val numBands = eq.numberOfBands.toInt()
+        val range = eq.bandLevelRange
+        for (band in 0 until numBands) {
+            val gainDb = if (band < gains.size) gains[band] else 0f
+            val level = (gainDb * 100).toInt().coerceIn(range[0].toInt(), range[1].toInt()).toShort()
+            eq.setBandLevel(band.toShort(), level)
+        }
+        eq.enabled = true
+    }
+
     private inner class PlayerListener : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             trigger("mpvPauseChange", JSObject().put("paused", !isPlaying))
             if (isPlaying) ensureForegroundServiceStarted()
+        }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            attachEqualizer(audioSessionId)
         }
 
         override fun onPlaybackStateChanged(state: Int) {
