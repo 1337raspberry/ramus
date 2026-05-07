@@ -794,11 +794,11 @@ pub fn run() {
                                         monitor_player.update_server_connection(url, token, is_remote);
                                         monitor_player.rewrite_stale_playlist_urls();
                                         // rewrite_stale_playlist_urls skips the current entry to avoid
-                                        // disrupting playback, but for transcode (HLS) tracks the dead
-                                        // manifest URL stays loaded — mpv hangs for the full
-                                        // `network-timeout=15` before file-ended retry kicks in. This
-                                        // forces a fresh load of the current track too. Cached and
-                                        // stopped paths no-op internally.
+                                        // disrupting playback, but an in-flight transcode session
+                                        // pointing at the dead upstream stays loaded — mpv hangs for
+                                        // the full `network-timeout=15` before file-ended retry kicks
+                                        // in. This forces a fresh load of the current track too.
+                                        // Cached and stopped paths no-op internally.
                                         monitor_player.force_reload_current_track();
                                         monitor_prefetch.notify_skip();
                                         monitor_reachable
@@ -949,6 +949,12 @@ pub fn run() {
                                                 .iter()
                                                 .any(|c| normalize(&c.uri) == stored_normalized && c.local);
                                             bg_player.set_remote(!is_local);
+                                            // Pin the verified URI on the monitor too;
+                                            // steps 1 and 3 do this via apply_connection,
+                                            // and without it the next evaluate_connection
+                                            // cycle would diff against a stale baseline
+                                            // and re-probe a known-good URI.
+                                            bg_monitor.update_active_uri(bg_url.to_string());
                                             log::debug!(
                                                 "stored connection ok (is_remote={})",
                                                 !is_local,

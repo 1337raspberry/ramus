@@ -37,7 +37,7 @@ type TabId = "playback" | "library" | "storage" | "network" | "about";
 // selected (e.g. settings copied from mobile).
 const MODE_PROSE: Record<PlaybackMode, string> = {
   never:
-    "Always stream lossless files in their original quality. Best if youre almost always on a fast or local connection.",
+    "Always stream lossless files in their original quality. Best if you're almost always on a fast or local connection.",
   cellular:
     "Transcode lossless files only when you're on cellular data. Saves your data plan without sacrificing quality at home, or helps with bad cellular coverage/speeds.",
   remote:
@@ -61,6 +61,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
   const isMobile = useIsMobile();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showError = useCallback((msg: string) => {
     setError(msg);
@@ -89,8 +90,14 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
           .then(setStats)
           .catch(() => {});
         // Auto-clear the banner shortly after the "done" frame lands so
-        // the user sees the completion state then it fades.
-        setTimeout(() => setSyncProgress(null), 2000);
+        // the user sees the completion state then it fades. Stored in
+        // a ref so a follow-up sync (or unmount) cancels the pending
+        // clear and doesn't wipe the new sync's progress mid-flight.
+        if (syncBannerTimerRef.current) clearTimeout(syncBannerTimerRef.current);
+        syncBannerTimerRef.current = setTimeout(() => {
+          setSyncProgress(null);
+          syncBannerTimerRef.current = null;
+        }, 2000);
       }
     });
     return () => {
@@ -102,6 +109,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+      if (syncBannerTimerRef.current) clearTimeout(syncBannerTimerRef.current);
     };
   }, []);
 
@@ -129,6 +137,12 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
     (type: "full" | "incremental" | "genre") => {
       setSyncing(type);
       setSyncProgress(null);
+      // Cancel a pending banner-clear from a just-finished sync so it
+      // doesn't wipe the new sync's progress 2 s in.
+      if (syncBannerTimerRef.current) {
+        clearTimeout(syncBannerTimerRef.current);
+        syncBannerTimerRef.current = null;
+      }
       const fn =
         type === "full"
           ? startFullSync
@@ -141,6 +155,29 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
       });
     },
     [showError],
+  );
+
+  // Switch the genre source immediately rather than via the 300 ms
+  // debounce, because loadGenreTree() needs the new source to already
+  // be persisted. Cancels any pending debounced save first so a stale
+  // settings snapshot can't flush after this and revert genreSource.
+  const switchGenreSource = useCallback(
+    (source: "open" | "custom") => {
+      if (!settings) return;
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      const next = { ...settings, genreSource: source };
+      setSettings(next);
+      updateSettings(next)
+        .then(() => {
+          useSettingsStore.setState(next);
+          useLibraryStore.getState().loadGenreTree();
+        })
+        .catch((e) => showError(`Failed to switch genre source: ${e}`));
+    },
+    [settings, showError],
   );
 
   const handleImportGenres = useCallback(() => {
@@ -374,9 +411,15 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
                 </select>
               </label>
               <HelperText>
-                This data comes directly from Plex, based on how many people have starred each track.
-                <br /><br /><strong>Hot Tracks</strong> shows the most popular tracks per album. Bigger album = more tracks
-                <br /><strong>Popularity chart</strong> shows the relative popularity of all tracks, versus the most popular one.
+                This data comes directly from Plex, based on how many people have starred each
+                track.
+                <br />
+                <br />
+                <strong>Hot Tracks</strong> shows the most popular tracks per album. Bigger album =
+                more tracks
+                <br />
+                <strong>Popularity chart</strong> shows the relative popularity of all tracks,
+                versus the most popular one.
               </HelperText>
 
               <label className="settings-row">
@@ -449,19 +492,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <button
                     className={`settings-btn${settings.genreSource === "open" ? " active" : ""}`}
-                    onClick={() => {
-                      const next = {
-                        ...settings,
-                        genreSource: "open" as const,
-                      };
-                      setSettings(next);
-                      updateSettings(next)
-                        .then(() => {
-                          useSettingsStore.setState(next);
-                          useLibraryStore.getState().loadGenreTree();
-                        })
-                        .catch((e) => showError(`Failed to switch genre source: ${e}`));
-                    }}
+                    onClick={() => switchGenreSource("open")}
                   >
                     Open Source
                   </button>
@@ -469,19 +500,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
                     className={`settings-btn${settings.genreSource === "custom" ? " active" : ""}`}
                     disabled={!hasCustomGenres}
                     title={!hasCustomGenres ? "Import custom genres first" : undefined}
-                    onClick={() => {
-                      const next = {
-                        ...settings,
-                        genreSource: "custom" as const,
-                      };
-                      setSettings(next);
-                      updateSettings(next)
-                        .then(() => {
-                          useSettingsStore.setState(next);
-                          useLibraryStore.getState().loadGenreTree();
-                        })
-                        .catch((e) => showError(`Failed to switch genre source: ${e}`));
-                    }}
+                    onClick={() => switchGenreSource("custom")}
                   >
                     Custom
                   </button>

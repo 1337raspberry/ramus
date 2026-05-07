@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::thread;
 
 use ramus_core::playback::mpv::{FileEndReason, LoadMode, MpvCallbacks, MpvPlayer, ObserverID};
+use ramus_core::util::redact_urls;
 
 use crate::mpv_ffi::*;
 
@@ -403,17 +404,22 @@ fn event_loop(
                     let text = unsafe { CStr::from_ptr(msg.text) }
                         .to_string_lossy();
                     // mpv terminates lines with `\n` itself; trim so our
-                    // own logger doesn't emit blank lines.
-                    let text = text.trim_end_matches('\n');
-                    if !text.is_empty() {
+                    // own logger doesn't emit blank lines. The lavf/http
+                    // subsystems log full URLs at info level on connect
+                    // and on transfer errors; redact_urls strips any
+                    // ?X-Plex-Token= / X-Plex-Headers= query that would
+                    // otherwise land in our log sinks.
+                    let trimmed = text.trim_end_matches('\n');
+                    if !trimmed.is_empty() {
+                        let safe = redact_urls(trimmed);
                         // mpv log_level constants (from client.h):
                         // 10=FATAL, 20=ERROR, 30=WARN, 40=INFO, 50=V, 60=DEBUG, 70=TRACE.
                         match msg.log_level {
-                            l if l <= 20 => log::error!("mpv[{prefix}]: {text}"),
-                            l if l <= 30 => log::warn!("mpv[{prefix}]: {text}"),
-                            l if l <= 40 => log::info!("mpv[{prefix}]: {text}"),
-                            l if l <= 60 => log::debug!("mpv[{prefix}]: {text}"),
-                            _ => log::trace!("mpv[{prefix}]: {text}"),
+                            l if l <= 20 => log::error!("mpv[{prefix}]: {safe}"),
+                            l if l <= 30 => log::warn!("mpv[{prefix}]: {safe}"),
+                            l if l <= 40 => log::info!("mpv[{prefix}]: {safe}"),
+                            l if l <= 60 => log::debug!("mpv[{prefix}]: {safe}"),
+                            _ => log::trace!("mpv[{prefix}]: {safe}"),
                         }
                     }
                 }

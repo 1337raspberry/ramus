@@ -268,11 +268,6 @@ pub fn analyse_file(audio_path: &Path) -> Result<SpectrumFrames, AnalyseError> {
     ))
 }
 
-/// Average all channels of an `AudioBufferRef` into mono f32 samples in
-/// [-1, 1] and append them to `out`. symphonia yields whichever integer or
-/// float type the codec decodes into (FLAC: S16/S24/S32, MP3/AAC: F32, PCM
-/// WAV: U8/S16/S24/S32, Ogg Opus: F32).
-///
 /// Walk Ogg page boundaries from the start of the file and return the
 /// byte offset just past the last structurally complete page. A page
 /// is "complete" when its 27-byte header, the lacing table it
@@ -392,6 +387,11 @@ impl MediaSource for BoundedFileSource {
     }
 }
 
+/// Average all channels of an `AudioBufferRef` into mono f32 samples in
+/// `[-1, 1]` and append them to `out`. symphonia yields whichever integer
+/// or float type the codec decoded into (FLAC: S16/S24/S32, MP3/AAC: F32,
+/// PCM WAV: U8/S16/S24/S32, Ogg Opus: F32).
+///
 /// Conversion convention:
 /// - signed `iN::MAX` maps to +1.0 (and `iN::MIN` to slightly below -1.0,
 ///   which the spectrum analyser clamps harmlessly)

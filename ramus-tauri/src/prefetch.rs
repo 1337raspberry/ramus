@@ -670,7 +670,9 @@ async fn wait_for_source_drain(
     my_gen: u64,
 ) {
     /// Number of consecutive polls where ALL drain signals must hold
-    /// stable before we trust drain. 3 polls × 500 ms = 1.5 s of quiet.
+    /// stable before we trust drain. The first poll seeds prev_*, so
+    /// minimum elapsed time before drain fires is (STABLE_POLLS + 1) ×
+    /// 500 ms = 2.0 s of quiet.
     const STABLE_POLLS: u32 = 3;
     /// File size must reach this fraction of the expected bytes
     /// (`duration × bitrate / 8`) before drain can fire. Opus VBR can
@@ -731,11 +733,11 @@ async fn wait_for_source_drain(
         // hit transient lulls when Plex's chunked transcode pauses
         // mid-stream, before the body has actually finished. Compare
         // file size against `duration × bitrate / 8`; only declare
-        // drain when the file has reached ~92% of expected. This is
-        // what keeps the prefetch worker from opening competing
-        // transcode sessions while Plex is still feeding the current
-        // track — opening another session cuts the live one mid-body
-        // because of Plex's per-client concurrent-transcode cap.
+        // drain when the file has reached SOURCE_BYTES_FRACTION of
+        // expected. This is what keeps the prefetch worker from opening
+        // competing transcode sessions while Plex is still feeding the
+        // current track — opening another session cuts the live one
+        // mid-body because of Plex's per-client concurrent-transcode cap.
         // Skipped (always true) when expected_bytes is unknown
         // (missing duration or bitrate metadata) so we don't deadlock
         // on tracks without enough info.
@@ -769,8 +771,10 @@ async fn wait_for_source_drain(
     }
 }
 
-/// Block until the currently-playing track's live transcode HTTP body
-/// has fully drained, so opening a new transcode session for an
+/// One pass through the prefetch worker: wait the initial settle gap,
+/// run the in-cycle stream-record ingest (which itself gates on source
+/// drain), then run the serial downloads for upcoming tracks. Aborts
+/// silently if the shared generation has moved on.
 async fn run_cycle(
     player: Arc<AudioPlayer>,
     http: reqwest::Client,
@@ -789,13 +793,11 @@ async fn run_cycle(
         return;
     }
 
-    // Single drain wait below (inside the in-cycle ingest gate) covers
-    // both purposes: gating the in-cycle stream-record analyser AND
-    // gating prefetch (which runs at the end of run_cycle in
-    // run_serial_downloads). The historical separate `wait_for_live_drain`
-    // pre-pass was redundant — it delegated to the same predicates and
-    // doubled the ceiling that user-visible visualiser appearance has
-    // to wait through.
+    // The drain wait is folded into the in-cycle ingest gate below — a
+    // single pass covers both purposes: gating the stream-record analyser
+    // AND gating the serial downloads that run later in this cycle.
+    // A separate pre-pass was redundant and doubled the ceiling that
+    // user-visible visualiser appearance has to wait through.
 
     let cfg_dir = match ramus_core::plex::token_store::config_dir() {
         Ok(dir) => dir,
@@ -1311,9 +1313,9 @@ pub fn try_ingest_stream_record(
     app: AppHandle,
     rating_key: String,
 ) {
-    log::info!("stream_record: try_ingest invoked for rating_key={rating_key}");
+    log::debug!("stream_record: try_ingest invoked for rating_key={rating_key}");
     let Some((path, initial_size)) = find_stream_record_file(&player, &rating_key) else {
-        log::info!(
+        log::debug!(
             "stream_record: no file found for rating_key={rating_key} — bailing (stream_record_dir set? {})",
             player.stream_record_dir().is_some()
         );
@@ -1323,13 +1325,13 @@ pub fn try_ingest_stream_record(
     // KiB. Anything below that is mpv writing a header for a track the
     // user skipped immediately.
     if initial_size < 32_768 {
-        log::info!(
+        log::debug!(
             "stream_record: skip ingest of {path:?} ({initial_size} bytes) — too small to analyse"
         );
         return;
     }
     let prev_cached_size = player.with_cache(|c| c.size(&rating_key));
-    log::info!(
+    log::debug!(
         "stream_record: queued ingest of {path:?} ({initial_size} bytes, prev_cached_size={prev_cached_size:?}) for rating_key={rating_key}, awaiting byte-stability"
     );
 
@@ -1407,7 +1409,7 @@ pub fn try_ingest_stream_record(
             );
         }
 
-        log::info!(
+        log::debug!(
             "stream_record: ingesting {path:?} ({final_size} bytes) for rating_key={rating_key}"
         );
         player.with_cache(|c| c.insert(rating_key.clone(), path.clone(), final_size));

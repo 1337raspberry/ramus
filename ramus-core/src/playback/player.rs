@@ -336,12 +336,6 @@ impl AudioPlayer {
         self.inner.lock().is_cellular = is_cellular;
     }
 
-    /// Whether the device's primary network interface is cellular. Feeds
-    /// into `should_transcode()` under `Cellular` / `RemoteOrCellular`.
-    pub fn is_cellular(&self) -> bool {
-        self.inner.lock().is_cellular
-    }
-
     /// Configure the directory mpv writes its `stream-record` output to.
     /// Called once at startup by the Tauri layer with the audio cache
     /// path; the core can't compute this itself because it doesn't know
@@ -1059,10 +1053,11 @@ impl AudioPlayer {
     }
 
     /// Force-reload the currently-playing track using the current
-    /// `server_url` and `token`. Called after a connection failover so
-    /// transcode (HLS) tracks don't keep mpv hung on the dead manifest URL
-    /// for the full `network-timeout=15` before the file-ended retry path
-    /// kicks in. Returns `true` if a reload was issued.
+    /// `server_url` and `token`. Called after a connection failover so an
+    /// in-flight transcode session (whose URL is now pointing at the dead
+    /// upstream) doesn't keep mpv hung for the full `network-timeout=15`
+    /// before the file-ended retry path kicks in. Returns `true` if a
+    /// reload was issued.
     ///
     /// Differs from `try_recover_current_track` in two ways:
     /// 1. **Not gated on `last_retried_track`** — connection just changed,
@@ -1287,59 +1282,6 @@ impl AudioPlayer {
         self.mpv.load_file_at(&file_url, idx as i64, None);
     }
 
-    /// Whether the currently-playing track has been fully buffered into mpv's
-    /// demuxer cache — i.e. the live HTTP body has drained and the
-    /// transcode session on the server is no longer holding a slot.
-    ///
-    /// The prefetch worker polls this before opening its own transcode
-    /// session. Plex enforces a per-client concurrent-transcode cap of
-    /// roughly one, so firing prefetch while the live session is still
-    /// active gets the prefetch cut mid-stream.
-    ///
-    /// Returns `true` immediately if the current track is direct-play
-    /// (no live transcode session in flight to conflict with), or if the
-    /// queue is empty / mpv reports unknown duration.
-    ///
-    /// Returns `false` when a transcode is in flight and not yet drained,
-    /// OR when the underlying mpv bridge can't report `demuxer-cache-time`
-    /// (mobile bridges that haven't grown the call yet) — in the latter
-    /// case the worker should fall back to a fixed safety ceiling.
-    pub fn current_track_buffered_for_prefetch(&self) -> bool {
-        let inner = self.inner.lock();
-        let Some(track) = inner.state.queue.get(inner.state.queue_index) else {
-            return true;
-        };
-        let needs_transcode = transcode::should_transcode(
-            track.codec.as_deref(),
-            inner.config.playback_mode,
-            inner.is_remote,
-            inner.is_cellular,
-        );
-        if !needs_transcode {
-            return true;
-        }
-        // If the current track is already on disk (cached or downloaded)
-        // it's playing locally — no live transcode session at all.
-        if self.persistent_cache.read().contains_key(&track.rating_key)
-            || inner.cache.get(&track.rating_key).is_some()
-        {
-            return true;
-        }
-        let Some(cache_time) = self.mpv.demuxer_cache_time() else {
-            return false;
-        };
-        let position = inner.position;
-        let duration = inner.duration;
-        if duration <= 0.0 {
-            // Duration not yet reported — load just kicked off, definitely
-            // still draining.
-            return false;
-        }
-        // 1-second slack for clock skew / float jitter.
-        let needed = (duration - position - 1.0).max(0.0);
-        cache_time >= needed
-    }
-
     /// Whether the currently-playing track's source bytes have been fully
     /// pulled by mpv (i.e. the source HTTP body has EOFed and mpv is
     /// playing from its in-memory buffer the rest of the way through).
@@ -1425,53 +1367,6 @@ impl AudioPlayer {
         }
     }
 
-    /// Whether the currently-playing track is actively pulling from a
-    /// Plex transcode session — i.e. it would transcode under current
-    /// settings AND it's not already cached locally. The prefetch
-    /// worker uses this to decide whether to wait for the live track
-    /// to drain before opening sessions for upcoming tracks. False for
-    /// direct-play (no transcode session) and for tracks already on
-    /// disk (their playback is from the local file, no Plex session).
-    pub fn current_track_competes_for_transcode_slot(&self) -> bool {
-        let inner = self.inner.lock();
-        let Some(track) = inner.state.queue.get(inner.state.queue_index) else {
-            return false;
-        };
-        let needs_transcode = transcode::should_transcode(
-            track.codec.as_deref(),
-            inner.config.playback_mode,
-            inner.is_remote,
-            inner.is_cellular,
-        );
-        if !needs_transcode {
-            return false;
-        }
-        if self.persistent_cache.read().contains_key(&track.rating_key)
-            || inner.cache.get(&track.rating_key).is_some()
-        {
-            return false;
-        }
-        true
-    }
-
-    /// Whether the currently-playing track would transcode under the
-    /// active settings. Reads through the same `should_transcode`
-    /// predicate the URL builder uses, so the answer agrees with what
-    /// mpv is actually pulling.
-    ///
-    /// Returns `false` if the queue is empty.
-    pub fn current_track_is_transcoded(&self) -> bool {
-        let inner = self.inner.lock();
-        let Some(track) = inner.state.queue.get(inner.state.queue_index) else {
-            return false;
-        };
-        transcode::should_transcode(
-            track.codec.as_deref(),
-            inner.config.playback_mode,
-            inner.is_remote,
-            inner.is_cellular,
-        )
-    }
 }
 
 fn resolve_url(
@@ -1552,7 +1447,10 @@ fn stream_record_option_for(track: &Track, url: &str, inner: &PlayerInner) -> Op
     let ext = if is_transcode {
         "ogg".to_string()
     } else {
-        url.rsplit('?')
+        // Strip the query string before grabbing the extension —
+        // rsplit was returning the query (everything after `?`) and
+        // the codec field was always the de-facto fallback.
+        url.split('?')
             .next()
             .and_then(|p| p.rsplit('.').next())
             .filter(|e| {
