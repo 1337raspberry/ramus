@@ -52,16 +52,25 @@ export default function App() {
 
   useEffect(() => {
     isAuthenticated()
-      .then((ok) => {
-        setAuthed(ok);
-        if (ok) {
-          useSettingsStore.getState().loadSettings();
-          useDownloadsStore.getState().ensureListeners();
-          useDownloadsStore.getState().refresh();
-        }
-      })
+      .then(setAuthed)
       .catch(() => setAuthed(false));
   }, []);
+
+  // Wire post-auth side-effects whenever `authed` flips to `true` — covers
+  // both the resume path (token cached on disk, isAuthenticated returns
+  // true on mount) and the fresh-onboarding path (OnboardingFlow's
+  // onComplete sets authed). Without depending on `authed` here, a user
+  // who signed in this session would skip `ensureListeners` entirely and
+  // the downloads panel would never receive live progress events — only
+  // the snapshot from each manual open would reach the UI.
+  // ensureListeners is idempotent (`_listenersInstalled` guard), so it's
+  // safe to call again on a second `authed=true` flip.
+  useEffect(() => {
+    if (authed !== true) return;
+    useSettingsStore.getState().loadSettings();
+    useDownloadsStore.getState().ensureListeners();
+    useDownloadsStore.getState().refresh();
+  }, [authed]);
 
   usePlaybackEvents();
   useWindowTitle();

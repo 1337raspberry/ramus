@@ -11,11 +11,11 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 use ramus_core::cache::image_cache::ImageCache;
-use ramus_core::models::{Album, AlbumFilterParams, Track};
+use ramus_core::models::{Album, AlbumFilterParams, DownloadQuality, Track};
 use ramus_core::playback::transcode;
 use ramus_core::playback::waveform;
 use ramus_core::plex::client::PlexClient;
-use ramus_core::util::plex_art_url;
+use ramus_core::util::{is_lossless_codec, plex_art_url};
 
 use crate::events::{emit_downloads_changed, ConnectionStatusPayload};
 use crate::prefetch::{DownloadManagerSnapshot, UserDownloadJob};
@@ -456,19 +456,23 @@ pub async fn get_downloads_overview(state: State<'_, AppState>) -> CmdResult<Dow
 
 /// Estimated bytes for downloading every favourited track. Uses actual
 /// `fileSizeBytes` when known, otherwise `bitrate_kbps × duration_sec / 8`.
+/// When the user has a transcoded download quality selected, lossless
+/// tracks are estimated against the transcode bitrate instead.
 #[tauri::command]
 pub async fn estimate_starred_tracks_size(state: State<'_, AppState>) -> CmdResult<i64> {
     let tracks = with_cache(&state, |cache| cache.favourite_tracks())?;
-    Ok(estimate_total_bytes(&tracks))
+    let quality = state.settings.read().download_quality;
+    Ok(estimate_total_bytes(&tracks, quality))
 }
 
 #[tauri::command]
 pub async fn estimate_starred_albums_size(state: State<'_, AppState>) -> CmdResult<i64> {
     let albums = with_cache(&state, |cache| cache.favourite_albums())?;
+    let quality = state.settings.read().download_quality;
     let mut total: i64 = 0;
     for album in &albums {
         let tracks = lookup_album_tracks(&state, &album.rating_key)?;
-        total += estimate_total_bytes(&tracks);
+        total += estimate_total_bytes(&tracks, quality);
     }
     Ok(total)
 }
@@ -495,6 +499,7 @@ pub async fn estimate_bookmark(
     filters: AlbumFilterParams,
 ) -> CmdResult<BookmarkDownloadEstimate> {
     let albums = resolve_filter_albums(&state, &filters)?;
+    let quality = state.settings.read().download_quality;
     let only_favourites = filters.favourite_tracks;
     let mut total_bytes: i64 = 0;
     let mut track_count: usize = 0;
@@ -504,7 +509,7 @@ pub async fn estimate_bookmark(
             tracks.retain(|t| t.is_favourite);
         }
         track_count += tracks.len();
-        total_bytes += estimate_total_bytes(&tracks);
+        total_bytes += estimate_total_bytes(&tracks, quality);
     }
     Ok(BookmarkDownloadEstimate {
         total_bytes,
@@ -548,17 +553,21 @@ fn lookup_album_tracks(
     with_cache(state, |cache| cache.tracks_for_album(album_rating_key))
 }
 
-/// Build a direct-play download URL for a track. Returns `Err` for any
-/// track that can't be downloaded (no part_key, codec-only-transcodable,
-/// no server URL). User downloads always use direct play regardless of
-/// the user's PlaybackMode setting — the whole point is local-first
-/// playback offline.
+/// Build a download job for a track. Returns `Err` for any track that
+/// can't be downloaded (no part_key, no server URL).
+///
+/// Branches on `Settings.download_quality`: `Original` direct-plays the
+/// source file; the `Kbps*` variants transcode lossless sources to
+/// Ogg/Opus at the chosen bitrate (lossy sources still direct-play —
+/// transcoding lossy → lossy strips quality with no bandwidth payoff).
+/// Mirrors the live transcode path in `player.rs` (same session-id shape,
+/// same URL builder), so Plex's per-client cap behaves identically.
 fn build_job(state: &State<'_, AppState>, track: &Track) -> Result<UserDownloadJob, String> {
     let part_key = track
         .part_key
         .as_ref()
         .ok_or_else(|| "track has no part_key".to_string())?;
-    let codec = track
+    let source_codec = track
         .codec
         .clone()
         .ok_or_else(|| "track has no codec".to_string())?;
@@ -567,8 +576,41 @@ fn build_job(state: &State<'_, AppState>, track: &Track) -> Result<UserDownloadJ
         .server_url()
         .ok_or_else(|| "no server url".to_string())?;
     let token = state.client.token().ok_or_else(|| "no token".to_string())?;
-    let url = transcode::build_direct_play_url(&server_url, part_key, &token)
-        .ok_or_else(|| "could not build direct-play url".to_string())?;
+
+    let quality = state.settings.read().download_quality;
+    let bitrate = quality.as_bitrate().filter(|_| is_lossless_codec(&source_codec));
+
+    let (url, codec, expected_size_bytes) = if let Some(bitrate) = bitrate {
+        // Session id mirrors the live/prefetch transcode shape so the
+        // server's `<client-id>-<unique-id>` tokenisation groups them.
+        let session = format!("{}-{}", state.client.client_identifier, track.rating_key);
+        let url = transcode::build_transcode_download_url(
+            &server_url,
+            &token,
+            &track.rating_key,
+            &state.client.client_identifier,
+            &session,
+            bitrate,
+        )
+        .ok_or_else(|| "could not build transcode url".to_string())?;
+        // Chunked Ogg/Opus has no Content-Length; estimate from
+        // duration × bitrate so the progress bar still shows roughly
+        // accurate completion.
+        let estimated = if track.duration > 0.0 {
+            Some(((bitrate.as_kbps() as f64 * 1000.0 * track.duration) / 8.0) as u64)
+        } else {
+            None
+        };
+        (url.to_string(), "opus".to_string(), estimated)
+    } else {
+        let url = transcode::build_direct_play_url(&server_url, part_key, &token)
+            .ok_or_else(|| "could not build direct-play url".to_string())?;
+        (
+            url.to_string(),
+            source_codec,
+            track.file_size_bytes.map(|b| b as u64),
+        )
+    };
 
     // Album key falls back to the track's rating key so an orphan track
     // still gets a stable grouping. `tracks_for_album` always populates
@@ -586,8 +628,8 @@ fn build_job(state: &State<'_, AppState>, track: &Track) -> Result<UserDownloadJ
         album_title: track.album_title.clone(),
         thumb: track.thumb.clone(),
         codec,
-        url: url.to_string(),
-        expected_size_bytes: track.file_size_bytes.map(|b| b as u64),
+        url,
+        expected_size_bytes,
     })
 }
 
@@ -603,19 +645,33 @@ fn resolve_filter_albums(
     with_cache(state, |cache| cache.albums_by_internal_ids(&ids))
 }
 
-fn estimate_total_bytes(tracks: &[Track]) -> i64 {
+fn estimate_total_bytes(tracks: &[Track], quality: DownloadQuality) -> i64 {
     tracks
         .iter()
-        .map(|t| {
-            if let Some(bytes) = t.file_size_bytes {
-                bytes
-            } else {
-                match t.bitrate {
-                    // bitrate is in kbps, duration is seconds.
-                    Some(kbps) if kbps > 0 => ((kbps as f64 * 1000.0 * t.duration) / 8.0) as i64,
-                    _ => 0,
-                }
-            }
-        })
+        .map(|t| estimate_track_bytes(t, quality))
         .sum()
+}
+
+/// Per-track byte estimate that mirrors `build_job`'s download branching:
+/// lossless sources transcoded to the chosen bitrate use the transcode
+/// estimate; everything else uses the source-file size (or
+/// bitrate×duration when fileSizeBytes is missing).
+fn estimate_track_bytes(t: &Track, quality: DownloadQuality) -> i64 {
+    let losseless_transcode = t
+        .codec
+        .as_deref()
+        .map(is_lossless_codec)
+        .unwrap_or(false)
+        .then(|| quality.as_bitrate())
+        .flatten();
+    if let Some(bitrate) = losseless_transcode {
+        return ((bitrate.as_kbps() as f64 * 1000.0 * t.duration) / 8.0) as i64;
+    }
+    if let Some(bytes) = t.file_size_bytes {
+        return bytes;
+    }
+    match t.bitrate {
+        Some(kbps) if kbps > 0 => ((kbps as f64 * 1000.0 * t.duration) / 8.0) as i64,
+        _ => 0,
+    }
 }

@@ -96,6 +96,36 @@ impl TranscodeBitrate {
     }
 }
 
+/// Quality preference for user-initiated downloads. `Original` direct-plays
+/// the source file (always lossless's full quality). The `Kbps*` variants
+/// transcode lossless sources to Ogg/Opus at the chosen bitrate, matching
+/// Plex's universal-transcode endpoint. Lossy sources always direct-play
+/// regardless of this setting (transcoding lossy → lossy throws away
+/// quality with no bandwidth payoff).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum DownloadQuality {
+    #[default]
+    Original,
+    Kbps320,
+    Kbps256,
+    Kbps192,
+    Kbps128,
+}
+
+impl DownloadQuality {
+    /// Returns the transcode bitrate to use, or `None` for direct play.
+    pub fn as_bitrate(self) -> Option<TranscodeBitrate> {
+        match self {
+            Self::Original => None,
+            Self::Kbps320 => Some(TranscodeBitrate::Kbps320),
+            Self::Kbps256 => Some(TranscodeBitrate::Kbps256),
+            Self::Kbps192 => Some(TranscodeBitrate::Kbps192),
+            Self::Kbps128 => Some(TranscodeBitrate::Kbps128),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SearchResultKind {
@@ -567,6 +597,9 @@ pub struct Settings {
     pub include_plex_styles: bool,
     /// Show country-of-origin flags next to artist names. Defaults true.
     pub show_artist_flags: bool,
+    /// Quality used for user-initiated downloads. `Original` direct-plays
+    /// the source; `Kbps*` transcodes lossless sources to Ogg/Opus.
+    pub download_quality: DownloadQuality,
 }
 
 impl Default for Settings {
@@ -591,6 +624,7 @@ impl Default for Settings {
             popularity_display: PopularityDisplay::default(),
             include_plex_styles: true,
             show_artist_flags: true,
+            download_quality: DownloadQuality::default(),
         }
     }
 }

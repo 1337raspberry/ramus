@@ -110,6 +110,8 @@ export type PlaybackMode = "never" | "cellular" | "remote" | "remoteOrCellular" 
 
 export type TranscodeBitrate = "kbps320" | "kbps256" | "kbps192" | "kbps128";
 
+export type DownloadQuality = "original" | "kbps320" | "kbps256" | "kbps192" | "kbps128";
+
 export interface Settings {
   playbackMode: PlaybackMode;
   /** Bitrate (kbps as enum) the universal transcoder targets when transcoding. */
@@ -133,6 +135,9 @@ export interface Settings {
   includePlexStyles: boolean;
   /** When true, country-of-origin flags render next to artist names. */
   showArtistFlags: boolean;
+  /** Quality used for user-initiated downloads. Lossless tracks transcode
+   *  to Ogg/Opus at the chosen bitrate; lossy tracks always direct-play. */
+  downloadQuality: DownloadQuality;
 }
 
 export interface CacheStats {

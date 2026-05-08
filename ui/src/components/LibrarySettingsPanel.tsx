@@ -566,6 +566,30 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
               </button>
 
               <label className="settings-row">
+                <span>Download quality</span>
+                <select
+                  className="sort-select"
+                  value={settings.downloadQuality}
+                  onChange={(e) =>
+                    save({
+                      downloadQuality: e.target.value as Settings["downloadQuality"],
+                    })
+                  }
+                >
+                  <option value="original">Lossless</option>
+                  <option value="kbps320">320 kbps</option>
+                  <option value="kbps256">256 kbps</option>
+                  <option value="kbps192">192 kbps</option>
+                  <option value="kbps128">128 kbps</option>
+                </select>
+              </label>
+              <HelperText>
+                <strong>Lossless</strong> downloads the original file as-is. The other options
+                transcode lossless tracks to Ogg/Opus at the chosen bitrate to save storage and
+                data. Already-lossy tracks (MP3, AAC etc) always download as-is.
+              </HelperText>
+
+              <label className="settings-row">
                 <span>Offline mode</span>
                 <input
                   type="checkbox"

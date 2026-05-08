@@ -1093,7 +1093,13 @@ async fn run_user_download(
         return Ok(());
     }
 
-    let ext = {
+    // Transcoded jobs always carry "opus" in `job.codec`, but the
+    // on-disk container is Ogg/Opus — match the prefetch worker's
+    // extension and use ".ogg" so both worker paths produce the same
+    // filename shape, and rehydration / lossless-codec checks line up.
+    let ext = if ramus_core::playback::transcode::is_transcode_download_url(&job.url) {
+        "ogg".to_string()
+    } else {
         let codec_ext = job.codec.to_lowercase();
         if is_allowed_extension(&codec_ext) {
             codec_ext
