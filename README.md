@@ -141,11 +141,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test -p ramus-core
 ( cd ui && npx tsc --noEmit )
 ```
-</details
----
+</details>
 
-
-## Architecture
+## Architecture & Tech Stack
 
 
 ```
@@ -162,8 +160,6 @@ scripts/       Build helpers (libmpv bundling, codesigning,
                license regeneration).
 ```
 
-### Tech stack
-
 - **Backend** - [Rust](https://www.rust-lang.org/), [Tauri 2](https://tauri.app/), [rusqlite](https://github.com/rusqlite/rusqlite) with WAL + FTS5, [reqwest](https://github.com/seanmonstar/reqwest), [tokio](https://tokio.rs/).
 - **Audio** - [libmpv](https://mpv.io/) (loaded dynamically via [libloading](https://github.com/nagisa/rust_libloading)) on desktop; [MPVKit](https://github.com/mpvkit/MPVKit) on iOS; [Media3 / ExoPlayer](https://developer.android.com/media/media3) on Android.
 - **DSP** - [symphonia](https://github.com/pdeljanov/Symphonia) + [rustfft](https://github.com/ejmahler/RustFFT) for the focus mode visualiser on desktop. Opus playback (transcoded streams, downloaded `.ogg` copies) decodes via the [symphonia-adapter-libopus](https://github.com/sdroege/symphonia-adapter-libopus) crate, which bundles libopus C source and builds it via CMake.
@@ -179,13 +175,13 @@ Most behaviour lives in `ramus-core` and is unit-tested. The Tauri layer is inte
 
 - **Plex auth tokens** are encrypted at rest with **AES-256-GCM**, using a key derived (`SHA-256`) from a stable per-machine identifier:
   
-  - **macOS** — `IOPlatformUUID` (read via IOKit).
+  - **macOS** - `IOPlatformUUID` (read via IOKit).
   - **Windows** — `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`.
   - **Linux** — `/etc/machine-id`.
   - **Android** — a random UUID generated on first run and stored in the app's sandboxed config dir.
   - **iOS** is the exception: tokens go directly into the system Keychain (no file, no AES layer), via a Swift `KeychainBridge`.
   
-  The encrypted blob (`tokens.enc`) lives in the platform's standard app-data directory and is written atomically (tmp + `fsync` + `rename`) with `0o600` permissions on Unix. The threat defense model is "render the file inert if arbitrarily exfiltrated to another machine" - not protection against a local attacker who already has root on the same device. This is the same model (or in some cases, being encrypted is one step better) that most plex clients or even the official plex clients, operate on. 
+ The encrypted blob (`tokens.enc`) lives in the platform's standard app-data directory and is written atomically (tmp + `fsync` + `rename`) with `0o600` permissions on Unix. The threat defense model is "render the file inert if arbitrarily exfiltrated to another machine" - not protection against a local attacker who already has root on the same device. This is the same model (or in some cases, being encrypted is one step better) that most plex clients or even the official plex clients, operate on. 
 
 - **No telemetry, no analytics, no crash reporters, no auto-updaters. Not ever.** ramus only talks to your Plex Media Server and plex.tv (for OAuth + server discovery). No other connections anywhere.
 
@@ -215,7 +211,7 @@ If you've found a vulnerability, please **don't open a public issue**. See [SECU
 ---
 
 ## Limitations, Known Issues & Planned Improvements
-
+<details>
 - The focus mode visualiser does not run/intercept our audio data "live", we need to compute the spectrum data separately. This leads to a negigible but not non-nothing cpu hit. This is a limitation of our broad one-size-fits-all mpv based audio engine (besides android). Hooking into the audio stream to do it live would require an entirely new audio engine I am pretty sure. For a feature that's off by default and I imagine most people will ignore, this is an okay compromise for now. 
 
 - Because Plex only exposes minimal genre and style data on a standard broad api call, we need to maintain a local db with an initial cache/sync setup phase and deep sync on all albums. Without this we'd lack the data to make the app do the cool stuff it was built to do! This gives us the ability to do our super fast locally cached search as well which is great, and even on massive libraries, connected remotely, the initial sync is only a few minutes. Worth the trade off I think. Incremental syncs after that are genuinely incremental and if nothing changes in your library, are essentially a no-op. If plex ever changes what they serve out by default, we can reconsider this. 
@@ -227,8 +223,7 @@ If you've found a vulnerability, please **don't open a public issue**. See [SECU
 - The colour extraction and accent colours still aren't as perfect as I'd like, and there are some edge cases where things aren't as readable as I'd want, but I've done loads of tweaking to try and get to a happy medium, on many different displays, SDR and HDR too. So I might just have to accept that perfect is the enemy of good, or whatever it is they say.
 
 - I wouldn't mind implementing the new JWT short lived token auth system that plex has recently rolled out, but as far as I can tell it only applies to plex.tv auth, not PMS server auth, so that token is always going to be perma and long standing. Mixing the two isn't ideal, so when that is fully baked into PMS, i would like to roll that out. No harm in extra hardening. 
-
----
+</details>
 
 ## Trademarks & affiliation
 
