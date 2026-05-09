@@ -38,16 +38,16 @@
 
 <table>
   <tr>
-    <td><img src="docs/screenshots/library.png" alt="Library view" /></td>
-    <td><img src="docs/screenshots/nowplaying.png" alt="Now playing" /></td>
+    <td><img src="docs/screenshots/search.png" alt="Search with operators" width="400" /></td>
+    <td><img src="docs/screenshots/focus.png" alt="Focus / spectrum view" width="400"/></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/search.png" alt="Search with operators" /></td>
-    <td><img src="docs/screenshots/focus.png" alt="Focus / spectrum view" /></td>
+    <td><img src="docs/screenshots/library.png" alt="Artist view" /></td>
+    <td><img src="docs/screenshots/filters.png" alt="filters" width="400"/></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/mobile.png" alt="iOS/Android" /></td>
-    <td><img src="docs/screenshots/filters.png" alt="filters" /></td>
+    <td><img src="docs/screenshots/mobile.png" alt="Mobile Now Playing" width="300"/></td>
+    <td><img src="docs/screenshots/mobile.png" alt="Mobile Library" width="300"/></td>
   </tr>
 </table>
 
