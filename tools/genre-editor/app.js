@@ -34,6 +34,7 @@ const els = {
   fileMeta: $("#file-meta"),
   saveBtn: $("#save-btn"),
   exportTxtBtn: $("#export-txt-btn"),
+  importTxtBtn: $("#import-txt-btn"),
   dirtyFlag: $("#dirty-flag"),
   search: $("#search"),
   expandAllBtn: $("#expand-all-btn"),
@@ -129,7 +130,15 @@ async function loadFile(name) {
 }
 
 async function save() {
-  if (!state.path || !state.data) return;
+  if (!state.data) return;
+  if (!state.path) {
+    // Imported-but-not-loaded-from-disk case: there's no destination JSON
+    // file. The two ways out are export-as-txt or selecting a target file
+    // from the dropdown (which would replace the imported tree, so the
+    // user shouldn't reach for this expecting to "save as").
+    setStatus("imported tree has no destination file — use export .txt, or pick a JSON file from the dropdown to load over", "err");
+    return;
+  }
   setStatus("saving…");
   const r = await fetch("/api/save", {
     method: "POST",
@@ -190,6 +199,195 @@ function exportTxt() {
   // Revoke after the navigation has had time to start.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   setStatus(`exported ${countNodes(state.data.genres)} nodes`, "ok");
+}
+
+// --- import ---------------------------------------------------------------
+
+// Port of ramus-core/src/genre/parser.rs::CustomGenreParser. Parses the
+// indented `Name | aka1 | aka2` text format and returns an editor-shape
+// tree (`{name, short_summary: null, aka?, children}`) plus any non-fatal
+// warnings. Throws on structural problems (empty file, JSON-looking input,
+// indentation jumps, no roots) so the caller can surface a clean error.
+function parseTxt(text) {
+  if (!text) throw new Error("the file is empty");
+
+  // Strip C0 controls (except tab), DEL, and C1 controls — same set the
+  // Rust parser drops in `strip_control_characters`.
+  const cleaned = text.replace(/[\x00-\x08\x0b-\x1f\x7f\x80-\x9f]/g, "");
+
+  const rawLines = cleaned.split(/\r?\n/);
+  const indexed = []; // { lineNumber, text }
+  for (let i = 0; i < rawLines.length; i++) {
+    if (rawLines[i].trim()) indexed.push({ lineNumber: i + 1, text: rawLines[i] });
+  }
+  if (indexed.length === 0) throw new Error("the file is empty");
+
+  const firstChar = indexed[0].text.trim()[0];
+  if (firstChar === "{" || firstChar === "[") {
+    throw new Error(
+      "this looks like JSON or another structured format — use a plain text file with indented genre names instead",
+    );
+  }
+
+  // Detect indent unit from the first indented line: tab wins over spaces;
+  // for spaces, snap to 4 / 2 / 1 based on how deep the first indent goes.
+  // Default to 2-space when the file has no indentation at all (a flat
+  // list of roots).
+  let unit = { kind: "spaces", size: 2 };
+  for (const { text: t } of indexed) {
+    if (t[0] === "\t") {
+      unit = { kind: "tab" };
+      break;
+    }
+    if (t[0] === " ") {
+      let n = 0;
+      while (t[n] === " ") n++;
+      unit = { kind: "spaces", size: n >= 4 ? 4 : n >= 2 ? 2 : 1 };
+      break;
+    }
+  }
+
+  const measure = (line) => {
+    if (unit.kind === "tab") {
+      let n = 0;
+      while (line[n] === "\t") n++;
+      return { depth: n, content: line.slice(n).trim() };
+    }
+    let n = 0;
+    while (line[n] === " ") n++;
+    const depth = Math.floor(n / unit.size);
+    return { depth, content: line.slice(depth * unit.size).trim() };
+  };
+
+  const entries = [];
+  const warnings = [];
+  let prevDepth = 0;
+
+  for (const { lineNumber, text: t } of indexed) {
+    const { depth, content } = measure(t);
+    const parts = content.split("|");
+    const name = (parts[0] || "").trim();
+    const akas = parts
+      .slice(1)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    if (!name) {
+      warnings.push(`Line ${lineNumber}: skipped — no genre name found.`);
+      continue;
+    }
+    if (depth > prevDepth + 1) {
+      throw new Error(
+        `line ${lineNumber}: indentation jumps from level ${prevDepth} to ${depth}`,
+      );
+    }
+    prevDepth = depth;
+    entries.push({ depth, name, akas, lineNumber });
+  }
+
+  if (!entries.some((e) => e.depth === 0)) {
+    throw new Error("no root-level genres found");
+  }
+
+  // Tree assembly mirrors `build_tree` in the Rust parser: a stack of
+  // open-at-depth nodes, popped onto their parent when a sibling/ancestor
+  // arrives. Same-level duplicate names produce non-fatal warnings;
+  // duplicates across different parents are allowed (cousins can share
+  // a name — e.g. "Funk" under both R&B and Pop).
+  const roots = [];
+  const stack = []; // { depth, node }
+  const dupeSets = [new Set()];
+
+  for (const { depth, name, akas, lineNumber } of entries) {
+    const newNode = { name, short_summary: null, children: [] };
+    if (akas.length) newNode.aka = akas;
+
+    let didPop = false;
+    while (stack.length && stack[stack.length - 1].depth >= depth) {
+      const popped = stack.pop();
+      if (stack.length === 0) roots.push(popped.node);
+      else stack[stack.length - 1].node.children.push(popped.node);
+      didPop = true;
+    }
+
+    if (didPop && depth + 1 < dupeSets.length) {
+      dupeSets.length = depth + 1;
+    }
+    while (dupeSets.length <= depth) dupeSets.push(new Set());
+
+    const key = name.toLowerCase();
+    if (dupeSets[depth].has(key)) {
+      warnings.push(`Line ${lineNumber}: duplicate genre "${name}" at this level.`);
+    } else {
+      dupeSets[depth].add(key);
+    }
+
+    stack.push({ depth, node: newNode });
+  }
+
+  while (stack.length) {
+    const last = stack.pop();
+    if (stack.length === 0) roots.push(last.node);
+    else stack[stack.length - 1].node.children.push(last.node);
+  }
+
+  return { genres: roots, warnings };
+}
+
+function importTxt() {
+  if (state.dirty && !confirm("discard unsaved changes?")) return;
+  // Browser-native file picker — same approach as the export anchor, no
+  // need for a hidden <input> in the markup.
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".txt,.text,text/plain";
+  input.onchange = () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = parseTxt(reader.result || "");
+      } catch (err) {
+        setStatus("import failed: " + err.message, "err");
+        return;
+      }
+      // Replace the in-memory tree. `state.path` goes null because there
+      // is no on-disk JSON file yet — `save()` surfaces that explicitly.
+      state.path = null;
+      state.data = { genres: parsed.genres };
+      // Mirror loadFile()'s normalisation so downstream code can assume
+      // children is always an array.
+      const norm = (n) => {
+        if (!Array.isArray(n.children)) n.children = [];
+        n.children.forEach(norm);
+      };
+      state.data.genres.forEach(norm);
+
+      setDirty(true);
+      const total = countNodes(state.data.genres);
+      els.fileMeta.textContent = `${total} nodes (imported from ${file.name}, unsaved)`;
+      render();
+
+      if (parsed.warnings.length) {
+        // Warnings are non-fatal (e.g. same-level duplicates). Surface the
+        // count in the status; full list goes to the console so the user
+        // can audit without crowding the toolbar.
+        console.warn("import warnings:\n" + parsed.warnings.join("\n"));
+        const w = parsed.warnings.length;
+        setStatus(
+          `imported ${total} nodes (${w} warning${w === 1 ? "" : "s"} — see console)`,
+          "ok",
+        );
+      } else {
+        setStatus(`imported ${total} nodes`, "ok");
+      }
+    };
+    reader.onerror = () => setStatus("read failed: " + reader.error, "err");
+    reader.readAsText(file);
+  };
+  input.click();
 }
 
 // --- rendering ------------------------------------------------------------
@@ -793,6 +991,7 @@ els.reloadBtn.addEventListener("click", () => {
 
 els.saveBtn.addEventListener("click", save);
 els.exportTxtBtn.addEventListener("click", exportTxt);
+els.importTxtBtn.addEventListener("click", importTxt);
 
 els.search.addEventListener("input", () => {
   applyFilter(els.search.value);

@@ -49,6 +49,15 @@ no dependencies — stdlib only.
   edits) as a .txt file in the format ramus-core's `CustomGenreParser`
   accepts, so you can round-trip a tree built here back into the app via
   Settings → Genres → Import. AKAs and descriptions are preserved.
+- `import .txt` (toolbar) is the inverse: pick a .txt file in the same
+  format and it replaces the current in-memory tree so you can edit it
+  here. The imported tree has no destination JSON file, so `save` is
+  disabled-effectively (it surfaces a hint to use export .txt or pick a
+  file from the dropdown). Same parser rules as ramus-core: 2-space or
+  tab indent (auto-detected), pipe-separated AKAs, no JSON-shaped input.
+  Same-level duplicate names produce console warnings; descriptions
+  aren't part of the .txt format so imported nodes have no
+  `short_summary`.
 
 ## .txt format
 
