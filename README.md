@@ -24,21 +24,19 @@
 ## About
 
 > ramus is a genre-first music client for Plex focused on discovering and exploring your existing library. Out of the box It's designed to function with the metadata plex has already assigned your albums to give you a rich hierarchical tree-like view of your library, while genre-obsessives can go as deep and custom as they wish and browse by their own dream musical taxonomy. 
+
 ## Features
 
 - **Hierarchical browsing** - ramus features a tree-like genre browser that automatically matches your existing library. It comes with a custom and rich genre hierarchy by default, but you can build and supply your own, or maybe download a custom setup built by somebody else
-- **Instant locally cached search** - Ctrl+F > "freebi" > Enter and you're listening to Freebird. Or just "wwodnerwal" and it knows you meant Wonderwall. Also features search operators and shortcuts for power users eg "/Dream-Pop AND year:>2013"
+- **Instant locally cached search** - Ctrl+F > "free b" > Enter and you're listening to Free Bird. Or just "wonrederwall" and it knows you meant Wonderwall. Also features search operators and shortcuts for power users eg "/Dream-Pop AND year:>2013"
 - **Library filters** which can be saved as easy-reach bookmarks, and even cached for offline listening (with no file size limit). Save all your favourite albums in the dubstep genre as "workout tunes" and download the whole thing for your gym with the dodgy wifi.
-- **Album-Art focused** - Browse by art grid instead of dry lists, and enjoy auto-extracted background and accent colours making your entire music listening experience cohesive and _aesthetic_
-- **Waveform Seeking** - If you have Sonic Analysis enabled on your server, you already have all this wonderful data. Skip right past the 14 minutes of silence on that bonus track to the good stuff. 
+- **Album-Art focused** - Browse by art grid instead of dry text lists, and enjoy auto-extracted background and accent colours making your entire music listening experience cohesive and _aesthetic_
+- **Waveform Seeking** - If you have Sonic Analysis enabled on your server, you already have all this wonderful data. Skip past the 6 minute ambient intro straight to the visible  14 minutes of silence on that bonus track to the good stuff.
 - **Track popularity data** - See the top tracks in an album based on crowdsourced popularity data supplied directly via plex and obtained via users starring their own libraries, or see a unique popularity chart over an albums track listing to get the full picture. 
 - **A good ol fashioned visualiser and full screen oriented "focus mode"** - Watch your music bounce like it's 2003
 - **Lyrics courtesy of lrclib** - No account needed and a huge number of the lyrics are synced too. All credits to lrclib. what a service!
 
-> _placeholder for the deeper feature copy / bulleted highlights. inb4 a billion words_
-
 ## Screenshots
-
 
 <table>
   <tr>
@@ -89,6 +87,11 @@ You'll need:
 - **Rust** stable (`rustup install stable`).
 - **Node.js** 20+ and **npm**.
 - **Tauri 2 prerequisites** for your platform — follow [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/).
+- **CMake** (and ideally **Ninja**). The focus mode visualiser includes an Opus decoder via the `symphonia-adapter-libopus` crate, which compiles a vendored libopus C source through `cmake` at build time. Without it, `cargo build` will error out partway through `opusic-sys`.
+  - macOS: `brew install cmake ninja`.
+  - Linux (Debian/Ubuntu): `sudo apt-get install cmake ninja-build`.
+  - Linux (Fedora): `sudo dnf install cmake ninja-build`.
+  - Windows: install [CMake](https://cmake.org/download/) (or `winget install Kitware.CMake` / `choco install cmake`) and make sure it's on `PATH`. The MSVC build tools you already need for Tauri provide the rest of the C toolchain — Ninja is optional on Windows; CMake will fall back to MSBuild.
 - **libmpv** in the dev loop:
   - macOS: `brew install mpv` (provides `libmpv.dylib`).
   - Linux (Debian/Ubuntu): `libmpv-dev libwebkit2gtk-4.1-dev libgtk-3-dev` (and `build-essential pkg-config` if you don't have them already).
@@ -121,7 +124,7 @@ Mobile:
 cargo tauri ios build
 ```
 
-> You'll need to sideload this yourself. If demand is there I may put this on the App Store, but I'm not in a rush to pay Apple for the privilege of releasing an open-source, as-free, zero cost app.
+> You'll need to sideload this yourself. If demand is there I may put this on the App Store, but I'm not in a rush to pay Apple for the privilege of releasing an open-source, ad-free, zero cost app.
 
 ```sh
 # Android — emulator or connected device
@@ -161,7 +164,7 @@ scripts/       Build helpers (libmpv bundling, codesigning,
 
 - **Backend** - [Rust](https://www.rust-lang.org/), [Tauri 2](https://tauri.app/), [rusqlite](https://github.com/rusqlite/rusqlite) with WAL + FTS5, [reqwest](https://github.com/seanmonstar/reqwest), [tokio](https://tokio.rs/).
 - **Audio** - [libmpv](https://mpv.io/) (loaded dynamically via [libloading](https://github.com/nagisa/rust_libloading)) on desktop; [MPVKit](https://github.com/mpvkit/MPVKit) on iOS; [Media3 / ExoPlayer](https://developer.android.com/media/media3) on Android.
-- **DSP** - [symphonia](https://github.com/pdeljanov/Symphonia) + [rustfft](https://github.com/ejmahler/RustFFT) for the focus mode visualiser on desktop.
+- **DSP** - [symphonia](https://github.com/pdeljanov/Symphonia) + [rustfft](https://github.com/ejmahler/RustFFT) for the focus mode visualiser on desktop. Opus playback (transcoded streams, downloaded `.ogg` copies) decodes via the [symphonia-adapter-libopus](https://github.com/sdroege/symphonia-adapter-libopus) crate, which bundles libopus C source and builds it via CMake.
 - **System integration** - [souvlaki](https://github.com/Sinono3/souvlaki) for desktop media keys / Now Playing; `MPRemoteCommandCenter` on iOS; `MediaSession` + `MediaSessionService` on Android.
 - **Frontend** - [React 19](https://react.dev/) + [Vite](https://vite.dev/) + [TypeScript](https://www.typescriptlang.org/), [Zustand](https://github.com/pmndrs/zustand) for state, [@tanstack/react-virtual](https://tanstack.com/virtual) for the long lists.
 - **Fonts** - [Inter](https://rsms.me/inter/), [JetBrains Mono](https://www.jetbrains.com/lp/mono/), [Twemoji Country Flags](https://github.com/talkjs/country-flag-emoji-polyfill).
@@ -170,7 +173,7 @@ Most behaviour lives in `ramus-core` and is unit-tested. The Tauri layer is inte
 
 ---
 
-## Privacy
+## Privacy & Security
 
 - **Plex auth tokens** are encrypted at rest with **AES-256-GCM**, using a key derived (`SHA-256`) from a stable per-machine identifier:
   
@@ -191,11 +194,9 @@ Most behaviour lives in `ramus-core` and is unit-tested. The Tauri layer is inte
   - macOS: `~/Library/Application Support/com.raspsoft.ramus/` (desktop). On iOS, everything lives inside the app's sandboxed container.
   - Windows: `%APPDATA%\raspsoft\ramus\`.
   - Linux: `~/.local/share/ramus/` (XDG-respecting `$XDG_DATA_HOME`).
-  - Android: app-private storage; `network_security_config.xml` permits cleartext HTTP for LAN Plex servers (so you can reach `http://192.168.x.x:32400`) and nothing else.
+  - Android: app-private storage. `network_security_config.xml` is setup to permit cleartext HTTP (against android defaults) for LAN addresses only (so you can reach `http://192.168.x.x:32400` on your home LAN.)
 
-## Security
 
-If you've found a vulnerability, please **don't open a public issue**. See [SECURITY.md](SECURITY.md) for the disclosure process and scope. In short: report through [GitHub Security Advisories](https://github.com/1337raspberry/ramus/security/advisories/new). 
 
 ---
 
@@ -205,20 +206,23 @@ Bug reports, feature requests, and PRs are welcome. Read [CONTRIBUTING.md](CONTR
 
 This project follows the [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 
+## Security Reporting
+
+If you've found a vulnerability, please **don't open a public issue**. See [SECURITY.md](SECURITY.md) for the disclosure process and scope. In short: report through [GitHub Security Advisories](https://github.com/1337raspberry/ramus/security/advisories/new).
+
 ---
 
 ## Limitations, Known Issues & Planned Improvements
-- Transcode based streams, or lossless streams on mobile networks, are not perfect at present. I want to build a smarter connection monitor and lifecycle setup that can adapt to bandwidth availability and be smarter about things so it "just works", including filling up a prefetch buffer after the initial transcode streaming is done if possible, but this will require a fair bit of work. This is my current focus.
 
-- The focus mode visualiser does not run/intercept our audio data "live", we need to compute the spectrum data separately. This leads to a duplicate data download on the first track of an album, and a (negligible but existing) cpu hit. This is a limitation of our broad one-size-fits-all mpv based audio engine. Hooking into the audio stream to do it live would require an entirely new audio engine I believe. For a feature that's off by default and I imagine most people will ignore, this is an okay compromise for now. 
+- The focus mode visualiser does not run/intercept our audio data "live", we need to compute the spectrum data separately. This leads to a negigible but not non-nothing cpu hit. This is a limitation of our broad one-size-fits-all mpv based audio engine (besides android). Hooking into the audio stream to do it live would require an entirely new audio engine I am pretty sure. For a feature that's off by default and I imagine most people will ignore, this is an okay compromise for now. 
 
 - Because Plex only exposes minimal genre and style data on a standard broad api call, we need to maintain a local db with an initial cache/sync setup phase and deep sync on all albums. Without this we'd lack the data to make the app do the cool stuff it was built to do! This gives us the ability to do our super fast locally cached search as well which is great, and even on massive libraries, connected remotely, the initial sync is only a few minutes. Worth the trade off I think. Incremental syncs after that are genuinely incremental and if nothing changes in your library, are essentially a no-op. If plex ever changes what they serve out by default, we can reconsider this. 
 
-- No playlist support - currently on the fence about if i even want to add this. Depends on demand i suppose
+- No playlist support - currently on the fence about if i even want to add this. Depends on demand i suppose.
 
 - I wouldn't mind improving some of the more hidden/unintuitive ux. I've spent a lot of time making it as obvious and, what i think is as user friendly as possible. But this is still very much a myopic one person project. What is obvious to me might not be obvious to everybody else.
 
-- The colour extraction and accent colours still aren't as perfect as I'd like, and there are some edge cases where things aren't as readable as I'd want, but I've done loads of tweaking to try and get to a happy medium, on many different displays, SDR and HDR too. So I might just have to accept that perfect is the enemy of good, or whatever they say.
+- The colour extraction and accent colours still aren't as perfect as I'd like, and there are some edge cases where things aren't as readable as I'd want, but I've done loads of tweaking to try and get to a happy medium, on many different displays, SDR and HDR too. So I might just have to accept that perfect is the enemy of good, or whatever it is they say.
 
 - I wouldn't mind implementing the new JWT short lived token auth system that plex has recently rolled out, but as far as I can tell it only applies to plex.tv auth, not PMS server auth, so that token is always going to be perma and long standing. Mixing the two isn't ideal, so when that is fully baked into PMS, i would like to roll that out. No harm in extra hardening. 
 

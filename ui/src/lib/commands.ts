@@ -119,9 +119,24 @@ export const ART_SIZE = {
   LARGE: 1200,
 } as const;
 
-export const getArtUrl = async (thumb: string, size?: number): Promise<string> => {
-  const filePath = await invoke<string>("get_art_url", { thumb, size });
-  return convertFileSrc(filePath);
+// Coalesce concurrent art lookups for the same (thumb, size). Without this,
+// every queue row / grid tile that mounts with the same artwork fires its
+// own IPC + Plex fetch — and Plex's per-client concurrent cap serialises
+// them, so identical images appear one-by-one on slow links.
+const inFlightArt = new Map<string, Promise<string>>();
+
+export const getArtUrl = (thumb: string, size?: number): Promise<string> => {
+  const key = `${size ?? 300}::${thumb}`;
+  const existing = inFlightArt.get(key);
+  if (existing) return existing;
+  const pending = (async () => {
+    const filePath = await invoke<string>("get_art_url", { thumb, size });
+    return convertFileSrc(filePath);
+  })().finally(() => {
+    inFlightArt.delete(key);
+  });
+  inFlightArt.set(key, pending);
+  return pending;
 };
 
 export const getAlbumColors = (sourceId: string) =>
