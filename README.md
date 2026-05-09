@@ -35,21 +35,23 @@
 - **Lyrics courtesy of lrclib** - No account needed and a huge number of the lyrics are synced too. All credits to lrclib. what a service!
 
 ## Screenshots
-
+<details>
+<summary>Click for some mobile and desktop screenies of the key ramus features</summary>
 <table>
   <tr>
     <td><img src="docs/screenshots/search.png" alt="Search with operators" width="400" /></td>
     <td><img src="docs/screenshots/focus.png" alt="Focus / spectrum view" width="400"/></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/library.png" alt="Artist view" /></td>
-    <td><img src="docs/screenshots/filters.png" alt="filters" width="400"/></td>
+    <td><img src="docs/screenshots/artist.png" alt="Artist view" width="400"/></td>
+    <td><img src="docs/screenshots/mobile-np-lyrics.png" alt="Mobile Now Playing" width="400"/></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/mobile.png" alt="Mobile Now Playing" width="300"/></td>
-    <td><img src="docs/screenshots/mobile.png" alt="Mobile Library" width="300"/></td>
+    <td><img src="docs/screenshots/popular.png" alt="Popularity Charts view" width="400"/></td>
+    <td><img src="docs/screenshots/filters.png" alt="filters" width="400"/></td>
   </tr>
 </table>
+</details>
 
 ---
 
@@ -65,7 +67,7 @@ Pre-built installers are produced by [GitHub Actions](https://github.com/1337ras
 | **iOS**                           | Build from source only for now                                            | More on that below.                                                                                   |
 | **Android**                       | `ramus_<version>_universal.apk`                                           | Signed multi-ABI APK (`arm64-v8a` + `armeabi-v7a`); sideload via `adb install` or your file manager.  |
 
-> ⚠️ **Releases are currently unsigned or self-signed.** As with many open source projects, macOS gatekeeper will quarantine the `.app` and tell you it's damaged or untrusted; Windows SmartScreen will whine that it's unrecognised, and android Play Protect will ask to scan it first. The release notes include the standard `xattr -cr ramus.app` and SmartScreen "More info → Run anyway" solutions.
+> ⚠️ **Releases are currently unsigned or self-signed.** As with many open source projects, macOS gatekeeper will quarantine the `.app` and tell you it's damaged or untrusted; Windows SmartScreen will whine that it's unrecognised, and Android Play Protect will ask to scan it first. On MacOS you'll need to go into Settings > Privacy & Security > Run Anyway. On Windows you'll need to click "Run Anyway".
 
 ### Requirements
 
@@ -79,7 +81,7 @@ Pre-built installers are produced by [GitHub Actions](https://github.com/1337ras
 ---
 
 ## Build from source
-
+<details>
 You'll need:
 
 - **Rust** stable (`rustup install stable`).
@@ -139,10 +141,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test -p ramus-core
 ( cd ui && npx tsc --noEmit )
 ```
-
+</details
 ---
 
+
 ## Architecture
+
 
 ```
 ramus-core/    Rust library — all business logic.
