@@ -176,9 +176,9 @@ Most behaviour lives in `ramus-core` and is unit-tested. The Tauri layer is inte
 - **Plex auth tokens** are encrypted at rest with **AES-256-GCM**, using a key derived (`SHA-256`) from a stable per-machine identifier:
   
   - **macOS** - `IOPlatformUUID` (read via IOKit).
-  - **Windows** — `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`.
-  - **Linux** — `/etc/machine-id`.
-  - **Android** — a random UUID generated on first run and stored in the app's sandboxed config dir.
+  - **Windows** - `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`.
+  - **Linux** - `/etc/machine-id`.
+  - **Android** - a random UUID generated on first run and stored in the app's sandboxed config dir.
   - **iOS** is the exception: tokens go directly into the system Keychain (no file, no AES layer), via a Swift `KeychainBridge`.
   
  The encrypted blob (`tokens.enc`) lives in the platform's standard app-data directory and is written atomically (tmp + `fsync` + `rename`) with `0o600` permissions on Unix. The threat defense model is "render the file inert if arbitrarily exfiltrated to another machine" - not protection against a local attacker who already has root on the same device. This is the same model (or in some cases, being encrypted is one step better) that most plex clients or even the official plex clients, operate on. 
