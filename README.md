@@ -5,8 +5,6 @@
 <h1 align="center">ramus</h1>
 <p align="center"><sub>ramus | ra·​mus | a projecting part, elongated process, or branch</sub></p>
 
-<!-- TAGLINE: one-line pitch goes here -->
-
 [![CI](https://github.com/1337raspberry/ramus/actions/workflows/ci.yml/badge.svg)](https://github.com/1337raspberry/ramus/actions/workflows/ci.yml)
 [![Release](https://github.com/1337raspberry/ramus/actions/workflows/release.yml/badge.svg)](https://github.com/1337raspberry/ramus/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -16,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="docs/screenshots/hero.png" alt="ramus main view" width="900" />
+  <img src="docs/screenshots/hero.png" alt="ramus main view" width="700" />
 </p>
 
 ---
