@@ -80,7 +80,7 @@ Pre-built installers are produced by [GitHub Actions](https://github.com/1337ras
 
 ---
 
-## Build from source
+## Building From Source
 <details>
 You'll need:
 
