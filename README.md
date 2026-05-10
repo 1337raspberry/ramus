@@ -202,8 +202,6 @@ Most behaviour lives in `ramus-core` and is unit-tested. The Tauri layer is inte
 
 Bug reports, feature requests, and PRs are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before sending a non-trivial PR - it covers the project layout, the pre-push checks, and a few of the load-bearing constraints around playback timing and the mobile bridges.
 
-This project follows the [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
-
 ## Security Reporting
 
 If you've found a vulnerability, please **don't open a public issue**. See [SECURITY.md](SECURITY.md) for the disclosure process and scope. In short: report through [GitHub Security Advisories](https://github.com/1337raspberry/ramus/security/advisories/new).
@@ -213,7 +211,7 @@ If you've found a vulnerability, please **don't open a public issue**. See [SECU
 ## Limitations, Known Issues & Planned Improvements
 
 <details>
-- The focus mode visualiser does not run/intercept our audio data "live", we need to compute the spectrum data separately. This leads to a negigible but not non-nothing cpu hit. This is a limitation of our broad one-size-fits-all mpv based audio engine (besides android). Hooking into the audio stream to do it live would require an entirely new audio engine I am pretty sure. For a feature that's off by default and I imagine most people will ignore, this is an okay compromise for now.
+- The focus mode visualiser does not run/intercept our audio data "live", we need to compute the spectrum data separately. This leads to a slight delay on first song load for it to appear, and a negigible but not-nothing cpu hit. This is a limitation of our broad one-size-fits-all mpv based audio engine (besides android). Hooking into the audio stream to do it live would require an entirely new audio engine I am pretty sure. For a feature that's off by default and I imagine most people will ignore, this is an okay compromise for me for now.
 
 - Because Plex only exposes minimal genre and style data on a standard broad api call, we need to maintain a local db with an initial cache/sync setup phase and deep sync on all albums. Without this we'd lack the data to make the app do the cool stuff it was built to do! This gives us the ability to do our super fast locally cached search as well which is great, and even on massive libraries, connected remotely, the initial sync is only a few minutes. Worth the trade off I think. Incremental syncs after that are genuinely incremental and if nothing changes in your library, are essentially a no-op. If plex ever changes what they serve out by default, we can reconsider this. 
 
@@ -223,7 +221,7 @@ If you've found a vulnerability, please **don't open a public issue**. See [SECU
 
 - The colour extraction and accent colours still aren't as perfect as I'd like, and there are some edge cases where things aren't as readable as I'd want, but I've done loads of tweaking to try and get to a happy medium, on many different displays, SDR and HDR too. So I might just have to accept that perfect is the enemy of good, or whatever it is they say.
 
-- I wouldn't mind implementing the new JWT short lived token auth system that plex has recently rolled out, but as far as I can tell it only applies to plex.tv auth, not PMS server auth, so that token is always going to be perma and long standing. Mixing the two isn't ideal, so when that is fully baked into PMS, i would like to roll that out. No harm in extra hardening. 
+- I wouldn't mind implementing the new JWT short-lived token auth system that plex has recently rolled out, but as far as I can tell it only applies to plex.tv auth, not PMS server auth, so that token is always going to be perma and long standing. Mixing the two isn't ideal, so when that is fully baked into PMS, i would like to roll that out. No harm in extra hardening. 
   
   </details>
 
