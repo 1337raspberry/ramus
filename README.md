@@ -189,7 +189,7 @@ Most behaviour lives in `ramus-core` and is unit-tested. The Tauri layer is inte
 
 - **Server auth tokens are kept out of logs and UI.** Plex authenticates by query string (`?X-Plex-Token=…`), and reqwest's error formatter includes the failing URL. ramus redacts both: track URLs are never logged in full (only `ratingKey` / part-key), and `prefetch.rs::redact_reqwest_err()` peels the underlying error so download failures don't leak the token in logs. The mobile debug panel (long-press the EQ button) masks `X-Plex-Token=` and `X-Plex-Headers=` before rendering anything.
 
-- **Local databases** (cache, image cache, audio cache, downloads) live in your platform's standard app-data directory :
+- **Local databases** (cache, image cache, audio cache, downloads) live in your platform's standard app-data directory:
   
   - macOS: `~/Library/Application Support/com.raspsoft.ramus/` (desktop). On iOS, everything lives inside the app's sandboxed container.
   - Windows: `%APPDATA%\raspsoft\ramus\`.
