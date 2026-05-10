@@ -245,6 +245,29 @@ See [`tools/genre-editor/README.md`](tools/genre-editor/README.md) for the full 
 
 ---
 
+## Some notes on AI assisted development and my background
+
+<details>
+<summary>tl;dr It was used here (but not entirely) to make a solodev hobby project take months, not years</summary>
+ramus (or the dream of it) has been something that i have tried to build for well over a decade. I am a sysadmin by trade so not at all unfamiliar with some scripting, programming and systems hardening, but i am not a software developer. I am not going to pretend to be. If you are and you look at this code, you'll probably very quickly see anything i have written vs what claude has.
+
+As for the history of this project, I have dabbled with trying to create this twice in the past:
+
+- It first started out as a very rough foobar2000 plugin that i created for myself but ultimately gave up on because it was just really quite awful in practice
+
+- Then a few years ago, it was a very rough java proof of concept which worked, but i just didn't have the ability or time to get out of a "okay the genre tree works with my library and it can play music...now what" phase.
+
+- About a year ago, on and off with the tools and models available then, I started working on a swift based MacOS only version of ramus, and despite being pretty much feature ready and good to go, I ultimately decided to scrap it because over the course of building that, I had learned so much and I knew I could take that learning, and create something far better and multi platform.
+
+Skip forward some more and thanks to rapid recent advancements in genAI coding and that prior learning - have let me finally take this concept, and deliver it into something that I have been using every day now on multiple platforms for a few months. It has been feature complete and "ready to go" for like 150 commits at least iirc, and all I have been doing is polish, security passes, and iterative improvements. This is open source and free, and I have no interest in ever making money for it, but I am proud of it, and I don't want to release something that sucks.
+
+....ethically or philosophically, I think genAI is actually a very good fit for coding, and computers programming computers was probably always going to be the logical conclusion really. 
+
+I however have absolutely zero interest in its existence or use in any other creativity etc (not that software development isnt creative but you know what I mean) so all design decisions here were me and if you can't tell by my godawful rambling writing style, so were the docs (mostly, save for the dry architectural stuff). And the logo. All 8 points on that path in illustrator and that one gradient oh yeah that year of graphic design at university is paying off big time.
+</details>
+
+---
+
 ## License
 
 ramus is licensed under the [MIT License](LICENSE).
