@@ -815,6 +815,53 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ### BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) (variant 4)
 
 Used by:
+- `opusic-sys` 0.7.3 — https://github.com/DoumanAsh/opusic-sys
+
+```
+/***********************************************************************
+Copyright (C) 2015 Vidyo
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+- Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+- Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+- Neither the name of Internet Society, IETF or IETF Trust, nor the
+names of specific contributors, may be used to endorse or promote
+products derived from this software without specific prior written
+permission.
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+***********************************************************************/
+
+#ifndef SILK_MACROS_ARM64_H
+#define SILK_MACROS_ARM64_H
+
+#include <arm_neon.h>
+
+#undef silk_ADD_SAT32
+#define silk_ADD_SAT32(a, b) (vqadds_s32((a), (b)))
+
+#undef silk_SUB_SAT32
+#define silk_SUB_SAT32(a, b) (vqsubs_s32((a), (b)))
+
+#endif /* SILK_MACROS_ARM64_H */
+```
+
+### BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) (variant 5)
+
+Used by:
 - `subtle` 2.6.1 — https://github.com/dalek-cryptography/subtle
 
 ```
@@ -1665,8 +1712,8 @@ Used by:
 - `phf_shared` 0.8.0 — https://github.com/sfackler/rust-phf
 - `r-efi` 5.3.0 — https://github.com/r-efi/r-efi
 - `r-efi` 6.0.0 — https://github.com/r-efi/r-efi
-- `ramus-core` 0.9.8 — https://github.com/1337raspberry/ramus
-- `ramus-tauri` 0.9.8 — https://github.com/1337raspberry/ramus
+- `ramus-core` 1.0.0 — https://github.com/1337raspberry/ramus
+- `ramus-tauri` 1.0.0 — https://github.com/1337raspberry/ramus
 - `realfft` 3.5.0 — https://github.com/HEnquist/realfft
 - `siphasher` 0.3.11 — https://github.com/jedisct1/rust-siphash
 - `siphasher` 1.0.2 — https://github.com/jedisct1/rust-siphash
@@ -1909,6 +1956,7 @@ DEALINGS IN THE SOFTWARE.
 Used by:
 - `cc` 1.2.59 — https://github.com/rust-lang/cc-rs
 - `cfg-if` 1.0.4 — https://github.com/rust-lang/cfg-if
+- `cmake` 0.1.58 — https://github.com/rust-lang/cmake-rs
 - `find-msvc-tools` 0.1.9 — https://github.com/rust-lang/cc-rs
 - `js-sys` 0.3.94 — https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys
 - `pkg-config` 0.3.32 — https://github.com/rust-lang/pkg-config-rs
@@ -6243,6 +6291,35 @@ SOFTWARE.
 ### MIT License (MIT) (variant 162)
 
 Used by:
+- `symphonia-adapter-libopus` 0.2.9 — https://github.com/aschey/symphonia-adapters
+
+```
+MIT License
+
+Copyright (c) 2025 Austin Schey
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### MIT License (MIT) (variant 163)
+
+Used by:
 - `synstructure` 0.13.2 — https://github.com/mystor/synstructure
 
 ```
@@ -6255,7 +6332,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 163)
+### MIT License (MIT) (variant 164)
 
 Used by:
 - `tauri-winres` 0.3.5 — https://github.com/tauri-apps/winres
@@ -6291,7 +6368,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 164)
+### MIT License (MIT) (variant 165)
 
 Used by:
 - `tempfile` 3.27.0 — https://github.com/Stebalien/tempfile
@@ -6324,7 +6401,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 165)
+### MIT License (MIT) (variant 166)
 
 Used by:
 - `time` 0.3.47 — https://github.com/time-rs/time
@@ -6353,7 +6430,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 166)
+### MIT License (MIT) (variant 167)
 
 Used by:
 - `tokio` 1.51.0 — https://github.com/tokio-rs/tokio
@@ -6383,7 +6460,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 167)
+### MIT License (MIT) (variant 168)
 
 Used by:
 - `tokio-macros` 2.7.0 — https://github.com/tokio-rs/tokio
@@ -6413,7 +6490,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 168)
+### MIT License (MIT) (variant 169)
 
 Used by:
 - `tokio-rustls` 0.26.4 — https://github.com/rustls/tokio-rustls
@@ -6446,7 +6523,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 169)
+### MIT License (MIT) (variant 170)
 
 Used by:
 - `tower` 0.5.3 — https://github.com/tower-rs/tower
@@ -6481,7 +6558,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 170)
+### MIT License (MIT) (variant 171)
 
 Used by:
 - `tower-http` 0.6.8 — https://github.com/tower-rs/tower-http
@@ -6514,7 +6591,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 171)
+### MIT License (MIT) (variant 172)
 
 Used by:
 - `tracing` 0.1.44 — https://github.com/tokio-rs/tracing
@@ -6549,7 +6626,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 172)
+### MIT License (MIT) (variant 173)
 
 Used by:
 - `transpose` 0.2.3 — https://github.com/ejmahler/transpose
@@ -6582,7 +6659,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 173)
+### MIT License (MIT) (variant 174)
 
 Used by:
 - `try-lock` 0.2.5 — https://github.com/seanmonstar/try-lock
@@ -6610,7 +6687,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 174)
+### MIT License (MIT) (variant 175)
 
 Used by:
 - `typenum` 1.19.0 — https://github.com/paholg/typenum
@@ -6639,7 +6716,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 175)
+### MIT License (MIT) (variant 176)
 
 Used by:
 - `uds_windows` 1.2.1 — https://github.com/haraldh/rust_uds_windows
@@ -6668,7 +6745,7 @@ MIT License
     SOFTWARE
 ```
 
-### MIT License (MIT) (variant 176)
+### MIT License (MIT) (variant 177)
 
 Used by:
 - `universal-hash` 0.5.1 — https://github.com/RustCrypto/traits
@@ -6701,7 +6778,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 177)
+### MIT License (MIT) (variant 178)
 
 Used by:
 - `urlpattern` 0.3.0 — https://github.com/denoland/rust-urlpattern
@@ -6730,7 +6807,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 178)
+### MIT License (MIT) (variant 179)
 
 Used by:
 - `utf8parse` 0.2.2 — https://github.com/alacritty/vte
@@ -6763,7 +6840,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 179)
+### MIT License (MIT) (variant 180)
 
 Used by:
 - `uuid` 1.23.0 — https://github.com/uuid-rs/uuid
@@ -6797,7 +6874,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 180)
+### MIT License (MIT) (variant 181)
 
 Used by:
 - `vcpkg` 0.2.15 — https://github.com/mcgoo/vcpkg-rs
@@ -6830,7 +6907,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 181)
+### MIT License (MIT) (variant 182)
 
 Used by:
 - `version-compare` 0.2.1 — https://gitlab.com/timvisee/version-compare
@@ -6857,7 +6934,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 182)
+### MIT License (MIT) (variant 183)
 
 Used by:
 - `version_check` 0.9.5 — https://github.com/SergioBenitez/version_check
@@ -6884,7 +6961,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 183)
+### MIT License (MIT) (variant 184)
 
 Used by:
 - `vswhom` 0.1.0 — https://github.com/nabijaczleweli/vswhom.rs
@@ -6914,7 +6991,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 184)
+### MIT License (MIT) (variant 185)
 
 Used by:
 - `want` 0.3.1 — https://github.com/seanmonstar/want
@@ -6941,7 +7018,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 185)
+### MIT License (MIT) (variant 186)
 
 Used by:
 - `webkit2gtk` 2.0.2 — https://github.com/tauri-apps/webkit2gtk-rs
@@ -6969,7 +7046,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 186)
+### MIT License (MIT) (variant 187)
 
 Used by:
 - `webkit2gtk-sys` 2.0.2 — https://github.com/tauri-apps/webkit2gtk-rs
@@ -6995,7 +7072,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 187)
+### MIT License (MIT) (variant 188)
 
 Used by:
 - `winapi` 0.3.9 — https://github.com/retep998/winapi-rs
@@ -7022,7 +7099,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 188)
+### MIT License (MIT) (variant 189)
 
 Used by:
 - `window-vibrancy` 0.6.0 — https://github.com/tauri-apps/tauri-plugin-vibrancy
@@ -7051,7 +7128,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 189)
+### MIT License (MIT) (variant 190)
 
 Used by:
 - `winnow` 0.5.40 — https://github.com/winnow-rs/winnow
@@ -7079,7 +7156,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 190)
+### MIT License (MIT) (variant 191)
 
 Used by:
 - `winreg` 0.55.0 — https://github.com/gentoo90/winreg-rs
@@ -7106,7 +7183,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 191)
+### MIT License (MIT) (variant 192)
 
 Used by:
 - `wry` 0.54.4 — https://github.com/tauri-apps/wry
@@ -7135,7 +7212,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 192)
+### MIT License (MIT) (variant 193)
 
 Used by:
 - `zbus` 5.14.0 — https://github.com/z-galaxy/zbus/
@@ -7172,7 +7249,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 193)
+### MIT License (MIT) (variant 194)
 
 Used by:
 - `zerocopy` 0.8.48 — https://github.com/google/zerocopy
@@ -7205,7 +7282,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### MIT License (MIT) (variant 194)
+### MIT License (MIT) (variant 195)
 
 Used by:
 - `zeroize` 1.8.2 — https://github.com/RustCrypto/utils
