@@ -17,8 +17,6 @@
   <img src="docs/screenshots/hero.png" alt="ramus main view" width="700" />
 </p>
 
----
-
 ## About
 
 **ramus** is a genre-first music client for Plex focused on discovering and exploring your existing library. Out of the box It's designed to function with the metadata plex has already assigned your albums to give you a rich hierarchical tree-like view of your library, while genre-obsessives can go as deep and custom as they wish and browse by their own dream musical taxonomy. 
@@ -40,21 +38,39 @@
 <summary>Click for some mobile and desktop screenies of the key ramus features</summary>
 <table>
   <tr>
-    <td><img src="docs/screenshots/search.png" alt="Search with operators" width="400" /></td>
-    <td><img src="docs/screenshots/focus.png" alt="Focus / spectrum view" width="400"/></td>
+    <td><img src="docs/screenshots/search.png" alt="Search with operators" width="450" /><br><p align ="center">Desktop Search View</p></td>
+    <td><img src="docs/screenshots/focus.png" alt="Focus / spectrum view" width="450"/><br><p align ="center">Focus/Visualiser Mode</p></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/artist.png" alt="Artist view" width="400"/></td>
-    <td><img src="docs/screenshots/mobile-np-lyrics.png" alt="Mobile Now Playing" width="400"/></td>
+    <td><img src="docs/screenshots/artist.png" alt="Artist view" width="450"/><br><p align ="center">Artist List</p></td>
+    <td><img src="docs/screenshots/mobile-np-lyrics.png" alt="Mobile Now Playing" width="450"/><br><p align ="center">Mobile Now Playing (With Lyrics)</p></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/popular.png" alt="Popularity Charts view" width="400"/></td>
-    <td><img src="docs/screenshots/filters.png" alt="filters" width="400"/></td>
+    <td><img src="docs/screenshots/popular.png" alt="Popularity Charts view" width="450"/><br><p align ="center">Popularity Charts on Album Details</p></td>
+    <td><img src="docs/screenshots/filters.png" alt="filters" width="450"/><br><p align ="center">Library Filters</p></td>
   </tr>
 </table>
 </details>
 
----
+## Notes on AI assisted development
+
+<details>
+<summary>tl;dr It was used (but not exclusively) to make a solodev hobby project take months, not years</summary>
+<br>
+ramus (or the dream of it) has been something that i have tried to build for well over a decade. I am a sysadmin by trade so not at all unfamiliar with some scripting, programming and systems hardening, but i am not a software developer. I am not going to pretend to be. If you are and you look at this code, you'll probably very quickly see anything i have written vs what claude has. As for the history of this project, I have dabbled with trying to create this three times now in the past:
+
+- It first started out as a very rough hacky foobar2000 plugin that i created for myself but ultimately gave up on because it was just really quite awful in practice.
+
+- Then a few years ago, it was a very rough java proof of concept which worked, but I just didn't have the ability or time to get out of a "okay the genre tree works with my library and it can play music...now what" phase.
+
+- About a year ago, on and off with the tools and models available then, I started working on a swift based MacOS only version of ramus, and despite being pretty much feature ready and good to go, I ultimately decided to scrap it because over the course of building that, I had learned so much and I knew I could take that learning, and create something far better and multi platform.
+
+Skip forward some more and thanks to rapid recent advancements in genAI coding and that prior learning - have let me finally take this concept, and deliver it into something that I have been using every day now on multiple platforms for a few months. It has been feature complete and "ready to go" for like 150 commits at least iirc, and all I have been doing is polish, security passes, and iterative improvements. This is open source and free, and I have no interest in ever making money for it, but I am proud of it, and I don't want to release something that sucks.
+
+....ethically or philosophically, I think genAI is actually a very good fit for coding, and computers programming computers was probably always going to be the logical conclusion really. 
+
+I however have absolutely zero interest in its existence or use in any other creativity etc (not that software development isnt creative but you know what I mean) so all design decisions here were me and if you can't tell by my godawful rambling writing style, so were the docs (mostly, save for the dry architectural stuff). And the logo. All 8 points on that path in illustrator and that one gradient oh yeah that year of graphic design at university is paying off big time.
+</details>
 
 ## Download
 
@@ -211,6 +227,7 @@ If you've found a vulnerability, please **don't open a public issue**. See [SECU
 ## Limitations, Known Issues & Planned Improvements
 
 <details>
+
 - The focus mode visualiser does not run/intercept our audio data "live", we need to compute the spectrum data separately. This leads to a slight delay on first song load for it to appear, and a negigible but not-nothing cpu hit. This is a limitation of our broad one-size-fits-all mpv based audio engine (besides android). Hooking into the audio stream to do it live would require an entirely new audio engine I am pretty sure. For a feature that's off by default and I imagine most people will ignore, this is an okay compromise for me for now.
 
 - Because Plex only exposes minimal genre and style data on a standard broad api call, we need to maintain a local db with an initial cache/sync setup phase and deep sync on all albums. Without this we'd lack the data to make the app do the cool stuff it was built to do! This gives us the ability to do our super fast locally cached search as well which is great, and even on massive libraries, connected remotely, the initial sync is only a few minutes. Worth the trade off I think. Incremental syncs after that are genuinely incremental and if nothing changes in your library, are essentially a no-op. If plex ever changes what they serve out by default, we can reconsider this. 
@@ -242,29 +259,6 @@ With it you can::
 - **Share with other people** - export the current tree as a plain `.txt` file in the same format ramus's in-app importer accepts (Settings > Genres > Import). Anyone you send it to can import it, edit it, and export their own version back out. Round-trip preserves AKAs and descriptions. Useful if you maybe wanted to share a specific hierarchy that you've made with a community or tool that has a set genre list, that you and others tag from (eg [metal-archives](https://www.metal-archives.com/)) 
 
 See [`tools/genre-editor/README.md`](tools/genre-editor/README.md) for the full feature list, keyboard shortcuts, and the `.txt` format spec.
-
----
-
-## Some notes on AI assisted development and my background
-
-<details>
-<summary>tl;dr It was used here (but not entirely) to make a solodev hobby project take months, not years</summary>
-ramus (or the dream of it) has been something that i have tried to build for well over a decade. I am a sysadmin by trade so not at all unfamiliar with some scripting, programming and systems hardening, but i am not a software developer. I am not going to pretend to be. If you are and you look at this code, you'll probably very quickly see anything i have written vs what claude has.
-
-As for the history of this project, I have dabbled with trying to create this twice in the past:
-
-- It first started out as a very rough foobar2000 plugin that i created for myself but ultimately gave up on because it was just really quite awful in practice
-
-- Then a few years ago, it was a very rough java proof of concept which worked, but i just didn't have the ability or time to get out of a "okay the genre tree works with my library and it can play music...now what" phase.
-
-- About a year ago, on and off with the tools and models available then, I started working on a swift based MacOS only version of ramus, and despite being pretty much feature ready and good to go, I ultimately decided to scrap it because over the course of building that, I had learned so much and I knew I could take that learning, and create something far better and multi platform.
-
-Skip forward some more and thanks to rapid recent advancements in genAI coding and that prior learning - have let me finally take this concept, and deliver it into something that I have been using every day now on multiple platforms for a few months. It has been feature complete and "ready to go" for like 150 commits at least iirc, and all I have been doing is polish, security passes, and iterative improvements. This is open source and free, and I have no interest in ever making money for it, but I am proud of it, and I don't want to release something that sucks.
-
-....ethically or philosophically, I think genAI is actually a very good fit for coding, and computers programming computers was probably always going to be the logical conclusion really. 
-
-I however have absolutely zero interest in its existence or use in any other creativity etc (not that software development isnt creative but you know what I mean) so all design decisions here were me and if you can't tell by my godawful rambling writing style, so were the docs (mostly, save for the dry architectural stuff). And the logo. All 8 points on that path in illustrator and that one gradient oh yeah that year of graphic design at university is paying off big time.
-</details>
 
 ---
 
