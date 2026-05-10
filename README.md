@@ -35,6 +35,7 @@
 - **Lyrics courtesy of lrclib** - No account needed and a huge number of the lyrics are synced too. All credits to lrclib. what a service!
 
 ## Screenshots
+
 <details>
 <summary>Click for some mobile and desktop screenies of the key ramus features</summary>
 <table>
@@ -81,6 +82,7 @@ Pre-built installers are produced by [GitHub Actions](https://github.com/1337ras
 ---
 
 ## Building From Source
+
 <details>
 You'll need:
 
@@ -141,10 +143,10 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test -p ramus-core
 ( cd ui && npx tsc --noEmit )
 ```
+
 </details>
 
 ## Architecture & Tech Stack
-
 
 ```
 ramus-core/    Rust library — all business logic.
@@ -181,7 +183,7 @@ Most behaviour lives in `ramus-core` and is unit-tested. The Tauri layer is inte
   - **Android** - a random UUID generated on first run and stored in the app's sandboxed config dir.
   - **iOS** is the exception: tokens go directly into the system Keychain (no file, no AES layer), via a Swift `KeychainBridge`.
   
- The encrypted blob (`tokens.enc`) lives in the platform's standard app-data directory and is written atomically (tmp + `fsync` + `rename`) with `0o600` permissions on Unix. The threat defense model is "render the file inert if arbitrarily exfiltrated to another machine" - not protection against a local attacker who already has root on the same device. This is the same model (or in some cases, being encrypted is one step better) that most plex clients or even the official plex clients, operate on. 
+  The encrypted blob (`tokens.enc`) lives in the platform's standard app-data directory and is written atomically (tmp + `fsync` + `rename`) with `0o600` permissions on Unix. The threat defense model is "render the file inert if arbitrarily exfiltrated to another machine" - not protection against a local attacker who already has root on the same device. This is the same model (or in some cases, being encrypted is one step better) that most plex clients or even the official plex clients, operate on. 
 
 - **No telemetry, no analytics, no crash reporters, no auto-updaters. Not ever.** ramus only talks to your Plex Media Server and plex.tv (for OAuth + server discovery). No other connections anywhere.
 
@@ -193,8 +195,6 @@ Most behaviour lives in `ramus-core` and is unit-tested. The Tauri layer is inte
   - Windows: `%APPDATA%\raspsoft\ramus\`.
   - Linux: `~/.local/share/ramus/` (XDG-respecting `$XDG_DATA_HOME`).
   - Android: app-private storage. `network_security_config.xml` is setup to permit cleartext HTTP (against android defaults) for LAN addresses only (so you can reach `http://192.168.x.x:32400` on your home LAN.)
-
-
 
 ---
 
@@ -211,8 +211,9 @@ If you've found a vulnerability, please **don't open a public issue**. See [SECU
 ---
 
 ## Limitations, Known Issues & Planned Improvements
+
 <details>
-- The focus mode visualiser does not run/intercept our audio data "live", we need to compute the spectrum data separately. This leads to a negigible but not non-nothing cpu hit. This is a limitation of our broad one-size-fits-all mpv based audio engine (besides android). Hooking into the audio stream to do it live would require an entirely new audio engine I am pretty sure. For a feature that's off by default and I imagine most people will ignore, this is an okay compromise for now. 
+- The focus mode visualiser does not run/intercept our audio data "live", we need to compute the spectrum data separately. This leads to a negigible but not non-nothing cpu hit. This is a limitation of our broad one-size-fits-all mpv based audio engine (besides android). Hooking into the audio stream to do it live would require an entirely new audio engine I am pretty sure. For a feature that's off by default and I imagine most people will ignore, this is an okay compromise for now.
 
 - Because Plex only exposes minimal genre and style data on a standard broad api call, we need to maintain a local db with an initial cache/sync setup phase and deep sync on all albums. Without this we'd lack the data to make the app do the cool stuff it was built to do! This gives us the ability to do our super fast locally cached search as well which is great, and even on massive libraries, connected remotely, the initial sync is only a few minutes. Worth the trade off I think. Incremental syncs after that are genuinely incremental and if nothing changes in your library, are essentially a no-op. If plex ever changes what they serve out by default, we can reconsider this. 
 
@@ -223,7 +224,8 @@ If you've found a vulnerability, please **don't open a public issue**. See [SECU
 - The colour extraction and accent colours still aren't as perfect as I'd like, and there are some edge cases where things aren't as readable as I'd want, but I've done loads of tweaking to try and get to a happy medium, on many different displays, SDR and HDR too. So I might just have to accept that perfect is the enemy of good, or whatever it is they say.
 
 - I wouldn't mind implementing the new JWT short lived token auth system that plex has recently rolled out, but as far as I can tell it only applies to plex.tv auth, not PMS server auth, so that token is always going to be perma and long standing. Mixing the two isn't ideal, so when that is fully baked into PMS, i would like to roll that out. No harm in extra hardening. 
-</details>
+  
+  </details>
 
 ## Trademarks & affiliation
 
@@ -233,7 +235,15 @@ ramus is an **independent third-party client**. It is not affiliated with, endor
 
 ## Custom Hierarchy Tool
 
-- details of how this works goes here. also i gotta setup an import feature on that too so people can import then customise then export again as .txt for sharing etc.
+ramus ships with a small local web UI based tool in [`tools/genre-editor/`](tools/genre-editor/) for working on genre trees outside the app. It's standard Python with no extra dependencies needed, just run `python3 tools/genre-editor/server.py` from the project root and open the link it prints in your web browser.
+
+With it you can::
+
+- **Edit the bundled tree** - tweak the default `open.json` (rename, add AKAs, drag genres around, add/remove children). Useful if you're building from source or forking. Or if you wanna suggest improvements/changes to our built in genre tree - very open to that. 
+- **Build your own from scratch** - start empty and grow a hierarchy that matches how you think about music. Before i started tagging all my music "properly", this is how I did things. I put things into conceptual high level buckets that made sense to me and then drilled down from there. Even if yknow, strictly speaking it was in entirely the wrong place.
+- **Share with other people** - export the current tree as a plain `.txt` file in the same format ramus's in-app importer accepts (Settings > Genres > Import). Anyone you send it to can import it, edit it, and export their own version back out. Round-trip preserves AKAs and descriptions. Useful if you maybe wanted to share a specific hierarchy that you've made with a community or tool that has a set genre list, that you and others tag from (eg [metal-archives](https://www.metal-archives.com/)) 
+
+See [`tools/genre-editor/README.md`](tools/genre-editor/README.md) for the full feature list, keyboard shortcuts, and the `.txt` format spec.
 
 ---
 
