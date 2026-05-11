@@ -19,6 +19,7 @@
 //! successful download for the focus-mode visualiser.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::io::{Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -1300,6 +1301,15 @@ async fn run_user_download(
 /// match (in case of stale leftovers from a prior session) along with
 /// its size, or `None` if no file exists yet / `stream_record_dir` is
 /// unset.
+///
+/// Size is read by opening the file and seeking to end, NOT via
+/// `metadata().len()`. On Windows, NTFS lags the directory-entry size
+/// for files still open by another handle (mpv's recorder, in our
+/// case), so `metadata().len()` can report 0 long after bytes have
+/// actually been written. Seeking on a freshly-opened read handle asks
+/// the kernel for the current end-of-file position, which is updated
+/// promptly. On macOS/Linux the two values agree, so this is a no-op
+/// for those platforms — diagnostic value is purely on Windows.
 pub fn find_stream_record_file(
     player: &AudioPlayer,
     rating_key: &str,
@@ -1316,7 +1326,11 @@ pub fn find_stream_record_file(
         if !name.starts_with(&prefix) {
             continue;
         }
-        let len = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        let len = std::fs::OpenOptions::new()
+            .read(true)
+            .open(&p)
+            .and_then(|mut f| f.seek(SeekFrom::End(0)))
+            .unwrap_or(0);
         if best.as_ref().is_none_or(|(_, prev_len)| len > *prev_len) {
             best = Some((p, len));
         }
