@@ -29,6 +29,11 @@ pub struct MpvController {
     lib: Arc<MpvLib>,
     handle: Arc<MpvHandle>,
     shutdown: Arc<AtomicBool>,
+    /// mpv 0.38 changed `loadfile` from `<url> <flags> [<options>]` to
+    /// `<url> <flags> [<index>] [<options>]` and added the `insert-at` /
+    /// `insert-next` flag values. Older libmpv (Ubuntu 24.04 LTS ships
+    /// 0.35.1) rejects both. Probed once at init from `mpv-version`.
+    loadfile_has_index_slot: bool,
     _event_thread: Option<thread::JoinHandle<()>>,
 }
 
@@ -108,6 +113,29 @@ impl MpvController {
             let handle = Arc::new(MpvHandle(ctx));
             let shutdown = Arc::new(AtomicBool::new(false));
 
+            // Probe libmpv's loadfile signature. Ubuntu 24.04 LTS ships
+            // mpv 0.35.1 which expects `loadfile <url> <flags> [<options>]`
+            // and only accepts replace/append/append-play in <flags>. mpv
+            // 0.38+ added a positional <index> slot and the insert-at
+            // flag. Without this branch we'd send `-1` in slot 3 on old
+            // mpv, which gets parsed as the options string and fails.
+            let loadfile_has_index_slot = match read_string_property(&lib, ctx, "mpv-version") {
+                Some(v) => {
+                    let new_signature = mpv_version_at_least(&v, 0, 38);
+                    log::info!(
+                        "libmpv: {v} (loadfile {} index slot)",
+                        if new_signature { "has" } else { "lacks" }
+                    );
+                    new_signature
+                }
+                None => {
+                    log::warn!(
+                        "libmpv: could not read mpv-version, assuming pre-0.38 loadfile signature"
+                    );
+                    false
+                }
+            };
+
             let handle_clone = handle.clone();
             let shutdown_clone = shutdown.clone();
             let lib_clone = lib.clone();
@@ -122,6 +150,7 @@ impl MpvController {
                 lib,
                 handle,
                 shutdown,
+                loadfile_has_index_slot,
                 _event_thread: Some(event_thread),
             })
         }
@@ -179,6 +208,23 @@ impl MpvController {
         }
     }
 
+    fn get_property_int64(&self, name: &str) -> Option<i64> {
+        unsafe {
+            let n = CString::new(name).ok()?;
+            let mut v: i64 = 0;
+            let ret = self.lib.get_property(
+                self.handle.ptr(),
+                n.as_ptr(),
+                MPV_FORMAT_INT64,
+                &mut v as *mut i64 as *mut c_void,
+            );
+            if ret < 0 {
+                return None;
+            }
+            Some(v)
+        }
+    }
+
     fn get_property_double(&self, name: &str) -> Option<f64> {
         unsafe {
             let n = CString::new(name).ok()?;
@@ -201,24 +247,104 @@ impl MpvController {
     }
 }
 
+/// Read a string-typed mpv property. libmpv allocates the C string and the
+/// caller must free it via `mpv_free` — wrapping the unsafe dance here keeps
+/// it confined.
+///
+/// Free-function (not a method) so the loadfile-signature probe in `new()`
+/// can run before the `Self` is built.
+fn read_string_property(lib: &MpvLib, ctx: *mut mpv_handle, name: &str) -> Option<String> {
+    unsafe {
+        let n = CString::new(name).ok()?;
+        let mut out: *mut c_char = std::ptr::null_mut();
+        let ret = lib.get_property(
+            ctx,
+            n.as_ptr(),
+            MPV_FORMAT_STRING,
+            &mut out as *mut *mut c_char as *mut c_void,
+        );
+        if ret < 0 || out.is_null() {
+            return None;
+        }
+        let value = CStr::from_ptr(out).to_string_lossy().into_owned();
+        lib.free(out as *mut c_void);
+        Some(value)
+    }
+}
+
+/// Parse mpv's `mpv-version` string (e.g. `"mpv 0.35.1"`, `"mpv 0.38.0"`,
+/// `"mpv 0.40.0-1"`, `"mpv git-deadbeef"`) and return whether the reported
+/// version is at least `major.minor`. Returns `false` on any parse failure
+/// or git/unknown build — safe default is the older signature, since old
+/// mpv rejects the new args outright but new mpv tolerates 3-arg `loadfile`
+/// with no per-track options (see `load_file` below).
+fn mpv_version_at_least(version: &str, min_major: u32, min_minor: u32) -> bool {
+    let Some(rest) = version.strip_prefix("mpv ") else {
+        return false;
+    };
+    let numeric = rest
+        .split(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .next()
+        .unwrap_or("");
+    let mut parts = numeric.split('.');
+    let Some(major) = parts.next().and_then(|s| s.parse::<u32>().ok()) else {
+        return false;
+    };
+    let Some(minor) = parts.next().and_then(|s| s.parse::<u32>().ok()) else {
+        return false;
+    };
+    (major, minor) >= (min_major, min_minor)
+}
+
 impl MpvPlayer for MpvController {
     fn load_file(&self, url: &str, mode: LoadMode, options: Option<&str>) {
-        // mpv's loadfile: `loadfile <url> <flags> [<index>] [<options>]`. For
-        // replace / append / append-play the <index> slot is unused — pass "-1"
-        // as libmpv's accepted "no index" sentinel and put options in slot 4.
-        // Note: `replace` implicitly stops; callers must not invoke stop() before
-        // load_queue or they race with playlist setup.
-        match options {
-            Some(opts) => self.command(&["loadfile", url, mode.as_str(), "-1", opts]),
-            None => self.command(&["loadfile", url, mode.as_str()]),
+        // loadfile arg layout depends on libmpv version (probed at init).
+        // mpv 0.38+ : `loadfile <url> <flags> [<index>] [<options>]` — pass
+        //             "-1" in the index slot as the "no index" sentinel.
+        // mpv <0.38: `loadfile <url> <flags> [<options>]` — no index slot;
+        //             passing "-1" gets parsed as the options string and
+        //             fails with "Expected '=' and a value".
+        //
+        // Note: `replace` implicitly stops; callers must not invoke stop()
+        // before load_queue or they race with playlist setup.
+        match (options, self.loadfile_has_index_slot) {
+            (Some(opts), true) => self.command(&["loadfile", url, mode.as_str(), "-1", opts]),
+            (Some(opts), false) => self.command(&["loadfile", url, mode.as_str(), opts]),
+            (None, _) => self.command(&["loadfile", url, mode.as_str()]),
         }
     }
 
     fn load_file_at(&self, url: &str, index: i64, options: Option<&str>) {
-        let idx = index.to_string();
+        if self.loadfile_has_index_slot {
+            let idx = index.to_string();
+            match options {
+                Some(opts) => self.command(&["loadfile", url, "insert-at", &idx, opts]),
+                None => self.command(&["loadfile", url, "insert-at", &idx]),
+            }
+            return;
+        }
+
+        // Pre-0.38 mpv has no `insert-at` flag. Emulate by appending to
+        // the end of the playlist and then moving the new entry into
+        // position. `playlist-count` is read AFTER the append so the
+        // index of the appended entry is unambiguous even under
+        // concurrent playlist mutations (none today, but future-proofing
+        // is cheap). `from > to` works for backward moves; `from == to`
+        // is a no-op which mpv tolerates.
         match options {
-            Some(opts) => self.command(&["loadfile", url, "insert-at", &idx, opts]),
-            None => self.command(&["loadfile", url, "insert-at", &idx]),
+            Some(opts) => self.command(&["loadfile", url, "append", opts]),
+            None => self.command(&["loadfile", url, "append"]),
+        }
+        match self.get_property_int64("playlist-count") {
+            Some(count) if count > 0 => {
+                self.playlist_move(count - 1, index);
+            }
+            _ => {
+                log::error!(
+                    "load_file_at: playlist-count unreadable on pre-0.38 mpv; \
+                     appended entry left at end instead of index {index}"
+                );
+            }
         }
     }
 
@@ -449,5 +575,35 @@ fn event_loop(
 
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mpv_version_at_least;
+
+    #[test]
+    fn parses_release_versions() {
+        assert!(!mpv_version_at_least("mpv 0.35.1", 0, 38));
+        assert!(!mpv_version_at_least("mpv 0.37.0", 0, 38));
+        assert!(mpv_version_at_least("mpv 0.38.0", 0, 38));
+        assert!(mpv_version_at_least("mpv 0.39.0", 0, 38));
+        assert!(mpv_version_at_least("mpv 1.0.0", 0, 38));
+    }
+
+    #[test]
+    fn parses_versions_with_trailing_suffix() {
+        // Distro patch suffix (Debian/Ubuntu style)
+        assert!(mpv_version_at_least("mpv 0.40.0-1", 0, 38));
+        // Pre-release tag
+        assert!(mpv_version_at_least("mpv 0.38.0-rc1", 0, 38));
+    }
+
+    #[test]
+    fn rejects_unparseable_versions() {
+        assert!(!mpv_version_at_least("mpv git-deadbeef", 0, 38));
+        assert!(!mpv_version_at_least("", 0, 38));
+        assert!(!mpv_version_at_least("0.38.0", 0, 38)); // missing "mpv " prefix
+        assert!(!mpv_version_at_least("mpv 0", 0, 38)); // no minor
     }
 }

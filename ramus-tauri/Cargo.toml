@@ -25,6 +25,16 @@ repository.workspace = true
 name = "ramus_tauri"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Explicit bin target so the installed executable is `ramus` rather than the
+# package-name default (`ramus-tauri`). Affects `target/release/<bin>`, the
+# binary inside the macOS .app, and the path inside the Linux .deb / RPM /
+# AppImage (which Tauri's bundler picks up from cargo metadata). Mobile
+# builds ignore [[bin]] — they consume the [lib] staticlib (iOS) or cdylib
+# (Android) — so this is desktop-only.
+[[bin]]
+name = "ramus"
+path = "src/main.rs"
+
 [dependencies]
 ramus-core = { path = "../ramus-core" }
 # Tauri mobile plugin that owns the iOS mpv handle (via MPVKit), the

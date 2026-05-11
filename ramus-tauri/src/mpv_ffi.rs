@@ -117,6 +117,7 @@ type FnObserveProperty = unsafe extern "C" fn(*mut mpv_handle, u64, *const c_cha
 type FnWaitEvent = unsafe extern "C" fn(*mut mpv_handle, f64) -> *mut mpv_event;
 type FnErrorString = unsafe extern "C" fn(c_int) -> *const c_char;
 type FnRequestLogMessages = unsafe extern "C" fn(*mut mpv_handle, *const c_char) -> c_int;
+type FnFree = unsafe extern "C" fn(*mut c_void);
 
 /// Runtime-loaded libmpv.
 ///
@@ -138,6 +139,7 @@ pub struct MpvLib {
     wait_event: FnWaitEvent,
     error_string: FnErrorString,
     request_log_messages: FnRequestLogMessages,
+    free: FnFree,
     _lib: Library,
 }
 
@@ -177,6 +179,7 @@ impl MpvLib {
             let error_string: Symbol<FnErrorString> = resolve(&lib, b"mpv_error_string\0")?;
             let request_log_messages: Symbol<FnRequestLogMessages> =
                 resolve(&lib, b"mpv_request_log_messages\0")?;
+            let free: Symbol<FnFree> = resolve(&lib, b"mpv_free\0")?;
 
             // Copy each fn pointer out of its Symbol<'_>. The pointers remain
             // valid as long as `_lib` is alive, guaranteed by struct field
@@ -194,6 +197,7 @@ impl MpvLib {
                 wait_event: *wait_event,
                 error_string: *error_string,
                 request_log_messages: *request_log_messages,
+                free: *free,
                 _lib: lib,
             })
         }
@@ -292,6 +296,11 @@ impl MpvLib {
         min_level: *const c_char,
     ) -> c_int {
         (self.request_log_messages)(ctx, min_level)
+    }
+
+    #[inline]
+    pub unsafe fn free(&self, data: *mut c_void) {
+        (self.free)(data)
     }
 }
 

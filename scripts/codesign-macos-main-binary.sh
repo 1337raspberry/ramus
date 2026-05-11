@@ -4,7 +4,7 @@
 # when dlopen-ing ad-hoc dylibs from untrusted locations.
 set -euo pipefail
 
-BINARY="target/release/ramus-tauri"
+BINARY="target/release/ramus"
 
 if [ -f "$BINARY" ]; then
   codesign --force --sign - "$BINARY"
