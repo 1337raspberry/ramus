@@ -123,7 +123,15 @@ jobs:
           # iOS device-only (aarch64-apple-ios). Skipping the simulator
           # triple keeps the build fast — sideload distribution always
           # targets real hardware.
-          ios='{"id":"ios","platform":"macos-14","label":"iOS (IPA, ad-hoc)","rust-target":"aarch64-apple-ios","tauri-args":""}'
+          #
+          # Runs on macos-15, NOT macos-14: xcodegen (latest brew)
+          # generates pbxproj files with objectVersion=77, which needs
+          # Xcode 16+. macos-14's default Xcode is 15.4 (objectVersion
+          # tops out around 56) and fails with "future Xcode project
+          # file format (77)". The desktop matrix entries stay on
+          # macos-14 because they build via cargo/tauri-action and
+          # never open an .xcodeproj.
+          ios='{"id":"ios","platform":"macos-15","label":"iOS (IPA, ad-hoc)","rust-target":"aarch64-apple-ios","tauri-args":""}'
           case "$PLATFORM" in
             all)     include="[$macos,$linux,$windows,$android,$ios]" ;;
             macos)   include="[$macos]" ;;
