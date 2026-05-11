@@ -24,16 +24,14 @@ import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
 import DownloadsPanel from "./components/DownloadsPanel";
 import OnboardingFlow, { clearOnboardingStorage } from "./components/onboarding/OnboardingFlow";
 import { clearPin } from "./components/onboarding/OAuthSignIn";
-import UltraBlurBackground, { randomPalette } from "./components/UltraBlurBackground";
+import UltraBlurBackground from "./components/UltraBlurBackground";
 import MobileApp from "./mobile/MobileApp";
 import Toast from "./components/Toast";
-import { applyAccent } from "./lib/accent";
+import { applyAccent, DEFAULT_ACCENT, DEFAULT_BLUR_COLORS } from "./lib/accent";
+import { accentFromPalette } from "./lib/vibrantColor";
 import { handleAndroidBack, pushBackHandler } from "./lib/backHandler";
 
-const initialPalette = randomPalette();
-const initialColors = initialPalette.colors;
-
-applyAccent(initialPalette.accent[0], initialPalette.accent[1], initialPalette.accent[2]);
+applyAccent(...DEFAULT_ACCENT);
 
 export default function App() {
   const isMobile = useIsMobile();
@@ -48,13 +46,41 @@ export default function App() {
   const albumColors = usePlaybackStore((s) => s.ultraBlurColors);
   const isFocusMode = usePlaybackStore((s) => s.isFocusMode);
   const toggleFocusMode = usePlaybackStore((s) => s.toggleFocusMode);
-  const blurColors = useMemo(() => albumColors ?? initialColors, [albumColors]);
+  const keepDefaultColours = useSettingsStore((s) => s.keepDefaultColours);
+  const blurColors = useMemo(
+    () => (keepDefaultColours ? DEFAULT_BLUR_COLORS : (albumColors ?? DEFAULT_BLUR_COLORS)),
+    [albumColors, keepDefaultColours],
+  );
+
+  // Snap accent both directions when the "keep default colours" toggle
+  // flips. ON → force brand default; OFF → restore the currently-playing
+  // album's accent from the cached vibrant palette so the user doesn't
+  // have to start a new track to see the change.
+  useEffect(() => {
+    if (keepDefaultColours) {
+      applyAccent(...DEFAULT_ACCENT);
+    } else {
+      const palette = usePlaybackStore.getState().vibrantPalette;
+      if (palette) {
+        const [r, g, b] = accentFromPalette(palette);
+        applyAccent(r, g, b);
+      }
+    }
+  }, [keepDefaultColours]);
 
   useEffect(() => {
     isAuthenticated()
       .then(setAuthed)
       .catch(() => setAuthed(false));
   }, []);
+
+  // Revert to the brand accent whenever the user is unauthenticated (e.g.
+  // after sign-out). Post-auth, album-art palette extraction in the
+  // playback store takes over the moment a track loads.
+  useEffect(() => {
+    if (authed === true) return;
+    applyAccent(...DEFAULT_ACCENT);
+  }, [authed]);
 
   // Wire post-auth side-effects whenever `authed` flips to `true` — covers
   // both the resume path (token cached on disk, isAuthenticated returns

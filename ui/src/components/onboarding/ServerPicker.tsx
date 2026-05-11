@@ -6,6 +6,7 @@ import {
   connectManualUrl,
 } from "../../lib/commands";
 import type { PlexServer } from "../../lib/types";
+import { IconHome, IconGlobe, IconSpinner } from "../Icons";
 
 interface Props {
   onSelect: (server: PlexServer, serverUrl: string) => void;
@@ -115,12 +116,11 @@ export default function ServerPicker({ onSelect }: Props) {
     setManualTesting(false);
   }, [manualUrl, onSelect]);
 
-  const connectionLabel = (status: ServerStatus) => {
+  const connectionLabel = (status: ServerStatus, owned: boolean) => {
     if (status.testing) return "Testing...";
     if (!status.connected) return "Unavailable";
-    if (status.local) return "Local";
-    if (status.isHttp) return "Remote (HTTP)";
-    return "Remote";
+    const reach = status.local ? "Local" : status.isHttp ? "Remote (HTTP)" : "Remote";
+    return `${reach} · ${owned ? "Owned by you" : "Shared with you"}`;
   };
 
   return (
@@ -140,21 +140,40 @@ export default function ServerPicker({ onSelect }: Props) {
         {servers.map((server) => {
           const status = statuses.get(server.machineIdentifier);
           const isSelected = selectedId === server.machineIdentifier;
+          // Drive icon from the live connection result (local vs remote)
+          // once known; before testing completes, pre-guess from the
+          // discovery payload so the icon doesn't pop between renders.
+          const isLocal =
+            status?.connected && status.local !== undefined
+              ? status.local
+              : server.connections.some((c) => c.local);
           return (
             <div
               key={server.machineIdentifier}
               className={`server-row${isSelected ? " selected" : ""}${status?.connected ? "" : " unavailable"}`}
               onClick={() => handleSelect(server)}
             >
-              <span className="server-icon">{server.owned ? "\uD83D\uDDA5" : "\uD83D\uDD17"}</span>
+              <span className="server-icon">
+                {isLocal ? <IconHome size={28} /> : <IconGlobe size={28} />}
+              </span>
               <div className="server-info">
                 <div className="server-name">{server.name}</div>
-                <div className="server-status">{status ? connectionLabel(status) : "..."}</div>
+                <div className="server-status">
+                  {isSelected
+                    ? "Connecting\u2026"
+                    : status
+                      ? connectionLabel(status, server.owned)
+                      : "..."}
+                </div>
               </div>
-              {status?.isHttp && (
-                <span className="server-http-warn" title="Unencrypted connection">
-                  {"\u26A0"}
-                </span>
+              {isSelected ? (
+                <IconSpinner size={16} className="server-spinner" />
+              ) : (
+                status?.isHttp && (
+                  <span className="server-http-warn" title="Unencrypted connection">
+                    {"\u26A0"}
+                  </span>
+                )
               )}
             </div>
           );

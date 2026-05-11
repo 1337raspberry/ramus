@@ -138,6 +138,9 @@ export interface Settings {
   /** Quality used for user-initiated downloads. Lossless tracks transcode
    *  to Ogg/Opus at the chosen bitrate; lossy tracks always direct-play. */
   downloadQuality: DownloadQuality;
+  /** When true, suppress album-art accent + blur extraction and keep the
+   *  brand default palette everywhere. */
+  keepDefaultColours: boolean;
 }
 
 export interface CacheStats {

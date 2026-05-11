@@ -4,6 +4,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { spectrumKind, type SpectrumFrames, type SpectrumState } from "../lib/types";
 import { isHDR } from "../lib/hdr";
 import { accentFromPalette } from "../lib/vibrantColor";
+import { DEFAULT_ACCENT } from "../lib/accent";
 
 /**
  * Focus-mode 128-band mirrored FFT visualiser.
@@ -222,7 +223,13 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
     b: "220",
   });
   const vibrantPalette = usePlaybackStore((s) => s.vibrantPalette);
+  const keepDefaultColours = useSettingsStore((s) => s.keepDefaultColours);
   useEffect(() => {
+    if (keepDefaultColours) {
+      const [r, g, b] = DEFAULT_ACCENT;
+      accentRef.current = { r: String(r), g: String(g), b: String(b) };
+      return;
+    }
     if (!vibrantPalette) {
       // Fresh session or a track with no art. Match the CSS `:root`
       // defaults.
@@ -231,7 +238,7 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
     }
     const [r, g, b] = accentFromPalette(vibrantPalette);
     accentRef.current = { r: String(r), g: String(g), b: String(b) };
-  }, [vibrantPalette]);
+  }, [vibrantPalette, keepDefaultColours]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

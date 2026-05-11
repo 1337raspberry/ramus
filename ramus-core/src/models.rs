@@ -600,6 +600,9 @@ pub struct Settings {
     /// Quality used for user-initiated downloads. `Original` direct-plays
     /// the source; `Kbps*` transcodes lossless sources to Ogg/Opus.
     pub download_quality: DownloadQuality,
+    /// When true, accent + ultra-blur palette extraction from album art
+    /// is suppressed and the brand defaults are kept everywhere.
+    pub keep_default_colours: bool,
 }
 
 impl Default for Settings {
@@ -625,6 +628,7 @@ impl Default for Settings {
             include_plex_styles: true,
             show_artist_flags: true,
             download_quality: DownloadQuality::default(),
+            keep_default_colours: false,
         }
     }
 }

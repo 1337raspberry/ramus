@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { findMusicLibraries } from "../../lib/commands";
 import type { LibrarySection, PlexServer } from "../../lib/types";
+import { IconMusicNote, IconCheck } from "../Icons";
 
 interface Props {
   server: PlexServer;
@@ -45,9 +46,15 @@ export default function LibraryPicker({ server, onSelect }: Props) {
             className={`library-row${selectedKey === lib.key ? " selected" : ""}`}
             onClick={() => handleSelect(lib)}
           >
-            <span className="library-icon">{"\uD83C\uDFB5"}</span>
+            <span className="library-icon">
+              <IconMusicNote size={20} />
+            </span>
             <span className="library-name">{lib.title}</span>
-            {selectedKey === lib.key && <span className="library-check">{"\u2713"}</span>}
+            {selectedKey === lib.key && (
+              <span className="library-check">
+                <IconCheck size={16} />
+              </span>
+            )}
           </div>
         ))}
       </div>

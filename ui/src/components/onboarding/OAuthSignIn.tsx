@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { startOauth, pollOauth } from "../../lib/commands";
+import ramusLogo from "../../assets/ramus-logo.png";
 
 // Pin state survives a WKWebView reload so polling resumes automatically
 // when the user returns from Safari after completing the OAuth handshake,
@@ -107,7 +108,7 @@ export default function OAuthSignIn({ onSuccess }: Props) {
 
   return (
     <div className="onboarding-step">
-      <div className="onboarding-icon">{"\uD83C\uDFB5"}</div>
+      <img src={ramusLogo} alt="ramus" className="onboarding-logo" />
       <h2>Welcome to ramus</h2>
       <p className="onboarding-subtitle">Sign in with your Plex account to get started.</p>
 

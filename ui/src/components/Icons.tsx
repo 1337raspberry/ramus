@@ -367,3 +367,79 @@ export function IconChevronOpenDown({ size = defaults.size, className }: IconPro
     </svg>
   );
 }
+
+export function IconHome({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M3 11l9-7 9 7" />
+      <path d="M5 10v10h14V10" />
+      <path d="M10 20v-6h4v6" />
+    </svg>
+  );
+}
+
+export function IconGlobe({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <circle cx="12" cy="12" r="9" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <ellipse cx="12" cy="12" rx="4" ry="9" />
+    </svg>
+  );
+}
+
+export function IconCheck({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <polyline points="5 12 10 17 19 7" />
+    </svg>
+  );
+}
+
+export function IconSpinner({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.25"
+      strokeLinecap="round"
+      className={`icon-spinner${className ? ` ${className}` : ""}`}
+    >
+      <circle cx="12" cy="12" r="9" opacity="0.2" />
+      <path d="M21 12a9 9 0 0 0-9-9" />
+    </svg>
+  );
+}

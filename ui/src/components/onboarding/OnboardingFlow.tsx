@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { finalizeOnboarding, connectManualUrl } from "../../lib/commands";
+import { finalizeOnboarding, connectManualUrl, logout } from "../../lib/commands";
 import type { LibrarySection, PlexServer } from "../../lib/types";
-import OAuthSignIn from "./OAuthSignIn";
+import OAuthSignIn, { clearPin } from "./OAuthSignIn";
 import ServerPicker from "./ServerPicker";
 import LibraryPicker from "./LibraryPicker";
 import StyleToggle from "./StyleToggle";
@@ -97,10 +97,26 @@ export default function OnboardingFlow({ onComplete }: Props) {
     onComplete();
   }, [onComplete]);
 
+  // Escape hatch for users stuck in a broken mid-flow state (e.g. quit
+  // at the library picker, came back to "not connected to a Plex
+  // server"). Wipes both the Rust-side credentials and the JS-side step
+  // persistence so the next mount lands cleanly on step one.
+  const handleRestart = useCallback(() => {
+    logout().catch(() => {
+      // Best-effort — even if token-store wipe fails, the local state
+      // reset below still drops the user back to the sign-in screen.
+    });
+    clearOnboardingStorage();
+    clearPin();
+    setServer(null);
+    setServerUrl("");
+    setFinalizeError(null);
+    setStep("signIn");
+  }, []);
+
   return (
     <div className="onboarding-container">
       <div className="onboarding-card">
-        <div className="onboarding-brand">ramus</div>
         {step === "signIn" && <OAuthSignIn onSuccess={handleSignInSuccess} />}
         {step === "discoverServers" && <ServerPicker onSelect={handleServerSelect} />}
         {step === "selectLibrary" && server && (
@@ -115,6 +131,11 @@ export default function OnboardingFlow({ onComplete }: Props) {
         {step === "initialSync" && (
           <InitialSync onComplete={handleSyncComplete} onSkip={handleSkip} />
         )}
+        <div className="onboarding-restart">
+          <button className="onboarding-text-btn" onClick={handleRestart}>
+            Restart setup
+          </button>
+        </div>
       </div>
     </div>
   );

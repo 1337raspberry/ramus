@@ -369,6 +369,19 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
                   </HelperText>
                 </>
               )}
+
+              <label className="settings-row">
+                <span>Keep default colours</span>
+                <input
+                  type="checkbox"
+                  checked={settings.keepDefaultColours}
+                  onChange={(e) => save({ keepDefaultColours: e.target.checked })}
+                />
+              </label>
+              <HelperText>
+                Just keep our lovely default pink colours instead of changing depending on what you
+                listen to. If you prefer consistency :)
+              </HelperText>
             </>
           )}
 
