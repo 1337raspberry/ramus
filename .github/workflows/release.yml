@@ -205,9 +205,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          MPV_RELEASE_TAG: 2026-04-10-75939c2
-          MPV_ASSET: mpv-dev-lgpl-x86_64-20260410-git-75939c2.7z
-          MPV_ASSET_SHA256: 7c80d47c69a29451a603cb212875d96ac5c2669f4a8b858b0af5cef0bf3dd581
+          MPV_RELEASE_TAG: 2026-05-11-8674222927
+          MPV_ASSET: mpv-dev-lgpl-x86_64-20260511-git-8674222927.7z
+          MPV_ASSET_SHA256: 6b915ea370d2db68fae70d59970d544afd6bb736520d2dade8721853385a9254
         run: |
           $url = "https://github.com/zhongfly/mpv-winbuild/releases/download/$env:MPV_RELEASE_TAG/$env:MPV_ASSET"
           Write-Host "Downloading $url"
