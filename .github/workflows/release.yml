@@ -485,6 +485,7 @@ jobs:
             - **macOS (Universal)** - `*_universal.dmg` (works on Intel + Apple Silicon)
             - **Linux** - `.AppImage` (portable), `.deb` (Debian/Ubuntu), `.rpm` (Fedora/RHEL)
             - **Windows** - `*_x64-setup.exe` (NSIS) or `*_x64_en-US.msi` (MSI).
+            - **Android** - `.apk` (sideload).
             - **iOS (iPhone)** - `*_ios-adhoc.ipa` (sideload)
 
             ### Installation note:
