@@ -80,8 +80,8 @@ pub enum PlaybackMode {
 pub enum TranscodeBitrate {
     Kbps320,
     Kbps256,
-    Kbps192,
     #[default]
+    Kbps192,
     Kbps128,
 }
 
@@ -495,7 +495,7 @@ impl Default for PlaybackConfig {
         Self::new(
             PlaybackMode::default(),
             TranscodeBitrate::default(),
-            10,
+            6,
             Self::DEFAULT_CACHE_LIMIT_BYTES,
         )
     }
@@ -607,10 +607,10 @@ impl Default for Settings {
         Self {
             playback_mode: PlaybackMode::default(),
             transcode_bitrate: TranscodeBitrate::default(),
-            lookahead_depth: 10,
+            lookahead_depth: 6,
             audio_cache_limit_bytes: PlaybackConfig::DEFAULT_CACHE_LIMIT_BYTES,
             image_cache_limit_bytes: 1_073_741_824,
-            sync_interval_hours: 0,
+            sync_interval_hours: 4,
             genre_source: GenreSource::default(),
             library_padding: 0,
             refuse_http: false,
@@ -900,8 +900,8 @@ mod tests {
     fn test_playback_config_default() {
         let cfg = PlaybackConfig::default();
         assert_eq!(cfg.playback_mode, PlaybackMode::Never);
-        assert_eq!(cfg.transcode_bitrate, TranscodeBitrate::Kbps128);
-        assert_eq!(cfg.lookahead_depth, 10);
+        assert_eq!(cfg.transcode_bitrate, TranscodeBitrate::Kbps192);
+        assert_eq!(cfg.lookahead_depth, 6);
         assert_eq!(cfg.audio_cache_limit_bytes, 2_147_483_648);
     }
 

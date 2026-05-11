@@ -507,6 +507,20 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
                 Show every genre as a flat alphabetical list instead of a hierarchical tree.
               </HelperText>
 
+              <label className="settings-row">
+                <span>Include Plex Style tags</span>
+                <input
+                  type="checkbox"
+                  checked={settings.includePlexStyles}
+                  onChange={(e) => save({ includePlexStyles: e.target.checked })}
+                />
+              </label>
+              <HelperText>
+                Plex tags each album with a primary genre and one or more styles (more specific
+                sub-genres). Most libraries are richer with both — turn this off if you tag genres
+                yourself and use &ldquo;prefer local metadata&rdquo;.
+              </HelperText>
+
               <div className="settings-row">
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <button

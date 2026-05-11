@@ -272,17 +272,30 @@ fn read_string_property(lib: &MpvLib, ctx: *mut mpv_handle, name: &str) -> Optio
     }
 }
 
-/// Parse mpv's `mpv-version` string (e.g. `"mpv 0.35.1"`, `"mpv 0.38.0"`,
-/// `"mpv 0.40.0-1"`, `"mpv git-deadbeef"`) and return whether the reported
-/// version is at least `major.minor`. Returns `false` on any parse failure
-/// or git/unknown build — safe default is the older signature, since old
-/// mpv rejects the new args outright but new mpv tolerates 3-arg `loadfile`
-/// with no per-track options (see `load_file` below).
+/// Parse mpv's `mpv-version` string and return whether the reported version
+/// is at least `major.minor`. Real-world formats observed:
+/// - `"mpv 0.35.1"`            — Ubuntu/Debian apt packages
+/// - `"mpv v0.41.0"`           — Homebrew on macOS (leading `v`)
+/// - `"mpv 0.40.0-1"`          — Debian patch suffix
+/// - `"mpv 0.38.0-rc1"`        — pre-release tag
+/// - `"mpv git-deadbeef"`      — self-built from git
+///
+/// Strategy: strip the `"mpv "` prefix, skip any leading non-digit
+/// characters (handles the `v` prefix), then parse `major.minor` up to
+/// the first non-version character.
+///
+/// Returns `false` on any parse failure — safe default is the older
+/// signature, since old mpv rejects the new args outright while new mpv
+/// tolerates the 3-arg `loadfile` with no per-track options (see
+/// `load_file` below). The bias is therefore "fail safe on old mpv,"
+/// not "fail safe on new mpv" — getting it wrong on a new mpv breaks
+/// stream-record (loadfile would put options in the index slot).
 fn mpv_version_at_least(version: &str, min_major: u32, min_minor: u32) -> bool {
     let Some(rest) = version.strip_prefix("mpv ") else {
         return false;
     };
-    let numeric = rest
+    let after_v = rest.trim_start_matches(|c: char| !c.is_ascii_digit());
+    let numeric = after_v
         .split(|c: char| !(c.is_ascii_digit() || c == '.'))
         .next()
         .unwrap_or("");
@@ -589,6 +602,17 @@ mod tests {
         assert!(mpv_version_at_least("mpv 0.38.0", 0, 38));
         assert!(mpv_version_at_least("mpv 0.39.0", 0, 38));
         assert!(mpv_version_at_least("mpv 1.0.0", 0, 38));
+    }
+
+    #[test]
+    fn parses_homebrew_v_prefix() {
+        // Homebrew's libmpv on macOS reports the version with a leading
+        // `v` (e.g. "mpv v0.41.0"). Apt does not. Original parser missed
+        // this and returned false on perfectly modern mpv, silently
+        // falling back to the pre-0.38 loadfile signature.
+        assert!(mpv_version_at_least("mpv v0.41.0", 0, 38));
+        assert!(mpv_version_at_least("mpv v0.38.0", 0, 38));
+        assert!(!mpv_version_at_least("mpv v0.37.0", 0, 38));
     }
 
     #[test]

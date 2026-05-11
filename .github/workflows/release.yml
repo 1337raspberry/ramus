@@ -262,8 +262,21 @@ jobs:
   # when `platform=all`; both jobs upload to the same draft release.
   build-android:
     name: Android (APK)
-    needs: setup
-    if: needs.setup.outputs.android == 'true'
+    # Wait for the desktop matrix so tauri-action has already created the
+    # draft release by the time we try to attach the APK. GitHub allows
+    # multiple drafts on the same tag (a draft doesn't claim the tag until
+    # published), so running the create concurrently with tauri-action
+    # used to produce two drafts — one full, one empty "android stub".
+    needs: [setup, build]
+    # `if: always()` lets this job run even when the desktop matrix is
+    # skipped (platform=android alone). `success || skipped` filters out
+    # the failure / cancelled paths so we don't try to release a broken
+    # build. needs.setup.outputs.android still gates whether Android was
+    # requested at all.
+    if: |
+      always()
+      && needs.setup.outputs.android == 'true'
+      && (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -383,13 +396,16 @@ jobs:
           ls -la "$APK"
           echo "path=$APK" >> "$GITHUB_OUTPUT"
 
-      # When `platform=all`, tauri-action creates the draft release in
-      # the desktop matrix. When `platform=android` alone, no draft
-      # exists yet — fall back to creating it. The `|| true` makes the
-      # create idempotent across the race with tauri-action: whichever
-      # job wins the create, the other just continues to the upload
-      # step. `gh release upload --clobber` lets re-runs overwrite a
-      # previously uploaded APK without manual cleanup.
+      # When `platform=all`, tauri-action created the draft in the
+      # desktop matrix (which this job now waits on via `needs: build`).
+      # When `platform=android` alone, no draft exists yet — fall back
+      # to creating it. `gh release view` checks for an existing draft
+      # by tag; we only create one if absent. Previously this step ran
+      # `gh release create ... || true`, which races with tauri-action
+      # because GitHub allows multiple drafts on the same tag — that
+      # produced the duplicate empty "android stub" draft. `gh release
+      # upload --clobber` lets re-runs overwrite a previously uploaded
+      # APK without manual cleanup.
       - name: Upload APK to draft release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -397,11 +413,12 @@ jobs:
           APK: ${{ steps.apk.outputs.path }}
         run: |
           TAG="v$VERSION"
-          gh release create "$TAG" \
-            --draft \
-            --title "ramus $TAG" \
-            --notes "Automated build. Sideload — install the .apk on a phone with 'Install unknown apps' enabled for your file manager / browser." \
-            2>/dev/null || true
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --draft \
+              --title "ramus $TAG" \
+              --notes "Automated build. Sideload — install the .apk on a phone with 'Install unknown apps' enabled for your file manager / browser."
+          fi
           DEST="ramus_${VERSION}_universal.apk"
           cp "$APK" "$DEST"
           gh release upload "$TAG" "$DEST" --clobber
