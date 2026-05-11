@@ -136,6 +136,25 @@ impl MpvController {
                 }
             };
 
+            // Read back the cache / demuxer caps so we can verify our
+            // `set_option_string` calls actually landed. mpv silently
+            // discards unknown options and doesn't reject out-of-range
+            // values; without a read-back the only way to detect "option
+            // didn't apply" is via downstream symptoms (e.g. recorder
+            // failing because the demuxer slurped a whole track).
+            for opt in [
+                "demuxer-max-bytes",
+                "demuxer-readahead-secs",
+                "cache-secs",
+                "cache",
+            ] {
+                if let Some(v) = read_string_property(&lib, ctx, opt) {
+                    log::info!("libmpv: {opt}={v}");
+                } else {
+                    log::warn!("libmpv: could not read {opt}");
+                }
+            }
+
             let handle_clone = handle.clone();
             let shutdown_clone = shutdown.clone();
             let lib_clone = lib.clone();
