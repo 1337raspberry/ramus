@@ -1,0 +1,49 @@
+{
+  "name": "ramus",
+  "identifier": "com.ramus.app.sidestore",
+  "sourceURL": "https://1337raspberry.github.io/ramus.json",
+  "subtitle": "genre-first Plex music player",
+  "description": "ramus is a genre-first music client for Plex focused on discovering and exploring your existing library.",
+  "iconURL": "https://raw.githubusercontent.com/1337raspberry/ramus/main/ramus-tauri/icons/icon.png",
+  "website": "https://github.com/1337raspberry/ramus",
+  "tintColor": "A405FA",
+  "apps": [
+    {
+      "name": "ramus",
+      "bundleIdentifier": "com.ramus.app",
+      "developerName": "1337raspberry",
+      "subtitle": "Plex music player",
+      "localizedDescription": "ramus is a genre-first music client for Plex focused on discovering and exploring your existing library. Out of the box It's designed to function with the metadata plex has already assigned your albums to give you a rich hierarchical tree-like view of your library, while genre-obsessives can go as deep and custom as they wish and browse by their own dream musical taxonomy.",
+      "iconURL": "https://raw.githubusercontent.com/1337raspberry/ramus/main/ramus-tauri/icons/icon.png",
+      "tintColor": "A405FA",
+      "category": "music",
+      "screenshotURLs": [],
+      "version": "1.0.0",
+      "versionDate": "2026-05-11T00:00:00Z",
+      "versionDescription": "Initial SideStore source. The iOS build is produced by the unified release workflow (.github/workflows/release.yml) and uploaded as an ad-hoc-signed IPA — SideStore re-signs it with your Apple ID at install time.",
+      "size": 40000000,
+      "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v1.0.0/ramus_1.0.0_ios-adhoc.ipa",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "date": "2026-05-11T00:00:00Z",
+          "localizedDescription": "Initial SideStore source. The iOS build is produced by the unified release workflow (.github/workflows/release.yml) and uploaded as an ad-hoc-signed IPA — SideStore re-signs it with your Apple ID at install time.",
+          "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v1.0.0/ramus_1.0.0_ios-adhoc.ipa",
+          "size": 40000000,
+          "minOSVersion": "17.5"
+        }
+      ],
+      "permissions": [
+        {
+          "type": "background-audio",
+          "usageDescription": "Lets ramus keep playing music when the screen is locked or the app is backgrounded."
+        },
+        {
+          "type": "network",
+          "usageDescription": "ramus needs local network access to find Plex servers on your home network."
+        }
+      ]
+    }
+  ],
+  "news": []
+}

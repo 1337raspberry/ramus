@@ -1,0 +1,95 @@
+name: Sync SideStore source
+
+# Mirrors sidestore/source.json from this repo over to
+# 1337raspberry/1337raspberry.github.io/ramus.json so SideStore clients
+# can fetch the manifest from the short, TLD-ish Pages URL
+# (https://1337raspberry.github.io/ramus.json) without us paying for a
+# domain. The canonical, hand-edited copy stays in this repo — the
+# pages-repo copy is a build artifact and should never be edited
+# directly.
+#
+# Triggers:
+#   - Push to main that touches sidestore/source.json (the common case
+#     when cutting a release and prepending a new versions[] entry).
+#   - Manual workflow_dispatch (for re-syncs after a rollback or after
+#     fixing the PAT).
+#
+# REQUIRED SECRET — set once in repo Settings → Secrets and variables →
+# Actions → New repository secret:
+#   PAGES_SYNC_TOKEN  Fine-grained Personal Access Token, scoped to ONLY
+#                     the 1337raspberry/1337raspberry.github.io repo,
+#                     with Repository permissions → Contents → Read and
+#                     write. Generate at
+#                     github.com/settings/personal-access-tokens/new.
+#                     Pick a long expiry (1 year) and add a calendar
+#                     reminder to rotate — the workflow will fail loudly
+#                     once the token expires.
+#
+# Why a PAT and not GITHUB_TOKEN: the default GITHUB_TOKEN is scoped to
+# the repo the workflow runs in (this one) and cannot push to other
+# repos. A fine-grained PAT scoped to JUST the pages repo with JUST
+# Contents:write is the least-privilege option that works.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sidestore/source.json'
+  workflow_dispatch:
+
+permissions:
+  # The default GITHUB_TOKEN only needs read access to this repo — the
+  # cross-repo write happens via PAGES_SYNC_TOKEN. Keeping this minimal
+  # so a token leak from this workflow can't be escalated.
+  contents: read
+
+concurrency:
+  # If two pushes land in quick succession, only the latest gets mirrored.
+  # cancel-in-progress is fine here because the cancelled run's work would
+  # have been overwritten by the newer source.json anyway.
+  group: sidestore-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Mirror to user-pages
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout ramus (source manifest)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          path: ramus
+
+      - name: Checkout user-pages (destination)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          repository: 1337raspberry/1337raspberry.github.io
+          token: ${{ secrets.PAGES_SYNC_TOKEN }}
+          path: pages
+
+      - name: Copy source.json → ramus.json and push if changed
+        env:
+          # Short SHA for the commit message — lets future-me trace
+          # which ramus commit produced the current pages content
+          # without digging through Actions logs.
+          RAMUS_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cp ramus/sidestore/source.json pages/ramus.json
+          cd pages
+
+          # Bail out clean if source.json was edited but the
+          # whitespace-normalised content matches the existing
+          # ramus.json (e.g. someone reformatted a comment). No-op
+          # commits clutter the user-pages history for no reason.
+          if [ -z "$(git status --porcelain ramus.json)" ]; then
+            echo "ramus.json already matches source.json — nothing to sync"
+            exit 0
+          fi
+
+          git config user.name "ramus sync bot"
+          git config user.email "admin@blueshelter.net"
+          git add ramus.json
+          git commit -m "sync ramus.json from ramus@${RAMUS_SHA:0:7}"
+          git push
+          echo "Pushed updated ramus.json — available at https://1337raspberry.github.io/ramus.json within a minute or two."

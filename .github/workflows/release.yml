@@ -1,7 +1,7 @@
 name: Release
 
-# Builds ramus for macOS (Apple Silicon + Intel), Linux, Windows, and
-# Android, uploads the installers to a draft GitHub Release. Trigger by
+# Builds ramus for macOS (Apple Silicon + Intel), Linux, Windows, Android,
+# and iOS. Uploads the installers to a draft GitHub Release. Trigger by
 # pushing a `v*` tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`) or
 # by running the workflow manually from the Actions tab.
 #
@@ -10,7 +10,8 @@ name: Release
 # loop on mac/linux. On Windows there is no pkg-config / libmpv-dev
 # package to install — we download the zhongfly LGPL prebuilt DLL and
 # let Tauri bundle it as a resource so it ends up alongside ramus.exe.
-# Android uses Media3/ExoPlayer (not libmpv), so no native lib bundling.
+# Android uses Media3/ExoPlayer (not libmpv); iOS uses MPVKit via SPM
+# (resolved by Xcode), so neither needs a separate libmpv bundling step.
 #
 # REQUIRED SECRETS for Android signing — set once in repo Settings →
 # Secrets and variables → Actions:
@@ -19,7 +20,16 @@ name: Release
 #   ANDROID_KEYSTORE_PASSWORD  store password ("ramusdev" for the local dev keystore).
 #   ANDROID_KEY_ALIAS          key alias ("ramus").
 #   ANDROID_KEY_PASSWORD       key password ("ramusdev").
-# The Android job won't run without these.
+# The Android matrix entry won't sign correctly without these.
+#
+# iOS NEEDS NO SECRETS. The .ipa is ad-hoc signed (CODE_SIGN_IDENTITY="-")
+# with no provisioning profile. The resulting build is NOT installable on
+# a real device directly — it is intended to be re-signed by SideStore /
+# AltStore at install time, which replaces the placeholder signature with
+# the end-user's own Apple ID. The IPA contents (Mach-O binary, embedded
+# MPVKit frameworks, Info.plist) are otherwise identical to what a real
+# Apple Distribution build would produce. Adding real signing would
+# require a $99/yr Apple Developer membership and additional secrets.
 
 on:
   # Disabled automatic triggers to save GitHub Actions minutes.
@@ -39,6 +49,7 @@ on:
           - linux
           - windows
           - android
+          - ios
 
 concurrency:
   group: release-${{ github.ref }}
@@ -56,56 +67,80 @@ jobs:
   # matrix entries with a job-level `if:` because the `matrix` context
   # isn't available in job-level conditions — only `github`, `needs`,
   # `vars`, `inputs`. So we compute the matrix dynamically up front instead.
+  #
+  # Every platform (incl. android + ios) is a matrix entry now — the
+  # build job has per-step `if: matrix.id == ...` gates so the unified
+  # job can host the wildly different toolchains. Saves a separate
+  # build-android job and lets ios slot in with the same plumbing.
   setup:
     name: Select platforms
     runs-on: ubuntu-22.04
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
-      # 'true' or 'false' — tells the build-android job whether to run.
-      # Kept separate from the desktop matrix because Android uses a
-      # totally different build pipeline (no tauri-action) and can't
-      # piggyback on the existing matrix entries.
-      android: ${{ steps.select.outputs.android }}
+      # Workspace version, parsed from Cargo.toml. Used by android +
+      # ios matrix entries to tag the release and name the artifact.
+      # Desktop entries get this via tauri-action's __VERSION__
+      # substitution and don't read this output.
+      version: ${{ steps.version.outputs.version }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - id: version
+        run: |
+          VERSION=$(awk '/^\[workspace\.package\]/{f=1; next} f && /^version[[:space:]]*=/{gsub(/[",[:space:]]/, "", $3); print $3; exit}' Cargo.toml)
+          if [ -z "$VERSION" ]; then
+            echo "::error::Failed to parse version from Cargo.toml"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Workspace version: $VERSION"
+
       - id: select
         env:
           # Default to 'all' so tag-push triggers (if re-enabled) still build everything.
           PLATFORM: ${{ inputs.platform || 'all' }}
         shell: bash
         run: |
-          # macOS Universal: builds for both Apple Silicon and Intel on a
-          # single arm64 runner, then `lipo`s them together into one .dmg.
-          # Possible because libloading means we don't need a libmpv binary
-          # for each arch at link time — only at runtime, where each user's
-          # brew install provides the right one.
+          # `id` drives per-step gating in the build job. `rust-target`
+          # is empty for hosts that build for the native triple only
+          # (linux x86_64, windows x86_64). `tauri-args` is passed to
+          # tauri-action where applicable; android + ios call their own
+          # toolchains directly and ignore it.
+          #
+          # macOS Universal: builds for both Apple Silicon and Intel on
+          # a single arm64 runner, then `lipo`s them together into one
+          # .dmg. Possible because libloading means we don't need a
+          # libmpv binary for each arch at link time — only at runtime,
+          # where each user's brew install provides the right one.
           macos='{"id":"macos","platform":"macos-14","label":"macOS (Universal)","rust-target":"aarch64-apple-darwin,x86_64-apple-darwin","tauri-args":"--target universal-apple-darwin"}'
           linux='{"id":"linux","platform":"ubuntu-22.04","label":"Linux (x86_64)","rust-target":"","tauri-args":""}'
           windows='{"id":"windows","platform":"windows-latest","label":"Windows (x86_64)","rust-target":"","tauri-args":""}'
-          android=false
+          # 64-bit ARM covers all modern phones; 32-bit ARM keeps older
+          # devices working. Skipping x86 / x86_64 keeps the APK smaller
+          # — emulator-only ABIs aren't worth the bloat for sideload.
+          android='{"id":"android","platform":"ubuntu-22.04","label":"Android (APK)","rust-target":"aarch64-linux-android,armv7-linux-androideabi","tauri-args":""}'
+          # iOS device-only (aarch64-apple-ios). Skipping the simulator
+          # triple keeps the build fast — sideload distribution always
+          # targets real hardware.
+          ios='{"id":"ios","platform":"macos-14","label":"iOS (IPA, ad-hoc)","rust-target":"aarch64-apple-ios","tauri-args":""}'
           case "$PLATFORM" in
-            all)
-              include="[$macos,$linux,$windows]"
-              android=true
-              ;;
+            all)     include="[$macos,$linux,$windows,$android,$ios]" ;;
             macos)   include="[$macos]" ;;
             linux)   include="[$linux]" ;;
             windows) include="[$windows]" ;;
-            android)
-              include="[]"
-              android=true
-              ;;
+            android) include="[$android]" ;;
+            ios)     include="[$ios]" ;;
             *) echo "Unknown platform: $PLATFORM" >&2; exit 1 ;;
           esac
           echo "matrix={\"include\":$include}" >> "$GITHUB_OUTPUT"
-          echo "android=$android" >> "$GITHUB_OUTPUT"
 
   build:
     name: ${{ matrix.label }}
     needs: setup
-    # Skip the desktop matrix entirely when the user picked `android`
-    # alone — `include: []` would technically already produce zero matrix
-    # runs, but the explicit guard keeps the Actions UI tidier (no
-    # phantom 'build' parent job in the run summary).
+    # The setup job always emits a non-empty matrix (the workflow_dispatch
+    # input is required), but the guard is cheap and protects against
+    # future refactors that might emit `[]` for a no-op case.
     if: needs.setup.outputs.matrix != '{"include":[]}'
     runs-on: ${{ matrix.platform }}
     strategy:
@@ -125,8 +160,11 @@ jobs:
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
         with:
           workspaces: '. -> target'
-          # Separate cache per platform so they don't stomp each other.
-          key: ${{ matrix.platform }}
+          # Separate cache per matrix entry. Android + iOS share runner
+          # OSes with desktop entries (ubuntu-22.04 / macos-14) but
+          # produce different compiled artifacts, so they need their
+          # own cache slots.
+          key: ${{ matrix.id }}
 
       - name: Install Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -135,13 +173,14 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      # Linux: Tauri's webkit2gtk + libmpv for playback. patchelf is needed
+      # ── Linux ──────────────────────────────────────────────────────
+      # Tauri's webkit2gtk + libmpv for playback. patchelf is needed
       # both by tauri's AppImage bundler and by our self-contained libmpv
       # script (sets RPATH=$ORIGIN on each bundled lib).
       # libayatana-appindicator3-dev is the maintained replacement for
       # the deprecated libappindicator3-dev package.
       - name: Install Linux system dependencies
-        if: runner.os == 'Linux'
+        if: matrix.id == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -165,14 +204,16 @@ jobs:
       # — those use the system libmpv2 / mpv-libs via the depends arrays
       # already in tauri.conf.json.
       - name: Bundle libmpv into Linux .AppImage
-        if: runner.os == 'Linux'
+        if: matrix.id == 'linux'
         run: python3 scripts/bundle-linux-libmpv.py
 
-      # macOS: brew installs libmpv plus its full ffmpeg/codec/font stack.
-      # We bundle all of it into the .app a few steps below for self-contained
-      # distribution — users no longer need to `brew install mpv` themselves.
+      # ── macOS ──────────────────────────────────────────────────────
+      # brew installs libmpv plus its full ffmpeg/codec/font stack.
+      # We bundle all of it into the .app a few steps below for
+      # self-contained distribution — users no longer need to
+      # `brew install mpv` themselves.
       - name: Install macOS system dependencies
-        if: runner.os == 'macOS'
+        if: matrix.id == 'macos'
         run: brew install mpv
 
       # Walk libmpv's transitive dylibs, copy them to ramus-tauri/macos-frameworks/,
@@ -182,11 +223,12 @@ jobs:
       # (already self-contained) dylibs into <app>.app/Contents/Frameworks/.
       # See scripts/bundle-macos-libmpv.py for the gory details.
       - name: Bundle libmpv into macOS .app
-        if: runner.os == 'macOS'
+        if: matrix.id == 'macos'
         run: python3 scripts/bundle-macos-libmpv.py
 
-      # Windows: no pkg-config, no libmpv-dev package. Download the LGPL
-      # prebuilt DLL from zhongfly/mpv-winbuild and drop it where
+      # ── Windows ────────────────────────────────────────────────────
+      # No pkg-config, no libmpv-dev package. Download the LGPL prebuilt
+      # DLL from zhongfly/mpv-winbuild and drop it where
       # tauri.windows.conf.json expects it (`ramus-tauri/windows-deps/`).
       # Tauri then bundles it as a resource so it lands next to ramus.exe
       # in the installer. `7z.exe` is preinstalled on GitHub Actions Windows runners.
@@ -202,7 +244,7 @@ jobs:
       #     --jq '.assets[] | select(.name=="<asset>") | .digest'
       # which returns "sha256:<hex>").
       - name: Download libmpv DLL
-        if: runner.os == 'Windows'
+        if: matrix.id == 'windows'
         shell: pwsh
         env:
           MPV_RELEASE_TAG: 2026-05-11-8674222927
@@ -225,121 +267,39 @@ jobs:
           Copy-Item $dll.FullName ramus-tauri/windows-deps/libmpv-2.dll
           Write-Host "Placed libmpv-2.dll ($((Get-Item ramus-tauri/windows-deps/libmpv-2.dll).Length) bytes)"
 
+      # ── Frontend (android + ios) ───────────────────────────────────
+      # tauri-action runs `npm ci` + `npm run build` itself for desktop
+      # entries (via beforeBuildCommand in tauri.conf.json), but android
+      # and iOS call their toolchains directly and need ui/dist/ ready
+      # before the build kicks off — the bundled assets are baked into
+      # the APK/IPA at compile time.
       - name: Install frontend dependencies
+        if: matrix.id == 'android' || matrix.id == 'ios'
         working-directory: ui
         run: npm ci
 
-      - name: Build and publish Tauri app
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5  # v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: ramus-tauri
-          tagName: v__VERSION__
-          releaseName: 'ramus v__VERSION__'
-          releaseBody: |
-            Automated build from CI. Grab the file that matches your system:
+      - name: Build frontend
+        if: matrix.id == 'android' || matrix.id == 'ios'
+        working-directory: ui
+        run: npm run build
 
-            - **macOS (Universal)** — `*_universal.dmg` (works on Intel + Apple Silicon)
-            - **Linux** — `.AppImage` (portable), `.deb` (Debian/Ubuntu), `.rpm` (Fedora/RHEL)
-            - **Windows** — `*_x64-setup.exe` (NSIS) or `*_x64_en-US.msi` (MSI). libmpv-2.dll is bundled, no separate install needed.
+      - name: Install tauri CLI
+        if: matrix.id == 'android' || matrix.id == 'ios'
+        run: cargo install tauri-cli --locked --version '^2'
 
-            ### Heads up
-            These builds are **unsigned**, so you'll get a warning the first time you open the app:
-
-            - **macOS**: right-click the app → Open, or run `xattr -cr /Applications/ramus.app` to clear the quarantine flag.
-            - **Linux**: `chmod +x ramus_*.AppImage` if you grabbed the AppImage.
-            - **Windows**: SmartScreen will show "Unknown publisher" — click "More info" → "Run anyway".
-            - **Android**: enable "Install unknown apps" for your file manager / browser, then tap the .apk.
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.tauri-args }}
-
-  # Android sits outside the desktop matrix because `cargo tauri android
-  # build` doesn't go through tauri-action — different SDK setup, custom
-  # signing flow, and the artefact ships as a sideloadable APK rather
-  # than a platform installer. Runs in parallel with the desktop matrix
-  # when `platform=all`; both jobs upload to the same draft release.
-  build-android:
-    name: Android (APK)
-    # Wait for the desktop matrix so tauri-action has already created the
-    # draft release by the time we try to attach the APK. GitHub allows
-    # multiple drafts on the same tag (a draft doesn't claim the tag until
-    # published), so running the create concurrently with tauri-action
-    # used to produce two drafts — one full, one empty "android stub".
-    needs: [setup, build]
-    # `if: always()` lets this job run even when the desktop matrix is
-    # skipped (platform=android alone). `success || skipped` filters out
-    # the failure / cancelled paths so we don't try to release a broken
-    # build. needs.setup.outputs.android still gates whether Android was
-    # requested at all.
-    if: |
-      always()
-      && needs.setup.outputs.android == 'true'
-      && (needs.build.result == 'success' || needs.build.result == 'skipped')
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
-
-      # Pull the workspace version out of Cargo.toml so we can tag the
-      # release and name the artefact. Single source of truth — same
-      # value tauri-action substitutes for `__VERSION__` on desktop.
-      - name: Resolve workspace version
-        id: version
-        run: |
-          VERSION=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
-          if [ -z "$VERSION" ]; then
-            echo "::error::Failed to parse version from Cargo.toml"
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building Android APK for v$VERSION"
-
+      # ── Android ────────────────────────────────────────────────────
       - name: Set up JDK 17
+        if: matrix.id == 'android'
         uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b  # v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
-        with:
-          # 64-bit ARM covers all modern phones; 32-bit ARM keeps older
-          # devices working. Skipping x86 / x86_64 keeps the APK smaller
-          # — emulator-only ABIs aren't worth the bloat for sideload.
-          targets: aarch64-linux-android,armv7-linux-androideabi
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
-        with:
-          workspaces: '. -> target'
-          key: release-android
-
-      - name: Install Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: ui
-        run: npm ci
-
-      # `cargo tauri android build` reads frontendDist from tauri.conf.json
-      # and bakes it into the APK's assets — has to exist before the build.
-      - name: Build frontend
-        working-directory: ui
-        run: npm run build
-
-      - name: Install tauri CLI
-        run: cargo install tauri-cli --locked --version '^2'
-
       # Decode the keystore from a base64 secret rather than committing it.
       # Two failure modes worth catching loudly: secret unset (zero bytes
       # in env), or wrong base64 encoding (decoded file empty).
-      - name: Decode signing keystore
+      - name: Decode Android signing keystore
+        if: matrix.id == 'android'
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
@@ -357,7 +317,8 @@ jobs:
 
       # build.gradle.kts reads these via java.util.Properties.load — no
       # shell escaping concerns. Don't echo the values.
-      - name: Write signing.properties
+      - name: Write Android signing.properties
+        if: matrix.id == 'android'
         env:
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -378,13 +339,15 @@ jobs:
       # only useful for Play Store). cargo-tauri auto-generates
       # tauri.properties (versionCode/versionName) from Cargo.toml, so we
       # don't need to maintain that file.
-      - name: Build signed release APK
+      - name: Build signed Android release APK
+        if: matrix.id == 'android'
         working-directory: ramus-tauri
         run: cargo tauri android build --apk
 
       # `cargo tauri android build` outputs to a known directory but the
       # exact filename includes the ABI / build variant — glob it.
       - name: Locate APK
+        if: matrix.id == 'android'
         id: apk
         run: |
           APK=$(find ramus-tauri/gen/android/app/build/outputs/apk -name "*-release.apk" | head -1)
@@ -396,30 +359,189 @@ jobs:
           ls -la "$APK"
           echo "path=$APK" >> "$GITHUB_OUTPUT"
 
-      # When `platform=all`, tauri-action created the draft in the
-      # desktop matrix (which this job now waits on via `needs: build`).
-      # When `platform=android` alone, no draft exists yet — fall back
-      # to creating it. `gh release view` checks for an existing draft
-      # by tag; we only create one if absent. Previously this step ran
-      # `gh release create ... || true`, which races with tauri-action
-      # because GitHub allows multiple drafts on the same tag — that
-      # produced the duplicate empty "android stub" draft. `gh release
-      # upload --clobber` lets re-runs overwrite a previously uploaded
-      # APK without manual cleanup.
-      - name: Upload APK to draft release
+      # ── iOS ────────────────────────────────────────────────────────
+      # xcodegen generates the .xcodeproj from project.yml. CocoaPods is
+      # not used — the plugin's Swift sources are wired in via SPM (see
+      # plugins/tauri-plugin-ramus-ios-bridge/ios/Package.swift) and
+      # MPVKit is declared as an SPM package in gen/apple/project.yml.
+      # macos-14 runners ship Xcode + the iOS SDK; only xcodegen needs
+      # installing.
+      - name: Install xcodegen
+        if: matrix.id == 'ios'
+        run: brew install xcodegen
+
+      - name: Regenerate iOS Xcode project
+        if: matrix.id == 'ios'
+        run: ./scripts/regen-ios-project.sh
+
+      # Build an ad-hoc-signed .app and pack it into a structurally valid
+      # .ipa, with NO Apple Developer credentials required.
+      #
+      # CODE_SIGN_IDENTITY="-" signs each Mach-O with the ad-hoc identity
+      # (sha-only, no certificate). The resulting .ipa is NOT directly
+      # installable on a real device — Apple's installd rejects ad-hoc
+      # signatures. The flow is: SideStore / AltStore strip the
+      # placeholder signature on install and re-sign with the end-user's
+      # own Apple ID. The IPA contents (Mach-O binary, embedded MPVKit
+      # xcframeworks, Info.plist, asset catalog) are otherwise identical
+      # to what an Apple Distribution build would produce.
+      #
+      # We bypass `cargo tauri ios build` here because the tauri CLI
+      # assumes a real DEVELOPMENT_TEAM is configured and tries to invoke
+      # `xcodebuild -exportArchive` with an ExportOptions.plist demanding
+      # a provisioning profile. Calling xcodebuild directly lets us pass
+      # the ad-hoc signing flags; the cargo build for libapp.a is still
+      # triggered by the preBuildScript in gen/apple/project.yml, which
+      # runs `cargo tauri ios xcode-script`.
+      #
+      # CODE_SIGNING_ALLOWED=YES + CODE_SIGN_STYLE=Manual is the
+      # combination that lets Xcode sign without trying to auto-fetch a
+      # provisioning profile from the Developer Portal. Empty
+      # PROVISIONING_PROFILE_SPECIFIER + DEVELOPMENT_TEAM make that
+      # explicit so future Xcode versions don't change behavior on us.
+      - name: Build iOS .ipa (ad-hoc signed)
+        if: matrix.id == 'ios'
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd ramus-tauri/gen/apple
+          # CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO suppresses Xcode's
+          # default Release-config injection of `get-task-allow` (and
+          # other base entitlements) into the ad-hoc signature. Without
+          # this, recent Xcodes inject `get-task-allow=true` for ad-hoc
+          # builds, marking the binary as debuggable — harmless under
+          # SideStore (which re-signs and strips entitlements) but a
+          # nicer baseline if anyone ever does a more conservative
+          # re-sign downstream.
+          xcodebuild archive \
+            -project ramus-tauri.xcodeproj \
+            -scheme ramus-tauri_iOS \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/ramus-tauri_iOS.xcarchive \
+            -allowProvisioningUpdates \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            DEVELOPMENT_TEAM=""
+
+          # Skip `xcodebuild -exportArchive` — it requires a real
+          # signing identity + provisioning profile for any iOS export
+          # method. Manually pack the archive's ramus.app into Payload/
+          # and zip — the .ipa format is just a renamed zip with that
+          # layout.
+          rm -rf build/Payload
+          mkdir -p build/Payload
+          cp -R build/ramus-tauri_iOS.xcarchive/Products/Applications/ramus.app build/Payload/
+
+          # Re-sign embedded frameworks first (deepest-first via -depth)
+          # then the .app itself. `codesign --deep` is deprecated by
+          # Apple and skips nested bundles inconsistently — walking the
+          # framework set ourselves is more reliable. Order matters: the
+          # outer .app signature must seal over its dependencies' fresh
+          # signatures.
+          find build/Payload/ramus.app/Frameworks -name "*.framework" -depth -exec codesign --force --sign - --timestamp=none {} \;
+          codesign --force --sign - --timestamp=none build/Payload/ramus.app
+
+          cd build
+          zip -rqy "ramus_${VERSION}_ios-adhoc.ipa" Payload
+          ls -la "ramus_${VERSION}_ios-adhoc.ipa"
+
+      - name: Locate IPA
+        if: matrix.id == 'ios'
+        id: ipa
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          IPA="ramus-tauri/gen/apple/build/ramus_${VERSION}_ios-adhoc.ipa"
+          if [ ! -f "$IPA" ]; then
+            echo "::error::Expected IPA at $IPA but it does not exist"
+            exit 1
+          fi
+          echo "path=$IPA" >> "$GITHUB_OUTPUT"
+
+      # ── Desktop publish (tauri-action) ─────────────────────────────
+      # tauri-action handles the build, beforeBuildCommand (vite build),
+      # bundling, AND draft-release creation/upload in one step. Android
+      # and iOS bypass it entirely because they need custom toolchains
+      # and produce artifacts (.apk / .ipa) that tauri-action doesn't
+      # know how to bundle from cargo metadata alone.
+      - name: Build and publish desktop artifacts (tauri-action)
+        if: matrix.id == 'macos' || matrix.id == 'linux' || matrix.id == 'windows'
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5  # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-          APK: ${{ steps.apk.outputs.path }}
+        with:
+          projectPath: ramus-tauri
+          tagName: v__VERSION__
+          releaseName: 'ramus v__VERSION__'
+          releaseBody: |
+            Automated build from CI. Grab the file that matches your system:
+
+            - **macOS (Universal)** — `*_universal.dmg` (works on Intel + Apple Silicon)
+            - **Linux** — `.AppImage` (portable), `.deb` (Debian/Ubuntu), `.rpm` (Fedora/RHEL)
+            - **Windows** — `*_x64-setup.exe` (NSIS) or `*_x64_en-US.msi` (MSI). libmpv-2.dll is bundled, no separate install needed.
+            - **Android** — `.apk` (sideload).
+            - **iOS** — `*_ios-adhoc.ipa` (sideload via SideStore / AltStore — the placeholder signature is replaced at install time).
+
+            ### Heads up
+            These builds are **unsigned**, so you'll get a warning the first time you open the app:
+
+            - **macOS**: right-click the app → Open, or run `xattr -cr /Applications/ramus.app` to clear the quarantine flag.
+            - **Linux**: `chmod +x ramus_*.AppImage` if you grabbed the AppImage.
+            - **Windows**: SmartScreen will show "Unknown publisher" — click "More info" → "Run anyway".
+            - **Android**: enable "Install unknown apps" for your file manager / browser, then tap the .apk.
+            - **iOS**: requires SideStore / AltStore — the placeholder ad-hoc signature is not Apple-trusted, so the IPA will not install via Finder / Apple Configurator alone.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.tauri-args }}
+
+      # ── Sideload artifact upload (android + ios) ───────────────────
+      # When desktop matrix entries ran, tauri-action created the draft.
+      # When this is the only matrix entry, no draft exists yet — fall
+      # back to creating it. `gh release view` checks for an existing
+      # draft by tag; we only create if absent. Concurrent matrix runs
+      # are safe: the first one to `gh release create` wins, others see
+      # the draft already there. `--clobber` on upload lets re-runs
+      # overwrite a previously uploaded asset without manual cleanup.
+      - name: Upload sideload artifact to draft release
+        if: matrix.id == 'android' || matrix.id == 'ios'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.setup.outputs.version }}
+          APK_PATH: ${{ steps.apk.outputs.path }}
+          IPA_PATH: ${{ steps.ipa.outputs.path }}
+          MATRIX_ID: ${{ matrix.id }}
         run: |
+          set -euo pipefail
           TAG="v$VERSION"
+          # TOCTOU: android + ios + tauri-action can all hit the
+          # "create draft if absent" path concurrently when no prior
+          # run has created v$VERSION. The window between the view
+          # check and the create call is wide enough that two runners
+          # can both see "doesn't exist" and both try to create. Under
+          # `set -e` the loser exits non-zero and fails the job.
+          # `|| gh release view "$TAG"` recovers: if another runner
+          # won the race, the release now exists and view returns 0;
+          # if it still doesn't exist, the original create error is
+          # the real problem and the view will also fail, propagating.
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
               --draft \
               --title "ramus $TAG" \
-              --notes "Automated build. Sideload — install the .apk on a phone with 'Install unknown apps' enabled for your file manager / browser."
+              --notes "Automated build. See platform-specific install notes in the release description once the desktop matrix populates it." \
+              || gh release view "$TAG" >/dev/null 2>&1
           fi
-          DEST="ramus_${VERSION}_universal.apk"
-          cp "$APK" "$DEST"
+          if [ "$MATRIX_ID" = "android" ]; then
+            DEST="ramus_${VERSION}_universal.apk"
+            cp "$APK_PATH" "$DEST"
+          else
+            DEST="ramus_${VERSION}_ios-adhoc.ipa"
+            cp "$IPA_PATH" "$DEST"
+          fi
           gh release upload "$TAG" "$DEST" --clobber
           echo "Uploaded $DEST to $TAG"
