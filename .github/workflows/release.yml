@@ -486,7 +486,7 @@ jobs:
             - **Linux** — `.AppImage` (portable), `.deb` (Debian/Ubuntu), `.rpm` (Fedora/RHEL)
             - **Windows** — `*_x64-setup.exe` (NSIS) or `*_x64_en-US.msi` (MSI). libmpv-2.dll is bundled, no separate install needed.
             - **Android** — `.apk` (sideload).
-            - **iOS** — `*_ios-adhoc.ipa` (sideload via SideStore / AltStore — the placeholder signature is replaced at install time).
+            - **iOS** — `*_ios-adhoc.ipa` (sideload only).
 
             ### Heads up
             These builds are **unsigned**, so you'll get a warning the first time you open the app:
@@ -495,7 +495,7 @@ jobs:
             - **Linux**: `chmod +x ramus_*.AppImage` if you grabbed the AppImage.
             - **Windows**: SmartScreen will show "Unknown publisher" — click "More info" → "Run anyway".
             - **Android**: enable "Install unknown apps" for your file manager / browser, then tap the .apk.
-            - **iOS**: requires SideStore / AltStore — the placeholder ad-hoc signature is not Apple-trusted, so the IPA will not install via Finder / Apple Configurator alone.
+            - **iOS (iPhone Only)**: sideload however you like, or use sidestore source `https://1337raspberry.github.io/ramus.json` to grab this automatically.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.tauri-args }}
