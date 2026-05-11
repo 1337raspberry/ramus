@@ -754,6 +754,11 @@ async fn wait_for_source_drain(
             (Some(_), None) => false,
         };
 
+        log::debug!(
+            "stream_record: drain probe t={:.1}s drain_met={drain_met} cache_steady={cache_steady} file_steady={file_steady} bytes_met={bytes_met} cache_time={cur_cache:?} file_size={cur_file:?} expected_bytes={expected_bytes:?} steady_count={steady_count}",
+            started.elapsed().as_secs_f64(),
+        );
+
         if drain_met && cache_steady && file_steady && bytes_met {
             steady_count += 1;
             if steady_count >= STABLE_POLLS {
