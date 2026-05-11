@@ -19,4 +19,19 @@ export RAMUS_VERSION
 echo "regen-ios-project: RAMUS_VERSION=${RAMUS_VERSION}"
 
 cd ramus-tauri/gen/apple
+
+# xcodegen validates that every `sources:` path in project.yml exists on
+# disk before generating, otherwise it fails with "missing source
+# directory". Two such paths are absent on a fresh clone (and on CI):
+#
+#   Externals/  — fully gitignored; populated later in the build by
+#                 xcodebuild's preBuildScript, which runs `cargo tauri
+#                 ios xcode-script` and drops libapp.a in here per-arch.
+#   assets/     — git doesn't track empty dirs; populated by `cargo
+#                 tauri build` which copies licenses into assets/_up_/.
+#
+# Pre-create them empty so xcodegen passes spec validation; the real
+# contents land later in the build.
+mkdir -p Externals assets
+
 exec xcodegen generate --spec project.yml
