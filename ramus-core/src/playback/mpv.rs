@@ -108,26 +108,10 @@ pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
         ("gapless-audio", "yes"),
         ("prefetch-playlist", prefetch_playlist),
         ("audio-buffer", "0.5"),
-        // Demuxer caps tight enough to actually bind, not just nominally
-        // set. mpv reads ahead until EITHER readahead-secs * bitrate OR
-        // max-bytes is reached; for typical FLAC bitrates a 30s/128 MiB
-        // pair never binds (whole track fits), and the demuxer slurped
-        // everything into cache in <200 ms, racing the stream-record
-        // wire-up. With max-bytes=4 MiB the demuxer physically cannot
-        // hold a whole compressed track and must wait for playback to
-        // drain before reading more — the recorder then captures the
-        // packet flow incrementally. Side effects: more frequent disk
-        // reads for network sources, tiny seek latency. Both fine.
-        // Within-track seeks still work fine (FLAC is seekable, mpv just
-        // re-buffers from the new position); gapless across album tracks
-        // is handled by our reqwest prefetch worker swapping playlist
-        // entries to file:// URLs, not by mpv's demuxer readahead.
-        ("demuxer-max-bytes", "4MiB"),
-        ("demuxer-readahead-secs", "5"),
-        // Match the demuxer-side cap on mpv's *stream* cache — otherwise
-        // raw HTTP bytes still pile up in the stream cache regardless of
-        // what the demuxer is allowed to buffer.
-        ("cache-secs", "5"),
+        // Eagerly pull whole files into the demuxer cache for reliable
+        // gapless playback of large files.
+        ("demuxer-max-bytes", "2GiB"),
+        ("demuxer-readahead-secs", "1200"),
         // Cap how long mpv will sit on a stalled HTTP request before erroring
         // out — without this, an unreachable host hangs forever and our
         // file-ended retry path never fires. Paired with lavf reconnect so
