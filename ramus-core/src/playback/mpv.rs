@@ -108,10 +108,21 @@ pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
         ("gapless-audio", "yes"),
         ("prefetch-playlist", prefetch_playlist),
         ("audio-buffer", "0.5"),
-        // Eagerly pull whole files into the demuxer cache for reliable
-        // gapless playback of large files.
-        ("demuxer-max-bytes", "2GiB"),
-        ("demuxer-readahead-secs", "1200"),
+        // Demuxer readahead intentionally modest. The natural inclination is
+        // "buffer the whole track up front" (we used to set 1200s / 2 GiB)
+        // but on Windows mpv builds past 0.41.0, that races stream-record:
+        // the demuxer slurped the entire ~67 MB FLAC into cache in ~500 ms
+        // and hit EOF *before* the recorder finished wiring up to the
+        // packet path. Result: file created at 0 bytes, never written. With
+        // a 30 s readahead the demuxer paces with playback and the recorder
+        // has a steady stream of packets to capture. macOS 0.41.0 vanilla
+        // doesn't hit this race — same setting is safe / a no-op there.
+        // Within-track seeks still work fine (FLAC is seekable, mpv just
+        // re-buffers from the new position); gapless across album tracks
+        // is handled by our reqwest prefetch worker swapping playlist
+        // entries to file:// URLs, not by mpv's demuxer readahead.
+        ("demuxer-max-bytes", "128MiB"),
+        ("demuxer-readahead-secs", "30"),
         // Cap how long mpv will sit on a stalled HTTP request before erroring
         // out — without this, an unreachable host hangs forever and our
         // file-ended retry path never fires. Paired with lavf reconnect so
