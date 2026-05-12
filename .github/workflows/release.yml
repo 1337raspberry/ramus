@@ -539,12 +539,32 @@ jobs:
             DEVELOPMENT_TEAM="" \
             ENABLE_DEBUG_DYLIB=NO
 
-          UNSIGNED_APP="$DERIVED_DATA/Build/Products/Release-iphoneos/ramus.app"
-          if [ ! -d "$UNSIGNED_APP" ]; then
-            echo "::error::Expected built app at $UNSIGNED_APP but it does not exist"
+          # Xcode 16 + xcodegen scheme combo doesn't always honour
+          # `-configuration Release` — the .app sometimes lands in
+          # `debug-iphoneos/` instead. The cargo-built libapp.a is the
+          # release-optimised variant either way, so a "debug-built"
+          # outer .app still produces a usable IPA — just with a
+          # larger main binary. Look in both spellings and warn if we
+          # picked the non-Release variant. Match build-ios-ipa-local.sh.
+          UNSIGNED_APP=""
+          ACTUAL_CFG=""
+          for CFG_DIR in "Release-iphoneos" "release-iphoneos" "Debug-iphoneos" "debug-iphoneos"; do
+            CANDIDATE="$DERIVED_DATA/Build/Products/$CFG_DIR/ramus.app"
+            if [ -d "$CANDIDATE" ]; then
+              UNSIGNED_APP="$CANDIDATE"
+              ACTUAL_CFG="$CFG_DIR"
+              break
+            fi
+          done
+          if [ -z "$UNSIGNED_APP" ]; then
+            echo "::error::No .app found under $DERIVED_DATA/Build/Products"
             find "$DERIVED_DATA/Build/Products" -maxdepth 3 -name "*.app" 2>/dev/null || true
             exit 1
           fi
+          if [[ "$ACTUAL_CFG" != Release-* && "$ACTUAL_CFG" != release-* ]]; then
+            echo "::warning::Xcode produced $ACTUAL_CFG instead of Release — IPA will install fine but the main binary is debug-config (TODO: figure out why -configuration Release is being silently dropped)"
+          fi
+          echo "Using app from $ACTUAL_CFG/"
 
           # Pack into IPA layout (Payload/ramus.app at root of the zip).
           rm -rf build/Payload
