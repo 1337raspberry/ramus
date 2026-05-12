@@ -428,12 +428,18 @@ jobs:
         run: |
           set -euo pipefail
           cargo build --target aarch64-apple-ios --release -p ramus-tauri --lib
-          # xcodegen's outputFiles spec expects Externals/<arch>/<config>/libapp.a
-          # — copy the cargo staticlib into that exact shape.
-          DEST_DIR=ramus-tauri/gen/apple/Externals/arm64/Release
-          mkdir -p "$DEST_DIR"
-          cp target/aarch64-apple-ios/release/libramus_tauri.a "$DEST_DIR/libapp.a"
-          ls -la "$DEST_DIR/libapp.a"
+          # Place libapp.a in BOTH Release and Debug slots. Xcode 16
+          # sometimes links Debug variants as part of a Release build
+          # (debug-symbols bundle, mergeable-libs pre-pass, scheme
+          # implicit deps — exact trigger varies by Xcode point
+          # release). The Rust staticlib is the same in either slot;
+          # the cost is one extra cp. Mirrors build-ios-ipa-local.sh.
+          for CONFIG in Release Debug; do
+            DEST_DIR="ramus-tauri/gen/apple/Externals/arm64/$CONFIG"
+            mkdir -p "$DEST_DIR"
+            cp target/aarch64-apple-ios/release/libramus_tauri.a "$DEST_DIR/libapp.a"
+          done
+          ls -la ramus-tauri/gen/apple/Externals/arm64/*/libapp.a
 
       - name: Drop tauri xcode-script preBuildScript (CI-only)
         if: matrix.id == 'ios'
