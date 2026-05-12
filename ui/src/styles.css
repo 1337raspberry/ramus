@@ -264,6 +264,17 @@ textarea {
   -webkit-backdrop-filter: blur(20px);
 }
 
+/* WebView2 (Windows) and WebKitGTK (Linux) both render backdrop-filter so
+   weakly that the translucent glass becomes washed-out 85% dark sitting over
+   album art — hard to read. Swap to a fully opaque surface and drop the
+   (essentially no-op) blur. macOS WKWebView keeps the real blur. */
+:root[data-platform="windows"] .glass,
+:root[data-platform="linux"] .glass {
+  background: var(--bg-primary);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* --- Layout --- */
 
 .three-column-layout {
