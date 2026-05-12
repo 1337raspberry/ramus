@@ -15,7 +15,7 @@
 #   tree (warn-only — duplicates aren't always avoidable, but they
 #   should be visible) and gives us a hook to outright forbid a crate
 #   if a known-bad one ever lands.
-# * licenses:   `accepted` mirrors `about.toml`. about.toml remains
+# * licenses:   `accepted` mirrors `config/about.toml`. about.toml remains
 #   the source of truth for THIRD_PARTY_LICENSES.md; this section
 #   just keeps cargo-deny from failing on a license that
 #   `cargo about` already accepts. Keep the two lists in sync when

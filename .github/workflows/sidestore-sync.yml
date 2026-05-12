@@ -1,6 +1,6 @@
 name: Sync SideStore source
 
-# Mirrors sidestore/source.json from this repo over to
+# Mirrors .github/sidestore/source.json from this repo over to
 # 1337raspberry/1337raspberry.github.io/ramus.json so SideStore clients
 # can fetch the manifest from the short, TLD-ish Pages URL
 # (https://1337raspberry.github.io/ramus.json) without us paying for a
@@ -9,7 +9,7 @@ name: Sync SideStore source
 # directly.
 #
 # Triggers:
-#   - Push to main that touches sidestore/source.json (the common case
+#   - Push to main that touches .github/sidestore/source.json (the common case
 #     when cutting a release and prepending a new versions[] entry).
 #   - Manual workflow_dispatch (for re-syncs after a rollback or after
 #     fixing the PAT).
@@ -34,7 +34,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'sidestore/source.json'
+      - '.github/sidestore/source.json'
   workflow_dispatch:
 
 permissions:
@@ -75,7 +75,7 @@ jobs:
           RAMUS_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          cp ramus/sidestore/source.json pages/ramus.json
+          cp ramus/.github/sidestore/source.json pages/ramus.json
           cd pages
 
           # Bail out clean if source.json was edited but the

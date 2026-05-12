@@ -7,7 +7,7 @@ interface Props {
 
 const REPO_BASE = "https://github.com/1337raspberry/ramus/blob/main";
 const THIRD_PARTY_URL = `${REPO_BASE}/THIRD_PARTY_LICENSES.md`;
-const NOTICE_URL = `${REPO_BASE}/NOTICE.md`;
+const NOTICE_URL = `${REPO_BASE}/licenses/NOTICE.md`;
 const LICENSE_URL = `${REPO_BASE}/LICENSE`;
 
 interface KeyComponent {

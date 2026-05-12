@@ -6,7 +6,7 @@ Runs two tools back-to-back and concatenates their output:
 1. `cargo about generate --format json` — walks the Rust dep tree and
    emits machine-readable data. This script re-renders it to markdown
    with strict deterministic ordering (sort by license id, then crate
-   name+version). Config lives in about.toml; the `accepted` allowlist
+   name+version). Config lives in config/about.toml; the `accepted` allowlist
    there doubles as an early warning if a surprise copyleft dep lands.
 
 2. `pnpm licenses list --prod --json` — walks ui/node_modules
@@ -69,6 +69,8 @@ def run_cargo_about_json() -> dict:
                 "--frozen",
                 "--manifest-path",
                 "Cargo.toml",
+                "--config",
+                "config/about.toml",
             ],
             cwd=ROOT,
             check=True,
@@ -355,7 +357,7 @@ def main() -> int:
         "hand** — CI diffs this file on every PR and fails if it's "
         "stale; run the script locally and commit the result.\n\n"
         "See `LICENSE` for the ramus license itself (MIT) and "
-        "`NOTICE.md` for attribution of bundled data files and "
+        "`licenses/NOTICE.md` for attribution of bundled data files and "
         "runtime-linked native libraries (libmpv).\n\n"
         "---\n\n"
     )

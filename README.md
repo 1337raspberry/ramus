@@ -1,6 +1,6 @@
 <div align="center">
 
-<img title="" src="ramuslogo.png" alt="ramus" width="160" height="160" data-align="center">
+<img title="" src="docs/ramuslogo.png" alt="ramus" width="160" height="160" data-align="center">
 
 <h1 align="center">ramus</h1>
 <p align="center"><sub>ramus | ra·​mus | a projecting part, elongated process, or branch</sub></p>
@@ -216,11 +216,11 @@ Most behaviour lives in `ramus-core` and is unit-tested. The Tauri layer is inte
 
 ## Contributing
 
-Bug reports, feature requests, and PRs are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before sending a non-trivial PR - it covers the project layout, the pre-push checks, and a few of the load-bearing constraints around playback timing and the mobile bridges.
+Bug reports, feature requests, and PRs are welcome. Read [CONTRIBUTING.md](.github/CONTRIBUTING.md) before sending a non-trivial PR - it covers the project layout, the pre-push checks, and a few of the load-bearing constraints around playback timing and the mobile bridges.
 
 ## Security Reporting
 
-If you've found a vulnerability, please **don't open a public issue**. See [SECURITY.md](SECURITY.md) for the disclosure process and scope. In short: report through [GitHub Security Advisories](https://github.com/1337raspberry/ramus/security/advisories/new).
+If you've found a vulnerability, please **don't open a public issue**. See [SECURITY.md](.github/SECURITY.md) for the disclosure process and scope. In short: report through [GitHub Security Advisories](https://github.com/1337raspberry/ramus/security/advisories/new).
 
 ---
 
@@ -272,7 +272,7 @@ ramus links — at runtime, dynamically — against **libmpv** ([LGPL-2.1-or-lat
 
 A handful of bundled Rust crates (notably the [symphonia](https://github.com/pdeljanov/Symphonia) audio decoder family) are distributed under [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/). MPL-2.0 is file-scope copyleft and does not affect the rest of ramus.
 
-The bundled music genre tree (`ramus-tauri/data/open.json`) is derived from the [beets](https://github.com/beetbox/beets) project's `genres-tree.yaml` (MIT, © Adrian Sampson) and has been substantially extended. See [NOTICE.md](NOTICE.md).
+The bundled music genre tree (`ramus-tauri/data/open.json`) is derived from the [beets](https://github.com/beetbox/beets) project's `genres-tree.yaml` (MIT, © Adrian Sampson) and has been substantially extended. See [NOTICE.md](licenses/NOTICE.md).
 
 The full list of third-party Rust crates and npm packages — together with their license texts — is in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), regenerated from `Cargo.lock` and `ui/pnpm-lock.yaml` by [`scripts/generate-third-party-licenses.py`](scripts/generate-third-party-licenses.py).
 

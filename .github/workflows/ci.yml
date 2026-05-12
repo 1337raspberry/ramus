@@ -158,8 +158,8 @@ jobs:
   # Runs cargo-deny against the committed Cargo.lock. Stricter
   # superset of `cargo audit`: also enforces source allowlist
   # (crates.io only — no surprise git deps), license policy (mirrors
-  # about.toml), and surfaces duplicate-version warnings. Triaged
-  # advisories live in the `ignore` array in /deny.toml — each entry
+  # config/about.toml), and surfaces duplicate-version warnings. Triaged
+  # advisories live in the `ignore` array in /config/deny.toml — each entry
   # has a comment explaining why we tolerate it; review on bump.
   cargo-deny:
     name: cargo-deny
@@ -180,7 +180,7 @@ jobs:
         run: cargo install cargo-deny --locked --version '^0.19'
 
       - name: cargo deny check
-        run: cargo deny check
+        run: cargo deny --manifest-path Cargo.toml check --config config/deny.toml
 
   # Regenerates THIRD_PARTY_LICENSES.md from the current Cargo.lock +
   # ui/pnpm-lock.yaml and surfaces drift as an advisory annotation.
