@@ -734,7 +734,13 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             if (path.isNullOrEmpty()) return null
             val file = File(path)
             if (!file.exists()) return null
-            val appDataDir = activity.filesDir.canonicalPath
+            // Sandbox boundary is the package data dir, not filesDir/.
+            // The Rust image cache lives at <dataDir>/image_cache/, seeded
+            // from Tauri's app_data_dir() which resolves to dataDir on
+            // Android — using filesDir.canonicalPath here would reject
+            // every legitimate art file and the lock-screen widget would
+            // render without artwork.
+            val appDataDir = activity.dataDir.canonicalPath
             if (!file.canonicalPath.startsWith(appDataDir)) return null
             file.readBytes()
         } catch (e: Exception) {

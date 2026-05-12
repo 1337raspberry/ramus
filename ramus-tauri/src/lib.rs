@@ -442,8 +442,12 @@ pub fn run() {
             // ramus-core touches `config_dir()`. The `directories` crate
             // returns `None` on Android, so `ProjectDirs::from` would
             // otherwise fail with `NoConfigDir`. Tauri's `PathResolver`
-            // knows the right per-package sandbox path
-            // (`/data/user/0/<package>/files/`).
+            // resolves `app_data_dir()` to `activity.dataDir` —
+            // `/data/user/0/<package>/` — i.e. the parent of `files/`,
+            // not `files/` itself. Anything reading these paths from the
+            // Kotlin side must compare against `activity.dataDir`, NOT
+            // `activity.filesDir`, or the prefix check will silently
+            // reject every image-cache path (see `loadArtworkBytes`).
             #[cfg(target_os = "android")]
             {
                 use tauri::Manager;
