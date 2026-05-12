@@ -184,7 +184,12 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
-          node-version: 20
+          # pnpm 11.x requires Node ≥ 22.13 — it imports `node:sqlite`
+          # which only exists in the Node 22 builtin set. Earlier Node
+          # versions crash with ERR_UNKNOWN_BUILTIN_MODULE at
+          # `pnpm store path` (which setup-node invokes when
+          # `cache: pnpm` is set).
+          node-version: 22
           cache: pnpm
           cache-dependency-path: ui/pnpm-lock.yaml
 
