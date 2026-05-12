@@ -516,6 +516,15 @@ jobs:
           #      signature only needs to satisfy the IPA structural
           #      requirement (codesign-checked at install on the
           #      device side, regardless of who eventually signs it).
+          # ENABLE_DEBUG_DYLIB=NO disables Xcode 16's per-app debug
+          # dylib build (a separate <app>.debug.dylib that ships next
+          # to the main binary for SwiftUI Previews / hot-swap
+          # iteration). It builds in a Debug context even under
+          # `-configuration Release`, so it tries to link libapp.a
+          # from Externals/arm64/Debug/ — but we only pre-built and
+          # placed the Release variant. Disabling the debug dylib
+          # cuts the whole second link step; we don't ship previews
+          # in distributed builds so there's nothing to lose.
           DERIVED_DATA="$PWD/build/DerivedData"
           xcodebuild build \
             -project ramus-tauri.xcodeproj \
@@ -527,7 +536,8 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            DEVELOPMENT_TEAM=""
+            DEVELOPMENT_TEAM="" \
+            ENABLE_DEBUG_DYLIB=NO
 
           UNSIGNED_APP="$DERIVED_DATA/Build/Products/Release-iphoneos/ramus.app"
           if [ ! -d "$UNSIGNED_APP" ]; then
