@@ -124,8 +124,8 @@ You'll need:
 git clone https://github.com/1337raspberry/ramus
 cd ramus
 
-# Frontend deps
-( cd ui && npm install )
+# Frontend deps (pnpm — install via `brew install pnpm` if you don't have it)
+( cd ui && pnpm install )
 
 # Run the desktop app (Rust + React hot-reload)
 cargo tauri dev
@@ -157,7 +157,7 @@ Pre-flight checks (CI runs the same):
 ```sh
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test -p ramus-core
-( cd ui && npx tsc --noEmit )
+( cd ui && pnpm exec tsc --noEmit )
 ```
 
 </details>
@@ -274,7 +274,7 @@ A handful of bundled Rust crates (notably the [symphonia](https://github.com/pde
 
 The bundled music genre tree (`ramus-tauri/data/open.json`) is derived from the [beets](https://github.com/beetbox/beets) project's `genres-tree.yaml` (MIT, © Adrian Sampson) and has been substantially extended. See [NOTICE.md](NOTICE.md).
 
-The full list of third-party Rust crates and npm packages — together with their license texts — is in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), regenerated from `Cargo.lock` and `ui/package-lock.json` by [`scripts/generate-third-party-licenses.py`](scripts/generate-third-party-licenses.py).
+The full list of third-party Rust crates and npm packages — together with their license texts — is in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), regenerated from `Cargo.lock` and `ui/pnpm-lock.yaml` by [`scripts/generate-third-party-licenses.py`](scripts/generate-third-party-licenses.py).
 
 ## Acknowledgements
 

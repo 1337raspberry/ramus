@@ -7,11 +7,11 @@
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": {
       "cwd": "../ui",
-      "script": "npm run dev"
+      "script": "pnpm run dev"
     },
     "beforeBuildCommand": {
       "cwd": "../ui",
-      "script": "npm run build"
+      "script": "pnpm run build"
     }
   },
   "app": {

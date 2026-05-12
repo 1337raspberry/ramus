@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate THIRD_PARTY_LICENSES.md from Cargo.lock and ui/package-lock.json.
+"""Generate THIRD_PARTY_LICENSES.md from Cargo.lock and ui/pnpm-lock.yaml.
 
 Runs two tools back-to-back and concatenates their output:
 
@@ -9,9 +9,12 @@ Runs two tools back-to-back and concatenates their output:
    name+version). Config lives in about.toml; the `accepted` allowlist
    there doubles as an early warning if a surprise copyleft dep lands.
 
-2. `npx license-checker-rseidelsohn --production --json` — walks
-   ui/node_modules (production-only, no devDependencies) and emits
-   JSON. Same deterministic re-rendering on this side.
+2. `pnpm licenses list --prod --json` — walks ui/node_modules
+   (production-only, no devDependencies) and emits JSON. Same
+   deterministic re-rendering on this side. Was `npx
+   license-checker-rseidelsohn` before the pnpm migration; the npx form
+   fetched a remote tool on every run, exactly the supply-chain pattern
+   the migration was meant to harden against.
 
 Output is written to /THIRD_PARTY_LICENSES.md at the repo root, plus a
 copy at /licenses/THIRD_PARTY_LICENSES.md so the bundled licenses
@@ -165,18 +168,22 @@ def _sort_key_for_text(
     return (first_crate, _text[:100])
 
 
-def run_license_checker() -> dict:
-    """Invoke npm license-checker and parse its JSON output."""
+def run_pnpm_licenses() -> list[dict]:
+    """Invoke `pnpm licenses list` and flatten to one record per (name, version).
+
+    Output shape from pnpm is `{license_id: [{name, versions, paths, ...}, ...]}`
+    — packages with multiple resolved versions in the tree are collapsed under
+    one entry with parallel `versions` / `paths` arrays. We flatten back to one
+    record per (name, version) so the markdown renderer can sort and dedupe
+    deterministically.
+
+    Switched from `npx license-checker-rseidelsohn` (which fetched a remote
+    package on every run, and didn't handle pnpm's symlinked node_modules
+    layout cleanly) to pnpm's built-in command after the npm migration.
+    """
     try:
         result = subprocess.run(
-            [
-                "npx",
-                "--yes",
-                "license-checker-rseidelsohn",
-                "--production",
-                "--json",
-                "--relativeLicensePath",
-            ],
+            ["pnpm", "licenses", "list", "--prod", "--json"],
             cwd=UI,
             check=True,
             capture_output=True,
@@ -184,56 +191,118 @@ def run_license_checker() -> dict:
         )
     except FileNotFoundError:
         print(
-            "npx not found. Install Node.js to run license-checker.",
+            "pnpm not found. Install pnpm to enumerate npm dep licenses "
+            "(brew install pnpm).",
             file=sys.stderr,
         )
         sys.exit(1)
     except subprocess.CalledProcessError as e:
-        print("license-checker failed:", file=sys.stderr)
+        print("pnpm licenses list failed:", file=sys.stderr)
         print(e.stderr, file=sys.stderr)
         sys.exit(1)
-    return json.loads(result.stdout)
+    grouped = json.loads(result.stdout)
+    flat: list[dict] = []
+    for license_id, entries in grouped.items():
+        for entry in entries:
+            name = entry.get("name", "?")
+            versions = entry.get("versions") or []
+            paths = entry.get("paths") or []
+            # Parallel arrays: zip what we have, padding the shorter side.
+            for i in range(max(len(versions), len(paths), 1)):
+                version = versions[i] if i < len(versions) else "?"
+                pkg_path = paths[i] if i < len(paths) else None
+                flat.append(
+                    {
+                        "name": name,
+                        "version": version,
+                        "license": license_id,
+                        "path": pkg_path,
+                        "repository": _read_repo(pkg_path),
+                    }
+                )
+    return flat
 
 
-def read_license_file(license_file: str | None) -> str:
-    """Read a license file referenced by license-checker, if accessible.
+def _read_repo(pkg_path: str | None) -> str:
+    """Extract the `repository` field from a package's package.json."""
+    if not pkg_path:
+        return ""
+    pj = Path(pkg_path) / "package.json"
+    if not pj.exists():
+        return ""
+    try:
+        data = json.loads(pj.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    repo = data.get("repository")
+    if isinstance(repo, str):
+        return repo
+    if isinstance(repo, dict):
+        return repo.get("url", "") or ""
+    return ""
 
-    `license-checker-rseidelsohn` with --relativeLicensePath returns
-    paths relative to cwd (ui/). Returns a short placeholder if the
-    file is missing or unreadable; license-checker always supplies the
-    SPDX identifier, which is enough for legal attribution even without
-    the full text.
 
-    A compromised npm package could point `licenseFile` at a path like
-    `../../ramus-tauri/src/...` to slip source-code content into the
-    embedded third-party list. The resolved path is confined to `ui/`
-    before any read so a hostile manifest can't escape the node_modules
-    subtree.
+# Filenames a package may use for its license text. Walked in order; the
+# first match wins. Covers both `LICENSE` and `LICENCE` spellings and the
+# three common extensions, in upper/lower/mixed case to match what packages
+# actually ship.
+LICENSE_FILENAMES = (
+    "LICENSE",
+    "LICENSE.md",
+    "LICENSE.txt",
+    "LICENCE",
+    "LICENCE.md",
+    "LICENCE.txt",
+    "License",
+    "License.md",
+    "License.txt",
+    "license",
+    "license.md",
+    "license.txt",
+)
+
+
+def find_license_text(pkg_path: str | None) -> str:
+    """Locate and read a package's LICENSE file from its install path.
+
+    pnpm's `licenses list` doesn't carry the license-text path the way the
+    old license-checker tool did, so we walk the package's directory
+    ourselves. The path is confined to `ui/node_modules/` before reading so
+    a hostile package.json that somehow points outside its install dir
+    can't be coerced into slipping unrelated content into the output.
     """
-    if not license_file:
+    if not pkg_path:
         return "(license text not bundled with this package)"
-    candidate = UI / license_file
-    if not candidate.exists():
-        return f"(license text not found at {license_file})"
+    pkg_dir = Path(pkg_path)
+    if not pkg_dir.exists():
+        return f"(package directory not found: {pkg_path})"
     ui_root = UI.resolve()
     try:
-        resolved = candidate.resolve()
+        resolved = pkg_dir.resolve()
     except OSError as e:
-        return f"(could not resolve {license_file}: {e})"
+        return f"(could not resolve {pkg_path}: {e})"
     if ui_root != resolved and ui_root not in resolved.parents:
-        return f"(license path {license_file} escapes ui/ — skipped)"
-    try:
-        return resolved.read_text(encoding="utf-8", errors="replace").strip()
-    except OSError as e:
-        return f"(could not read {license_file}: {e})"
+        return f"(license path {pkg_path} escapes ui/ — skipped)"
+    for name in LICENSE_FILENAMES:
+        candidate = pkg_dir / name
+        if candidate.exists():
+            try:
+                return candidate.read_text(
+                    encoding="utf-8", errors="replace"
+                ).strip()
+            except OSError as e:
+                return f"(could not read {name}: {e})"
+    return "(no LICENSE file found in package)"
 
 
-def format_npm_section(packages: dict) -> str:
+def format_npm_section(packages: list[dict]) -> str:
     """Render the npm section as canonical markdown.
 
-    license-checker's output is `{"name@version": {...}, ...}`. We sort
-    by key for determinism and skip the top-level `ui@*` entry (the app
-    itself is not a third-party dep).
+    Sorted by (name, version) so the output is byte-stable across runs.
+    Skips the top-level `ui` package (the app itself, not a third-party
+    dep) and dedupes by (name, version) — pnpm can emit the same package
+    multiple times if it resolves to the same version through different
+    dependency graph paths.
     """
     out: list[str] = [
         "## Frontend (npm) dependencies\n",
@@ -243,14 +312,22 @@ def format_npm_section(packages: dict) -> str:
         "shipped in release artifacts.\n",
     ]
 
-    filtered = sorted(
-        (k, v) for (k, v) in packages.items() if not k.startswith("ui@")
-    )
-    for name_ver, info in filtered:
-        licenses = info.get("licenses", "UNKNOWN")
-        repo = info.get("repository", "")
-        license_text = read_license_file(info.get("licenseFile"))
-        out.append(f"### {name_ver} ({licenses})\n")
+    seen: set[tuple[str, str]] = set()
+    deduped: list[dict] = []
+    for pkg in packages:
+        if pkg["name"] == "ui":
+            continue
+        key = (pkg["name"], pkg["version"])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(pkg)
+
+    for pkg in sorted(deduped, key=lambda p: (p["name"], p["version"])):
+        name_ver = f"{pkg['name']}@{pkg['version']}"
+        license_text = find_license_text(pkg.get("path"))
+        repo = pkg.get("repository") or ""
+        out.append(f"### {name_ver} ({pkg['license']})\n")
         if repo:
             out.append(f"Repository: {repo}\n")
         out.append("```")
@@ -265,8 +342,8 @@ def main() -> int:
     rust_data = run_cargo_about_json()
     rust_md = format_rust_section(rust_data)
 
-    print("Running license-checker (npm package licenses) → JSON...")
-    npm_data = run_license_checker()
+    print("Running pnpm licenses list (npm package licenses) → JSON...")
+    npm_data = run_pnpm_licenses()
     npm_md = format_npm_section(npm_data)
 
     header = (
@@ -274,7 +351,7 @@ def main() -> int:
         "This file lists the open-source components bundled in ramus "
         "release artifacts, along with their license texts. It is "
         "generated by `scripts/generate-third-party-licenses.py` from "
-        "`Cargo.lock` and `ui/package-lock.json`. **Do not edit by "
+        "`Cargo.lock` and `ui/pnpm-lock.yaml`. **Do not edit by "
         "hand** — CI diffs this file on every PR and fails if it's "
         "stale; run the script locally and commit the result.\n\n"
         "See `LICENSE` for the ramus license itself (MIT) and "

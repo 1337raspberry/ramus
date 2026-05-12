@@ -33,7 +33,7 @@ CI runs the same checks. Save yourself the round-trip:
 ```sh
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test -p ramus-core
-(cd ui && npx tsc --noEmit)
+(cd ui && pnpm exec tsc --noEmit)
 ```
 
 Per-crate clippy hides warnings in the other crate, and lints in `#[cfg(test)]` code don't fail `cargo build`. Use `--workspace --all-targets` or you'll find out from CI.

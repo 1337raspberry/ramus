@@ -174,12 +174,19 @@ jobs:
           # own cache slots.
           key: ${{ matrix.id }}
 
+      # pnpm/action-setup must run before setup-node so `cache: pnpm`
+      # can call `pnpm store path` to find the cache directory.
+      - name: Install pnpm
+        uses: pnpm/action-setup@739bfe42ca9233c5e6aca07c1a25a9d34aca49b0  # v6.0.7
+        with:
+          version: 11
+
       - name: Install Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
 
       # ── Linux ──────────────────────────────────────────────────────
       # Tauri's webkit2gtk + libmpv for playback. patchelf is needed
@@ -276,20 +283,21 @@ jobs:
           Write-Host "Placed libmpv-2.dll ($((Get-Item ramus-tauri/windows-deps/libmpv-2.dll).Length) bytes)"
 
       # ── Frontend (android + ios) ───────────────────────────────────
-      # tauri-action runs `npm ci` + `npm run build` itself for desktop
-      # entries (via beforeBuildCommand in tauri.conf.json), but android
-      # and iOS call their toolchains directly and need ui/dist/ ready
-      # before the build kicks off — the bundled assets are baked into
-      # the APK/IPA at compile time.
+      # tauri-action runs `pnpm install` + `pnpm run build` itself for
+      # desktop entries (via beforeBuildCommand in tauri.conf.json — and
+      # it autodetects the package manager from the committed lockfile),
+      # but android and iOS call their toolchains directly and need
+      # ui/dist/ ready before the build kicks off — the bundled assets
+      # are baked into the APK/IPA at compile time.
       - name: Install frontend dependencies
         if: matrix.id == 'android' || matrix.id == 'ios'
         working-directory: ui
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build frontend
         if: matrix.id == 'android' || matrix.id == 'ios'
         working-directory: ui
-        run: npm run build
+        run: pnpm run build
 
       - name: Install tauri CLI
         if: matrix.id == 'android' || matrix.id == 'ios'

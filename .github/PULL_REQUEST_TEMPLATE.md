@@ -14,7 +14,7 @@
 
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings`
 - [ ] `cargo test -p ramus-core`
-- [ ] `cd ui && npx tsc --noEmit`
+- [ ] `cd ui && pnpm exec tsc --noEmit`
 - [ ] If dependencies changed: regenerated `THIRD_PARTY_LICENSES.md` (`python3 scripts/generate-third-party-licenses.py`)
 
 ## Platforms exercised
