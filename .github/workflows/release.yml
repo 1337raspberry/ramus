@@ -414,44 +414,55 @@ jobs:
         run: |
           set -euo pipefail
           cd ramus-tauri/gen/apple
-          # CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO suppresses Xcode's
-          # default Release-config injection of `get-task-allow` (and
-          # other base entitlements) into the ad-hoc signature. Without
-          # this, recent Xcodes inject `get-task-allow=true` for ad-hoc
-          # builds, marking the binary as debuggable — harmless under
-          # SideStore (which re-signs and strips entitlements) but a
-          # nicer baseline if anyone ever does a more conservative
-          # re-sign downstream.
-          xcodebuild archive \
+
+          # iOS 17+ SDKs reject CODE_SIGN_IDENTITY="-" during
+          # `xcodebuild archive` with: "Ad Hoc code signing is not
+          # allowed with SDK 'iOS 18.5'". Apple closed the path that
+          # let an unprivileged ad-hoc identity claim a real signing
+          # slot at archive time. Two-phase workaround:
+          #
+          #   1. `xcodebuild build` (NOT archive) with code signing
+          #      fully disabled. Produces an unsigned .app inside
+          #      DerivedData. `archive` requires a signed product;
+          #      `build` is happy with no signature.
+          #   2. Ad-hoc sign the unsigned .app + every embedded
+          #      framework ourselves with `codesign -s -`. SideStore
+          #      strips and re-signs at install time, so the ad-hoc
+          #      signature only needs to satisfy the IPA structural
+          #      requirement (codesign-checked at install on the
+          #      device side, regardless of who eventually signs it).
+          DERIVED_DATA="$PWD/build/DerivedData"
+          xcodebuild build \
             -project ramus-tauri.xcodeproj \
             -scheme ramus-tauri_iOS \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath build/ramus-tauri_iOS.xcarchive \
-            -allowProvisioningUpdates \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             DEVELOPMENT_TEAM=""
 
-          # Skip `xcodebuild -exportArchive` — it requires a real
-          # signing identity + provisioning profile for any iOS export
-          # method. Manually pack the archive's ramus.app into Payload/
-          # and zip — the .ipa format is just a renamed zip with that
-          # layout.
+          UNSIGNED_APP="$DERIVED_DATA/Build/Products/Release-iphoneos/ramus.app"
+          if [ ! -d "$UNSIGNED_APP" ]; then
+            echo "::error::Expected built app at $UNSIGNED_APP but it does not exist"
+            find "$DERIVED_DATA/Build/Products" -maxdepth 3 -name "*.app" 2>/dev/null || true
+            exit 1
+          fi
+
+          # Pack into IPA layout (Payload/ramus.app at root of the zip).
           rm -rf build/Payload
           mkdir -p build/Payload
-          cp -R build/ramus-tauri_iOS.xcarchive/Products/Applications/ramus.app build/Payload/
+          cp -R "$UNSIGNED_APP" build/Payload/
 
-          # Re-sign embedded frameworks first (deepest-first via -depth)
-          # then the .app itself. `codesign --deep` is deprecated by
-          # Apple and skips nested bundles inconsistently — walking the
-          # framework set ourselves is more reliable. Order matters: the
-          # outer .app signature must seal over its dependencies' fresh
-          # signatures.
+          # Re-sign embedded frameworks first (deepest-first via -depth,
+          # which on BSD find is identical to -d / global post-order
+          # traversal) then the .app itself. `codesign --deep` is
+          # deprecated by Apple and skips nested bundles inconsistently
+          # — walking the framework set ourselves is more reliable.
+          # Order matters: the outer .app signature must seal over its
+          # dependencies' fresh signatures.
           find build/Payload/ramus.app/Frameworks -name "*.framework" -depth -exec codesign --force --sign - --timestamp=none {} \;
           codesign --force --sign - --timestamp=none build/Payload/ramus.app
 
