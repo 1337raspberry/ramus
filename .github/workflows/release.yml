@@ -435,28 +435,32 @@ jobs:
           cp target/aarch64-apple-ios/release/libramus_tauri.a "$DEST_DIR/libapp.a"
           ls -la "$DEST_DIR/libapp.a"
 
-      - name: Patch out tauri xcode-script preBuildScript (CI-only)
+      - name: Drop tauri xcode-script preBuildScript (CI-only)
         if: matrix.id == 'ios'
         # Ruby is preinstalled on macos-15 runners and its stdlib
         # includes `psych` (YAML); python3 is also there but PyYAML
         # is NOT preinstalled, and pip-installing it just to mutate
         # one YAML file is more overhead than this is worth.
+        #
+        # Earlier iteration tried to replace the script with a
+        # "verify libapp.a exists" stub, but Xcode also invokes
+        # preBuildScripts during pre-build/indexing passes where
+        # ARCHS / CONFIGURATION aren't populated (env shows
+        # `arch=undefined_arch`), and the verify falsely tripped
+        # there. Since the workflow's earlier step already places
+        # libapp.a at the path xcodegen's outputFiles spec points
+        # the linker at, the script is doing no useful work for us
+        # — drop it entirely. The link step itself will surface a
+        # clear "library not found" error if libapp.a is missing.
         run: |
           set -euo pipefail
           ruby <<'RB'
           require 'yaml'
           path = 'ramus-tauri/gen/apple/project.yml'
           d = YAML.load_file(path)
-          # Replace the tauri-cli invocation with a fail-fast verify
-          # that libapp.a was placed by the previous workflow step.
-          d['targets']['ramus-tauri_iOS']['preBuildScripts'] = [{
-            'name' => 'Verify pre-built libapp.a',
-            'basedOnDependencyAnalysis' => false,
-            'script' => 'test -f "${SRCROOT}/Externals/${ARCHS}/${CONFIGURATION}/libapp.a" || (echo "::error::libapp.a missing — the Pre-build step should have placed it" >&2; exit 1)',
-          }]
+          d['targets']['ramus-tauri_iOS'].delete('preBuildScripts')
           File.write(path, d.to_yaml)
-          puts "project.yml patched:"
-          puts d['targets']['ramus-tauri_iOS']['preBuildScripts'].to_yaml
+          puts "project.yml: preBuildScripts removed from ramus-tauri_iOS target"
           RB
 
       - name: Regenerate iOS Xcode project
