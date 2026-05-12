@@ -52,6 +52,14 @@
     "Twemoji Country Flags", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
 
+  /* Safe-area insets. On iOS, WKWebView reports the home-indicator height via
+     env(). On Android, Chromium's env() ignores the 3-button nav bar — the
+     Android host activity reads WindowInsets and pushes --android-inset-* in
+     CSS px. The max() means whichever source is larger wins, so gesture nav
+     and the iOS home indicator both work without platform branching. */
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--android-inset-top, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--android-inset-bottom, 0px));
+
   color-scheme: dark;
 }
 
@@ -4079,8 +4087,8 @@ body.is-fullscreen .focus-body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
   color: var(--text-primary);
   font-size: 15px;
   -webkit-tap-highlight-color: transparent;
@@ -4348,7 +4356,7 @@ body.is-fullscreen .focus-body {
 
 .mobile-filter-backdrop {
   position: fixed;
-  top: calc(-1 * env(safe-area-inset-top, 0px));
+  top: calc(-1 * var(--safe-top));
   left: 0;
   right: 0;
   bottom: 0;
@@ -4366,7 +4374,7 @@ body.is-fullscreen .focus-body {
   border-radius: 16px 16px 0 0;
   /* Buffer the system safe-area inset (iOS home indicator) so the last button
      isn't clipped. The +24px gives a comfortable margin above the indicator. */
-  padding: 0 0 calc(env(safe-area-inset-bottom, 16px) + 24px);
+  padding: 0 0 calc(var(--safe-bottom) + 24px);
   max-height: 80vh;
   /* Always scroll when content overflows — without this the non-mini variant
      just clipped the bottom of the panel. */
@@ -4376,7 +4384,7 @@ body.is-fullscreen .focus-body {
 
 .mobile-filter-panel.with-mini {
   /* Lift the scroll content above the persistent mini-player. */
-  padding-bottom: calc(env(safe-area-inset-bottom, 16px) + 96px);
+  padding-bottom: calc(var(--safe-bottom) + 96px);
 }
 
 .mobile-filter-header {
@@ -5603,7 +5611,11 @@ body.is-fullscreen .focus-body {
   z-index: 50;
   display: flex;
   flex-direction: column;
-  padding-bottom: env(safe-area-inset-bottom);
+  /* Lift content above whatever system bar is at the bottom (iOS home
+     indicator, Android nav bar) plus a constant visual gap on top. Additive
+     rather than a min/max floor so the gap above the system inset is the same
+     regardless of platform. */
+  padding-bottom: calc(var(--safe-bottom) + 16px);
   background: transparent;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   cursor: pointer;
@@ -5764,8 +5776,11 @@ body.is-fullscreen .focus-body {
   z-index: 100;
   display: flex;
   flex-direction: column;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-top: var(--safe-top);
+  /* Match the mini-player: system inset plus a constant visual gap so the
+     transport row / foot don't sit flush against the nav bar. Top stays raw
+     because the header provides its own internal padding. */
+  padding-bottom: calc(var(--safe-bottom) + 16px);
   will-change: transform;
   background: #0a0a0c;
   transform: translateY(100%);
@@ -5880,7 +5895,7 @@ body.is-fullscreen .focus-body {
 .mobile-sheet-art {
   --_art-size: clamp(
     160px,
-    calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 380px),
+    calc(100dvh - var(--safe-top) - var(--safe-bottom) - 380px),
     min(80vw, 360px)
   );
   position: relative;
@@ -6293,8 +6308,8 @@ body.is-fullscreen .focus-body {
     max-height: 100% \!important;
     max-width: 100% \!important;
     border-radius: 0;
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
   }
 
   .settings-backdrop {
@@ -6622,7 +6637,7 @@ body.is-fullscreen .focus-body {
   display: flex;
   align-items: flex-end;
   animation: mobile-sheet-fade-in 150ms ease;
-  padding: 0 8px calc(8px + env(safe-area-inset-bottom));
+  padding: 0 8px calc(8px + var(--safe-bottom));
 }
 @keyframes mobile-sheet-fade-in {
   from {
@@ -6641,7 +6656,7 @@ body.is-fullscreen .focus-body {
 }
 @keyframes mobile-sheet-slide-up {
   from {
-    transform: translateY(calc(100% + env(safe-area-inset-bottom)));
+    transform: translateY(calc(100% + var(--safe-bottom)));
   }
   to {
     transform: translateY(0);
@@ -6738,7 +6753,7 @@ body.is-fullscreen .focus-body {
 
 .toast {
   position: fixed;
-  top: env(safe-area-inset-top, 0px);
+  top: var(--safe-top);
   left: 50%;
   transform: translateX(-50%) translateY(-100%);
   padding: 10px 20px;

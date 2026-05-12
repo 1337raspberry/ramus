@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import {
   ART_SIZE,
   setAlbumPalette,
@@ -11,7 +12,7 @@ import {
 } from "../lib/commands";
 import { formatDuration } from "../lib/format";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
-import { applyAccent } from "../lib/accent";
+import { applyAccent, DEFAULT_BLUR_COLORS } from "../lib/accent";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
 import WaveformSeekBar from "../components/WaveformSeekBar";
@@ -107,7 +108,12 @@ interface Props {
 export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Props) {
   const status = usePlaybackStore((s) => s.status);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
-  const sheetBlurColors = usePlaybackStore((s) => s.ultraBlurColors);
+  const albumBlurColors = usePlaybackStore((s) => s.ultraBlurColors);
+  const keepDefaultColours = useSettingsStore((s) => s.keepDefaultColours);
+  const sheetBlurColors = useMemo(
+    () => (keepDefaultColours ? DEFAULT_BLUR_COLORS : (albumBlurColors ?? DEFAULT_BLUR_COLORS)),
+    [albumBlurColors, keepDefaultColours],
+  );
   const queue = usePlaybackStore((s) => s.queue);
   const queueIndex = usePlaybackStore((s) => s.queueIndex);
   const jumpToIndex = usePlaybackStore((s) => s.jumpToIndex);
@@ -509,17 +515,12 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
       <div
         ref={miniRef}
         className="mobile-miniplayer"
-        style={{
-          ...(dragDeltaY !== 0 ? { transform: `translateY(${dragDeltaY}px)` } : {}),
-          paddingBottom: 40,
-        }}
+        style={dragDeltaY !== 0 ? { transform: `translateY(${dragDeltaY}px)` } : undefined}
       >
-        {sheetBlurColors && (
-          <div className="mobile-miniplayer-bg">
-            <UltraBlurBackground colors={sheetBlurColors} />
-            <div className="mobile-miniplayer-darken" style={{ background: "rgba(0,0,0,0.3)" }} />
-          </div>
-        )}
+        <div className="mobile-miniplayer-bg">
+          <UltraBlurBackground colors={sheetBlurColors} />
+          <div className="mobile-miniplayer-darken" style={{ background: "rgba(0,0,0,0.3)" }} />
+        </div>
         <div className="mobile-miniplayer-hint" style={{ paddingTop: 10 }}>
           <div className="mobile-miniplayer-hint-pill" style={{ width: 50 }} />
         </div>
@@ -598,11 +599,9 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
         style={sheetDragY > 0 ? { transform: `translateY(${sheetDragY}px)` } : undefined}
         onTransitionEnd={dismissing ? onSheetTransitionEnd : undefined}
       >
-        {sheetBlurColors && (
-          <div className="mobile-sheet-bg">
-            <UltraBlurBackground colors={sheetBlurColors} />
-          </div>
-        )}
+        <div className="mobile-sheet-bg">
+          <UltraBlurBackground colors={sheetBlurColors} />
+        </div>
         <header ref={sheetHeaderRef} className="mobile-sheet-header">
           <div className="mobile-sheet-hint-bar" />
           <button
