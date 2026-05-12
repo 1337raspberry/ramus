@@ -155,13 +155,14 @@ jobs:
         working-directory: ui
         run: pnpm run build
 
-  # Runs cargo audit against the committed Cargo.lock. Same
-  # workflow_dispatch trigger as the other jobs so it doesn't burn
-  # GitHub Actions minutes; run manually before a release to confirm
-  # no transitive RUSTSEC advisories have appeared since the last
-  # audit.
-  audit:
-    name: Cargo audit
+  # Runs cargo-deny against the committed Cargo.lock. Stricter
+  # superset of `cargo audit`: also enforces source allowlist
+  # (crates.io only — no surprise git deps), license policy (mirrors
+  # about.toml), and surfaces duplicate-version warnings. Triaged
+  # advisories live in the `ignore` array in /deny.toml — each entry
+  # has a comment explaining why we tolerate it; review on bump.
+  cargo-deny:
+    name: cargo-deny
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -170,11 +171,16 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+      # `--locked` makes cargo respect the lockfile shipped with the
+      # cargo-deny crate on crates.io — same supply-chain rationale
+      # as the tauri-cli install in release.yml. Pinning the version
+      # range so a fresh major bump (e.g. 0.20 with breaking config
+      # changes) doesn't silently break CI.
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --version '^0.19'
 
-      - name: cargo audit
-        run: cargo audit
+      - name: cargo deny check
+        run: cargo deny check
 
   # Regenerates THIRD_PARTY_LICENSES.md from the current Cargo.lock +
   # ui/pnpm-lock.yaml and surfaces drift as an advisory annotation.

@@ -304,9 +304,31 @@ jobs:
         working-directory: ui
         run: pnpm run build
 
-      - name: Install tauri CLI
+      # Cache the compiled cargo-tauri binary instead of rebuilding it
+      # (and its ~1500 transitive crates) on every release run. Key on
+      # the exact tauri-cli version + runner OS so a version bump or a
+      # platform swap forces a fresh install; otherwise restore the
+      # binary directly into ~/.cargo/bin and skip the install entirely.
+      # The desktop matrix entries don't need this — tauri-action
+      # invokes cargo-tauri internally via the workspace `Cargo.toml`,
+      # not via `cargo install`.
+      - name: Cache tauri CLI binary
         if: matrix.id == 'android' || matrix.id == 'ios'
-        run: cargo install tauri-cli --locked --version '^2'
+        id: cache-tauri-cli
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri
+          key: tauri-cli-2.11.1-${{ runner.os }}
+
+      # Pin to an exact patch version (note the leading `=`; without it
+      # cargo treats `2.11.1` as `^2.11.1` and could pick up 2.11.2 etc).
+      # `--locked` makes cargo respect the Cargo.lock that ships with the
+      # tauri-cli crate on crates.io, so we inherit Tauri's own dep
+      # pinning for the ~1500 transitive crates rather than fresh-
+      # resolving every time. Bump deliberately, not implicitly.
+      - name: Install tauri CLI
+        if: (matrix.id == 'android' || matrix.id == 'ios') && steps.cache-tauri-cli.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --locked --version '=2.11.1'
 
       # ── Android ────────────────────────────────────────────────────
       - name: Set up JDK 17

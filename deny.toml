@@ -1,0 +1,153 @@
+# cargo-deny configuration — supply-chain & dep hygiene for ramus.
+#
+# Run locally:
+#   cargo install cargo-deny --locked
+#   cargo deny check
+#
+# Four independent sub-checks:
+#
+# * advisories: walks the RustSec advisory DB against the workspace
+#   Cargo.lock. Strict superset of `cargo audit`.
+# * sources:    refuses crates from any source not on the allowlist
+#   below. Catches a workspace member accidentally pulling a git dep
+#   or a private registry that wasn't reviewed.
+# * bans:       flags duplicate versions of the same crate in the
+#   tree (warn-only — duplicates aren't always avoidable, but they
+#   should be visible) and gives us a hook to outright forbid a crate
+#   if a known-bad one ever lands.
+# * licenses:   `accepted` mirrors `about.toml`. about.toml remains
+#   the source of truth for THIRD_PARTY_LICENSES.md; this section
+#   just keeps cargo-deny from failing on a license that
+#   `cargo about` already accepts. Keep the two lists in sync when
+#   adding a new permissive license.
+
+[graph]
+# Restrict graph analysis to the targets we actually ship. Without
+# this, cargo-deny walks every conditional dep for every target
+# triple (including ones we never build for, like x86_64-fuchsia
+# pulled transitively by some crates), which both balloons the
+# check and surfaces advisories on platforms we don't ship.
+targets = [
+    { triple = "aarch64-apple-darwin" },
+    { triple = "x86_64-apple-darwin" },
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "x86_64-pc-windows-msvc" },
+    { triple = "aarch64-apple-ios" },
+    { triple = "aarch64-linux-android" },
+    { triple = "armv7-linux-androideabi" },
+]
+
+[advisories]
+version = 2
+# Yanked versions are still installable when pinned via lockfile
+# (cargo --locked honors the existing entry), but a yank is the
+# crate author's "do not use" signal — flag so we bump deliberately.
+yanked = "deny"
+# RUSTSEC IDs to allow past despite an advisory match. Add only
+# after manual triage; each entry should have a `# RUSTSEC-…: why`
+# comment so future-us can re-evaluate when we bump tauri/wry.
+#
+# Important: this list suppresses `unmaintained` / `unsound` /
+# `notice` advisories on transitive deps we can't fix. It does
+# NOT cover `vulnerability` — a real CVE in any of these crates
+# would still fail the check, which is the behaviour we want.
+ignore = [
+    # gtk-rs GTK3 bindings — entire cluster marked unmaintained
+    # after the project announced their GTK4 migration. Pulled in
+    # transitively by Tauri's Linux WebKit runtime (webkit2gtk-sys
+    # → gtk-sys → glib-sys etc). Drops when Tauri migrates to
+    # GTK4-on-Linux upstream; until then there is no version of
+    # tauri that avoids them.
+    "RUSTSEC-2024-0411",  # gtk-sys
+    "RUSTSEC-2024-0412",  # gtk
+    "RUSTSEC-2024-0413",  # atk-sys
+    "RUSTSEC-2024-0414",  # gdk-sys
+    "RUSTSEC-2024-0415",  # gdkwayland-sys
+    "RUSTSEC-2024-0416",  # gdkx11-sys
+    "RUSTSEC-2024-0417",  # atk
+    "RUSTSEC-2024-0418",  # gdk
+    "RUSTSEC-2024-0419",  # gdkwayland
+    "RUSTSEC-2024-0420",  # gdkx11
+
+    # unic-* Unicode crates — all five entries in the rust-unic
+    # project archived together (per github.com/rustsec/
+    # advisory-db/issues/2414). Reach us via
+    # tauri-utils → urlpattern → unic-ucd-ident. Drops when
+    # urlpattern migrates to icu4x; upstream issue open at
+    # whatwg/urlpattern. No safe upgrade today.
+    "RUSTSEC-2025-0075",  # unic-char-range
+    "RUSTSEC-2025-0080",  # unic-common
+    "RUSTSEC-2025-0081",  # unic-char-property
+    "RUSTSEC-2025-0098",  # unic-ucd-version
+    "RUSTSEC-2025-0100",  # unic-ucd-ident
+
+    # proc-macro-error v1 deprecated by author in favour of
+    # proc-macro-error2. Transitive via several macro crates in
+    # the tauri tree; drops as those upgrade.
+    "RUSTSEC-2024-0370",
+
+    # fxhash unmaintained; original author archived. Pulled in
+    # transitively by selectors/cssparser (servo heritage), reachable
+    # through wry. Drops as the servo-tree crates migrate.
+    "RUSTSEC-2025-0057",
+
+    # rand unsound advisory — specifically the `rand::rng()` thread-
+    # local pattern when combined with a custom logger that re-enters
+    # rand during init. We don't install a custom logger and we don't
+    # call rand::rng() in any such hot path. Not exploitable in our
+    # use of rand (transitive via reqwest TLS and a few uuid paths).
+    "RUSTSEC-2026-0097",
+]
+
+[sources]
+# Refuse crates from any source not in the allowlists below.
+unknown-registry = "deny"
+unknown-git = "deny"
+# crates.io is the only registry we use.
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# No git deps at present — add specific repos here if a workspace
+# member ever needs one (and document why in a comment).
+allow-git = []
+
+[bans]
+# Duplicate versions of the same crate often mean two parts of the
+# tree haven't aligned their dep ranges. Sometimes unavoidable
+# (e.g. when a top-level crate pins an older `syn`), but worth
+# seeing in CI output.
+multiple-versions = "warn"
+# Explicit blocklist — add crates we never want in the tree.
+deny = []
+# Explicit allowlist — add crates we always permit even if other
+# rules would flag them. Empty by default.
+allow = []
+
+[licenses]
+version = 2
+# Mirrors about.toml's `accepted` list. Both files must agree —
+# about.toml drives the human-readable third-party license file,
+# this drives the CI gate.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "Unlicense",
+    "OpenSSL",
+    "BSL-1.0",
+    "0BSD",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+# Per-crate license overrides. `ring` is the classic case — its
+# SPDX expression isn't standard, so cargo-deny needs to be told
+# the license explicitly (matches about.toml's `workarounds`).
+exceptions = [
+    { name = "ring", allow = ["ISC", "MIT", "OpenSSL"] },
+]
