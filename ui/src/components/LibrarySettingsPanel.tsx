@@ -28,7 +28,7 @@ interface Props {
   onOpenDownloads: () => void;
 }
 
-type TabId = "playback" | "library" | "storage" | "network" | "about";
+type TabId = "playback" | "looks" | "library" | "storage" | "network" | "about";
 
 // Per-mode prose shown under the dropdown so users can tell at a glance
 // what each option actually does. The "Cellular" / "RemoteOrCellular"
@@ -256,6 +256,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
 
   const tabs: ReadonlyArray<{ id: TabId; label: string }> = [
     { id: "playback", label: "Playback" },
+    { id: "looks", label: "Looks" },
     { id: "library", label: "Library" },
     { id: "storage", label: "Storage" },
     { id: "network", label: "Network" },
@@ -369,7 +370,11 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
                   </HelperText>
                 </>
               )}
+            </>
+          )}
 
+          {activeTab === "looks" && (
+            <>
               <label className="settings-row">
                 <span>Keep default colours</span>
                 <input
@@ -381,31 +386,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
               <HelperText>
                 Just keep our lovely default pink colours instead of changing depending on what you
                 listen to. If you prefer consistency :)
-              </HelperText>
-            </>
-          )}
-
-          {activeTab === "library" && (
-            <>
-              <label className="settings-row">
-                <span>Auto-sync interval</span>
-                <select
-                  className="sort-select"
-                  value={settings.syncIntervalHours}
-                  onChange={(e) => save({ syncIntervalHours: Number(e.target.value) })}
-                >
-                  <option value={0}>Off</option>
-                  <option value={1}>1 hour</option>
-                  <option value={2}>2 hours</option>
-                  <option value={4}>4 hours</option>
-                  <option value={6}>6 hours</option>
-                  <option value={12}>12 hours</option>
-                  <option value={24}>24 hours</option>
-                </select>
-              </label>
-              <HelperText>
-                Background quick-sync cadence. Set to Off to only sync when you press one of the
-                buttons below.
               </HelperText>
 
               {!isMobile && (
@@ -463,7 +443,44 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
                 />
               </label>
 
+              <label className="settings-row">
+                <span>Flat genres</span>
+                <input
+                  type="checkbox"
+                  checked={settings.flatGenres}
+                  onChange={(e) => save({ flatGenres: e.target.checked })}
+                />
+              </label>
+              <HelperText>
+                Show every genre as a flat alphabetical list instead of a hierarchical tree.
+              </HelperText>
+            </>
+          )}
+
+          {activeTab === "library" && (
+            <>
               <div className="settings-section-header">SYNC</div>
+
+              <label className="settings-row">
+                <span>Auto-sync interval</span>
+                <select
+                  className="sort-select"
+                  value={settings.syncIntervalHours}
+                  onChange={(e) => save({ syncIntervalHours: Number(e.target.value) })}
+                >
+                  <option value={0}>Off</option>
+                  <option value={1}>1 hour</option>
+                  <option value={2}>2 hours</option>
+                  <option value={4}>4 hours</option>
+                  <option value={6}>6 hours</option>
+                  <option value={12}>12 hours</option>
+                  <option value={24}>24 hours</option>
+                </select>
+              </label>
+              <HelperText>
+                Background quick-sync cadence. Set to Off to only sync when you press one of the
+                buttons below.
+              </HelperText>
 
               <div className="settings-sync-buttons">
                 <button
@@ -507,18 +524,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
               )}
 
               <div className="settings-section-header">GENRES</div>
-
-              <label className="settings-row">
-                <span>Flat genres</span>
-                <input
-                  type="checkbox"
-                  checked={settings.flatGenres}
-                  onChange={(e) => save({ flatGenres: e.target.checked })}
-                />
-              </label>
-              <HelperText>
-                Show every genre as a flat alphabetical list instead of a hierarchical tree.
-              </HelperText>
 
               <label className="settings-row">
                 <span>Include Plex Style tags</span>
