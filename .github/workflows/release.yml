@@ -437,23 +437,27 @@ jobs:
 
       - name: Patch out tauri xcode-script preBuildScript (CI-only)
         if: matrix.id == 'ios'
+        # Ruby is preinstalled on macos-15 runners and its stdlib
+        # includes `psych` (YAML); python3 is also there but PyYAML
+        # is NOT preinstalled, and pip-installing it just to mutate
+        # one YAML file is more overhead than this is worth.
         run: |
           set -euo pipefail
-          python3 <<'PY'
-          import yaml, pathlib
-          p = pathlib.Path('ramus-tauri/gen/apple/project.yml')
-          d = yaml.safe_load(p.read_text())
+          ruby <<'RB'
+          require 'yaml'
+          path = 'ramus-tauri/gen/apple/project.yml'
+          d = YAML.load_file(path)
           # Replace the tauri-cli invocation with a fail-fast verify
           # that libapp.a was placed by the previous workflow step.
           d['targets']['ramus-tauri_iOS']['preBuildScripts'] = [{
-              'name': 'Verify pre-built libapp.a',
-              'basedOnDependencyAnalysis': False,
-              'script': 'test -f "${SRCROOT}/Externals/${ARCHS}/${CONFIGURATION}/libapp.a" || (echo "::error::libapp.a missing — the Pre-build step should have placed it" >&2; exit 1)',
+            'name' => 'Verify pre-built libapp.a',
+            'basedOnDependencyAnalysis' => false,
+            'script' => 'test -f "${SRCROOT}/Externals/${ARCHS}/${CONFIGURATION}/libapp.a" || (echo "::error::libapp.a missing — the Pre-build step should have placed it" >&2; exit 1)',
           }]
-          p.write_text(yaml.dump(d, sort_keys=False))
-          print("project.yml patched:")
-          print(yaml.dump(d['targets']['ramus-tauri_iOS']['preBuildScripts'], sort_keys=False))
-          PY
+          File.write(path, d.to_yaml)
+          puts "project.yml patched:"
+          puts d['targets']['ramus-tauri_iOS']['preBuildScripts'].to_yaml
+          RB
 
       - name: Regenerate iOS Xcode project
         if: matrix.id == 'ios'
