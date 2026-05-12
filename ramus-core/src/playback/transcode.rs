@@ -434,7 +434,7 @@ mod tests {
         // path param uses metadata key, not part key, fully URL-encoded.
         assert!(url_str.contains("path=%2Flibrary%2Fmetadata%2F99251"));
         assert!(!url_str.contains("path=/library"));
-        // Match Plexamp's call shape.
+        // Match the server-preferred call shape for chunked Opus.
         assert!(url_str.contains("directPlay=0"));
         assert!(url_str.contains("musicBitrate=128"));
         assert!(url_str.contains("X-Plex-Chunked=1"));
