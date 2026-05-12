@@ -386,6 +386,48 @@ jobs:
         if: matrix.id == 'ios'
         run: brew install xcodegen
 
+      # ramus-tauri/gen/apple/project.yml declares a preBuildScript that
+      # calls `cargo tauri ios xcode-script`. That subcommand expects to
+      # connect to a parent `cargo tauri ios build` process over a local
+      # WebSocket (the addr is published in $TMPDIR/<bundle-id>-server-
+      # addr by the parent) to fetch CliOptions via RPC. In CI there is
+      # no parent, so xcode-script panics with "failed to read missing
+      # addr file ...". Building Rust ourselves here, then patching the
+      # preBuildScript to just verify the artefact, bypasses the RPC
+      # handshake entirely. The patch only touches the working-tree
+      # copy of project.yml — local `cargo tauri ios dev` is untouched.
+      - name: Pre-build libapp.a for iOS (sidesteps tauri xcode-script RPC)
+        if: matrix.id == 'ios'
+        run: |
+          set -euo pipefail
+          cargo build --target aarch64-apple-ios --release -p ramus-tauri --lib
+          # xcodegen's outputFiles spec expects Externals/<arch>/<config>/libapp.a
+          # — copy the cargo staticlib into that exact shape.
+          DEST_DIR=ramus-tauri/gen/apple/Externals/arm64/Release
+          mkdir -p "$DEST_DIR"
+          cp target/aarch64-apple-ios/release/libramus_tauri.a "$DEST_DIR/libapp.a"
+          ls -la "$DEST_DIR/libapp.a"
+
+      - name: Patch out tauri xcode-script preBuildScript (CI-only)
+        if: matrix.id == 'ios'
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import yaml, pathlib
+          p = pathlib.Path('ramus-tauri/gen/apple/project.yml')
+          d = yaml.safe_load(p.read_text())
+          # Replace the tauri-cli invocation with a fail-fast verify
+          # that libapp.a was placed by the previous workflow step.
+          d['targets']['ramus-tauri_iOS']['preBuildScripts'] = [{
+              'name': 'Verify pre-built libapp.a',
+              'basedOnDependencyAnalysis': False,
+              'script': 'test -f "${SRCROOT}/Externals/${ARCHS}/${CONFIGURATION}/libapp.a" || (echo "::error::libapp.a missing — the Pre-build step should have placed it" >&2; exit 1)',
+          }]
+          p.write_text(yaml.dump(d, sort_keys=False))
+          print("project.yml patched:")
+          print(yaml.dump(d['targets']['ramus-tauri_iOS']['preBuildScripts'], sort_keys=False))
+          PY
+
       - name: Regenerate iOS Xcode project
         if: matrix.id == 'ios'
         run: ./scripts/regen-ios-project.sh
