@@ -122,7 +122,8 @@ def find_libmpv() -> Path | None:
     symlink points at the actual versioned file.
     """
     search_dirs = [
-        Path("/usr/lib/x86_64-linux-gnu"),  # Debian / Ubuntu multiarch
+        Path("/usr/lib/x86_64-linux-gnu"),  # Debian / Ubuntu multiarch (x86_64)
+        Path("/usr/lib/aarch64-linux-gnu"),  # Debian / Ubuntu multiarch (arm64)
         Path("/usr/lib64"),  # Fedora / RHEL
         Path("/usr/lib"),  # Arch and others
     ]

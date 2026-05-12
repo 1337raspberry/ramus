@@ -47,6 +47,7 @@ on:
           - all
           - macos
           - linux
+          - linux-arm
           - windows
           - android
           - ios
@@ -114,7 +115,19 @@ jobs:
           # libmpv binary for each arch at link time — only at runtime,
           # where each user's brew install provides the right one.
           macos='{"id":"macos","platform":"macos-14","label":"macOS (Universal)","rust-target":"aarch64-apple-darwin,x86_64-apple-darwin","tauri-args":"--target universal-apple-darwin"}'
+          # Two separate linux entries so each arch can be dispatched
+          # independently. Native arm64 runner — GitHub's
+          # `ubuntu-22.04-arm` images are free for public repos and
+          # billed (Larger Runner allocation) for private. Cross-
+          # compiling AppImages is impractical (appimagetool + runtime
+          # are arch-specific binaries the tauri bundler invokes
+          # natively), so a second runner is the cleanest path. The
+          # linux-only build steps below gate on
+          # `startsWith(matrix.id, 'linux')` so both arches share the
+          # same recipe; apt-get and ldd pick up the right arch
+          # automatically when run on the matching host.
           linux='{"id":"linux","platform":"ubuntu-22.04","label":"Linux (x86_64)","rust-target":"","tauri-args":""}'
+          linux_arm='{"id":"linux-arm","platform":"ubuntu-22.04-arm","label":"Linux (arm64)","rust-target":"","tauri-args":""}'
           windows='{"id":"windows","platform":"windows-latest","label":"Windows (x86_64)","rust-target":"","tauri-args":""}'
           # 64-bit ARM covers all modern phones; 32-bit ARM keeps older
           # devices working. Skipping x86 / x86_64 keeps the APK smaller
@@ -133,12 +146,13 @@ jobs:
           # never open an .xcodeproj.
           ios='{"id":"ios","platform":"macos-15","label":"iOS (IPA, ad-hoc)","rust-target":"aarch64-apple-ios","tauri-args":""}'
           case "$PLATFORM" in
-            all)     include="[$macos,$linux,$windows,$android,$ios]" ;;
-            macos)   include="[$macos]" ;;
-            linux)   include="[$linux]" ;;
-            windows) include="[$windows]" ;;
-            android) include="[$android]" ;;
-            ios)     include="[$ios]" ;;
+            all)       include="[$macos,$linux,$linux_arm,$windows,$android,$ios]" ;;
+            macos)     include="[$macos]" ;;
+            linux)     include="[$linux]" ;;
+            linux-arm) include="[$linux_arm]" ;;
+            windows)   include="[$windows]" ;;
+            android)   include="[$android]" ;;
+            ios)       include="[$ios]" ;;
             *) echo "Unknown platform: $PLATFORM" >&2; exit 1 ;;
           esac
           echo "matrix={\"include\":$include}" >> "$GITHUB_OUTPUT"
@@ -200,7 +214,7 @@ jobs:
       # libayatana-appindicator3-dev is the maintained replacement for
       # the deprecated libappindicator3-dev package.
       - name: Install Linux system dependencies
-        if: matrix.id == 'linux'
+        if: startsWith(matrix.id, 'linux')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -224,7 +238,7 @@ jobs:
       # — those use the system libmpv2 / mpv-libs via the depends arrays
       # already in tauri.conf.json.
       - name: Bundle libmpv into Linux .AppImage
-        if: matrix.id == 'linux'
+        if: startsWith(matrix.id, 'linux')
         run: python3 scripts/bundle-linux-libmpv.py
 
       # ── macOS ──────────────────────────────────────────────────────
@@ -611,7 +625,7 @@ jobs:
       # and produce artifacts (.apk / .ipa) that tauri-action doesn't
       # know how to bundle from cargo metadata alone.
       - name: Build and publish desktop artifacts (tauri-action)
-        if: matrix.id == 'macos' || matrix.id == 'linux' || matrix.id == 'windows'
+        if: matrix.id == 'macos' || startsWith(matrix.id, 'linux') || matrix.id == 'windows'
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5  # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -623,7 +637,8 @@ jobs:
             ### Available Binaries:
 
             - **macOS (Universal)** - `*_universal.dmg` (works on Intel + Apple Silicon)
-            - **Linux** - `.AppImage` (portable), `.deb` (Debian/Ubuntu), `.rpm` (Fedora/RHEL)
+            - **Linux (x86_64)** - `*_amd64.AppImage` / `*_amd64.deb` / `*.x86_64.rpm`
+            - **Linux (arm64)** - `*_aarch64.AppImage` / `*_arm64.deb` / `*.aarch64.rpm`
             - **Windows** - `*_x64-setup.exe` (NSIS) or `*_x64_en-US.msi` (MSI).
             - **Android** - `.apk` (sideload).
             - **iOS (iPhone)** - `*_ios-adhoc.ipa` (sideload)
