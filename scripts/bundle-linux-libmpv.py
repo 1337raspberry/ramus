@@ -10,12 +10,17 @@ Run from CI before invoking tauri-action on the Linux runner. The script:
    libstdc++, libgcc_s, libresolv, librt, libutil, ld-linux*). Bundling
    these in an AppImage breaks across distros — they are tightly coupled
    to the target system's dynamic loader and must come from the host.
-3. Copies each remaining lib into `ramus-tauri/linux-libs/`.
+3. Copies each remaining lib into `ramus-tauri/linux-libs/`, named by
+   DT_SONAME (e.g. `libmpv.so.1`, not the versioned real file
+   `libmpv.so.1.109.0`). The dynamic linker resolves NEEDED entries by
+   SONAME and our explicit `dlopen` uses the soname too; bundling under
+   the resolved real filename leaves the lib unfindable even though it
+   ships in the AppImage.
 4. Runs `patchelf --set-rpath '$ORIGIN'` on each copy so the bundled libs
    resolve their own NEEDED deps relative to their runtime location (the
    AppImage's mounted /usr/lib dir).
 5. Writes `ramus-tauri/tauri.linux.conf.json` with
-   `bundle.linux.appimage.files` mapping each lib to `/usr/lib/<basename>`
+   `bundle.linux.appimage.files` mapping each lib to `/usr/lib/<soname>`
    in the AppImage. Tauri auto-merges this platform-conf at build time.
 
 At runtime, AppImage extracts to /tmp/.mount_xxx/, and the binary lives
@@ -65,6 +70,23 @@ LD_LINUX_RE = re.compile(r"^ld-linux.*\.so")
 
 def is_skippable(soname: str) -> bool:
     return soname in GLIBC_FAMILY or bool(LD_LINUX_RE.match(soname))
+
+
+def get_soname(path: Path) -> str:
+    """Return the DT_SONAME of `path`, or its filename if it has none.
+
+    The dynamic linker resolves DT_NEEDED entries by SONAME, not by the
+    versioned real filename. e.g. libmpv records `NEEDED libavcodec.so.58`,
+    not `libavcodec.so.58.134.100`. Bundling under the real name leaves
+    every transitive load unresolvable — and `dlopen("libmpv.so.1")` fails
+    too because the symlink to the real file isn't present in the AppImage.
+    Falling back to the filename keeps libs without a SONAME (rare, but
+    possible) working.
+    """
+    out = subprocess.check_output(
+        ["patchelf", "--print-soname", str(path)], text=True
+    ).strip()
+    return out or path.name
 
 
 def ldd_deps(path: Path) -> list[Path]:
@@ -156,25 +178,26 @@ def main() -> int:
     WORKDIR.mkdir(parents=True)
 
     files_config: dict[str, str] = {}
-    # Track already-copied basenames. walk_transitive dedupes by resolved
+    # Track already-copied SONAMEs. walk_transitive dedupes by resolved
     # real path, so symlinked sonames collapse to one file — but two
-    # different real files can still share a basename (e.g. a multi-arch
+    # different real files can still share a SONAME (e.g. a multi-arch
     # install with `/usr/lib/x86_64-linux-gnu/libfoo.so.2` and
     # `/usr/lib/libfoo.so.2`). Fail loudly rather than silently overwrite
     # and ship whichever one happened to be last in BFS order.
-    used_basenames: dict[str, Path] = {}
+    used_sonames: dict[str, Path] = {}
     for src in libs:
-        dst = WORKDIR / src.name
-        if src.name in used_basenames:
+        soname = get_soname(src)
+        dst = WORKDIR / soname
+        if soname in used_sonames:
             print(
-                f"ERROR: basename collision on {src.name}: already bundled "
-                f"{used_basenames[src.name]}, now trying to bundle {src}. "
+                f"ERROR: SONAME collision on {soname}: already bundled "
+                f"{used_sonames[soname]}, now trying to bundle {src}. "
                 f"walk_transitive should not have returned both of these — "
                 f"investigate the dependency graph.",
                 file=sys.stderr,
             )
             return 1
-        used_basenames[src.name] = src
+        used_sonames[soname] = src
         shutil.copy2(src, dst)
         dst.chmod(0o644)
         # Set RPATH to $ORIGIN so the dynamic linker resolves this lib's
@@ -183,11 +206,14 @@ def main() -> int:
         subprocess.run(
             ["patchelf", "--set-rpath", "$ORIGIN", str(dst)], check=True
         )
-        # AppImage destination: each lib lands at /usr/lib/<basename>.
-        # Tauri's `bundle.linux.appimage.files` map keys are absolute
-        # paths inside the AppImage; values are paths relative to
-        # tauri.conf.json.
-        files_config[f"/usr/lib/{src.name}"] = f"linux-libs/{src.name}"
+        # AppImage destination: each lib lands at /usr/lib/<soname>. The
+        # dynamic linker (and our explicit `dlopen("libmpv.so.1")`) looks
+        # libs up by SONAME, not by the versioned real filename — bundling
+        # as `libmpv.so.1.109.0` instead of `libmpv.so.1` would leave the
+        # file unfindable even though it ships in the AppImage. Tauri's
+        # `bundle.linux.appimage.files` map keys are absolute paths inside
+        # the AppImage; values are paths relative to tauri.conf.json.
+        files_config[f"/usr/lib/{soname}"] = f"linux-libs/{soname}"
 
     config = {
         "$schema": "https://schema.tauri.app/config/2",
