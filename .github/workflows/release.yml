@@ -665,6 +665,29 @@ jobs:
           prerelease: false
           args: ${{ matrix.tauri-args }}
 
+      # ── Strip over-bundled host libs from the AppImage ─────────────
+      # tauri-action runs linuxdeploy + linuxdeploy-plugin-gtk, which
+      # bundles the host's wayland/X11/xkbcommon stack alongside GTK.
+      # Those libs are version-coupled to the host compositor and
+      # webkit2gtk; shipping our build-host copies breaks webkit's
+      # EGL init on distros newer than Ubuntu 22.04 (Fedora 42 aborts
+      # with EGL_BAD_PARAMETER and renders an invisible window).
+      # bundle.linux.appimage.files is additive — we can't un-bundle
+      # via Tauri config — so strip them after the fact, then re-upload
+      # to the draft release with --clobber to replace the asset
+      # tauri-action just put there. See scripts/strip-appimage.py for
+      # the full rationale and the soname-prefix exclude list.
+      - name: Strip over-bundled host libs from AppImage and re-upload
+        if: startsWith(matrix.id, 'linux')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          python3 scripts/strip-appimage.py
+          APPIMAGE=$(ls ramus-tauri/target/release/bundle/appimage/*.AppImage)
+          gh release upload "v${VERSION}" "$APPIMAGE" --clobber
+          echo "Re-uploaded stripped: $APPIMAGE"
+
       # ── Sideload artifact upload (android + ios) ───────────────────
       # When desktop matrix entries ran, tauri-action created the draft.
       # When this is the only matrix entry, no draft exists yet — fall
