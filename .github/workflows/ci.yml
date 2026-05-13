@@ -202,23 +202,93 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          # Need history to diff PR changes against the base ref in the
+          # detect step below. Full history is the simplest reliable
+          # option; the job is otherwise small enough that the extra
+          # fetch cost is in the noise.
+          fetch-depth: 0
+
+      # Skip the rest of the job on PRs that can't possibly affect the
+      # generated licenses doc. Cargo.lock + pnpm-lock.yaml are committed
+      # and CI uses frozen installs, so attribution only drifts when one
+      # of these inputs changes:
+      #   - Cargo.lock                              (added/removed/bumped Rust crates)
+      #   - ui/pnpm-lock.yaml                       (added/removed/bumped JS packages)
+      #   - config/about.toml                       (license policy / accept list)
+      #   - scripts/generate-third-party-licenses.py (renderer behaviour)
+      #   - THIRD_PARTY_LICENSES.md / licenses/…    (someone touched the output directly)
+      # Non-PR events (push to main, manual dispatch) always run — we
+      # want main builds to keep verifying, and manual dispatch is the
+      # whole point of an on-demand check. Trigger inputs are passed via
+      # env (github.event_name is an enumerated string; base.sha is a
+      # git SHA from GitHub, not attacker-influenceable text), and both
+      # are quoted in shell — no injection surface.
+      - name: Detect dependency-affecting changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Non-PR event ($EVENT_NAME) — running."
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only "$BASE_SHA"...HEAD)
+          echo "Changed files in this PR:"
+          echo "$CHANGED"
+          echo "------------------------------------------------------------"
+          if echo "$CHANGED" | grep -qE '^(Cargo\.lock|ui/pnpm-lock\.yaml|config/about\.toml|scripts/generate-third-party-licenses\.py|THIRD_PARTY_LICENSES\.md|licenses/THIRD_PARTY_LICENSES\.md)$'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Dependency-affecting paths changed — running drift check."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No dependency-affecting paths changed — skipping drift check."
+          fi
 
       - name: Install Rust toolchain
+        if: steps.changes.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
 
-      - name: Rust cache (cargo-about install)
+      # Cache the cargo registry/source so the `cargo fetch` step further
+      # down is a no-op on cache hits. The cargo-about *binary* itself is
+      # cached separately below — they're independent: binary cache
+      # avoids rebuilding the tool, registry cache avoids re-downloading
+      # our workspace's dep sources for cargo-about to scan.
+      - name: Rust cache (registry/source)
+        if: steps.changes.outputs.run == 'true'
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
         with:
           workspaces: '. -> target'
           key: ci-licenses
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      # Cache the compiled cargo-about binary instead of `cargo install`-ing
+      # it (and its transitive crates) on every run — same pattern as
+      # tauri-cli in release.yml. Key on exact version + runner OS so a
+      # bump or platform swap forces a fresh build; otherwise restore the
+      # binary straight into ~/.cargo/bin.
+      - name: Cache cargo-about binary
+        if: steps.changes.outputs.run == 'true'
+        id: cache-cargo-about
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: ~/.cargo/bin/cargo-about
+          key: cargo-about-0.6.6-${{ runner.os }}
+
+      - name: Install cargo-about
+        if: steps.changes.outputs.run == 'true' && steps.cache-cargo-about.outputs.cache-hit != 'true'
+        run: cargo install cargo-about --locked --version '=0.6.6'
+
       - name: Install pnpm
+        if: steps.changes.outputs.run == 'true'
         uses: pnpm/action-setup@739bfe42ca9233c5e6aca07c1a25a9d34aca49b0  # v6.0.7
         with:
           version: 11
 
       - name: Install Node.js
+        if: steps.changes.outputs.run == 'true'
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: 20
@@ -226,11 +296,9 @@ jobs:
           cache-dependency-path: ui/pnpm-lock.yaml
 
       - name: Install frontend dependencies
+        if: steps.changes.outputs.run == 'true'
         working-directory: ui
         run: pnpm install --frozen-lockfile
-
-      - name: Install cargo-about
-        run: cargo install cargo-about --locked --version '^0.6'
 
       # Populate the registry index so the next step's `cargo about
       # generate --frozen` (= --locked --offline) can resolve every crate
@@ -240,9 +308,11 @@ jobs:
       # index" — the rust job above primes its own cache under a
       # different key, so this job needs its own fetch.
       - name: Prime cargo registry
+        if: steps.changes.outputs.run == 'true'
         run: cargo fetch --locked
 
       - name: Regenerate THIRD_PARTY_LICENSES.md
+        if: steps.changes.outputs.run == 'true'
         run: python3 scripts/generate-third-party-licenses.py
 
       # Advisory only — cargo-about's license-text trimming behaves
@@ -254,6 +324,7 @@ jobs:
       # glance, and we regen + commit at release time. continue-on-error
       # keeps the job green either way.
       - name: Show THIRD_PARTY_LICENSES.md drift (advisory)
+        if: steps.changes.outputs.run == 'true'
         continue-on-error: true
         run: |
           if git diff --exit-code THIRD_PARTY_LICENSES.md licenses/THIRD_PARTY_LICENSES.md; then
