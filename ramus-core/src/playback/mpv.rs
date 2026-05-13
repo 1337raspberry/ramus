@@ -103,8 +103,14 @@ pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
         ("ao", "coreaudio"),
         #[cfg(target_os = "windows")]
         ("ao", "wasapi"),
+        // Linux: prefer pipewire when it's compiled in, fall back to
+        // pulse → alsa → jack so the AppImage works on hosts where our
+        // bundled libmpv (Ubuntu 22.04's libmpv1 / mpv 0.34.1) lacks
+        // pipewire support (it wasn't enabled in Debian's packaging
+        // that long ago). mpv's comma-list semantics skip any AO that
+        // isn't registered or fails init, so this gracefully degrades.
         #[cfg(target_os = "linux")]
-        ("ao", "pipewire"),
+        ("ao", "pipewire,pulse,alsa,jack"),
         ("gapless-audio", "yes"),
         ("prefetch-playlist", prefetch_playlist),
         ("audio-buffer", "0.5"),
