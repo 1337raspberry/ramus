@@ -10,11 +10,13 @@ Run from CI before invoking tauri-action on the Linux runner. The script:
      - glibc-family + loader (libc, libm, libpthread, libdl, libstdc++,
        libgcc_s, libresolv, librt, libutil, ld-linux*) — coupled to the
        target system's dynamic loader.
-     - host runtime stacks (mesa/EGL/GL, libdrm/libgbm, wayland/X11,
-       audio daemons, glib/gio, fontconfig). Bundling these either
-       shadows newer host symbols (host gvfs/gio modules then crash
-       against our older glib) or ships a libEGL/libGL/libgbm that
-       can't load the host's mesa DRI drivers.
+     - a narrow set of host-coupled runtime libs (libdrm, libgbm; the
+       glib/gio stack; libfontconfig). See `HOST_PROVIDED_PREFIXES`.
+   Everything else — including libmpv's direct DT_NEEDED audio backends
+   (libjack/libpulse/libpipewire/libasound), Wayland/X11/xkbcommon, the
+   Khronos GL/EGL loaders, libplacebo, libass, ffmpeg — is bundled, so
+   libmpv loads on a stock desktop install regardless of which audio
+   daemons or display servers happen to be installed.
 3. Copies each remaining lib into `ramus-tauri/linux-libs/`, named by
    DT_SONAME (e.g. `libmpv.so.1`, not the versioned real file
    `libmpv.so.1.109.0`). The dynamic linker resolves NEEDED entries by
@@ -72,35 +74,37 @@ GLIBC_FAMILY = {
 }
 LD_LINUX_RE = re.compile(r"^ld-linux.*\.so")
 
-# Host-provided runtime families — also must NOT be bundled. These are
-# kernel-, compositor-, or daemon-coupled. Bundling them either shadows
-# newer host symbols (e.g. host gvfs modules then resolve against our
-# older glib and crash with `undefined symbol: g_task_set_static_name`
-# on Ubuntu 26+), or it ships a libEGL/libGL/libgbm that can't load the
-# host's mesa DRI drivers (Fedora 42 throws `EGL_BAD_PARAMETER` and
-# `did not find extension DRI_Mesa`). Matched as soname prefixes so
-# every minor-version variant is covered.
+# Host-provided runtime families — must NOT be bundled even though
+# libmpv pulls them in transitively. Matched as soname prefixes so every
+# minor-version variant is covered.
+#
+# The skip list is deliberately narrow. Earlier attempts to also skip
+# libEGL/libGL, wayland, X11/xcb, libxkbcommon, and audio client libs
+# (libjack/libpulse/libpipewire/libasound) broke loading entirely — most
+# of those are direct DT_NEEDED entries on libmpv.so.{1,2}, and Ubuntu
+# 22.04's libmpv build links libjack in particular which isn't on most
+# desktop hosts by default (JACK is opt-in audio routing — Kubuntu 26
+# ships without it). The libs we DO need to skip:
+#
+# - libdrm / libgbm: kernel-coupled mesa-internal ABI. Bundling older
+#   versions makes the host's iris_dri.so / radeonsi_dri.so etc. fail to
+#   load with `did not find extension DRI_Mesa version 1`, which then
+#   cascades to `No provider of glGenTextures` (Ubuntu 26) and
+#   `EGL_BAD_PARAMETER` (Fedora 42). Skipping these lets the host's
+#   libdrm/libgbm match the host's DRI drivers.
+#
+# - glib / gio stack: gvfs and gio modules in `/usr/lib/.../gio/modules/`
+#   are loaded by the host's webkit/GTK stack and link against the host
+#   glib. If we ship an older libglib-2.0.so.0 with RPATH=$ORIGIN, the
+#   loader caches it; the host's libgvfscommon.so then trips on a
+#   missing `g_task_set_static_name` (added in glib 2.76) on Ubuntu 26+.
+#
+# - libfontconfig: reads `/etc/fonts/fonts.conf` and the host's
+#   fc-cache; the bundled copy doesn't see the host's installed fonts.
 HOST_PROVIDED_PREFIXES = (
-    # OpenGL / EGL / mesa
-    "libGL.so", "libGLX.so", "libGLdispatch.so", "libEGL.so",
-    "libOpenGL.so", "libGLU.so",
-    # GBM / DRM — kernel-coupled
-    "libgbm.so", "libdrm",
-    # Wayland / xkbcommon — compositor-coupled
-    "libwayland-", "libxkbcommon",
-    # X11 / XCB
-    "libX11", "libxcb", "libXext", "libXrender", "libXrandr",
-    "libXi.so", "libXcursor", "libXfixes", "libXcomposite",
-    "libXdamage", "libXinerama", "libXScrnSaver", "libXtst",
-    "libXt.so", "libSM.so", "libICE.so", "libxshmfence",
-    # Audio daemons — bundled client lib must match the running server
-    "libasound.so", "libpulse", "libpipewire-", "libjack.so",
-    # glib / gio stack — host gvfs and gio modules load against the
-    # host's glib version; bundling an older one breaks them.
+    "libgbm.so", "libdrm.so", "libdrm_",
     "libglib-2.0.so", "libgobject-2.0.so", "libgio-2.0.so",
     "libgmodule-2.0.so", "libgthread-2.0.so",
-    # Fontconfig reads /etc/fonts and the host's fc-cache; needs to be
-    # the host's copy to find the host's fonts.
     "libfontconfig.so",
 )
 
