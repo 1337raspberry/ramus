@@ -10,13 +10,16 @@ Run from CI before invoking tauri-action on the Linux runner. The script:
      - glibc-family + loader (libc, libm, libpthread, libdl, libstdc++,
        libgcc_s, libresolv, librt, libutil, ld-linux*) — coupled to the
        target system's dynamic loader.
-     - a narrow set of host-coupled runtime libs (libdrm, libgbm; the
-       glib/gio stack; libfontconfig). See `HOST_PROVIDED_PREFIXES`.
-   Everything else — including libmpv's direct DT_NEEDED audio backends
-   (libjack/libpulse/libpipewire/libasound), Wayland/X11/xkbcommon, the
-   Khronos GL/EGL loaders, libplacebo, libass, ffmpeg — is bundled, so
-   libmpv loads on a stock desktop install regardless of which audio
-   daemons or display servers happen to be installed.
+     - the GL/EGL/mesa stack (libGL/libGLX/libGLdispatch/libEGL/
+       libOpenGL/libGLU, libdrm/libgbm, libwayland-egl), the glib/gio
+       stack, and libfontconfig. See `HOST_PROVIDED_PREFIXES` for the
+       full reasoning; the short version is mesa DRI driver coupling
+       and gvfs/gio module symbol-resolution.
+   Everything else — libmpv's direct DT_NEEDED audio backends
+   (libjack/libpulse/libpipewire/libasound), Wayland (non-EGL),
+   X11/xcb, libxkbcommon, libplacebo, libass, ffmpeg, etc. — is
+   bundled, so libmpv loads on a stock desktop install regardless of
+   which audio daemons happen to be installed.
 3. Copies each remaining lib into `ramus-tauri/linux-libs/`, named by
    DT_SONAME (e.g. `libmpv.so.1`, not the versioned real file
    `libmpv.so.1.109.0`). The dynamic linker resolves NEEDED entries by
@@ -75,34 +78,41 @@ GLIBC_FAMILY = {
 LD_LINUX_RE = re.compile(r"^ld-linux.*\.so")
 
 # Host-provided runtime families — must NOT be bundled even though
-# libmpv pulls them in transitively. Matched as soname prefixes so every
-# minor-version variant is covered.
+# libmpv pulls them in (directly or transitively). Matched as soname
+# prefixes so every minor-version variant is covered.
 #
-# The skip list is deliberately narrow. Earlier attempts to also skip
-# libEGL/libGL, wayland, X11/xcb, libxkbcommon, and audio client libs
-# (libjack/libpulse/libpipewire/libasound) broke loading entirely — most
-# of those are direct DT_NEEDED entries on libmpv.so.{1,2}, and Ubuntu
-# 22.04's libmpv build links libjack in particular which isn't on most
-# desktop hosts by default (JACK is opt-in audio routing — Kubuntu 26
-# ships without it). The libs we DO need to skip:
+# Two distinct trap categories:
 #
-# - libdrm / libgbm: kernel-coupled mesa-internal ABI. Bundling older
-#   versions makes the host's iris_dri.so / radeonsi_dri.so etc. fail to
-#   load with `did not find extension DRI_Mesa version 1`, which then
-#   cascades to `No provider of glGenTextures` (Ubuntu 26) and
-#   `EGL_BAD_PARAMETER` (Fedora 42). Skipping these lets the host's
-#   libdrm/libgbm match the host's DRI drivers.
+# 1. GL/EGL/mesa stack — libglvnd dispatchers (libGL/libGLX/libEGL/etc.),
+#    libdrm/libgbm, and libwayland-egl. The host's vendor libs
+#    (libGLX_mesa, libEGL_mesa) and DRI drivers (iris_dri.so,
+#    radeonsi_dri.so, …) are tightly coupled to host libdrm/libgbm and
+#    to libglvnd's dispatch table; bundling our own causes libepoxy /
+#    webkit2gtk dispatch to fail (`No provider of glGenTextures` on
+#    Ubuntu 26, `No provider of glViewport` on Kubuntu 26, plus
+#    `EGL_BAD_PARAMETER` and `did not find extension DRI_Mesa` on
+#    Fedora 42). Every desktop Linux ships these via mesa, so skipping
+#    is safe — the loader falls through to host even when libmpv lists
+#    them in DT_NEEDED. (libwayland-client / -cursor / -server stay
+#    bundled — they're plain protocol libs, not EGL-coupled.)
 #
-# - glib / gio stack: gvfs and gio modules in `/usr/lib/.../gio/modules/`
-#   are loaded by the host's webkit/GTK stack and link against the host
-#   glib. If we ship an older libglib-2.0.so.0 with RPATH=$ORIGIN, the
-#   loader caches it; the host's libgvfscommon.so then trips on a
-#   missing `g_task_set_static_name` (added in glib 2.76) on Ubuntu 26+.
+# 2. glib / gio stack — host gvfs and gio modules in
+#    `/usr/lib/.../gio/modules/` link against the host glib. If we ship
+#    an older `libglib-2.0.so.0` with RPATH=$ORIGIN and anything loads
+#    it first, the host's libgvfscommon.so trips on a missing
+#    `g_task_set_static_name` (added in glib 2.76) on Ubuntu 26+.
 #
-# - libfontconfig: reads `/etc/fonts/fonts.conf` and the host's
-#   fc-cache; the bundled copy doesn't see the host's installed fonts.
+# Plus libfontconfig (reads host `/etc/fonts` and the host's fc-cache).
+#
+# Audio client libs (libjack/libpulse/libpipewire/libasound) are NOT
+# host-provided — JACK in particular isn't installed on stock desktops
+# (Kubuntu 26 ships without it). They go in the bundle so libmpv can
+# load on hosts that lack the daemon client.
 HOST_PROVIDED_PREFIXES = (
+    "libGL.so", "libGLX.so", "libGLdispatch.so", "libEGL.so",
+    "libOpenGL.so", "libGLU.so",
     "libgbm.so", "libdrm.so", "libdrm_",
+    "libwayland-egl.so",
     "libglib-2.0.so", "libgobject-2.0.so", "libgio-2.0.so",
     "libgmodule-2.0.so", "libgthread-2.0.so",
     "libfontconfig.so",
