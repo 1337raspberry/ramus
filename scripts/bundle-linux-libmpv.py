@@ -6,10 +6,15 @@ Run from CI before invoking tauri-action on the Linux runner. The script:
 
 1. Walks `libmpv.so.2`'s transitive deps via `ldd`, following resolved
    paths.
-2. Filters out glibc-family libs (libc, libm, libpthread, libdl,
-   libstdc++, libgcc_s, libresolv, librt, libutil, ld-linux*). Bundling
-   these in an AppImage breaks across distros — they are tightly coupled
-   to the target system's dynamic loader and must come from the host.
+2. Filters out two families that must come from the host:
+     - glibc-family + loader (libc, libm, libpthread, libdl, libstdc++,
+       libgcc_s, libresolv, librt, libutil, ld-linux*) — coupled to the
+       target system's dynamic loader.
+     - host runtime stacks (mesa/EGL/GL, libdrm/libgbm, wayland/X11,
+       audio daemons, glib/gio, fontconfig). Bundling these either
+       shadows newer host symbols (host gvfs/gio modules then crash
+       against our older glib) or ships a libEGL/libGL/libgbm that
+       can't load the host's mesa DRI drivers.
 3. Copies each remaining lib into `ramus-tauri/linux-libs/`, named by
    DT_SONAME (e.g. `libmpv.so.1`, not the versioned real file
    `libmpv.so.1.109.0`). The dynamic linker resolves NEEDED entries by
@@ -67,9 +72,45 @@ GLIBC_FAMILY = {
 }
 LD_LINUX_RE = re.compile(r"^ld-linux.*\.so")
 
+# Host-provided runtime families — also must NOT be bundled. These are
+# kernel-, compositor-, or daemon-coupled. Bundling them either shadows
+# newer host symbols (e.g. host gvfs modules then resolve against our
+# older glib and crash with `undefined symbol: g_task_set_static_name`
+# on Ubuntu 26+), or it ships a libEGL/libGL/libgbm that can't load the
+# host's mesa DRI drivers (Fedora 42 throws `EGL_BAD_PARAMETER` and
+# `did not find extension DRI_Mesa`). Matched as soname prefixes so
+# every minor-version variant is covered.
+HOST_PROVIDED_PREFIXES = (
+    # OpenGL / EGL / mesa
+    "libGL.so", "libGLX.so", "libGLdispatch.so", "libEGL.so",
+    "libOpenGL.so", "libGLU.so",
+    # GBM / DRM — kernel-coupled
+    "libgbm.so", "libdrm",
+    # Wayland / xkbcommon — compositor-coupled
+    "libwayland-", "libxkbcommon",
+    # X11 / XCB
+    "libX11", "libxcb", "libXext", "libXrender", "libXrandr",
+    "libXi.so", "libXcursor", "libXfixes", "libXcomposite",
+    "libXdamage", "libXinerama", "libXScrnSaver", "libXtst",
+    "libXt.so", "libSM.so", "libICE.so", "libxshmfence",
+    # Audio daemons — bundled client lib must match the running server
+    "libasound.so", "libpulse", "libpipewire-", "libjack.so",
+    # glib / gio stack — host gvfs and gio modules load against the
+    # host's glib version; bundling an older one breaks them.
+    "libglib-2.0.so", "libgobject-2.0.so", "libgio-2.0.so",
+    "libgmodule-2.0.so", "libgthread-2.0.so",
+    # Fontconfig reads /etc/fonts and the host's fc-cache; needs to be
+    # the host's copy to find the host's fonts.
+    "libfontconfig.so",
+)
+
 
 def is_skippable(soname: str) -> bool:
-    return soname in GLIBC_FAMILY or bool(LD_LINUX_RE.match(soname))
+    if soname in GLIBC_FAMILY:
+        return True
+    if LD_LINUX_RE.match(soname):
+        return True
+    return any(soname.startswith(p) for p in HOST_PROVIDED_PREFIXES)
 
 
 def get_soname(path: Path) -> str:
