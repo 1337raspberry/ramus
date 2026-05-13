@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metainfo for ramus. Read by KDE Discover, GNOME Software, and
+  other Linux software centres to render rich listings (name, summary,
+  description, screenshots, links). Without this file the package shows up
+  as "ramus-1" with "Unknown Author" because the centres fall back to raw
+  RPM/Deb fields. Installed to /usr/share/metainfo/ via the bundle.linux.
+  {deb,rpm}.files map in tauri.conf.json.
+
+  Validate with `appstreamcli validate com.ramus.app.metainfo.xml`.
+-->
+<component type="desktop-application">
+  <id>com.ramus.app</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>ramus</name>
+  <summary>genre-first Plex music player</summary>
+
+  <description>
+    <p>
+      ramus is a genre-first music client for Plex focused on discovering
+      and exploring your existing library. Out of the box It's designed
+      to function with the metadata plex has already assigned your albums
+      to give you a rich hierarchical tree-like view of your library,
+      while genre-obsessives can go as deep and custom as they wish and
+      browse by their own dream musical taxonomy.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">ramus.desktop</launchable>
+
+  <url type="homepage">https://github.com/1337raspberry/ramus</url>
+  <url type="bugtracker">https://github.com/1337raspberry/ramus/issues</url>
+  <url type="vcs-browser">https://github.com/1337raspberry/ramus</url>
+  <url type="contact">mailto:admin@blueshelter.net</url>
+
+  <developer id="io.github.1337raspberry">
+    <name>1337raspberry</name>
+  </developer>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Player</category>
+  </categories>
+
+  <keywords>
+    <keyword>music</keyword>
+    <keyword>plex</keyword>
+    <keyword>audio</keyword>
+    <keyword>player</keyword>
+    <keyword>library</keyword>
+  </keywords>
+
+  <provides>
+    <binary>ramus</binary>
+  </provides>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/1337raspberry/ramus/main/docs/screenshots/hero.png</image>
+      <caption>Main library view</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/1337raspberry/ramus/main/docs/screenshots/search.png</image>
+      <caption>Operator-driven search</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/1337raspberry/ramus/main/docs/screenshots/focus.png</image>
+      <caption>Focus mode with per-track spectrum visualisation</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/1337raspberry/ramus/main/docs/screenshots/artist.png</image>
+      <caption>Artist listing</caption>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="1.0.0" date="2026-05-14"/>
+  </releases>
+
+  <content_rating type="oars-1.1"/>
+</component>
