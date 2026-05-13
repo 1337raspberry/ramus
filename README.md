@@ -19,18 +19,18 @@
 
 ## About
 
-**ramus** is a genre-first music client for Plex focused on discovering and exploring your existing library. Out of the box It's designed to function with the metadata plex has already assigned your albums to give you a rich hierarchical tree-like view of your library, while genre-obsessives can go as deep and custom as they wish and browse by their own dream musical taxonomy. 
+**ramus** is a genre-first music client for [Plex](https://www.plex.tv/en-gb/media-server-downloads/) focused on discovering and exploring your existing library. Out of the box It's designed to function with the Genre and Style metadata plex already fetches for your albums to give you a rich hierarchical tree-like view of your library, while genre-obsessives and taxonomy purists can use their own curated genre tags and a custom built hierarchy to get as specific as they like.
 
 ## Features
 
-- **Hierarchical browsing** - ramus features a tree-like genre browser that automatically matches your existing library. It comes with a custom and rich genre hierarchy by default, but you can build and supply your own, or maybe download a custom setup built by somebody else
-- **Instant locally cached search** - Ctrl+F > "free b" > Enter and you're listening to Free Bird. Or just "wonrederwall" and it knows you meant Wonderwall. Also features search operators and shortcuts for power users eg "/Dream-Pop AND year:>2013"
-- **Library filters** which can be saved as easy-reach bookmarks, and even cached for offline listening (with no file size limit). Save all your favourite albums in the dubstep genre as "workout tunes" and download the whole thing for your gym with the dodgy wifi.
-- **Album-Art focused** - Browse by art grid instead of dry text lists, and enjoy auto-extracted background and accent colours making your entire music listening experience cohesive and _aesthetic_
-- **Waveform Seeking** - If you have Sonic Analysis enabled on your server, you already have all this wonderful data. Skip past the 6 minute ambient intro straight to the visible  14 minutes of silence on that bonus track to the good stuff.
-- **Track popularity data** - See the top tracks in an album based on crowdsourced popularity data supplied directly via plex and obtained via users starring their own libraries, or see a unique popularity chart over an albums track listing to get the full picture. 
-- **A good ol fashioned visualiser and full screen oriented "focus mode"** - Watch your music bounce like it's 2003
-- **Lyrics courtesy of lrclib** - No account needed and a huge number of the lyrics are synced too. All credits to lrclib. what a service!
+- **Hierarchical browsing** - ramus features a tree-like genre browser that automatically matches your existing library. It comes with a custom and rich genre hierarchy by default, but you can build and supply your own, or even download a custom setup built by somebody else
+- **Instant locally cached search** - Ctrl+F > "free b" > Enter and you're listening to Free Bird. Or just "wonrederwall" and it knows you meant Wonderwall. Also features search operators and shortcuts for power users eg `/Dream-Pop AND year:>2013`
+- **Library filters** - Save a custom view and recall it later as an easy-reach bookmark, or download the results to cache for offline listening (with no file size limit). Save all your favourite albums in the `dubstep` genre as "workout tunes" and download the whole thing for your gym with the dodgy wifi. Or all your favourite tracks in the `Showtunes` genre in a "Guilty Pleasures" download for your roadtrip.
+- **Album-Art focused** - Browse by an album art grid instead of boring ol' text lists, and enjoy auto-extracted background and accent colours across the whole interface, making your entire music listening experience cohesive and _aesthetic_
+- **Waveform Seeking** - If you have Sonic Analysis enabled on your server, you already have all this wonderful data. Skip past the 6 minute ambient intro straight to the good stuff.
+- **Track popularity data** - See the top tracks in an album based on crowdsourced popularity data supplied directly via Plex and obtained via users starring their own libraries, or see a unique popularity chart over an albums track listing to get the full picture. 
+- **A good ol fashioned visualiser and full screen oriented "focus mode"** - Watch your music bounce like it's 2003 and you just discovered visualiser plugins.
+- **Lyrics courtesy of lrclib** - No account needed, open source and a huge number of the lyrics are synced too. [All credits to lrclib, support them if you can](https://lrclib.net/)
 
 ## Screenshots
 
@@ -85,7 +85,7 @@ Pre-built installers are produced by [GitHub Actions](https://github.com/1337ras
 | **iOS**                           | `ramus_1.0.0_ios-adhoc.ipa`                                               | Ad-hoc signed for manual self side-loading. SideStore install also available via source `https://1337raspberry.github.io/ramus.json` |
 | **Android**                       | `ramus_<version>_universal.apk`                                           | Signed multi-ABI APK (`arm64-v8a` + `armeabi-v7a`); sideload via `adb install` or your file manager.  |
 
-> ⚠️ **Releases are currently unsigned or self-signed.** As with many open source projects, macOS gatekeeper will quarantine the `.app` and tell you it's damaged or untrusted; Windows SmartScreen will whine that it's unrecognised, and Android Play Protect will ask to scan it first. On MacOS you'll need to go into Settings > Privacy & Security > Run Anyway. On Windows you'll need to click "Run Anyway".
+> ⚠️ **Releases are currently unsigned or self-signed.** As with many open source projects, macOS gatekeeper will quarantine the `.app` and tell you it's damaged or untrusted; Windows SmartScreen will whine that it's unrecognised, and Android Play Protect will ask to scan it first. The [Releases](https://github.com/1337raspberry/ramus/releases) listing will have more specifics on how to deal with these annoyances
 
 ### Requirements
 
