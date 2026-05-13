@@ -262,6 +262,14 @@ pub async fn fetch_from_lrclib(
                 " (https://github.com/1337raspberry/ramus)",
             ),
         )
+        .header(
+            "User-Agent",
+            concat!(
+                "ramus v",
+                env!("CARGO_PKG_VERSION"),
+                " (https://github.com/1337raspberry/ramus)",
+            ),
+        )
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await
