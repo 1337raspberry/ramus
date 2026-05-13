@@ -103,14 +103,26 @@ pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
         ("ao", "coreaudio"),
         #[cfg(target_os = "windows")]
         ("ao", "wasapi"),
-        // Linux: prefer pipewire when it's compiled in, fall back to
-        // pulse → alsa → jack so the AppImage works on hosts where our
-        // bundled libmpv (Ubuntu 22.04's libmpv1 / mpv 0.34.1) lacks
-        // pipewire support (it wasn't enabled in Debian's packaging
-        // that long ago). mpv's comma-list semantics skip any AO that
-        // isn't registered or fails init, so this gracefully degrades.
+        // Linux: pulse → alsa → jack. We deliberately leave pipewire
+        // OFF the list even though it's the dominant audio daemon on
+        // modern distros, for two reasons:
+        //
+        // 1. The AppImage's bundled libmpv (Ubuntu 22.04 / mpv 0.34.1)
+        //    has no pipewire AO compiled in — Debian/Ubuntu didn't
+        //    enable it that long ago. Listing pipewire first guarantees
+        //    a noisy "Audio output pipewire not found!" probe on every
+        //    session with zero upside.
+        // 2. On modern PipeWire-based systems (Ubuntu 24+, Fedora 38+,
+        //    Arch, etc.), pipewire-pulse ships the PulseAudio API
+        //    alongside the daemon. mpv's `pulse` AO transparently goes
+        //    through that shim to the same daemon — for music playback
+        //    the latency difference vs direct-pipewire is microseconds,
+        //    imperceptible.
+        //
+        // mpv's comma-list semantics already do "try in order, stop at
+        // first success, stay on it"; no runtime probe needed.
         #[cfg(target_os = "linux")]
-        ("ao", "pipewire,pulse,alsa,jack"),
+        ("ao", "pulse,alsa,jack"),
         ("gapless-audio", "yes"),
         ("prefetch-playlist", prefetch_playlist),
         ("audio-buffer", "0.5"),
