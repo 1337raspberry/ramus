@@ -187,6 +187,15 @@ jobs:
           # produce different compiled artifacts, so they need their
           # own cache slots.
           key: ${{ matrix.id }}
+          # Don't cache ~/.cargo/bin — see the long-form comment in
+          # ci.yml. A stale cargo proxy here surfaces as
+          # `cargo metadata` failing inside tauri-action with
+          # "Usage: rustup-init[EXE] [OPTIONS]". tauri-cli is cached
+          # separately for the android/ios matrix entries via the
+          # actions/cache step further down; desktop entries get
+          # tauri-cli fresh from tauri-action's `npm install -g`, so
+          # there's nothing in ~/.cargo/bin worth caching here either.
+          cache-bin: false
 
       # pnpm/action-setup must run before setup-node so `cache: pnpm`
       # can call `pnpm store path` to find the cache directory.

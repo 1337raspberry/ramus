@@ -74,6 +74,14 @@ jobs:
           # Only write cache entries from main-branch runs so fork PRs
           # can't poison a key that a later release build consumes.
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Don't cache ~/.cargo/bin. Once it's stale (e.g. a runner
+          # image rolls and the old cargo proxy no longer matches the
+          # new rustup), every subsequent run restores broken binaries
+          # and `cargo <anything>` errors as `rustup-init`. Nothing in
+          # this job runs `cargo install` for a binary worth caching;
+          # tauri-cli / cargo-about are cached via dedicated
+          # actions/cache entries keyed on exact version.
+          cache-bin: false
 
       # Linux: tauri's transitive sys crates (webkit2gtk-sys, soup3-sys,
       # javascriptcore-sys) probe pkg-config in their build scripts even
@@ -263,6 +271,10 @@ jobs:
           workspaces: '. -> target'
           key: ci-licenses
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # ~/.cargo/bin caching disabled — see comment on the matrix
+          # rust-cache step above. cargo-about is the only installed
+          # binary here and it has its own dedicated cache entry below.
+          cache-bin: false
 
       # Cache the compiled cargo-about binary instead of `cargo install`-ing
       # it (and its transitive crates) on every run — same pattern as
