@@ -81,8 +81,8 @@ Pre-built installers are produced by [GitHub Actions](https://github.com/1337ras
 | **macOS** (Apple Silicon + Intel) | `ramus_<version>_universal.dmg`                                           | Universal binary. libmpv + ffmpeg/codec stack bundled inside the `.app`.                              |
 | **Windows 10/11 (x64)**           | `ramus_<version>_x64-setup.exe` (NSIS) or `ramus_<version>_x64_en-US.msi` | `libmpv-2.dll` ships next to the executable.                                                          |
 | **Linux (x86_64)**                | `ramus_<version>_<amd64>/<x86_64>.AppImage` / `.deb` / `.rpm`             | The AppImage bundles libmpv. The `.deb` / `.rpm` depend on the system `libmpv2` / `mpv-libs` package. |
-| **Linux (ARM)**                   | `ramus_<version>_<aarch64>/<arm64>.AppImage` / `.deb` / `.rpm`            | ^
-| **iOS**                           | `ramus_1.0.0_ios-adhoc.ipa`                                               | Ad-hoc signed for manual self side-loading. SideStore install also available via source `https://1337raspberry.github.io/ramus.json` |
+| **Linux (ARM)**                   | `ramus_<version>_<aarch64>/<arm64>.AppImage` / `.deb` / `.rpm`            | The AppImage bundles libmpv. The `.deb` / `.rpm` depend on the system `libmpv2` / `mpv-libs` package. |
+| **iOS**                           | `ramus_<version>_ios-adhoc.ipa`                                           | Ad-hoc signed for manual self side-loading. SideStore install also available via source `https://1337raspberry.github.io/ramus.json` |
 | **Android**                       | `ramus_<version>_universal.apk`                                           | Signed multi-ABI APK (`arm64-v8a` + `armeabi-v7a`); sideload via `adb install` or your file manager.  |
 
 > ⚠️ **Releases are currently unsigned or self-signed.** As with many open source projects, macOS gatekeeper will quarantine the `.app` and tell you it's damaged or untrusted; Windows SmartScreen will whine that it's unrecognised, and Android Play Protect will ask to scan it first. The [Releases](https://github.com/1337raspberry/ramus/releases) listing will have more specifics on how to deal with these annoyances
@@ -104,7 +104,7 @@ Pre-built installers are produced by [GitHub Actions](https://github.com/1337ras
 You'll need:
 
 - **Rust** stable (`rustup install stable`).
-- **Node.js** 20+ and **npm**.
+- **Node.js** 20+ and **pnpm**.
 - **Tauri 2 prerequisites** for your platform — follow [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/).
 - **CMake** (and ideally **Ninja**). The focus mode visualiser includes an Opus decoder via the `symphonia-adapter-libopus` crate, which compiles a vendored libopus C source through `cmake` at build time. Without it, `cargo build` will error out partway through `opusic-sys`.
   - macOS: `brew install cmake ninja`.

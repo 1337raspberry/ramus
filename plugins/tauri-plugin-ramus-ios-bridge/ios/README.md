@@ -1,3 +1,5 @@
-# Tauri Plugin ramus-ios-bridge
+# Tauri Plugin ramus-ios-bridge (iOS Swift sources)
 
-A description of this package.
+Auto-generated Swift Package scaffolding for the iOS side of the internal ramus Tauri plugin. Not intended for standalone use.
+
+See the main project [README](../../../README.md) for build and usage instructions.

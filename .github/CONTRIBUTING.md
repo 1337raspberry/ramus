@@ -41,7 +41,7 @@ Per-crate clippy hides warnings in the other crate, and lints in `#[cfg(test)]` 
 If you changed dependencies, regenerate the third-party license bundle (CI's drift check will catch you otherwise):
 
 ```sh
-cargo install cargo-about --locked --version '^0.6'
+cargo install cargo-about --locked --version '=0.6.6'
 python3 scripts/generate-third-party-licenses.py
 ```
 
