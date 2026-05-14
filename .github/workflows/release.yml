@@ -36,21 +36,45 @@ on:
   # Uncomment push to re-enable release builds on version tags.
   # push:
   #   tags: ['v*']
+  #
+  # workflow_dispatch can't express a multi-select dropdown, so each
+  # platform is its own boolean and `all` is a shortcut that overrides
+  # the individual ticks. Defaulting `all: true` preserves the
+  # historical "no inputs = build everything" behaviour for tag-push
+  # triggers (push events don't carry inputs.*, so every input resolves
+  # to its default). From the CLI:
+  #   gh workflow run release.yml \
+  #     -f all=false -f macos=true -f linux=true -f windows=true
   workflow_dispatch:
     inputs:
-      platform:
-        description: 'Which platform(s) to build'
-        type: choice
-        required: true
-        default: all
-        options:
-          - all
-          - macos
-          - linux
-          - linux-arm
-          - windows
-          - android
-          - ios
+      all:
+        description: 'Build all platforms (overrides the individual ticks below)'
+        type: boolean
+        default: true
+      macos:
+        description: 'macOS (Universal)'
+        type: boolean
+        default: false
+      linux:
+        description: 'Linux (x86_64)'
+        type: boolean
+        default: false
+      linuxArm:
+        description: 'Linux (arm64)'
+        type: boolean
+        default: false
+      windows:
+        description: 'Windows (x86_64)'
+        type: boolean
+        default: false
+      android:
+        description: 'Android (APK)'
+        type: boolean
+        default: false
+      ios:
+        description: 'iOS (IPA, ad-hoc)'
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -99,8 +123,19 @@ jobs:
 
       - id: select
         env:
-          # Default to 'all' so tag-push triggers (if re-enabled) still build everything.
-          PLATFORM: ${{ inputs.platform || 'all' }}
+          # Push-tag triggers (if re-enabled) carry no inputs, so every
+          # input resolves to its declared default — that's all=true,
+          # individuals=false, which lands in the ALL branch below and
+          # builds every platform. The `|| 'true'/'false'` coalesces
+          # only kick in if a future YAML edit accidentally drops a
+          # default; they're a safety net, not the primary mechanism.
+          ALL: ${{ inputs.all || 'true' }}
+          MACOS: ${{ inputs.macos || 'false' }}
+          LINUX: ${{ inputs.linux || 'false' }}
+          LINUX_ARM: ${{ inputs.linuxArm || 'false' }}
+          WINDOWS: ${{ inputs.windows || 'false' }}
+          ANDROID: ${{ inputs.android || 'false' }}
+          IOS: ${{ inputs.ios || 'false' }}
         shell: bash
         run: |
           # `id` drives per-step gating in the build job. `rust-target`
@@ -145,17 +180,35 @@ jobs:
           # macos-14 because they build via cargo/tauri-action and
           # never open an .xcodeproj.
           ios='{"id":"ios","platform":"macos-15","label":"iOS (IPA, ad-hoc)","rust-target":"aarch64-apple-ios","tauri-args":""}'
-          case "$PLATFORM" in
-            all)       include="[$macos,$linux,$linux_arm,$windows,$android,$ios]" ;;
-            macos)     include="[$macos]" ;;
-            linux)     include="[$linux]" ;;
-            linux-arm) include="[$linux_arm]" ;;
-            windows)   include="[$windows]" ;;
-            android)   include="[$android]" ;;
-            ios)       include="[$ios]" ;;
-            *) echo "Unknown platform: $PLATFORM" >&2; exit 1 ;;
-          esac
+
+          # `all` is a shortcut that wins over the individual ticks —
+          # leaving it on while also ticking specific platforms still
+          # builds everything (matches the UI hint on the input).
+          items=()
+          if [ "$ALL" = "true" ]; then
+            items+=("$macos" "$linux" "$linux_arm" "$windows" "$android" "$ios")
+          else
+            [ "$MACOS" = "true" ]     && items+=("$macos")
+            [ "$LINUX" = "true" ]     && items+=("$linux")
+            [ "$LINUX_ARM" = "true" ] && items+=("$linux_arm")
+            [ "$WINDOWS" = "true" ]   && items+=("$windows")
+            [ "$ANDROID" = "true" ]   && items+=("$android")
+            [ "$IOS" = "true" ]       && items+=("$ios")
+          fi
+
+          if [ ${#items[@]} -eq 0 ]; then
+            echo "::error::No platforms selected. Either tick 'all' or one or more individual platforms."
+            exit 1
+          fi
+
+          # Join with commas: ${items[*]} with IFS=, expands to a
+          # comma-separated list of the (already-JSON-formatted) entries.
+          OLD_IFS=$IFS
+          IFS=,
+          include="[${items[*]}]"
+          IFS=$OLD_IFS
           echo "matrix={\"include\":$include}" >> "$GITHUB_OUTPUT"
+          echo "Selected matrix: $include"
 
   build:
     name: ${{ matrix.label }}
