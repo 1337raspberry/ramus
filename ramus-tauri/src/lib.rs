@@ -70,7 +70,8 @@ use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
 use ramus_core::playback::mpv::MpvCallbacks;
 
 use crate::events::{
-    emit_playback_position, emit_playback_state, PlaybackPositionPayload, PlaybackStatePayload,
+    emit_buffering_state, emit_playback_position, emit_playback_state, BufferingStatePayload,
+    PlaybackPositionPayload, PlaybackStatePayload,
 };
 use crate::media_controls::MediaControlsRef;
 #[cfg(desktop)]
@@ -338,6 +339,17 @@ pub fn create_mpv_player(
         on_file_ended: Some(Box::new(move |reason| {
             if let Some(ref p) = *pr7.lock() {
                 p.handle_file_ended(reason);
+            }
+        })),
+        // Android-only signal — fired by `MpvBridgePlugin` when the
+        // Tauri plugin is pre-downloading a chunked-Opus transcode
+        // before handing the resulting local file to ExoPlayer.
+        // Desktop (libmpv) and iOS never fire this; the field stays
+        // populated everywhere because `MpvCallbacks` is shared.
+        on_buffering_change: Some(Box::new({
+            let app_handle = app_handle.clone();
+            move |buffering| {
+                emit_buffering_state(&app_handle, BufferingStatePayload { buffering });
             }
         })),
     });

@@ -24,6 +24,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import app.tauri.annotation.Command
@@ -35,6 +36,9 @@ import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import android.media.audiofx.Equalizer
 import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 private const val TAG = "MpvBridge"
 private const val POSITION_POLL_MS = 500L
@@ -45,6 +49,12 @@ private const val POST_NOTIFICATIONS_REQUEST_CODE = 1001
 // before launching, then back to anything else (or unset) to re-enable.
 private const val MEDIA_SESSION_PROP = "debug.ramus.media_session"
 private val GAIN_REGEX = Regex("""g=([-\d.]+)""")
+// Plex chunked-Opus transcode endpoint. Used to recognise URLs that need
+// the pre-download dance (see `mpvLoadFile` for the why).
+private const val TRANSCODE_URL_MARKER = "/transcode/universal/start"
+private const val TRANSCODE_BUFFER_DIR_NAME = "transcode-buffer"
+private const val TRANSCODE_CONNECT_TIMEOUT_MS = 15_000
+private const val TRANSCODE_READ_TIMEOUT_MS = 30_000
 
 @InvokeArg
 internal class LoadFileArgs {
@@ -132,6 +142,15 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     // STATE_READY after every seek + buffer recovery. Gate the bridged
     // event so the Rust callback only fires on genuine track loads.
     private var fileLoadedEmitted = false
+    // Set by the transcode pre-download path before calling `player.stop()`
+    // to silence the previous track. `stop()` transitions ExoPlayer to
+    // `STATE_IDLE`, which would normally fire `mpvIdleActive` and cause
+    // Rust to flip status=Stopped + drop current_track — wiping the
+    // synthetic `playback-state` event we just used to hydrate the UI
+    // for the new track. The flag swallows that one IDLE notification;
+    // any subsequent `stop()` (e.g. an actual playback end) fires
+    // through normally.
+    private var suppressNextIdleEvent = false
 
     // MediaSession + foreground service drive the lock-screen / notification
     // controls and keep audio alive across screen lock. Built once per
@@ -202,17 +221,55 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .build()
+                // Buffer the entire track into RAM, mirroring mpv's
+                // `demuxer-readahead-secs=1200` / `demuxer-max-bytes=2GiB`
+                // on desktop and iOS. Plex's chunked transcode endpoint
+                // (`/audio/:/transcode/universal/start`) responds with
+                // `Accept-Ranges: none`, so a `seekTo` that lands outside
+                // the buffered range closes the connection and re-GETs the
+                // URL — Plex generates a fresh transcode from byte 0 and
+                // the player snaps to 0:00. Slurping the whole stream
+                // (~3-5 MB for an Opus track) up-front sidesteps that:
+                // the network GET completes in seconds, the connection
+                // drains, and every subsequent seek is in-RAM. Back-buffer
+                // mirrors the forward buffer so backward seeks stay in
+                // RAM too. Costs ~5 MB per active player; negligible.
+                val loadControl = DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(
+                        /* minBufferMs = */ 600_000,
+                        /* maxBufferMs = */ 600_000,
+                        /* bufferForPlaybackMs = */ 1_000,
+                        /* bufferForPlaybackAfterRebufferMs = */ 5_000,
+                    )
+                    .setBackBuffer(
+                        /* backBufferDurationMs = */ 600_000,
+                        /* retainBackBufferFromKeyframe = */ true,
+                    )
+                    .setTargetBufferBytes(50_000_000)
+                    .setPrioritizeTimeOverSizeThresholds(false)
+                    .build()
                 val p = ExoPlayer.Builder(activity.applicationContext)
                     // `true` here lets ExoPlayer manage audio focus + ducking
                     // automatically (request on play, release on pause/stop).
                     .setAudioAttributes(audioAttrs, /* handleAudioFocus = */ true)
                     .setHandleAudioBecomingNoisy(true)
+                    .setLoadControl(loadControl)
                     .build()
                     .apply {
                         addListener(playerListener)
                     }
                 player = p
                 mainHandler.post(positionPoller)
+
+                // Drop any leftover `.part`/full files from a previous
+                // process (crash, force-stop, OS kill). The dir lives
+                // under cacheDir so the OS can also clear it under
+                // storage pressure; this just guarantees a clean start.
+                try {
+                    transcodeBufferDir.listFiles()?.forEach { it.delete() }
+                } catch (e: Throwable) {
+                    Log.w(TAG, "failed to clear transcode buffer dir", e)
+                }
 
                 // Build the MediaSession around the player so the
                 // foreground service can publish lock-screen controls.
@@ -391,31 +448,174 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun mpvLoadFile(invoke: Invoke) {
         val args = invoke.parseArgs(LoadFileArgs::class.java)
-        runOnMain {
-            val p = player ?: return@runOnMain invoke.reject("player not initialised")
-            val item = MediaItem.fromUri(Uri.parse(args.url))
-            when (args.mode) {
-                "replace" -> {
-                    p.setMediaItem(item)
+
+        // Pre-download the chunked-Opus transcode response to a local
+        // file before handing it to ExoPlayer. Background: Plex's
+        // `/audio/:/transcode/universal/start` endpoint serves a chunked
+        // stream with `Accept-Ranges: none`, so OggExtractor can't run
+        // its seek-to-end probe to recover trailing granule positions,
+        // never builds a real SeekMap, and the window stays
+        // `isSeekable=false`. Every `seekTo()` then short-circuits to
+        // a player reset → close → re-GET → Plex regenerates from
+        // offset 0 → audio snaps to 0:00. Local file = known length +
+        // proper SeekMap = real seeks.
+        //
+        // Threading: `@Command` runs on the Android main thread, which
+        // forbids network IO. The download runs on `ioHandler` (off-main),
+        // and we defer `invoke.resolve()` until the download finishes
+        // and `setMediaItem` lands. The Rust caller (`mpv_load_file` in
+        // `mpv_android.rs`) blocks on its IPC future until we resolve,
+        // so the next queue-append doesn't race ahead — the Rust thread
+        // running `load_queue` naturally serialises behind us. Only
+        // gated on the `replace` mode (the current track of a fresh
+        // play) — appended tracks haven't started playing yet and will
+        // be swapped to file:// by the Rust prefetch worker before they
+        // would.
+        if (args.mode == "replace" && isTranscodeUrl(args.url)) {
+            trigger("mpvBufferingChange", JSObject().put("buffering", true))
+            // Fire a synthetic `mpvPauseChange(paused=false)` BEFORE the
+            // download starts so the frontend gets a `playback-state`
+            // event immediately and can hydrate the album view
+            // (background, accent, waveform, queue, mini-player) instead
+            // of staring at a frozen UI for the 2–4s pre-download
+            // window. The Rust side already set `state.status = Playing`
+            // and `state.current_track` inside `load_queue` BEFORE this
+            // IPC arrived, so:
+            //   - `handle_pause_change(false)` is a no-op for the player
+            //     state itself (status is Playing, not Paused).
+            //   - The listener still emits `playback-state` after the
+            //     no-op handler call (`lib.rs:274`), carrying the
+            //     already-populated `current_track` + `queue_index`.
+            //   - Frontend `onPlaybackState` (`playbackStore.ts:151`)
+            //     detects the track change and fans out the per-track
+            //     loads (waveform, album, palette, lyrics, queue) in
+            //     parallel with our download.
+            // The IPC stays unresolved until the download completes, so
+            // Rust's `load_queue` still blocks before dispatching the
+            // appends — they can't race the deferred `setMediaItem`.
+            trigger("mpvPauseChange", JSObject().put("paused", false))
+
+            // Stop the previous track immediately. Without this, ExoPlayer
+            // keeps playing whatever was already loaded for the full
+            // pre-download window — its position poller keeps firing
+            // `mpvPositionChange` with the OLD position, and `lib.rs`'s
+            // `on_position_change` handler emits each tick paired with
+            // the NEW track's `inner.duration` (which `load_queue` set
+            // before this IPC arrived). The frontend renders that as
+            // "still playing, advancing through the new track" — exactly
+            // the scrub-bar regression the user reported. `p.stop()`
+            // halts audio + ends the poller (isPlaying = false). The
+            // accompanying `STATE_IDLE` transition is squashed via
+            // `suppressNextIdleEvent` so Rust doesn't flip status=Stopped
+            // and undo the synthetic state event above.
+            runOnMain {
+                val p = player
+                if (p != null) {
+                    suppressNextIdleEvent = true
+                    p.stop()
+                }
+            }
+
+            ioHandler.post {
+                val file = downloadTranscodeToTempFile(args.url)
+                mainHandler.post {
+                    val effectiveUrl = if (file != null) {
+                        Log.i(TAG, "transcode pre-download complete (${file.length()} bytes)")
+                        Uri.fromFile(file).toString()
+                    } else {
+                        // Better to hand ExoPlayer the live URL and lose
+                        // seek than to refuse playback. The user will
+                        // still hear the track; only the seek bar
+                        // misbehaves.
+                        Log.w(TAG, "transcode pre-download failed; falling back to live URL")
+                        args.url
+                    }
+                    performLoad(invoke, args, effectiveUrl)
+                }
+            }
+        } else {
+            runOnMain { performLoad(invoke, args, args.url) }
+        }
+    }
+
+    // Shared transcode-pre-download dance for paths that already have
+    // a playlist entry to swap in place: gapless auto-advance into a
+    // transcode URL (via `onMediaItemTransition`), or a manual skip
+    // to one (via `mpvPlaylistPlayIndex`). The `mpvLoadFile("replace")`
+    // path is structured slightly differently because it owns its own
+    // IPC and runs setMediaItem at the end, so it doesn't call this.
+    //
+    // Halts ExoPlayer immediately (the live URL would otherwise start
+    // streaming and the seek bar would be broken from the first
+    // second), fires the buffering signal, downloads, then swaps the
+    // playlist entry to `file://` and resumes from position 0.
+    private fun preDownloadAndSwapAt(p: ExoPlayer, idx: Int, url: String, onDone: () -> Unit = {}) {
+        trigger("mpvBufferingChange", JSObject().put("buffering", true))
+        suppressNextIdleEvent = true
+        p.stop()
+        ioHandler.post {
+            val file = downloadTranscodeToTempFile(url)
+            mainHandler.post {
+                val effectiveUri = if (file != null) {
+                    Log.i(TAG, "transcode pre-download complete (${file.length()} bytes) for idx=$idx")
+                    Uri.fromFile(file).toString()
+                } else {
+                    Log.w(TAG, "transcode pre-download failed; resuming with live URL at idx=$idx")
+                    url
+                }
+                suppressNextIdleEvent = false
+                try {
+                    p.replaceMediaItem(idx, MediaItem.fromUri(Uri.parse(effectiveUri)))
+                    p.seekTo(idx, 0L)
+                    p.prepare()
+                    p.play()
+                } catch (e: Exception) {
+                    Log.w(TAG, "preDownloadAndSwapAt: apply failed", e)
+                }
+                trigger("mpvBufferingChange", JSObject().put("buffering", false))
+                onDone()
+            }
+        }
+    }
+
+    private fun performLoad(invoke: Invoke, args: LoadFileArgs, url: String) {
+        val p = player ?: run {
+            invoke.reject("player not initialised")
+            return
+        }
+        // Belt-and-braces: if the pre-download path set this but the
+        // player was already idle (so `stop()` didn't fire a STATE_IDLE
+        // event), the flag would still be set. Clearing it here means
+        // the next legitimate idle transition fires normally.
+        suppressNextIdleEvent = false
+        val item = MediaItem.fromUri(Uri.parse(url))
+        when (args.mode) {
+            "replace" -> {
+                p.setMediaItem(item)
+                p.prepare()
+                p.play()
+            }
+            "append" -> {
+                p.addMediaItem(item)
+                if (p.playbackState == Player.STATE_IDLE) p.prepare()
+            }
+            "append-play" -> {
+                val wasEmpty = p.mediaItemCount == 0
+                p.addMediaItem(item)
+                if (wasEmpty || p.playbackState == Player.STATE_IDLE) {
                     p.prepare()
                     p.play()
                 }
-                "append" -> {
-                    p.addMediaItem(item)
-                    if (p.playbackState == Player.STATE_IDLE) p.prepare()
-                }
-                "append-play" -> {
-                    val wasEmpty = p.mediaItemCount == 0
-                    p.addMediaItem(item)
-                    if (wasEmpty || p.playbackState == Player.STATE_IDLE) {
-                        p.prepare()
-                        p.play()
-                    }
-                }
-                else -> Log.w(TAG, "unknown loadfile mode: ${args.mode}")
             }
-            invoke.resolve()
+            else -> Log.w(TAG, "unknown loadfile mode: ${args.mode}")
         }
+        // Always clear the buffering signal at the end of a load.
+        // Cheap no-op on the common (non-transcode) path; necessary
+        // on the transcode path because we set it true before the
+        // download started. Also covers the auto-advance intercept
+        // below — same exit point.
+        trigger("mpvBufferingChange", JSObject().put("buffering", false))
+        invoke.resolve()
     }
 
     @Command
@@ -436,10 +636,19 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             val p = player ?: return@runOnMain invoke.reject("player not initialised")
             val idx = args.index.toInt()
             if (idx < 0 || idx >= p.mediaItemCount) return@runOnMain invoke.resolve()
-            p.seekTo(idx, 0L)
-            if (p.playbackState == Player.STATE_IDLE) p.prepare()
-            p.play()
-            invoke.resolve()
+            // Manual skip into a not-yet-swapped transcode entry hits the
+            // same broken-seek behaviour as a fresh `replace` load —
+            // intercept here and pre-download the bytes before letting
+            // ExoPlayer start streaming.
+            val targetUri = p.getMediaItemAt(idx).localConfiguration?.uri?.toString()
+            if (targetUri != null && isTranscodeUrl(targetUri)) {
+                preDownloadAndSwapAt(p, idx, targetUri) { invoke.resolve() }
+            } else {
+                p.seekTo(idx, 0L)
+                if (p.playbackState == Player.STATE_IDLE) p.prepare()
+                p.play()
+                invoke.resolve()
+            }
         }
     }
 
@@ -752,6 +961,91 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    private val transcodeBufferDir: File
+        get() = File(activity.cacheDir, TRANSCODE_BUFFER_DIR_NAME).also { it.mkdirs() }
+
+    private fun isTranscodeUrl(url: String): Boolean {
+        return try {
+            Uri.parse(url).path?.contains(TRANSCODE_URL_MARKER) == true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    // Extract the Plex rating-key from a transcode URL via the `session`
+    // query param (`<client-id>-<rating-key>`; see `transcode.rs`). Used
+    // as the cache filename so repeated plays of the same track within a
+    // process reuse the same buffered copy instead of re-downloading.
+    private fun extractRatingKey(url: String): String? {
+        return try {
+            val session = Uri.parse(url).getQueryParameter("session") ?: return null
+            val rk = session.substringAfterLast('-', missingDelimiterValue = "")
+            rk.takeIf { it.isNotEmpty() && it != session }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    // Synchronously download a Plex transcode response to a local file
+    // under `cacheDir/transcode-buffer/`. Returns the finalised file on
+    // success or null on any error (caller falls back to the live URL).
+    //
+    // Must not be called from the main thread — blocking HTTP IO would
+    // throw `NetworkOnMainThreadException` (and would ANR if the policy
+    // was relaxed). Callers post this onto `ioHandler` and post the
+    // result back to main.
+    //
+    // Token hygiene: caught exceptions don't include the URL; raw HTTP
+    // errors from `URLConnection` can stringify the request URL (which
+    // carries `X-Plex-Token` in the query), so we log only the exception
+    // class name. Mirrors `redact_reqwest_err` in `prefetch.rs` on the
+    // Rust side.
+    private fun downloadTranscodeToTempFile(url: String): File? {
+        val key = extractRatingKey(url) ?: ("h" + Integer.toHexString(url.hashCode()))
+        val target = File(transcodeBufferDir, "$key.ogg")
+
+        // Already buffered earlier in this process? Reuse it. Cleared on
+        // `mpvInit`, so a stale file from a previous session can't leak.
+        if (target.exists() && target.length() > 0) {
+            return target
+        }
+
+        val tmp = File(transcodeBufferDir, "$key.ogg.part")
+        var conn: HttpURLConnection? = null
+        return try {
+            conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = TRANSCODE_CONNECT_TIMEOUT_MS
+                readTimeout = TRANSCODE_READ_TIMEOUT_MS
+                // Plex headers ride in the URL query string; no extra
+                // request headers required.
+            }
+            conn.connect()
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                Log.w(TAG, "transcode pre-download: HTTP $code")
+                return null
+            }
+            conn.inputStream.use { input ->
+                FileOutputStream(tmp).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            if (!tmp.renameTo(target)) {
+                Log.w(TAG, "transcode pre-download: rename .part → final failed")
+                tmp.delete()
+                return null
+            }
+            target
+        } catch (e: Throwable) {
+            Log.w(TAG, "transcode pre-download exception: ${e.javaClass.simpleName}")
+            try { tmp.delete() } catch (_: Throwable) {}
+            null
+        } finally {
+            try { conn?.disconnect() } catch (_: Throwable) {}
+        }
+    }
+
     private var pollerActive = true
 
     private val positionPoller = object : Runnable {
@@ -814,8 +1108,27 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private inner class PlayerListener : Player.Listener {
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // Drive `mpvPauseChange` off `playWhenReady` rather than
+            // `isPlaying`. `isPlaying` is a derived flag that flips false
+            // whenever the player enters `STATE_BUFFERING` — every
+            // `seekTo` call briefly does that even when the seek target
+            // is already buffered (the audio renderer needs a moment to
+            // re-prime at the new sample position), so wiring the pause
+            // event to `isPlaying` produced a one-frame "paused" flicker
+            // on every scrub. `playWhenReady` only changes on explicit
+            // `play()` / `pause()` calls, matching mpv's `pause` property
+            // semantics on desktop/iOS where the analogous event only
+            // fires on user-driven pause intent.
+            trigger("mpvPauseChange", JSObject().put("paused", !playWhenReady))
+        }
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            trigger("mpvPauseChange", JSObject().put("paused", !isPlaying))
+            // Foreground service promotion still keys off real playback
+            // (not intent) — starting the service before audio is actually
+            // flowing risks `ForegroundServiceDidNotStartInTimeException`
+            // because Media3 only attaches its MediaStyle notification
+            // once `isPlaying` flips true.
             if (isPlaying) ensureForegroundServiceStarted()
         }
 
@@ -841,7 +1154,11 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                     trigger("mpvFileEnded", JSObject().put("reason", "eof"))
                 }
                 Player.STATE_IDLE -> {
-                    trigger("mpvIdleActive", JSObject())
+                    if (suppressNextIdleEvent) {
+                        suppressNextIdleEvent = false
+                    } else {
+                        trigger("mpvIdleActive", JSObject())
+                    }
                 }
                 Player.STATE_BUFFERING -> { /* no-op */ }
             }
@@ -879,6 +1196,22 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                     fileLoadedEmitted = true
                     trigger("mpvFileLoaded", JSObject())
                 }
+
+                // Auto-advance into a not-yet-cached transcode URL: stop
+                // the live stream before any audio plays, pre-download the
+                // bytes, then resume from the local file. AUTO is the only
+                // reason that bypasses our @Command entry points (which
+                // already check the URL upfront) — SEEK comes from
+                // `mpvPlaylistPlayIndex` and PLAYLIST_CHANGED is fired by
+                // our own `replaceMediaItem` inside `preDownloadAndSwapAt`
+                // (which carries a `file://` URI, so the gate is false on
+                // re-entry).
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                    val uri = mediaItem?.localConfiguration?.uri?.toString()
+                    if (uri != null && isTranscodeUrl(uri)) {
+                        preDownloadAndSwapAt(p, idx, uri)
+                    }
+                }
             }
         }
 
@@ -892,6 +1225,7 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             trigger("mpvFileEnded", JSObject().put("reason", "error"))
         }
     }
+
 
     override fun onDestroy() {
         // Tauri delivers `onDestroy` on the main thread (TauriActivity.onDestroy
