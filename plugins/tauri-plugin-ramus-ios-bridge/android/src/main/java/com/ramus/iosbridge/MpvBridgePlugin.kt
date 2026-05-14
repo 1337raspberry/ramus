@@ -125,6 +125,12 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     private val playerListener = PlayerListener()
     private var lastReportedDuration: Long = C.TIME_UNSET
     private var lastReportedIndex: Int = -1
+    // Tracks the URI of the last MediaItem we emitted `mpvFileLoaded` for.
+    // Index alone isn't enough: a same-position queue replace (queue=[A]
+    // → queue=[B] with B at idx 0) is a real file change but doesn't trip
+    // the idx-changed branch in `onMediaItemTransition`, so the latch
+    // would stay set and suppress the event for the new track.
+    private var lastReportedUri: Uri? = null
     // mpv emits a real `MPV_EVENT_FILE_LOADED` per file; the latch
     // dedupes against `STATE_READY` re-entries on seek + cache-recovery
     // that don't represent a fresh track load.
@@ -329,9 +335,17 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         val args = invoke.parseArgs(LoadFileArgs::class.java)
         runOnMain {
             val p = player ?: return@runOnMain invoke.reject("player not initialised")
+            // No `setMediaId(args.url)`: Plex URLs embed `?X-Plex-Token=…`
+            // (direct play) or `X-Plex-Headers=…` (transcode), and
+            // `MediaItem.mediaId` is one of the few fields MediaSession
+            // serialises across the AIDL boundary to bound MediaController
+            // clients. Apps with `BIND_NOTIFICATION_LISTENER_SERVICE` and
+            // `adb dumpsys media_session` would otherwise pluck the token
+            // out of the published session. `LibmpvSimplePlayer.getState`
+            // falls back to `item.hashCode().toString()` for the playlist
+            // uid so the empty mediaId is harmless.
             val item = MediaItem.Builder()
                 .setUri(Uri.parse(args.url))
-                .setMediaId(args.url)
                 .build()
             when (args.mode) {
                 "replace" -> {
@@ -344,10 +358,20 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                     if (p.playbackState == Player.STATE_IDLE) p.prepare()
                 }
                 "append-play" -> {
-                    val wasEmpty = p.mediaItemCount == 0
+                    // mpv's native `append-play` flag: append, and start
+                    // playback only if nothing is currently playing. The
+                    // Media3 Player interface has no equivalent —
+                    // `addMediaItem` always maps to bare append, and
+                    // `play()` on an idle SimpleBasePlayer just flips
+                    // `pause` without loading anything. Drive the start
+                    // explicitly via seekTo on the appended index, which
+                    // `LibmpvSimplePlayer.handleSeek` translates into
+                    // `playlist-play-index`.
+                    val wasIdle = p.playbackState == Player.STATE_IDLE
+                    val newIdx = p.mediaItemCount
                     p.addMediaItem(item)
-                    if (wasEmpty || p.playbackState == Player.STATE_IDLE) {
-                        p.prepare()
+                    if (wasIdle) {
+                        p.seekTo(newIdx, 0L)
                         p.play()
                     }
                 }
@@ -364,7 +388,6 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             val p = player ?: return@runOnMain invoke.reject("player not initialised")
             val item = MediaItem.Builder()
                 .setUri(Uri.parse(args.url))
-                .setMediaId(args.url)
                 .build()
             p.addMediaItem(args.index.toInt(), item)
             if (p.playbackState == Player.STATE_IDLE) p.prepare()
@@ -492,6 +515,7 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             p.stop()
             p.clearMediaItems()
             lastReportedIndex = -1
+            lastReportedUri = null
             lastReportedDuration = C.TIME_UNSET
             fileLoadedEmitted = false
             foregroundServiceStarted = false
@@ -692,23 +716,33 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val p = player ?: return
             val idx = p.currentMediaItemIndex
-            if (idx != lastReportedIndex) {
-                lastReportedIndex = idx
+            val uri = mediaItem?.localConfiguration?.uri
+            val indexChanged = idx != lastReportedIndex
+            val uriChanged = uri != lastReportedUri
+            // `replaceCurrentMediaItemMetadata` mutates the queue and
+            // calls `invalidateState`, which can fire this callback even
+            // though the file hasn't changed. URI-based dedupe lets a
+            // metadata-only refresh pass through silently while still
+            // catching same-index file swaps.
+            if (!indexChanged && !uriChanged) return
+            lastReportedIndex = idx
+            lastReportedUri = uri
+            if (indexChanged) {
                 trigger("mpvPlaylistPosChange", JSObject().put("index", idx.toLong()))
-                lastReportedDuration = C.TIME_UNSET
-                fileLoadedEmitted = false
-                // A prebuffered auto-advance doesn't re-enter `STATE_READY`,
-                // so emit duration + fileLoaded straight from the transition
-                // for natural advance to update the lock-screen widget.
-                val dur = p.duration
-                if (dur != C.TIME_UNSET && dur != lastReportedDuration) {
-                    lastReportedDuration = dur
-                    trigger("mpvDurationChange", JSObject().put("duration", dur / 1000.0))
-                }
-                if (!fileLoadedEmitted) {
-                    fileLoadedEmitted = true
-                    trigger("mpvFileLoaded", JSObject())
-                }
+            }
+            lastReportedDuration = C.TIME_UNSET
+            fileLoadedEmitted = false
+            // A prebuffered auto-advance doesn't re-enter `STATE_READY`,
+            // so emit duration + fileLoaded straight from the transition
+            // for natural advance to update the lock-screen widget.
+            val dur = p.duration
+            if (dur != C.TIME_UNSET && dur != lastReportedDuration) {
+                lastReportedDuration = dur
+                trigger("mpvDurationChange", JSObject().put("duration", dur / 1000.0))
+            }
+            if (!fileLoadedEmitted) {
+                fileLoadedEmitted = true
+                trigger("mpvFileLoaded", JSObject())
             }
         }
 
