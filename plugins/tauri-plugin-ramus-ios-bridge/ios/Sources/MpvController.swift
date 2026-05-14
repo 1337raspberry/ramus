@@ -51,16 +51,36 @@ final class MpvController {
         }
         mpv = handle
 
-        // Audio-only options. Matches the reference Swift app's
-        // configuration; `audio-exclusive=yes` is required so the lock
-        // screen can drive playback state cleanly.
+        // Audio-only options. Mirrors `default_mpv_options()` in
+        // `ramus-core/src/playback/mpv.rs` — every platform sets the same
+        // list so playback behaviour is identical across desktop, iOS, and
+        // Android. Platform-specific overrides:
+        //   - `ao=audiounit` (iOS-only AO)
+        //   - `audio-exclusive=yes` (iOS-only; required so the AVAudioSession
+        //     category interlocks cleanly with the lock-screen widget. No
+        //     desktop equivalent — coreaudio/wasapi handle exclusivity
+        //     through OS-level audio session APIs, not mpv.)
+        // Anything else here should match desktop verbatim.
         setOption("vo", "null")
         setOption("vid", "no")
         setOption("ao", "audiounit")
         setOption("audio-exclusive", "yes")
         setOption("gapless-audio", "yes")
-        setOption("prefetch-playlist", "yes")
+        // `prefetch-playlist=no` matches desktop. We lean on Ramus's own
+        // reqwest prefetch worker (which rewrites playlist entries to
+        // `file://` URLs as they cache) instead of mpv's internal
+        // playlist prefetch. Single prefetch strategy across all five
+        // platforms.
+        setOption("prefetch-playlist", "no")
         setOption("audio-buffer", "0.5")
+        // Eagerly pull whole files into the demuxer cache for instant
+        // seek-within-buffered-range. Matches desktop. Default
+        // `demuxer-readahead-secs=1` would force a re-GET on any
+        // seek-forward outside the trailing 1s window — fine for a
+        // file:// URL, bad for a Plex chunked transcode with
+        // `Accept-Ranges: none`.
+        setOption("demuxer-readahead-secs", "1200")
+        setOption("demuxer-max-bytes", "2GiB")
         setOption("keep-open", "no")
         setOption("idle", "yes")
         setOption("input-default-bindings", "no")
@@ -69,11 +89,12 @@ final class MpvController {
         setOption("msg-level", "all=warn")
         setOption("load-scripts", "no")
         // Without these, an unreachable host (e.g. a stored LAN URL when the
-        // device is on cellular) leaves mpv hanging on TCP indefinitely while
-        // the UI still shows "playing". 15s gives Plex's transcoder room to
-        // spin up on a slow link without making a healthy connection feel
-        // sluggish. The lavf reconnect chain auto-resumes interrupted HTTP
-        // segment fetches instead of failing the whole load.
+        // device is on cellular) leaves mpv hanging on TCP indefinitely
+        // while the UI still shows "playing". 15s gives Plex's transcoder
+        // room to spin up on a slow link without making a healthy
+        // connection feel sluggish. The lavf reconnect chain auto-resumes
+        // interrupted HTTP segment fetches instead of failing the whole
+        // load.
         setOption("network-timeout", "15")
         setOption(
             "stream-lavf-o",
