@@ -23,7 +23,16 @@ pub fn load() -> Settings {
     let Ok(bytes) = std::fs::read(&path) else {
         return Settings::default();
     };
-    serde_json::from_slice(&bytes).unwrap_or_default()
+    let mut settings: Settings = serde_json::from_slice(&bytes).unwrap_or_default();
+    // Pre-libmpv Android builds wrote `eq_bands` sized to the system
+    // Equalizer's band count (typically 5). The libmpv build uses a
+    // 10-band lavfi chain everywhere; repair the shape on load so the
+    // first audio filter the user touches doesn't get five gains piped
+    // into a ten-band filter string.
+    if settings.eq_bands.len() != 10 {
+        settings.eq_bands = vec![0.0; 10];
+    }
+    settings
 }
 
 /// Save settings to disk. Creates the config directory if needed.

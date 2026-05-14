@@ -1,13 +1,12 @@
 //! Android `MpvPlayer` implementation that delegates to the Kotlin
 //! `MpvBridgePlugin` via Tauri mobile IPC.
 //!
-//! The Kotlin side owns a Media3/ExoPlayer instance (Android's native
-//! audio engine — there is no libmpv in this path despite the `mpv*`
-//! method names) and forwards player events through `Plugin.trigger`.
-//! `crate::mpv_mobile::register_mpv_listeners` wires those events back
-//! into `MpvCallbacks` — same plumbing as iOS, different native backend.
-//! The `mpv*` IPC names are kept for cross-platform parity with the
-//! `MpvPlayer` trait the desktop and iOS paths share.
+//! Playback runs on libmpv via `LibmpvSimplePlayer` (a Media3
+//! `SimpleBasePlayer` wrapping `dev.jdtech.mpv.MPVLib`), so the engine
+//! matches the desktop and iOS paths and the `mpv*` IPC names describe
+//! the real engine on every platform. `crate::mpv_mobile::register_mpv_listeners`
+//! wires libmpv property events back into `MpvCallbacks` — identical
+//! plumbing to iOS.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -32,9 +31,10 @@ impl<R: Runtime> AndroidMpvPlayer<R> {
         register_mpv_listeners(&app, callbacks)
             .map_err(|e| format!("failed to register mpv listeners: {e}"))?;
 
-        // Same ordering as iOS for consistency. Android's audio focus path
-        // doesn't have the AVAudioSession sample-rate quirk, but matching
-        // the order keeps the platforms easy to reason about.
+        // Same ordering as iOS for consistency. Android's audio focus
+        // path doesn't have the AVAudioSession sample-rate quirk; matching
+        // the order keeps the platforms easy to reason about, and
+        // `init_audio` on Android is a no-op (Media3 owns audio focus).
         app.ramus_ios_bridge()
             .mpv_init()
             .map_err(|e| format!("failed to init mpv: {e}"))?;
@@ -115,5 +115,20 @@ impl<R: Runtime> MpvPlayer for AndroidMpvPlayer<R> {
 
     fn is_shutdown(&self) -> bool {
         self.shutdown.load(Ordering::Acquire)
+    }
+
+    fn demuxer_cache_time(&self) -> Option<f64> {
+        // Real value via libmpv's `demuxer-cache-time` property. Polled at
+        // 500ms by `prefetch::wait_for_live_drain` while the live transcode
+        // session is draining — so worst case ~2/sec, negligible. With
+        // ExoPlayer this fell through to None and the ceiling absorbed the
+        // wait; libmpv unlocks the real drain detection.
+        match self.bridge().mpv_demuxer_cache_time() {
+            Ok(v) => v,
+            Err(e) => {
+                log::debug!("mpv_demuxer_cache_time bridge call failed: {e}");
+                None
+            }
+        }
     }
 }

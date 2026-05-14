@@ -31,7 +31,9 @@ android {
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "com.ramus.app"
-        minSdk = 24
+        // Bumped from 24 to 26 alongside the libmpv migration —
+        // dev.jdtech.mpv:libmpv 1.0.0 requires API 26 (Android 8.0 Oreo).
+        minSdk = 26
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")

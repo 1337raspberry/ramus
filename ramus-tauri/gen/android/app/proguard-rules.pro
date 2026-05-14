@@ -26,8 +26,26 @@
 -keep @app.tauri.annotation.InvokeArg class * { *; }
 -keepclassmembers @app.tauri.annotation.InvokeArg class * { *; }
 
-# Media3/ExoPlayer uses SPI-style reflection to discover Renderers and
-# Extractors. Without these keep rules the release APK builds but audio
-# playback fails silently with "no suitable media source".
+# Media3 uses SPI-style reflection to discover MediaSession callbacks +
+# notification provider classes. SimpleBasePlayer also relies on Player
+# interface methods being present even when subclasses override only a
+# subset. Without these keep rules the release APK builds but lock-screen
+# controls go missing.
 -keep class androidx.media3.** { *; }
 -dontwarn androidx.media3.**
+
+# libmpv calls Kotlin observer + property methods from native code via
+# JNI reflection. R8 doesn't see those callsites, so without an explicit
+# keep the release APK silently SIGABRTs on the first property observer
+# fire after libmpv emits its first time-pos event.
+-keep class dev.jdtech.mpv.** { *; }
+-keepclassmembers class dev.jdtech.mpv.MPVLib {
+    void eventProperty(java.lang.String);
+    void eventProperty(java.lang.String, long);
+    void eventProperty(java.lang.String, double);
+    void eventProperty(java.lang.String, boolean);
+    void eventProperty(java.lang.String, java.lang.String);
+    void event(int);
+    void logMessage(java.lang.String, int, java.lang.String);
+}
+-dontwarn dev.jdtech.mpv.**
