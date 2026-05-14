@@ -109,18 +109,3 @@ pub struct ConnectionStatusPayload {
 pub fn emit_connection_status(app: &AppHandle, payload: ConnectionStatusPayload) {
     let _ = app.emit("connection-status", payload);
 }
-
-/// Android-only buffering signal — fires `{ buffering: true }` when the
-/// Tauri-plugin's transcode pre-download starts, and `{ buffering: false }`
-/// when ExoPlayer has the local file and is ready to play. iOS and desktop
-/// never emit this. The frontend uses it to drive the scanning-bar overlay
-/// on `WaveformSeekBar` without falling back to timing heuristics.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BufferingStatePayload {
-    pub buffering: bool,
-}
-
-pub fn emit_buffering_state(app: &AppHandle, payload: BufferingStatePayload) {
-    let _ = app.emit("buffering-state", payload);
-}

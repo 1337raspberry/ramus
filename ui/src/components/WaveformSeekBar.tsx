@@ -10,17 +10,11 @@ export default function WaveformSeekBar() {
   const position = usePlaybackStore((s) => s.position);
   const duration = usePlaybackStore((s) => s.duration);
   const seek = usePlaybackStore((s) => s.seek);
-  // Explicit signal from the Android Tauri-plugin (`buffering-state`
-  // event). Other platforms never set this. No timing heuristics —
-  // the indicator is on iff the plugin is actively pre-downloading
-  // a transcode response.
-  const isBuffering = usePlaybackStore((s) => s.isBuffering);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPos, setSeekPos] = useState(0);
-  const [bufferingFraction, setBufferingFraction] = useState(0);
 
   // Cache the static waveform shape on an offscreen canvas.
   const shapeCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -35,32 +29,7 @@ export default function WaveformSeekBar() {
   const [sizeVersion, setSizeVersion] = useState(0);
 
   const displayPos = isSeeking ? seekPos : position;
-  const naturalFraction = duration > 0 ? displayPos / duration : 0;
-  // When buffering we hijack the fraction to drive a sweeping vertical
-  // bar (drawn in the canvas render) instead of mapping it to the
-  // played-portion fill. A progressive fill would read as "already
-  // played up to here", which is the wrong cue while we're still
-  // waiting on bytes.
-  const fraction = isBuffering ? bufferingFraction : naturalFraction;
-
-  // Drive the sweep animation. Triangle wave, 1.6s period — slow
-  // enough that the bounce reads as deliberate, fast enough that it
-  // doesn't look stuck.
-  useEffect(() => {
-    if (!isBuffering) return;
-    let raf = 0;
-    let start = 0;
-    const SWEEP_MS = 1600;
-    const tick = (t: number) => {
-      if (!start) start = t;
-      const elapsed = (t - start) % SWEEP_MS;
-      const phase = elapsed / (SWEEP_MS / 2);
-      setBufferingFraction(phase < 1 ? phase : 2 - phase);
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [isBuffering]);
+  const fraction = duration > 0 ? displayPos / duration : 0;
 
   // Tracks the AbortController for whichever drag is currently active
   // (mouse OR touch). Stored on a ref so the unmount cleanup can abort
@@ -176,17 +145,7 @@ export default function WaveformSeekBar() {
       ctx.globalCompositeOperation = "source-over";
       ctx.drawImage(shape, 0, 0, w, h);
 
-      if (isBuffering) {
-        // Buffering: a solid vertical bar that sweeps back and forth,
-        // not a progressive fill — filling-from-left would read as
-        // "already played up to here" which is the wrong cue while
-        // we're waiting on the network.
-        ctx.globalAlpha = 1;
-        ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-        const barWidth = 3;
-        ctx.fillRect(progressX - barWidth / 2, 0, barWidth, h);
-      } else if (progressX > 0) {
+      if (progressX > 0) {
         // Played portion, tinted with the accent colour.
         ctx.save();
         ctx.beginPath();
@@ -222,14 +181,7 @@ export default function WaveformSeekBar() {
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      if (isBuffering) {
-        // No waveform shape yet — draw the sweeping bar centred on the
-        // baseline at a fixed height so it reads consistently.
-        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-        const barWidth = 3;
-        const barHeight = 12;
-        ctx.fillRect(progressX - barWidth / 2, midY - barHeight / 2, barWidth, barHeight);
-      } else if (progressX > 0) {
+      if (progressX > 0) {
         ctx.beginPath();
         ctx.moveTo(0, midY);
         ctx.lineTo(progressX, midY);

@@ -43,12 +43,6 @@ struct ReasonPayload {
     reason: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct BufferingPayload {
-    buffering: bool,
-}
-
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 struct NetworkPathPayload {
@@ -158,19 +152,6 @@ pub fn register_mpv_listeners<R: Runtime>(
             Ok(())
         });
         bridge.register_listener("mpvFileEnded", channel)?;
-    }
-
-    {
-        let cb = callbacks.clone();
-        let channel = Channel::new(move |body| {
-            if let Ok(p) = body.deserialize::<BufferingPayload>() {
-                if let Some(ref handler) = cb.on_buffering_change {
-                    handler(p.buffering);
-                }
-            }
-            Ok(())
-        });
-        bridge.register_listener("mpvBufferingChange", channel)?;
     }
 
     Ok(())
