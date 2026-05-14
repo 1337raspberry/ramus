@@ -48,7 +48,7 @@ on:
   workflow_dispatch:
     inputs:
       all:
-        description: 'Build all platforms (overrides the individual ticks below)'
+        description: 'Build all platforms (only used when no individual platform is ticked)'
         type: boolean
         default: true
       macos:
@@ -123,19 +123,22 @@ jobs:
 
       - id: select
         env:
-          # Push-tag triggers (if re-enabled) carry no inputs, so every
-          # input resolves to its declared default — that's all=true,
-          # individuals=false, which lands in the ALL branch below and
-          # builds every platform. The `|| 'true'/'false'` coalesces
-          # only kick in if a future YAML edit accidentally drops a
-          # default; they're a safety net, not the primary mechanism.
-          ALL: ${{ inputs.all || 'true' }}
-          MACOS: ${{ inputs.macos || 'false' }}
-          LINUX: ${{ inputs.linux || 'false' }}
-          LINUX_ARM: ${{ inputs.linuxArm || 'false' }}
-          WINDOWS: ${{ inputs.windows || 'false' }}
-          ANDROID: ${{ inputs.android || 'false' }}
-          IOS: ${{ inputs.ios || 'false' }}
+          # Pass the inputs through verbatim. Do NOT coalesce with
+          # `|| 'true'/'false'` in GH expression syntax: `||` is a
+          # logical-or that treats the boolean `false` as falsy, so
+          # `${{ inputs.all || 'true' }}` resolves to `'true'` even
+          # when the user has explicitly UNTICKED `all` in the UI —
+          # which made unticking the default-on box do nothing. Handle
+          # the empty-inputs case (push-tag triggers, no dispatch
+          # context) below in bash where the check is unambiguous.
+          ALL: ${{ inputs.all }}
+          MACOS: ${{ inputs.macos }}
+          LINUX: ${{ inputs.linux }}
+          LINUX_ARM: ${{ inputs.linuxArm }}
+          WINDOWS: ${{ inputs.windows }}
+          ANDROID: ${{ inputs.android }}
+          IOS: ${{ inputs.ios }}
+          EVENT_NAME: ${{ github.event_name }}
         shell: bash
         run: |
           # `id` drives per-step gating in the build job. `rust-target`
@@ -181,24 +184,34 @@ jobs:
           # never open an .xcodeproj.
           ios='{"id":"ios","platform":"macos-15","label":"iOS (IPA, ad-hoc)","rust-target":"aarch64-apple-ios","tauri-args":""}'
 
-          # `all` is a shortcut that wins over the individual ticks —
-          # leaving it on while also ticking specific platforms still
-          # builds everything (matches the UI hint on the input).
-          items=()
-          if [ "$ALL" = "true" ]; then
-            items+=("$macos" "$linux" "$linux_arm" "$windows" "$android" "$ios")
+          # Push-tag triggers (if re-enabled) carry no workflow_dispatch
+          # context, so inputs.* renders as the empty string across the
+          # board. Detect that explicitly and build everything; the
+          # alternative was a GH-expression coalesce, which mis-fires
+          # on the boolean `false` (see env block above).
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            items=("$macos" "$linux" "$linux_arm" "$windows" "$android" "$ios")
           else
+            # Individual ticks beat `all` — ticking macos+windows while
+            # leaving the default-on `all` ticked builds just those two,
+            # not everything. `all` only kicks in when no specific
+            # platform is selected.
+            items=()
             [ "$MACOS" = "true" ]     && items+=("$macos")
             [ "$LINUX" = "true" ]     && items+=("$linux")
             [ "$LINUX_ARM" = "true" ] && items+=("$linux_arm")
             [ "$WINDOWS" = "true" ]   && items+=("$windows")
             [ "$ANDROID" = "true" ]   && items+=("$android")
             [ "$IOS" = "true" ]       && items+=("$ios")
-          fi
 
-          if [ ${#items[@]} -eq 0 ]; then
-            echo "::error::No platforms selected. Either tick 'all' or one or more individual platforms."
-            exit 1
+            if [ ${#items[@]} -eq 0 ]; then
+              if [ "$ALL" = "true" ]; then
+                items+=("$macos" "$linux" "$linux_arm" "$windows" "$android" "$ios")
+              else
+                echo "::error::No platforms selected. Tick at least one platform, or leave 'all' ticked to build everything."
+                exit 1
+              fi
+            fi
           fi
 
           # Join with commas: ${items[*]} with IFS=, expands to a
