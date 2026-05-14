@@ -55,8 +55,16 @@ trap restore_project_yml EXIT
 echo ">>> [1/6] Building frontend (pnpm run build)"
 (cd ui && pnpm run build)
 
-echo ">>> [2/6] cargo build --target aarch64-apple-ios --release -p ramus-tauri --lib"
-cargo build --target aarch64-apple-ios --release -p ramus-tauri --lib
+# `--features tauri/custom-protocol` is REQUIRED for a production build.
+# Without it, the `tauri` crate's build.rs flips on `cfg(dev)`, tauri-codegen
+# embeds zero frontend assets, and the binary is hard-coded to fetch
+# `devUrl` (http://localhost:5173) from `tauri.conf.json` at runtime — so
+# the sideloaded app boots into a "couldn't reach dev server" error screen.
+# `cargo tauri ios build` adds this feature for you (see
+# tauri-cli/src/interface/rust.rs::build_options); we bypass that CLI here
+# to dodge the xcode-script RPC handshake, so we have to add it ourselves.
+echo ">>> [2/6] cargo build --target aarch64-apple-ios --release -p ramus-tauri --lib --features tauri/custom-protocol"
+cargo build --target aarch64-apple-ios --release -p ramus-tauri --lib --features tauri/custom-protocol
 
 # Place libapp.a in BOTH Release and Debug slots. Xcode 16 sometimes
 # links Debug variants as part of a Release build (debug-symbols

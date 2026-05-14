@@ -516,7 +516,17 @@ jobs:
         if: matrix.id == 'ios'
         run: |
           set -euo pipefail
-          cargo build --target aarch64-apple-ios --release -p ramus-tauri --lib
+          # `--features tauri/custom-protocol` is REQUIRED. Without it,
+          # the `tauri` crate's build.rs sets `cfg(dev)`, tauri-codegen
+          # embeds zero frontend assets, and the binary is hard-coded
+          # to load `devUrl` (http://localhost:5173) from tauri.conf.json
+          # at runtime — so the sideloaded .ipa boots into a "couldn't
+          # reach dev server" error screen instead of the bundled UI.
+          # `cargo tauri ios build` injects this feature for us (see
+          # tauri-cli/src/interface/rust.rs::build_options); we bypass
+          # the CLI here to dodge the xcode-script RPC handshake, so it
+          # has to go on by hand. Mirror in scripts/build-ios-ipa-local.sh.
+          cargo build --target aarch64-apple-ios --release -p ramus-tauri --lib --features tauri/custom-protocol
           # Place libapp.a in BOTH Release and Debug slots. Xcode 16
           # sometimes links Debug variants as part of a Release build
           # (debug-symbols bundle, mergeable-libs pre-pass, scheme
