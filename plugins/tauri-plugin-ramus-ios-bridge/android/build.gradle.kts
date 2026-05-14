@@ -1,10 +1,11 @@
 // Android library module for the ramus iOS bridge plugin.
 //
 // Despite the "ios-bridge" name, this module also hosts the Android Kotlin
-// `MpvBridgePlugin` — Android plays audio via Media3/ExoPlayer (not libmpv)
-// behind the same Rust IPC surface that the iOS Swift bridge exposes. The
-// `mpv*` IPC names in `RamusIosBridge` are kept for cross-platform parity
-// with the Rust trait; nothing on Android actually invokes libmpv.
+// `MpvBridgePlugin`. Audio playback runs on libmpv via the `dev.jdtech.mpv`
+// AAR, wrapped behind a Media3 `SimpleBasePlayer` so the existing
+// `MediaSession` / `MediaSessionService` / lock-screen controls keep
+// working without changes. The `mpv*` IPC names in `RamusIosBridge` now
+// describe the real engine on every platform.
 
 plugins {
     id("com.android.library")
@@ -16,7 +17,8 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        minSdk = 24
+        // dev.jdtech.mpv:libmpv 1.0.0 requires API 26.
+        minSdk = 26
     }
 
     compileOptions {
@@ -32,12 +34,18 @@ dependencies {
     implementation(project(":tauri-android"))
     implementation("androidx.core:core-ktx:1.13.1")
 
-    // Media3 / ExoPlayer — Android playback engine + foreground media
-    // session. `media3-exoplayer` is the player; `media3-session` provides
-    // `MediaSession` + `MediaSessionService` (used by `MpvForegroundService`)
-    // which together drive the lock-screen / Bluetooth / Android Auto
-    // controls and keep audio alive while the activity is paused.
+    // Media3 — `media3-common` carries `SimpleBasePlayer` + the `Player`
+    // interface; `media3-session` provides `MediaSession` +
+    // `MediaSessionService` (hosted by `MpvForegroundService`) which drive
+    // the lock-screen / Bluetooth / Android Auto controls. ExoPlayer is no
+    // longer a dependency — audio runs on libmpv via the `dev.jdtech.mpv`
+    // AAR, exposed through `LibmpvSimplePlayer`.
     val media3 = "1.5.1"
-    implementation("androidx.media3:media3-exoplayer:$media3")
+    implementation("androidx.media3:media3-common:$media3")
     implementation("androidx.media3:media3-session:$media3")
+
+    // libmpv for Android — universal AAR (arm64-v8a, armeabi-v7a, x86,
+    // x86_64). Bundles mpv 0.41 + FFmpeg 8.1 + libass + libplacebo +
+    // mbedtls. LGPL — dynamically linked, source available upstream.
+    implementation("dev.jdtech.mpv:libmpv:1.0.0")
 }
