@@ -44,7 +44,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-BUNDLE_DIR = PROJECT_ROOT / "ramus-tauri" / "target" / "release" / "bundle" / "appimage"
+BUNDLE_DIR = PROJECT_ROOT / "target" / "release" / "bundle" / "appimage"
 
 # Soname prefixes for libs that must come from the host. Mirrors the
 # canonical AppImage excludelist

@@ -684,7 +684,7 @@ jobs:
           VERSION: ${{ needs.setup.outputs.version }}
         run: |
           python3 scripts/strip-appimage.py
-          APPIMAGE=$(ls ramus-tauri/target/release/bundle/appimage/*.AppImage)
+          APPIMAGE=$(ls target/release/bundle/appimage/*.AppImage)
           gh release upload "v${VERSION}" "$APPIMAGE" --clobber
           echo "Re-uploaded stripped: $APPIMAGE"
 
