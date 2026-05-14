@@ -41,21 +41,12 @@ export function usePlaybackEvents(): void {
     const u3 = listen<SpectrumReadyPayload>("spectrum-ready", (event) => {
       store.refreshSpectrum(event.payload.ratingKey);
     });
-    // Android-only — the desktop / iOS backends never emit this event.
-    // Wired directly from the Tauri-plugin's transcode pre-download path
-    // (see `MpvBridgePlugin.kt`), so the buffering indicator is gated on
-    // an explicit signal instead of a fragile position-event heuristic.
-    const u4 = listen<{ buffering: boolean }>("buffering-state", (event) => {
-      store.setBuffering(event.payload.buffering);
-    });
-
     store.loadVolume();
 
     return () => {
       u1.then((fn) => fn());
       u2.then((fn) => fn());
       u3.then((fn) => fn());
-      u4.then((fn) => fn());
     };
   }, []);
 }

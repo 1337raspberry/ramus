@@ -45,13 +45,6 @@ interface PlaybackState {
 
   // --- Waveform ---
   waveformLevels: number[] | null;
-  // Android-only — set true while the Tauri plugin is pre-downloading
-  // a chunked Plex transcode (`/transcode/universal/start` doesn't
-  // support Range, so ExoPlayer can't seek the live stream). Drives
-  // the scanning-bar overlay on `WaveformSeekBar`. Other platforms
-  // never see this flip; the wiring is no-op there.
-  isBuffering: boolean;
-
   // --- UltraBlur ---
   ultraBlurColors: UltraBlurColors | null;
   vibrantPalette: VibrantPalette | null;
@@ -90,7 +83,6 @@ interface PlaybackState {
   refreshSpectrum: (forRatingKey?: string) => void;
 
   // --- Actions ---
-  setBuffering: (buffering: boolean) => void;
   seek: (seconds: number) => void;
   seekFraction: (fraction: number) => void;
   changeVolume: (volume: number) => void;
@@ -140,7 +132,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   lyricsPinned: false,
 
   waveformLevels: null,
-  isBuffering: false,
 
   ultraBlurColors: null,
   vibrantPalette: null,
@@ -289,8 +280,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         set({ spectrumState: { unavailable: { reason: "Failed to load spectrum data" } } });
       });
   },
-
-  setBuffering: (buffering) => set({ isBuffering: buffering }),
 
   seek: (seconds) => {
     seekCmd(seconds).catch(() => {});

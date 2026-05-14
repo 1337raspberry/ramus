@@ -57,12 +57,6 @@ pub struct MpvCallbacks {
     pub on_idle_active: Option<Box<dyn Fn() + Send + Sync>>,
     pub on_file_loaded: Option<Box<dyn Fn() + Send + Sync>>,
     pub on_file_ended: Option<Box<dyn Fn(FileEndReason) + Send + Sync>>,
-    // Pure transport for an Android-only "we're holding playback to
-    // pre-download a chunked Plex transcode" signal. Desktop and iOS
-    // never fire this — libmpv handles seek-on-unseekable-stream
-    // internally. The frontend uses the event to drive a buffering
-    // indicator without falling back to a flaky timing heuristic.
-    pub on_buffering_change: Option<Box<dyn Fn(bool) + Send + Sync>>,
 }
 
 /// Default mpv initialization options for audio-only playback.
@@ -328,6 +322,5 @@ mod tests {
         assert!(cb.on_idle_active.is_none());
         assert!(cb.on_file_loaded.is_none());
         assert!(cb.on_file_ended.is_none());
-        assert!(cb.on_buffering_change.is_none());
     }
 }
