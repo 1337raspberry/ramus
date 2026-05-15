@@ -14,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="docs/screenshots/hero.png" alt="ramus main view" width="700" />
+  <img src="docs/screenshots/hero.png" alt="ramus main view" width="800" />
 </p>
 
 ## About
