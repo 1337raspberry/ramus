@@ -4,9 +4,9 @@
 
 **Please don't open a public issue for security findings.**
 
-Use [GitHub Security Advisories](https://github.com/1337raspberry/ramus/security/advisories/new) — that's a private channel between you and the maintainers, with a built-in workflow for assigning a CVE if one's warranted.
+Use [GitHub Security Advisories](https://github.com/1337raspberry/ramus/security/advisories/new) - that's a private channel between you and the maintainers (eg, me), with a built-in workflow for assigning a CVE if one's warranted.
 
-I'll acknowledge receipt within **7 days** and aim to publish a fix within **90 days** of the report. If a fix is going to take longer (because it depends on an upstream library, or because the right fix is structural), I'll keep you in the loop.
+I'll aim to acknowledge receipt within **14 days** and aim to publish a fix within **90 days** of the report. If a fix is going to take longer (because it depends on an upstream library, or because the right fix is structural), I'll keep you in the loop.
 
 You're welcome to publicly disclose after the 90-day window if I've gone silent. I'd rather you do that than sit on a real bug indefinitely.
 
