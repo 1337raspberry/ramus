@@ -358,7 +358,9 @@ def main() -> int:
         "stale; run the script locally and commit the result.\n\n"
         "See `LICENSE` for the ramus license itself (MIT) and "
         "`licenses/NOTICE.md` for attribution of bundled data files and "
-        "runtime-linked native libraries (libmpv).\n\n"
+        "runtime-linked native libraries (libmpv on every platform, plus "
+        "the supporting libraries — ffmpeg, libplacebo, libass, etc — "
+        "shipped inside the Android AAR).\n\n"
         "---\n\n"
     )
 

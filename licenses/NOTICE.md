@@ -22,8 +22,9 @@ Wikipedia text content is available under CC BY-SA 3.0.
 
 ## Runtime-linked native library: libmpv
 
-ramus dynamically loads libmpv at runtime to provide audio playback.
-libmpv is distributed under LGPL-2.1-or-later.
+ramus dynamically loads libmpv at runtime to provide audio playback on
+every platform (desktop, iOS, Android). libmpv is distributed under
+LGPL-2.1-or-later.
 
 - Upstream: https://github.com/mpv-player/mpv
 - License text: `licenses/LICENSE.LGPL-2.1` in the installed application,
@@ -31,9 +32,50 @@ libmpv is distributed under LGPL-2.1-or-later.
 
 Source code for libmpv can be obtained from https://github.com/mpv-player/mpv.
 
-libmpv is loaded dynamically (not statically linked), and the user may
-substitute their own copy by placing it on the library search path — see
-`ramus-tauri/src/mpv_ffi.rs` for the search paths.
+libmpv is loaded dynamically (not statically linked) on every platform,
+and the user may substitute their own copy:
+
+- **Desktop** (macOS / Windows / Linux) — place an alternative `libmpv`
+  on the dynamic library search path. See `ramus-tauri/src/mpv_ffi.rs`
+  for the platform-specific search paths.
+- **iOS** — libmpv is provided by the [MPVKit](https://github.com/mpvkit/MPVKit)
+  Swift Package, resolved by Xcode at build time.
+- **Android** — libmpv is provided by the
+  [`dev.jdtech.mpv:libmpv`](https://github.com/jarnedemeulemeester/libmpv-android)
+  Maven Central AAR (`v1.0.0` at the time of writing). The AAR ships the
+  `.so` files for all four Android ABIs; users may rebuild the AAR with
+  a different libmpv build and substitute it via Gradle.
+
+### Other native libraries bundled in the Android AAR
+
+`dev.jdtech.mpv:libmpv:1.0.0` packages a complete libmpv build along
+with the supporting libraries it depends on. They are dynamically linked
+inside the AAR's `.so` files and ship in every Android release. Each
+retains its own upstream license:
+
+| Library     | Version  | License                            | Upstream                                                   |
+| ----------- | -------- | ---------------------------------- | ---------------------------------------------------------- |
+| mpv (libmpv)| 0.41.0   | LGPL-2.1-or-later                  | https://github.com/mpv-player/mpv                          |
+| ffmpeg      | 8.1      | LGPL-2.1-or-later (non-GPL build)  | https://ffmpeg.org/                                         |
+| libplacebo  | 7.360.1  | LGPL-2.1-or-later                  | https://code.videolan.org/videolan/libplacebo              |
+| fribidi     | 1.0.16   | LGPL-2.1-or-later                  | https://github.com/fribidi/fribidi                         |
+| libunibreak | 6.1      | LGPL-2.1-or-later / Apache-2.0     | https://github.com/adah1972/libunibreak                    |
+| libass      | 0.17.4   | ISC                                | https://github.com/libass/libass                           |
+| harfbuzz    | 14.1.0   | Old MIT                            | https://github.com/harfbuzz/harfbuzz                       |
+| freetype    | 2.14.3   | FTL or GPL-2.0                     | https://gitlab.freedesktop.org/freetype/freetype           |
+| fontconfig  | 2.17.1   | fontconfig (MIT-style)             | https://gitlab.freedesktop.org/fontconfig/fontconfig       |
+| mbedtls     | 3.6.6    | Apache-2.0                         | https://github.com/Mbed-TLS/mbedtls                        |
+| dav1d       | 1.5.3    | BSD-2-Clause                       | https://code.videolan.org/videolan/dav1d                   |
+| libxml2     | 2.15.2   | MIT                                | https://gitlab.gnome.org/GNOME/libxml2                     |
+| lua         | 5.2.4    | MIT                                | https://www.lua.org/                                       |
+
+For the LGPL-2.1-or-later components, source code is available at each
+upstream listed above; the LGPL license text shipped at
+`licenses/LICENSE.LGPL-2.1` (and bundled into every ramus release)
+applies. The libmpv-android packaging itself is the work of
+[jarnedemeulemeester](https://github.com/jarnedemeulemeester/libmpv-android);
+the exact build configuration used for each AAR version is in that
+repository.
 
 ## Bundled fonts
 
