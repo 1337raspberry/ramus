@@ -229,17 +229,19 @@ If you've found a vulnerability, please **don't open a public issue**. See [SECU
 
 <details>
 
-- The focus mode visualiser does not run/intercept our audio data "live", we need to compute the spectrum data separately. This leads to a slight delay on first song load for it to appear, and a negigible but not-nothing cpu hit. This is a limitation of our broad one-size-fits-all mpv based audio engine (besides android). Hooking into the audio stream to do it live would require an entirely new audio engine I am pretty sure. For a feature that's off by default and I imagine most people will ignore, this is an okay compromise for me for now.
+- The focus mode visualiser does not run/intercept our audio data "live", we need to compute the spectrum data separately. This leads to a slight delay on first song load for it to appear, and a negigible but not-nothing cpu hit. This is a limitation of our broad one-size-fits-all mpv based audio engine. Hooking into the audio stream to do it live would require an entirely new audio engine I believe, and on each front, how we do that depends on per platform so it gets a lot messier. For a feature that's off by default and I imagine most people will ignore, this is an okay compromise for me for now.
 
 - Because Plex only exposes minimal genre and style data on a standard broad api call, we need to maintain a local db with an initial cache/sync setup phase and deep sync on all albums. Without this we'd lack the data to make the app do the cool stuff it was built to do! This gives us the ability to do our super fast locally cached search as well which is great, and even on massive libraries, connected remotely, the initial sync is only a few minutes. Worth the trade off I think. Incremental syncs after that are genuinely incremental and if nothing changes in your library, are essentially a no-op. If plex ever changes what they serve out by default, we can reconsider this. 
 
 - No playlist support - currently on the fence about if i even want to add this. Depends on demand i suppose.
 
-- I wouldn't mind improving some of the more hidden/unintuitive ux. I've spent a lot of time making it as obvious and, what i think is as user friendly as possible. But this is still very much a myopic one person project. What is obvious to me might not be obvious to everybody else.
+- I wouldn't mind improving some of the more hidden/unintuitive ux. I've spent a lot of time making it as obvious and, what i think is as user friendly as possible. But this is still very much a myopic one person project. What is obvious to me might not be obvious to everybody else. I haven't written anything in the way of usage guides because I hope it's all self evident but if people aren't finding features then I'll revisit accordingly.
 
 - The colour extraction and accent colours still aren't as perfect as I'd like, and there are some edge cases where things aren't as readable as I'd want, but I've done loads of tweaking to try and get to a happy medium, on many different displays, SDR and HDR too. So I might just have to accept that perfect is the enemy of good, or whatever it is they say.
 
-- I wouldn't mind implementing the new JWT short-lived token auth system that plex has recently rolled out, but as far as I can tell it only applies to plex.tv auth, not PMS server auth, so that token is always going to be perma and long standing. Mixing the two isn't ideal, so when that is fully baked into PMS, i would like to roll that out. No harm in extra hardening. 
+- Speaking of colour, because we're using tauri, each individual platform uses it's own native webview/kit/etc and each one treats the 4 way background gradient (and dithering/banding reduction of it) differently. Looks great on apple, pretty good on windows, but Webkitgtk on linux is particularly poor tbh. We've got a manual dither pattern only on linux to try and cover that up a bit but its not perfect. How much it bothers you may vary.
+
+- I want to implement the new JWT short-lived token auth system that plex has recently rolled out, but as far as I can tell it only applies to plex.tv auth, not PMS server auth, so that token is always going to be perma and long standing. Mixing the two isn't ideal and is only really half a solution and requires different approaches to auth depending on what token we are talking about, so when that _is_ fully baked into PMS, i would like to roll that out. No harm in extra hardening. 
   
   </details>
 
