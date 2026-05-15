@@ -1339,7 +1339,7 @@ textarea {
 }
 
 .album-fav.visible {
-  opacity: 0.8;
+  opacity: 1;
 }
 
 .album-card:hover .album-fav {
