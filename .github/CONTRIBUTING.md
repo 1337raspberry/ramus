@@ -69,9 +69,9 @@ Rust is `rustfmt`-clean (no special config). TypeScript uses Prettier with the p
 
 ## Mobile
 
-If you're touching the iOS or Android bridge, expect device-specific gotchas — audio session ordering on iOS (`mpv_init` must precede `init_audio` or playback runs ~8.8% fast at 44.1 kHz), libmpv's event-loop thread on Android (property observers fire off-main and every state mutation + `invalidateState()` must hop back to `SimpleBasePlayer.applicationLooper` via the plugin's `mainHandler`), MediaSession ownership across the plugin / foreground service boundary. The existing comments around those code paths describe the constraints; please don't rip them out.
+If you're touching the iOS or Android bridge, expect device-specific gotchas — audio session ordering on iOS (`mpv_init` must precede `init_audio` or I have seen instances where playback inexplicably runs ~8.8% fast at 44.1 kHz), libmpv's event-loop thread on Android (property observers fire off-main and every state mutation + `invalidateState()` must hop back to `SimpleBasePlayer.applicationLooper` via the plugin's `mainHandler`), MediaSession ownership across the plugin / foreground service boundary. The existing comments around those code paths describe the constraints; leave them in place where applicable.
 
-Mobile-bridge PRs need a smoke test on at least one real device or simulator; emulator-only is OK for code review but not for "ready to merge".
+Mobile-bridge PRs need a smoke test on at least a simulator for UI and UX work, and live device tests for anything touching actual playback changes.
 
 ## Reporting bugs / requesting features
 
