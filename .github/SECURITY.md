@@ -17,12 +17,12 @@ You're welcome to publicly disclose after the 90-day window if I've gone silent.
 - FFI: libmpv runtime loading, drop ordering, Swift / Kotlin bridge handles.
 - Cache database: SQL injection surfaces, FTS5 escaping, path traversal in image / audio cache paths.
 - IPC: Tauri command surface, frontend → backend boundaries, native search bar contract.
-- Mobile: iOS Keychain accessibility, Android cleartext config, ExoPlayer / MediaSession metadata.
+- Mobile: iOS Keychain accessibility, Android cleartext config, MediaSession metadata (including anything that could leak Plex auth tokens across the AIDL surface to bound MediaController clients).
 
 ## Out of scope
 
 - Bugs in Plex Media Server itself — report those upstream to Plex.
-- Bugs in libmpv, MPVKit, ExoPlayer, or other third-party runtime components — report upstream and let me know if ramus needs a workaround.
+- Bugs in libmpv, MPVKit, the `dev.jdtech.mpv:libmpv` Android AAR, or other third-party runtime components — report upstream and let me know if ramus needs a workaround.
 - Local-attacker scenarios where the threat model is "user already has shell on the device" (e.g. reading `~/Library/Application Support/`). That's a real concern but it's not what ramus can defend against; if you find a way to escalate that into a network-reachable issue, that's in scope.
 - Issues that require the user to run a modified build of ramus themselves.
 

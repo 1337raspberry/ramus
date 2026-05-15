@@ -10,8 +10,10 @@ name: Release
 # loop on mac/linux. On Windows there is no pkg-config / libmpv-dev
 # package to install — we download the zhongfly LGPL prebuilt DLL and
 # let Tauri bundle it as a resource so it ends up alongside ramus.exe.
-# Android uses Media3/ExoPlayer (not libmpv); iOS uses MPVKit via SPM
-# (resolved by Xcode), so neither needs a separate libmpv bundling step.
+# Android pulls libmpv from the dev.jdtech.mpv:libmpv Maven Central AAR
+# (Gradle resolves it at build time, ~47MB universal AAR with all 4 ABIs);
+# iOS uses MPVKit via SPM (resolved by Xcode). Neither needs a separate
+# libmpv bundling step here.
 #
 # REQUIRED SECRETS for Android signing — set once in repo Settings →
 # Secrets and variables → Actions:

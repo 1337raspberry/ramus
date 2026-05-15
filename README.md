@@ -83,7 +83,7 @@ Pre-built installers are produced by [GitHub Actions](https://github.com/1337ras
 | **Linux (x86_64)**                | `ramus_<version>_<amd64>/<x86_64>.AppImage` / `.deb` / `.rpm`             | The AppImage bundles libmpv. The `.deb` / `.rpm` depend on the system `libmpv2` / `mpv-libs` package. |
 | **Linux (ARM)**                   | `ramus_<version>_<aarch64>/<arm64>.AppImage` / `.deb` / `.rpm`            | The AppImage bundles libmpv. The `.deb` / `.rpm` depend on the system `libmpv2` / `mpv-libs` package. |
 | **iOS**                           | `ramus_<version>_ios-adhoc.ipa`                                           | Ad-hoc signed for manual self side-loading. SideStore install also available via source `https://1337raspberry.github.io/ramus.json` |
-| **Android**                       | `ramus_<version>_universal.apk`                                           | Signed multi-ABI APK (`arm64-v8a` + `armeabi-v7a`); sideload via `adb install` or your file manager.  |
+| **Android**                       | `ramus_<version>_universal.apk`                                           | Signed multi-ABI APK (`arm64-v8a` + `armeabi-v7a`). libmpv + ffmpeg/codec stack bundled inside the APK. Sideload via `adb install` or your file manager.  |
 
 > ⚠️ **Releases are currently unsigned or self-signed.** As with many open source projects, macOS gatekeeper will quarantine the `.app` and tell you it's damaged or untrusted; Windows SmartScreen will whine that it's unrecognised, and Android Play Protect will ask to scan it first. The [Releases](https://github.com/1337raspberry/ramus/releases) listing will have more specifics on how to deal with these annoyances
 
@@ -93,7 +93,7 @@ Pre-built installers are produced by [GitHub Actions](https://github.com/1337ras
 - **Windows** 10 (x64) or newer; WebView2 runtime (preinstalled on Windows 11; the installer pulls it in on Windows 10).
 - **Linux** with WebKitGTK 4.1 (most current distributions). The `.deb` / `.rpm` need `libmpv2` (or `mpv-libs`) installed; the AppImage doesn't.
 - **iOS** 17.5 or newer.
-- **Android** 7.0 Nougat (API 24) or newer.
+- **Android** 8.0 Oreo (API 26) or newer.
 - A **Plex Media Server** you can sign into that has a music library.
 
 ---
@@ -174,13 +174,13 @@ ramus-tauri/   Tauri 2 app shell.
                iOS Swift bridge, Android Kotlin bridge.
 ui/            React + Vite + Zustand + TypeScript.
 plugins/       Tauri plugin: iOS Swift bridge (MPVKit) and
-               Android Kotlin bridge (Media3 / ExoPlayer).
+               Android Kotlin bridge (libmpv via Media3 SimpleBasePlayer).
 scripts/       Build helpers (libmpv bundling, codesigning,
                license regeneration).
 ```
 
 - **Backend** - [Rust](https://www.rust-lang.org/), [Tauri 2](https://tauri.app/), [rusqlite](https://github.com/rusqlite/rusqlite) with WAL + FTS5, [reqwest](https://github.com/seanmonstar/reqwest), [tokio](https://tokio.rs/).
-- **Audio** - [libmpv](https://mpv.io/) (loaded dynamically via [libloading](https://github.com/nagisa/rust_libloading)) on desktop; [MPVKit](https://github.com/mpvkit/MPVKit) on iOS; [Media3 / ExoPlayer](https://developer.android.com/media/media3) on Android.
+- **Audio** - [libmpv](https://mpv.io/) on every platform: loaded dynamically via [libloading](https://github.com/nagisa/rust_libloading) on desktop, [MPVKit](https://github.com/mpvkit/MPVKit) on iOS, and the [`dev.jdtech.mpv:libmpv`](https://github.com/jarnedemeulemeester/libmpv-android) AAR wrapped behind a [Media3](https://developer.android.com/media/media3) `SimpleBasePlayer` on Android. Single audio engine, identical behaviour across all five targets.
 - **DSP** - [symphonia](https://github.com/pdeljanov/Symphonia) + [rustfft](https://github.com/ejmahler/RustFFT) for the focus mode visualiser on desktop. Opus playback (transcoded streams, downloaded `.ogg` copies) decodes via the [symphonia-adapter-libopus](https://github.com/sdroege/symphonia-adapter-libopus) crate, which bundles libopus C source and builds it via CMake.
 - **System integration** - [souvlaki](https://github.com/Sinono3/souvlaki) for desktop media keys / Now Playing; `MPRemoteCommandCenter` on iOS; `MediaSession` + `MediaSessionService` on Android.
 - **Frontend** - [React 19](https://react.dev/) + [Vite](https://vite.dev/) + [TypeScript](https://www.typescriptlang.org/), [Zustand](https://github.com/pmndrs/zustand) for state, [@tanstack/react-virtual](https://tanstack.com/virtual) for the long lists.

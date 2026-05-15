@@ -19,7 +19,7 @@ ramus-core/    Rust library — all business logic. Plex client, cache (rusqlite
                sync engine, search, genre tree, playback core. Comprehensive unit tests.
 ramus-tauri/   Tauri 2 app shell. IPC commands, mpv FFI, media controls, mobile bridges.
 ui/            React + Vite + Zustand. Components, stores, mobile views.
-plugins/       Tauri plugin: iOS Swift bridge (MPVKit) and Android Kotlin bridge (Media3).
+plugins/       Tauri plugin: iOS Swift bridge (MPVKit) and Android Kotlin bridge (libmpv via Media3 SimpleBasePlayer).
 scripts/       Build helpers (bundle-libmpv, codesign, regenerate licenses, AKA merge).
 licenses/      Vendored license texts for runtime-linked native libraries (LGPL, MPL).
 ```
@@ -69,7 +69,7 @@ Rust is `rustfmt`-clean (no special config). TypeScript uses Prettier with the p
 
 ## Mobile
 
-If you're touching the iOS or Android bridge, expect device-specific gotchas — audio session ordering on iOS (`mpv_init` must precede `init_audio` or playback runs ~8.8% fast at 44.1 kHz), ExoPlayer's single-thread contract on Android (every `player.*` call must run on the main looper), MediaSession ownership across the plugin / foreground service boundary. The existing comments around those code paths describe the constraints; please don't rip them out.
+If you're touching the iOS or Android bridge, expect device-specific gotchas — audio session ordering on iOS (`mpv_init` must precede `init_audio` or playback runs ~8.8% fast at 44.1 kHz), libmpv's event-loop thread on Android (property observers fire off-main and every state mutation + `invalidateState()` must hop back to `SimpleBasePlayer.applicationLooper` via the plugin's `mainHandler`), MediaSession ownership across the plugin / foreground service boundary. The existing comments around those code paths describe the constraints; please don't rip them out.
 
 Mobile-bridge PRs need a smoke test on at least one real device or simulator; emulator-only is OK for code review but not for "ready to merge".
 
