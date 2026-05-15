@@ -18,12 +18,20 @@
       "tintColor": "A405FA",
       "category": "music",
       "screenshotURLs": [],
-      "version": "1.0.0",
-      "versionDate": "2026-05-11T00:00:00Z",
-      "versionDescription": "Initial SideStore source. The iOS build is produced by the unified release workflow (.github/workflows/release.yml) and uploaded as an ad-hoc-signed IPA — SideStore re-signs it with your Apple ID at install time.",
-      "size": 40000000,
-      "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v1.0.0/ramus_1.0.0_ios-adhoc.ipa",
+      "version": "1.0.1",
+      "versionDate": "2026-05-15T00:00:00Z",
+      "versionDescription": "minor tweaks and bug fixes. Android engine rewrite mostly so you shouldn't notice anything :)",
+      "size": 25296060,
+      "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v1.0.1/ramus_1.0.1_ios-adhoc.ipa",
       "versions": [
+        {
+          "version": "1.0.1",
+          "date": "2026-05-15T00:00:00Z",
+          "localizedDescription": "minor tweaks and bug fixes. Android engine rewrite mostly so you shouldn't notice anything :)",
+          "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v1.0.1/ramus_1.0.1_ios-adhoc.ipa",
+          "size": 25296060,
+          "minOSVersion": "17.5"
+        },
         {
           "version": "1.0.0",
           "date": "2026-05-11T00:00:00Z",
