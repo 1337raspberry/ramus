@@ -1,6 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getFavouriteTracks, playTracks } from "../lib/commands";
+import type { Track } from "../lib/types";
 import { IconShuffle } from "./Icons";
+
+// Stratified shuffle: spreads each artist's tracks at ~1/K average spacing
+// across the queue. Plain Fisher–Yates clusters same-artist runs on large lists.
+function balancedShuffleByArtist(tracks: Track[]): Track[] {
+  const groups = new Map<string, Track[]>();
+  for (const t of tracks) {
+    const key = (t.trackArtist ?? t.artistName).toLowerCase();
+    const list = groups.get(key);
+    if (list) list.push(t);
+    else groups.set(key, [t]);
+  }
+
+  const placed: { track: Track; pos: number }[] = [];
+  for (const group of groups.values()) {
+    for (let i = group.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [group[i], group[j]] = [group[j], group[i]];
+    }
+    for (let i = 0; i < group.length; i++) {
+      placed.push({ track: group[i], pos: (i + Math.random()) / group.length });
+    }
+  }
+
+  placed.sort((a, b) => a.pos - b.pos);
+  return placed.map((p) => p.track);
+}
 
 export default function ShuffleFavsButton() {
   const [confirming, setConfirming] = useState(false);
@@ -22,11 +49,7 @@ export default function ShuffleFavsButton() {
     try {
       const tracks = await getFavouriteTracks();
       if (!tracks.length) return;
-      for (let i = tracks.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
-      }
-      await playTracks(tracks, 0);
+      await playTracks(balancedShuffleByArtist(tracks), 0);
     } catch {}
   }, []);
 
