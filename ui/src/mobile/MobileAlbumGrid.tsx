@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { Album, GenreNode } from "../lib/types";
+import { GENRE_ID_SEP, type Album, type GenreNode } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { IconChevronLeft, IconChevronDown, IconFilter } from "../components/Icons";
@@ -149,12 +149,12 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
 
   const crumbs = useMemo(() => {
     if (!isGenreContext || !selectedGenreId) return [];
-    const segments = selectedGenreId.split("/");
+    const segments = selectedGenreId.split(GENRE_ID_SEP);
     const trail: { label: string; depth: number; node: GenreNode | null }[] = [
       { label: "All", depth: 0, node: null },
     ];
     for (let i = 0; i < segments.length; i++) {
-      const partialId = segments.slice(0, i + 1).join("/");
+      const partialId = segments.slice(0, i + 1).join(GENRE_ID_SEP);
       const node = findNode(genreTree, partialId);
       trail.push({ label: node?.name ?? segments[i], depth: i + 1, node });
     }

@@ -1,5 +1,15 @@
 // TypeScript mirrors of ramus-core Rust models (camelCase-serialized).
 
+/**
+ * Separator joining ancestor names inside a path-based genre `id`.
+ * Must match `GENRE_ID_SEP` in `ramus-core/src/genre/node.rs` — the backend
+ * builds these ids, the frontend splits them to reconstruct breadcrumb trails.
+ * The ASCII Unit Separator (U+001F) is used because genre names can contain
+ * any printable character (e.g. "Reggae / Ska / Dancehall"); a printable
+ * separator would be mis-split into phantom ancestors.
+ */
+export const GENRE_ID_SEP = "\u001f";
+
 export interface GenreNode {
   id: string;
   name: string;

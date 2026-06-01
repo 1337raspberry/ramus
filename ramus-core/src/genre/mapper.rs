@@ -324,11 +324,7 @@ impl GenreMapper {
 
     fn convert_raw_node(raw: &GenreNodeRaw, parent_path: &str) -> GenreNode {
         let display_name = title_case(&raw.name);
-        let node_path = if parent_path.is_empty() {
-            raw.name.to_lowercase()
-        } else {
-            format!("{}/{}", parent_path, raw.name.to_lowercase())
-        };
+        let node_path = GenreNode::build_id(parent_path, &raw.name);
 
         let children: Option<Vec<GenreNode>> = match &raw.children {
             Some(kids) if !kids.is_empty() => {
@@ -492,6 +488,7 @@ pub fn title_case(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::genre::node::GENRE_ID_SEP;
     fn make_mapper(json: &str) -> GenreMapper {
         GenreMapper::from_json_bytes(json.as_bytes()).unwrap()
     }
@@ -568,7 +565,7 @@ mod tests {
             .iter()
             .find(|n| n.name == "Thrash Metal")
             .unwrap();
-        assert_eq!(thrash.id, "metal/thrash metal");
+        assert_eq!(thrash.id, format!("metal{GENRE_ID_SEP}thrash metal"));
         let crossover = thrash
             .children
             .as_ref()
@@ -576,7 +573,10 @@ mod tests {
             .iter()
             .find(|n| n.name == "Crossover Thrash")
             .unwrap();
-        assert_eq!(crossover.id, "metal/thrash metal/crossover thrash");
+        assert_eq!(
+            crossover.id,
+            format!("metal{GENRE_ID_SEP}thrash metal{GENRE_ID_SEP}crossover thrash")
+        );
     }
 
     #[test]
@@ -593,8 +593,8 @@ mod tests {
         assert_eq!(rb_funk.name, "Funk");
         assert_eq!(pop_funk.name, "Funk");
         assert_ne!(rb_funk.id, pop_funk.id);
-        assert_eq!(rb_funk.id, "r&b/funk");
-        assert_eq!(pop_funk.id, "pop/funk");
+        assert_eq!(rb_funk.id, format!("r&b{GENRE_ID_SEP}funk"));
+        assert_eq!(pop_funk.id, format!("pop{GENRE_ID_SEP}funk"));
     }
 
     #[test]

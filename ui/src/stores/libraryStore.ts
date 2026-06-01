@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import type { Album, ArtistInfo, GenreNode, Track } from "../lib/types";
+import {
+  GENRE_ID_SEP,
+  type Album,
+  type ArtistInfo,
+  type GenreNode,
+  type Track,
+} from "../lib/types";
 import { useToastStore } from "../components/Toast";
 import {
   getGenreTree,
@@ -435,8 +441,10 @@ function ensureGenreExpansions(
 }
 
 function genreSelectionState(node: GenreNode, currentExpanded: Set<string>): Partial<LibraryState> {
-  const segments = node.id.split("/");
-  const ancestorIds = segments.slice(0, -1).map((_, i) => segments.slice(0, i + 1).join("/"));
+  const segments = node.id.split(GENRE_ID_SEP);
+  const ancestorIds = segments
+    .slice(0, -1)
+    .map((_, i) => segments.slice(0, i + 1).join(GENRE_ID_SEP));
   const nextExpanded = new Set(currentExpanded);
   ancestorIds.forEach((id) => nextExpanded.add(id));
   return {

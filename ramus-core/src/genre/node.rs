@@ -2,9 +2,18 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
+/// Separator joining ancestor names into a path-based genre `id`.
+/// The ASCII Unit Separator (U+001F) is used instead of a printable character
+/// because genre names can themselves contain any printable character — a name
+/// like "Reggae / Ska / Dancehall" would otherwise be mis-split into phantom
+/// ancestors when the id is decomposed for breadcrumb rendering. The separator
+/// must stay in sync with `GENRE_ID_SEP` on the frontend (`ui/src/lib/types.ts`).
+pub const GENRE_ID_SEP: char = '\u{1f}';
+
 /// A node in the genre hierarchy tree.
 /// `children` is `None` for leaf nodes (required for UI tree rendering).
-/// `id` is path-based (e.g. "rock/funk") to handle genres appearing in multiple subtrees.
+/// `id` is path-based (ancestors joined by `GENRE_ID_SEP`) to handle genres
+/// appearing in multiple subtrees.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenreNode {
@@ -17,6 +26,17 @@ pub struct GenreNode {
 }
 
 impl GenreNode {
+    /// Build a path-based id by appending `name` (lowercased) to `parent_path`,
+    /// joined by `GENRE_ID_SEP`. Single source of truth for the id formula so
+    /// every construction site stays consistent.
+    pub fn build_id(parent_path: &str, name: &str) -> String {
+        if parent_path.is_empty() {
+            name.to_lowercase()
+        } else {
+            format!("{parent_path}{GENRE_ID_SEP}{}", name.to_lowercase())
+        }
+    }
+
     pub fn new(
         name: String,
         parent_path: &str,
@@ -25,11 +45,7 @@ impl GenreNode {
         album_count: usize,
         deduplicated_total_count: usize,
     ) -> Self {
-        let id = if parent_path.is_empty() {
-            name.to_lowercase()
-        } else {
-            format!("{}/{}", parent_path, name.to_lowercase())
-        };
+        let id = Self::build_id(parent_path, &name);
         Self {
             id,
             name,
@@ -78,7 +94,7 @@ mod tests {
                     None,
                     Some(vec![GenreNode::new(
                         "Crossover Thrash".into(),
-                        "metal/thrash metal",
+                        &format!("metal{GENRE_ID_SEP}thrash metal"),
                         None,
                         None,
                         0,
@@ -100,9 +116,12 @@ mod tests {
         let metal = make_sample_tree();
         assert_eq!(metal.id, "metal");
         let thrash = &metal.children.as_ref().unwrap()[0];
-        assert_eq!(thrash.id, "metal/thrash metal");
+        assert_eq!(thrash.id, format!("metal{GENRE_ID_SEP}thrash metal"));
         let crossover = &thrash.children.as_ref().unwrap()[0];
-        assert_eq!(crossover.id, "metal/thrash metal/crossover thrash");
+        assert_eq!(
+            crossover.id,
+            format!("metal{GENRE_ID_SEP}thrash metal{GENRE_ID_SEP}crossover thrash")
+        );
     }
 
     #[test]

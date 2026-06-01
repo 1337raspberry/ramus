@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { countryToFlag } from "../lib/countryFlag";
-import type { GenreNode } from "../lib/types";
+import { GENRE_ID_SEP, type GenreNode } from "../lib/types";
 
 const FONT_SIZE = 11;
 const CRUMB_PAD_H = 0;
@@ -86,11 +86,11 @@ export default function BreadcrumbBar() {
     }
 
     // Hierarchical: split the path-based id to build the trail.
-    const segments = selectedGenreId.split("/");
+    const segments = selectedGenreId.split(GENRE_ID_SEP);
     const trail: Crumb[] = [{ label: "All", onClick: selectAll }];
 
     for (let i = 0; i < segments.length; i++) {
-      const partialId = segments.slice(0, i + 1).join("/");
+      const partialId = segments.slice(0, i + 1).join(GENRE_ID_SEP);
       const node = findNodeById(genreTree, partialId);
       const isLast = i === segments.length - 1;
 
