@@ -173,68 +173,34 @@ pub async fn fetch_lyrics(
     state: State<'_, AppState>,
     rating_key: String,
 ) -> CmdResult<Option<LyricsResult>> {
-    // Try Plex lyrics first; fall back to LRCLIB.
-    match state.client.fetch_lyrics_stream(&rating_key).await {
-        Ok(Some(stream)) => {
-            if let Some(ref key) = stream.key {
-                if lyrics::validate_lyrics_path(key) {
-                    if let Ok(data) = state.client.download_lyrics_data(key).await {
-                        if key.ends_with(".lrc") {
-                            let text = String::from_utf8_lossy(&data);
-                            let lines = lyrics::parse_lrc(&text);
-                            if !lines.is_empty() {
-                                return Ok(Some(LyricsResult {
-                                    is_synced: lines.iter().any(|l| l.timestamp.is_some()),
-                                    lines,
-                                    source: lyrics::LyricsSource::Plex,
-                                }));
-                            }
-                        } else {
-                            if let Some(lines) = lyrics::parse_plex_json_lyrics(&data) {
-                                if !lines.is_empty() {
-                                    let is_synced = lines.iter().any(|l| l.timestamp.is_some());
-                                    return Ok(Some(LyricsResult {
-                                        lines,
-                                        is_synced,
-                                        source: lyrics::LyricsSource::Plex,
-                                    }));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Ok(None) => {}
-        Err(_) => {}
-    }
-
-    // LRCLIB fallback: look up the requested track from the queue by
-    // rating_key. Falling back to `current_track` would return lyrics for
-    // whatever is playing right now, which is wrong if the user opened the
-    // lyrics view for a queued track or mpv advanced between the Plex
-    // attempt and this call.
+    // Resolve the requested track from the queue by rating_key — LRCLIB needs
+    // its title/artist/album/duration. Falling back to `current_track` covers
+    // the rare race where mpv advanced between the UI call and this handler.
+    // With no metadata, Plex can still answer by rating key alone.
     let player_state = state.player.state();
     let track = player_state
         .queue
         .iter()
         .find(|t| t.rating_key == rating_key)
         .or(player_state.current_track.as_ref());
-    if let Some(track) = track {
-        if let Some(result) = lyrics::fetch_from_lrclib(
-            &state.http_client,
-            &track.title,
-            track.display_artist(),
-            &track.album_title,
-            track.duration,
-        )
-        .await
-        {
-            return Ok(Some(result));
-        }
-    }
+    let Some(track) = track else {
+        return Ok(lyrics::fetch_from_plex(&state.client, &rating_key).await);
+    };
 
-    Ok(None)
+    match lyrics::fetch_lyrics_full(
+        &state.client,
+        &state.http_client,
+        &rating_key,
+        &track.title,
+        track.display_artist(),
+        &track.album_title,
+        track.duration,
+    )
+    .await
+    {
+        lyrics::LyricsOutcome::Found(result) => Ok(Some(result)),
+        lyrics::LyricsOutcome::NotFound | lyrics::LyricsOutcome::Transient => Ok(None),
+    }
 }
 
 #[tauri::command]

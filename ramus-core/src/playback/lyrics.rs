@@ -66,6 +66,23 @@ impl LyricsResult {
     }
 }
 
+/// Outcome of a lyrics fetch attempt.
+///
+/// Distinguishes a definitive negative from a retryable transient failure so
+/// callers can retry only the latter and report an honest status to the user
+/// instead of collapsing every outcome into "not found".
+#[derive(Debug, Clone, PartialEq)]
+pub enum LyricsOutcome {
+    /// Lyrics were found.
+    Found(LyricsResult),
+    /// The source has definitively no lyrics for this track (e.g. LRCLIB 404,
+    /// or a 2xx response carrying no usable lyrics). Retrying won't help.
+    NotFound,
+    /// A transient failure — request timeout, network error, or a 5xx/429
+    /// response. Worth retrying; the source may answer on a later attempt.
+    Transient,
+}
+
 /// Parse LRC format lyrics text.
 ///
 /// Format: `[MM:SS.cc] text` where cc is centiseconds.
@@ -237,59 +254,102 @@ pub fn validate_lyrics_path(path: &str) -> bool {
 /// Maximum LRCLIB response size (512 KB).
 const LRCLIB_MAX_RESPONSE: usize = 512 * 1024;
 
+/// LRCLIB base URL. Split out so tests can target a mock server.
+const LRCLIB_BASE_URL: &str = "https://lrclib.net";
+
+/// Per-request LRCLIB timeout. Kept short because the orchestrator retries
+/// transient failures a few times — a long single-shot timeout would make the
+/// foreground fetch feel stuck.
+const LRCLIB_TIMEOUT_SECS: u64 = 6;
+
+/// Client identifier sent to LRCLIB (and reused as the User-Agent).
+const LRCLIB_CLIENT_TAG: &str = concat!(
+    "ramus v",
+    env!("CARGO_PKG_VERSION"),
+    " (https://github.com/1337raspberry/ramus)",
+);
+
 /// Fetch lyrics from LRCLIB. Tries synced (LRC) first, falls back to plain text.
+///
+/// Returns a [`LyricsOutcome`] so the caller can tell a definitive "no lyrics"
+/// (HTTP 404, or a 2xx body with nothing usable) from a transient failure
+/// (network error, timeout, 5xx/429) and retry only the latter.
 pub async fn fetch_from_lrclib(
     http: &reqwest::Client,
     track_name: &str,
     artist_name: &str,
     album_name: &str,
     duration_secs: f64,
-) -> Option<LyricsResult> {
+) -> LyricsOutcome {
+    fetch_from_lrclib_at(
+        http,
+        LRCLIB_BASE_URL,
+        track_name,
+        artist_name,
+        album_name,
+        duration_secs,
+    )
+    .await
+}
+
+async fn fetch_from_lrclib_at(
+    http: &reqwest::Client,
+    base_url: &str,
+    track_name: &str,
+    artist_name: &str,
+    album_name: &str,
+    duration_secs: f64,
+) -> LyricsOutcome {
     let duration_int = duration_secs as u64;
-    let resp = http
-        .get("https://lrclib.net/api/get")
+    // Map any reqwest error to `Transient` at this boundary and never carry it
+    // upward: `reqwest::Error`'s Display leaks the request URL.
+    let resp = match http
+        .get(format!("{base_url}/api/get"))
         .query(&[
             ("track_name", track_name),
             ("artist_name", artist_name),
             ("album_name", album_name),
             ("duration", &duration_int.to_string()),
         ])
-        .header(
-            "Lrclib-Client",
-            concat!(
-                "ramus v",
-                env!("CARGO_PKG_VERSION"),
-                " (https://github.com/1337raspberry/ramus)",
-            ),
-        )
-        .header(
-            "User-Agent",
-            concat!(
-                "ramus v",
-                env!("CARGO_PKG_VERSION"),
-                " (https://github.com/1337raspberry/ramus)",
-            ),
-        )
-        .timeout(std::time::Duration::from_secs(10))
+        .header("Lrclib-Client", LRCLIB_CLIENT_TAG)
+        .header("User-Agent", LRCLIB_CLIENT_TAG)
+        .timeout(std::time::Duration::from_secs(LRCLIB_TIMEOUT_SECS))
         .send()
         .await
-        .ok()?;
+    {
+        Ok(resp) => resp,
+        Err(_) => return LyricsOutcome::Transient,
+    };
 
-    if !resp.status().is_success() {
-        return None;
+    let status = resp.status();
+    if !status.is_success() {
+        // Server errors and rate-limits may clear up; a 404 (or any other
+        // client error like a malformed query) is definitive.
+        if status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return LyricsOutcome::Transient;
+        }
+        return LyricsOutcome::NotFound;
     }
 
-    let body = resp.bytes().await.ok()?;
+    let body = match resp.bytes().await {
+        Ok(body) => body,
+        Err(_) => return LyricsOutcome::Transient,
+    };
+    // A structurally bad 2xx response won't improve on retry — treat as
+    // definitively unusable rather than transient.
     if body.len() > LRCLIB_MAX_RESPONSE {
-        return None;
+        return LyricsOutcome::NotFound;
     }
 
-    let parsed: LrclibResponse = serde_json::from_slice(&body).ok()?;
+    let parsed: LrclibResponse = match serde_json::from_slice(&body) {
+        Ok(parsed) => parsed,
+        Err(_) => return LyricsOutcome::NotFound,
+    };
 
     if let Some(synced) = parsed.synced_lyrics {
         let lines = parse_lrc(&synced);
         if !lines.is_empty() {
-            return Some(LyricsResult {
+            return LyricsOutcome::Found(LyricsResult {
                 is_synced: true,
                 lines,
                 source: LyricsSource::Lrclib,
@@ -300,7 +360,7 @@ pub async fn fetch_from_lrclib(
     if let Some(plain) = parsed.plain_lyrics {
         let lines = parse_plain_lyrics(&plain);
         if !lines.is_empty() {
-            return Some(LyricsResult {
+            return LyricsOutcome::Found(LyricsResult {
                 is_synced: false,
                 lines,
                 source: LyricsSource::Lrclib,
@@ -308,7 +368,79 @@ pub async fn fetch_from_lrclib(
         }
     }
 
-    None
+    LyricsOutcome::NotFound
+}
+
+/// Fetch lyrics from the track's Plex lyrics stream, if it has one.
+///
+/// Returns the parsed lyrics on success and `None` for everything else —
+/// absence of a lyrics stream, an invalid path, or any fetch/parse failure.
+/// Plex is a preferred-but-optional source: a failure here simply falls
+/// through to LRCLIB, so it deliberately does not surface transient errors.
+pub async fn fetch_from_plex(
+    plex: &crate::plex::client::PlexClient,
+    rating_key: &str,
+) -> Option<LyricsResult> {
+    let stream = plex.fetch_lyrics_stream(rating_key).await.ok()??;
+    let key = stream.key.as_deref()?;
+    if !validate_lyrics_path(key) {
+        return None;
+    }
+    let data = plex.download_lyrics_data(key).await.ok()?;
+    let lines = if key.ends_with(".lrc") {
+        parse_lrc(&String::from_utf8_lossy(&data))
+    } else {
+        parse_plex_json_lyrics(&data)?
+    };
+    if lines.is_empty() {
+        return None;
+    }
+    let is_synced = lines.iter().any(|l| l.timestamp.is_some());
+    Some(LyricsResult {
+        lines,
+        is_synced,
+        source: LyricsSource::Plex,
+    })
+}
+
+/// Number of LRCLIB attempts before giving up with a transient status.
+const LRCLIB_MAX_ATTEMPTS: u32 = 3;
+
+/// Fetch lyrics for a track, preferring the user's Plex server and falling
+/// back to LRCLIB.
+///
+/// Plex is tried once: a transient Plex blip must not add retry latency
+/// (a remote server that's simply down would otherwise stall every track) nor
+/// mask LRCLIB's authoritative answer. LRCLIB — the comprehensive crowdsourced
+/// source — is retried a few times on transient failures with a short backoff.
+/// The returned [`LyricsOutcome`] lets the caller report an honest status.
+pub async fn fetch_lyrics_full(
+    plex: &crate::plex::client::PlexClient,
+    http: &reqwest::Client,
+    rating_key: &str,
+    title: &str,
+    artist: &str,
+    album: &str,
+    duration: f64,
+) -> LyricsOutcome {
+    if let Some(result) = fetch_from_plex(plex, rating_key).await {
+        return LyricsOutcome::Found(result);
+    }
+
+    let mut delay = std::time::Duration::from_millis(200);
+    for attempt in 0..LRCLIB_MAX_ATTEMPTS {
+        match fetch_from_lrclib(http, title, artist, album, duration).await {
+            LyricsOutcome::Found(result) => return LyricsOutcome::Found(result),
+            LyricsOutcome::NotFound => return LyricsOutcome::NotFound,
+            LyricsOutcome::Transient => {
+                if attempt + 1 < LRCLIB_MAX_ATTEMPTS {
+                    tokio::time::sleep(delay).await;
+                    delay *= 2;
+                }
+            }
+        }
+    }
+    LyricsOutcome::Transient
 }
 
 #[cfg(test)]
@@ -570,99 +702,94 @@ mod tests {
         assert!(!validate_lyrics_path("library/no-leading-slash"));
     }
 
-    #[tokio::test]
-    async fn test_fetch_from_lrclib_synced() {
+    async fn lrclib_outcome(template: wiremock::ResponseTemplate) -> LyricsOutcome {
         let mock_server = wiremock::MockServer::start().await;
-
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .and(wiremock::matchers::path("/api/get"))
-            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
-                serde_json::json!({
-                    "syncedLyrics": "[00:05.00] Line one\n[00:10.00] Line two",
-                    "plainLyrics": "Line one\nLine two"
-                }),
-            ))
+            .respond_with(template)
             .mount(&mock_server)
             .await;
-
         let http = reqwest::Client::new();
-        let resp = http
-            .get(format!("{}/api/get", mock_server.uri()))
-            .query(&[
-                ("track_name", "Test"),
-                ("artist_name", "Artist"),
-                ("album_name", "Album"),
-                ("duration", "180"),
-            ])
-            .header(
-                "Lrclib-Client",
-                concat!(
-                "ramus v",
-                env!("CARGO_PKG_VERSION"),
-                " (https://github.com/1337raspberry/ramus)",
-            ),
-            )
-            .timeout(std::time::Duration::from_secs(10))
-            .send()
-            .await
-            .unwrap();
+        fetch_from_lrclib_at(&http, &mock_server.uri(), "Test", "Artist", "Album", 180.0).await
+    }
 
-        let body = resp.bytes().await.unwrap();
-        let parsed: LrclibResponse = serde_json::from_slice(&body).unwrap();
-
-        let lines = parse_lrc(parsed.synced_lyrics.as_deref().unwrap());
-        assert_eq!(lines.len(), 2);
-        assert!(lines[0].timestamp.is_some());
+    #[tokio::test]
+    async fn test_fetch_from_lrclib_synced() {
+        let outcome = lrclib_outcome(wiremock::ResponseTemplate::new(200).set_body_json(
+            serde_json::json!({
+                "syncedLyrics": "[00:05.00] Line one\n[00:10.00] Line two",
+                "plainLyrics": "Line one\nLine two"
+            }),
+        ))
+        .await;
+        match outcome {
+            LyricsOutcome::Found(result) => {
+                assert!(result.is_synced);
+                assert_eq!(result.lines.len(), 2);
+                assert_eq!(result.source, LyricsSource::Lrclib);
+            }
+            other => panic!("expected Found, got {other:?}"),
+        }
     }
 
     #[tokio::test]
     async fn test_fetch_from_lrclib_plain_fallback() {
-        let mock_server = wiremock::MockServer::start().await;
-
-        wiremock::Mock::given(wiremock::matchers::method("GET"))
-            .and(wiremock::matchers::path("/api/get"))
-            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
-                serde_json::json!({
-                    "syncedLyrics": null,
-                    "plainLyrics": "Just plain text\nSecond line"
-                }),
-            ))
-            .mount(&mock_server)
-            .await;
-
-        let http = reqwest::Client::new();
-        let resp = http
-            .get(format!("{}/api/get", mock_server.uri()))
-            .send()
-            .await
-            .unwrap();
-
-        let body = resp.bytes().await.unwrap();
-        let parsed: LrclibResponse = serde_json::from_slice(&body).unwrap();
-
-        assert!(parsed.synced_lyrics.is_none());
-        let lines = parse_plain_lyrics(parsed.plain_lyrics.as_deref().unwrap());
-        assert_eq!(lines.len(), 2);
-        assert!(lines[0].timestamp.is_none());
+        let outcome = lrclib_outcome(wiremock::ResponseTemplate::new(200).set_body_json(
+            serde_json::json!({
+                "syncedLyrics": null,
+                "plainLyrics": "Just plain text\nSecond line"
+            }),
+        ))
+        .await;
+        match outcome {
+            LyricsOutcome::Found(result) => {
+                assert!(!result.is_synced);
+                assert_eq!(result.lines.len(), 2);
+            }
+            other => panic!("expected Found, got {other:?}"),
+        }
     }
 
     #[tokio::test]
-    async fn test_fetch_from_lrclib_not_found() {
-        let mock_server = wiremock::MockServer::start().await;
+    async fn test_fetch_from_lrclib_404_is_not_found() {
+        let outcome = lrclib_outcome(wiremock::ResponseTemplate::new(404)).await;
+        assert_eq!(outcome, LyricsOutcome::NotFound);
+    }
 
-        wiremock::Mock::given(wiremock::matchers::method("GET"))
-            .and(wiremock::matchers::path("/api/get"))
-            .respond_with(wiremock::ResponseTemplate::new(404))
-            .mount(&mock_server)
-            .await;
+    #[tokio::test]
+    async fn test_fetch_from_lrclib_5xx_is_transient() {
+        let outcome = lrclib_outcome(wiremock::ResponseTemplate::new(503)).await;
+        assert_eq!(outcome, LyricsOutcome::Transient);
+    }
 
+    #[tokio::test]
+    async fn test_fetch_from_lrclib_429_is_transient() {
+        let outcome = lrclib_outcome(wiremock::ResponseTemplate::new(429)).await;
+        assert_eq!(outcome, LyricsOutcome::Transient);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_from_lrclib_empty_body_is_not_found() {
+        let outcome = lrclib_outcome(wiremock::ResponseTemplate::new(200).set_body_json(
+            serde_json::json!({ "syncedLyrics": null, "plainLyrics": null }),
+        ))
+        .await;
+        assert_eq!(outcome, LyricsOutcome::NotFound);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_from_lrclib_malformed_json_is_not_found() {
+        let outcome =
+            lrclib_outcome(wiremock::ResponseTemplate::new(200).set_body_string("not json")).await;
+        assert_eq!(outcome, LyricsOutcome::NotFound);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_from_lrclib_connection_error_is_transient() {
+        // Nothing is listening on this port → reqwest send error → Transient.
         let http = reqwest::Client::new();
-        let resp = http
-            .get(format!("{}/api/get", mock_server.uri()))
-            .send()
-            .await
-            .unwrap();
-
-        assert!(!resp.status().is_success());
+        let outcome =
+            fetch_from_lrclib_at(&http, "http://127.0.0.1:1", "T", "A", "Al", 180.0).await;
+        assert_eq!(outcome, LyricsOutcome::Transient);
     }
 }
