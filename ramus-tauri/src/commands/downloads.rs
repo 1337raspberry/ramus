@@ -88,39 +88,69 @@ pub async fn warm_art_cache(
     thumb: &str,
 ) {
     for &size in WARM_ART_SIZES {
-        let needs_fetch = {
-            let mut cache = image_cache.lock();
-            match cache.get(thumb, size) {
-                Some(_) => {
-                    // Already on disk — just promote to pinned, no
-                    // re-download needed.
-                    cache.pin(thumb, size);
-                    false
-                }
-                None => true,
-            }
-        };
-        if !needs_fetch {
-            continue;
-        }
-        let Some(server_url) = client.server_url() else {
-            return;
-        };
-        let Some(token) = client.token() else {
-            return;
-        };
-        let url = plex_art_url(&server_url, thumb, size);
-        let Ok(response) = http.get(&url).header("X-Plex-Token", &token).send().await else {
-            continue;
-        };
-        if !response.status().is_success() {
-            continue;
-        }
-        let Ok(bytes) = response.bytes().await else {
-            continue;
-        };
+        fetch_store_art(image_cache, client, http, thumb, size, true).await;
+    }
+}
+
+/// Warm a single art size into the cache *without* pinning it. Used by the
+/// prefetch worker's idle warming tier so the hero art rides the normal LRU
+/// and stays evictable — only permanent user downloads pin. Returns `true`
+/// once the art is present in the cache.
+pub async fn warm_art_size_unpinned(
+    image_cache: &Arc<Mutex<ImageCache>>,
+    client: &Arc<PlexClient>,
+    http: &reqwest::Client,
+    thumb: &str,
+    size: u32,
+) -> bool {
+    fetch_store_art(image_cache, client, http, thumb, size, false).await
+}
+
+/// Fetch one art size into the image cache, reusing whatever is already on
+/// disk. Returns `true` if the art is present afterward.
+///
+/// `pinned` controls LRU survival: an already-cached entry is promoted to
+/// pinned when `pinned` is set (never demoted otherwise), and fresh fetches
+/// go in via `insert_pinned` vs `insert` accordingly.
+async fn fetch_store_art(
+    image_cache: &Arc<Mutex<ImageCache>>,
+    client: &Arc<PlexClient>,
+    http: &reqwest::Client,
+    thumb: &str,
+    size: u32,
+    pinned: bool,
+) -> bool {
+    {
         let mut cache = image_cache.lock();
-        let _ = cache.insert_pinned(thumb, size, &bytes);
+        if cache.get(thumb, size).is_some() {
+            // Already on disk — promote to pinned if asked, no re-download.
+            if pinned {
+                cache.pin(thumb, size);
+            }
+            return true;
+        }
+    }
+    let Some(server_url) = client.server_url() else {
+        return false;
+    };
+    let Some(token) = client.token() else {
+        return false;
+    };
+    let url = plex_art_url(&server_url, thumb, size);
+    let Ok(response) = http.get(&url).header("X-Plex-Token", &token).send().await else {
+        return false;
+    };
+    if !response.status().is_success() {
+        return false;
+    }
+    let Ok(bytes) = response.bytes().await else {
+        return false;
+    };
+    let mut cache = image_cache.lock();
+    if pinned {
+        cache.insert_pinned(thumb, size, &bytes).is_ok()
+    } else {
+        cache.insert(thumb, size, &bytes).is_ok()
     }
 }
 

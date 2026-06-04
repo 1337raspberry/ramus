@@ -983,12 +983,12 @@ async fn run_serial_downloads(
         let Some((track_id, url)) = player.next_uncached_target_in_lookahead(include_current)
         else {
             // All in-window audio is cached. Spend idle time on the
-            // lowest-priority warming tier — waveform sidecars (and, in a
-            // later pass, hero art) for tracks that are already playable
-            // offline. One bounded unit per loop, then fall through to the
-            // top so a fresh audio target, a queued user download, or a
-            // skip preempts before the next unit runs.
-            match next_warm_unit(player, &warm_failed) {
+            // lowest-priority warming tier — waveform sidecars and 1200px
+            // hero art for tracks that are already playable offline. One
+            // bounded unit per loop, then fall through to the top so a
+            // fresh audio target, a queued user download, or a skip
+            // preempts before the next unit runs.
+            match next_warm_unit(app, player, &warm_failed) {
                 Some(unit) => {
                     if !run_warm_unit(app, &unit).await {
                         warm_failed.insert(unit.failed_key());
@@ -1050,12 +1050,18 @@ fn is_network_error(err: &str) -> bool {
 
 // --- Lowest-priority cache warming (waveform sidecars + hero art) ---
 
+/// The now-playing hero renders album art at this size; it's the only art
+/// size never pre-warmed by the UI (the up-next list greedily fetches 72px),
+/// so offline playback otherwise falls back to the blurry thumb.
+const HERO_ART_SIZE: u32 = 1200;
+
 /// One unit of best-effort warming for a track whose audio is already
 /// cached. Each unit is a single bounded HTTP fetch so the worker can
 /// re-check for higher-priority audio work between units.
 #[derive(Debug, Clone)]
 enum WarmUnit {
     Waveform { rating_key: String, audio_path: PathBuf },
+    Art { thumb: String },
 }
 
 impl WarmUnit {
@@ -1064,14 +1070,21 @@ impl WarmUnit {
     fn failed_key(&self) -> String {
         match self {
             WarmUnit::Waveform { rating_key, .. } => format!("wave:{rating_key}"),
+            WarmUnit::Art { thumb } => format!("art:{thumb}"),
         }
     }
 }
 
 /// Find the next missing warm artefact across the lookahead window's
 /// already-cached tracks, skipping anything that failed earlier this cycle.
-/// Returns `None` when every in-window track is fully warmed.
-fn next_warm_unit(player: &AudioPlayer, warm_failed: &HashSet<String>) -> Option<WarmUnit> {
+/// Per track the waveform sidecar is filled before the hero art; returns
+/// `None` when every in-window track is fully warmed.
+fn next_warm_unit(
+    app: &AppHandle,
+    player: &AudioPlayer,
+    warm_failed: &HashSet<String>,
+) -> Option<WarmUnit> {
+    let image_cache = &app.state::<crate::state::AppState>().image_cache;
     for target in player.lookahead_warm_targets(true) {
         let wave = WarmUnit::Waveform {
             rating_key: target.rating_key.clone(),
@@ -1081,6 +1094,18 @@ fn next_warm_unit(player: &AudioPlayer, warm_failed: &HashSet<String>) -> Option
             && !crate::commands::downloads::waveform_sidecar_path(&target.audio_path).is_file()
         {
             return Some(wave);
+        }
+
+        if let Some(thumb) = &target.thumb {
+            let art = WarmUnit::Art {
+                thumb: thumb.clone(),
+            };
+            if !warm_failed.contains(&art.failed_key()) {
+                let cached = image_cache.lock().get(thumb, HERO_ART_SIZE).is_some();
+                if !cached {
+                    return Some(art);
+                }
+            }
         }
     }
     None
@@ -1099,6 +1124,16 @@ async fn run_warm_unit(app: &AppHandle, unit: &WarmUnit) -> bool {
             crate::commands::downloads::warm_waveform_sidecar(&state.client, rating_key, audio_path)
                 .await;
             crate::commands::downloads::waveform_sidecar_path(audio_path).is_file()
+        }
+        WarmUnit::Art { thumb } => {
+            crate::commands::downloads::warm_art_size_unpinned(
+                &state.image_cache,
+                &state.client,
+                &state.http_client,
+                thumb,
+                HERO_ART_SIZE,
+            )
+            .await
         }
     }
 }
