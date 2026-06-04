@@ -125,13 +125,46 @@ export const ART_SIZE = {
 // them, so identical images appear one-by-one on slow links.
 const inFlightArt = new Map<string, Promise<string>>();
 
+// Fixed-concurrency limiter for distinct art fetches. A single screen can
+// mount hundreds of thumbnails at once (e.g. the Up Next list after a
+// shuffle-all over a large favourites set), each firing its own IPC + Plex
+// request. The images are tiny so total cost is trivial, but slamming the
+// bridge and server with the whole burst simultaneously is needlessly
+// greedy. This funnels them through a fixed number of slots; the rest wait
+// in line and drain as slots free up. Coalesced duplicates (above) never
+// reach here, so only genuinely distinct fetches consume a slot.
+const ART_MAX_CONCURRENT = 6;
+let artInFlight = 0;
+const artWaiters: Array<() => void> = [];
+
+function acquireArtSlot(): Promise<void> {
+  if (artInFlight < ART_MAX_CONCURRENT) {
+    artInFlight++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => artWaiters.push(resolve));
+}
+
+function releaseArtSlot(): void {
+  const next = artWaiters.shift();
+  // Hand the slot straight to the next waiter (count stays put); only
+  // decrement when no one is waiting.
+  if (next) next();
+  else artInFlight--;
+}
+
 export const getArtUrl = (thumb: string, size?: number): Promise<string> => {
   const key = `${size ?? 300}::${thumb}`;
   const existing = inFlightArt.get(key);
   if (existing) return existing;
   const pending = (async () => {
-    const filePath = await invoke<string>("get_art_url", { thumb, size });
-    return convertFileSrc(filePath);
+    await acquireArtSlot();
+    try {
+      const filePath = await invoke<string>("get_art_url", { thumb, size });
+      return convertFileSrc(filePath);
+    } finally {
+      releaseArtSlot();
+    }
   })().finally(() => {
     inFlightArt.delete(key);
   });
