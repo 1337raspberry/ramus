@@ -1,4 +1,4 @@
-import { useCallback, useId, useRef } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
 
 interface TabDef<T extends string> {
   id: T;
@@ -36,6 +36,14 @@ export function TabBar<T extends string>({
 }: TabBarProps<T>) {
   const tablistId = useId();
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Keep the active tab visible when the strip scrolls horizontally (mobile,
+  // where the tabs can't all fit at once). A no-op on desktop, where the
+  // strip never overflows; `*: "nearest"` avoids scrolling other ancestors.
+  useEffect(() => {
+    const idx = tabs.findIndex((t) => t.id === active);
+    buttonRefs.current[idx]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active, tabs]);
 
   const handleKey = useCallback(
     (e: React.KeyboardEvent<HTMLButtonElement>, idx: number) => {

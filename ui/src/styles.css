@@ -437,9 +437,23 @@ textarea {
 @media (pointer: coarse) {
   .tabs {
     height: 44px;
+    /* Six uppercase tabs don't fit a phone width when forced to share it
+       equally (flex: 1), so let each tab size to its label and scroll the
+       strip sideways instead — the active tab is scrolled into view in JS. */
+    gap: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
   }
   .tab {
+    flex: 0 0 auto;
+    padding: 0 14px;
     font-size: 12px;
+    white-space: nowrap;
   }
 }
 
@@ -2953,6 +2967,11 @@ textarea {
 .settings-body {
   flex: 1;
   overflow-y: auto;
+  /* Lock to vertical scrolling. Setting only overflow-y makes the browser
+     compute overflow-x to `auto`, which let the content pan sideways the
+     moment anything overflowed by a pixel. */
+  overflow-x: hidden;
+  min-width: 0;
   padding: 16px 20px 20px;
   display: flex;
   flex-direction: column;
@@ -2973,6 +2992,9 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   font-size: 12px;
+  /* Let the row (and its label) shrink/wrap instead of forcing the body
+     wider than the viewport. */
+  min-width: 0;
 }
 
 .settings-row span {
