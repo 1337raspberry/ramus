@@ -10,7 +10,7 @@ import type {
   DownloadsOverview,
   GenreTreeResponse,
   LibrarySection,
-  LyricsResult,
+  LyricsFetchResult,
   PlexServer,
   BookmarkDownloadEstimate,
   SearchResult,
@@ -235,7 +235,7 @@ export interface EqConfig {
 export const getEqConfig = () => invoke<EqConfig>("get_eq_config");
 
 export const fetchLyrics = (ratingKey: string) =>
-  invoke<LyricsResult | null>("fetch_lyrics", { ratingKey });
+  invoke<LyricsFetchResult>("fetch_lyrics", { ratingKey });
 
 export const getWaveform = (ratingKey: string) =>
   invoke<number[] | null>("get_waveform", { ratingKey });

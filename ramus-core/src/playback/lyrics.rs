@@ -83,6 +83,33 @@ pub enum LyricsOutcome {
     Transient,
 }
 
+/// IPC-facing lyrics fetch status.
+///
+/// Mirrors [`LyricsOutcome`] but splits the transient case into "device
+/// offline" vs "source unreachable" so the UI can show an honest message
+/// instead of a blanket "not found". Serialized camelCase to match the TS
+/// union (`found` | `notFound` | `offline` | `unreachable`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LyricsStatus {
+    /// Lyrics were found (`lyrics` is populated on the response).
+    Found,
+    /// A source definitively has no lyrics for this track.
+    NotFound,
+    /// The device has no internet connection.
+    Offline,
+    /// The device is online but no lyrics source could be reached.
+    Unreachable,
+}
+
+/// IPC response for `fetch_lyrics`: an honest status plus the lyrics when found.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricsFetchResult {
+    pub status: LyricsStatus,
+    pub lyrics: Option<LyricsResult>,
+}
+
 /// Parse LRC format lyrics text.
 ///
 /// Format: `[MM:SS.cc] text` where cc is centiseconds.

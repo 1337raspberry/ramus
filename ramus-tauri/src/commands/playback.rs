@@ -1,7 +1,7 @@
 use tauri::{AppHandle, State};
 
 use ramus_core::models::Track;
-use ramus_core::playback::lyrics::{self, LyricsResult};
+use ramus_core::playback::lyrics::{self, LyricsFetchResult};
 use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
 use ramus_core::playback::waveform;
 #[cfg(target_os = "android")]
@@ -172,7 +172,7 @@ pub async fn get_eq_config(
 pub async fn fetch_lyrics(
     state: State<'_, AppState>,
     rating_key: String,
-) -> CmdResult<Option<LyricsResult>> {
+) -> CmdResult<LyricsFetchResult> {
     // Resolve the requested track from the queue by rating_key — LRCLIB needs
     // its title/artist/album/duration. Falling back to `current_track` covers
     // the rare race where mpv advanced between the UI call and this handler.
@@ -183,24 +183,52 @@ pub async fn fetch_lyrics(
         .iter()
         .find(|t| t.rating_key == rating_key)
         .or(player_state.current_track.as_ref());
-    let Some(track) = track else {
-        return Ok(lyrics::fetch_from_plex(&state.client, &rating_key).await);
+
+    let outcome = match track {
+        Some(track) => {
+            lyrics::fetch_lyrics_full(
+                &state.client,
+                &state.http_client,
+                &rating_key,
+                &track.title,
+                track.display_artist(),
+                &track.album_title,
+                track.duration,
+            )
+            .await
+        }
+        None => match lyrics::fetch_from_plex(&state.client, &rating_key).await {
+            Some(found) => lyrics::LyricsOutcome::Found(found),
+            None => lyrics::LyricsOutcome::NotFound,
+        },
     };
 
-    match lyrics::fetch_lyrics_full(
-        &state.client,
-        &state.http_client,
-        &rating_key,
-        &track.title,
-        track.display_artist(),
-        &track.album_title,
-        track.duration,
-    )
-    .await
-    {
-        lyrics::LyricsOutcome::Found(result) => Ok(Some(result)),
-        lyrics::LyricsOutcome::NotFound | lyrics::LyricsOutcome::Transient => Ok(None),
-    }
+    let result = match outcome {
+        lyrics::LyricsOutcome::Found(found) => LyricsFetchResult {
+            status: lyrics::LyricsStatus::Found,
+            lyrics: Some(found),
+        },
+        lyrics::LyricsOutcome::NotFound => LyricsFetchResult {
+            status: lyrics::LyricsStatus::NotFound,
+            lyrics: None,
+        },
+        // Only on a transient failure do we probe connectivity, to tell
+        // "device offline" from "lyrics source unreachable". The probe never
+        // runs on the common Found/NotFound paths, so it adds no latency there.
+        lyrics::LyricsOutcome::Transient => {
+            let status = if crate::internet_reachable(std::time::Duration::from_secs(1)).await {
+                lyrics::LyricsStatus::Unreachable
+            } else {
+                lyrics::LyricsStatus::Offline
+            };
+            LyricsFetchResult {
+                status,
+                lyrics: None,
+            }
+        }
+    };
+
+    Ok(result)
 }
 
 #[tauri::command]

@@ -44,7 +44,7 @@ pub mod state;
 /// First success wins; if both time out within `per_host_timeout`, the
 /// machine is genuinely offline and there's no point grinding through a
 /// 30s Plex discovery. Much faster than HTTP since we skip TLS entirely.
-async fn internet_reachable(per_host_timeout: std::time::Duration) -> bool {
+pub(crate) async fn internet_reachable(per_host_timeout: std::time::Duration) -> bool {
     let candidates = ["1.1.1.1:443", "8.8.8.8:443"];
     let mut set = tokio::task::JoinSet::new();
     for addr in candidates {

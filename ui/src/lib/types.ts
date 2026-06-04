@@ -172,6 +172,17 @@ export interface LyricsResult {
   source: "plex" | "lrclib";
 }
 
+/**
+ * Honest outcome of a lyrics fetch, so the UI can distinguish "no lyrics
+ * exist" from a network problem instead of showing a blanket message.
+ */
+export type LyricsStatus = "found" | "notFound" | "offline" | "unreachable";
+
+export interface LyricsFetchResult {
+  status: LyricsStatus;
+  lyrics: LyricsResult | null;
+}
+
 export interface SyncProgress {
   phase: "artists" | "albums" | "tracks" | "deepGenres" | "done";
   current: number;

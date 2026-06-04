@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import type { Album, LyricsResult, SpectrumState, Track, UltraBlurColors } from "../lib/types";
+import type {
+  Album,
+  LyricsResult,
+  LyricsStatus,
+  SpectrumState,
+  Track,
+  UltraBlurColors,
+} from "../lib/types";
 import { accentFromPalette, blurColorsFromPalette, type VibrantPalette } from "../lib/vibrantColor";
 import { applyAccent } from "../lib/accent";
 
@@ -40,6 +47,9 @@ interface PlaybackState {
   // --- Lyrics ---
   lyrics: LyricsResult | null;
   lyricsLoading: boolean;
+  /// Honest result of the last fetch — drives the panel's empty-state copy
+  /// (no lyrics vs offline vs server unreachable). `null` before any fetch.
+  lyricsStatus: LyricsStatus | null;
   showLyrics: boolean;
   lyricsPinned: boolean;
 
@@ -87,6 +97,10 @@ interface PlaybackState {
   seekFraction: (fraction: number) => void;
   changeVolume: (volume: number) => void;
   loadVolume: () => void;
+  /// Fetch lyrics for a track and store the result + honest status. Guarded
+  /// by a generation counter so a slow fetch for an outgoing track can't land
+  /// on a newer one (the retry path makes this race wider than it was).
+  loadLyrics: (ratingKey: string) => void;
   toggleLyrics: () => void;
   toggleLyricsPinned: () => void;
   toggleQueue: () => void;
@@ -118,6 +132,11 @@ export { activeLineIndex };
 // result if the track has changed.
 let spectrumGen = 0;
 
+// Same idea for lyrics: a slow `fetchLyrics` (now with retries) for the
+// outgoing track must not overwrite the incoming track's lyrics. Bumped on
+// every track change; each `loadLyrics` captures it and drops a stale result.
+let lyricsGen = 0;
+
 export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   status: "stopped",
   currentTrack: null,
@@ -128,6 +147,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   lyrics: null,
   lyricsLoading: false,
+  lyricsStatus: null,
   showLyrics: false,
   lyricsPinned: false,
 
@@ -151,10 +171,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     const prev = get().currentTrack;
     const trackChanged = track?.ratingKey !== prev?.ratingKey;
 
-    // Invalidate in-flight spectrum refreshes so stale data from the
+    // Invalidate in-flight spectrum + lyrics refreshes so stale data from the
     // previous track cannot land on the new one.
     if (trackChanged) {
       spectrumGen += 1;
+      lyricsGen += 1;
     }
 
     set({
@@ -169,6 +190,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     if (trackChanged && track) {
       set({
         lyrics: null,
+        lyricsStatus: null,
         waveformLevels: null,
         lyricsLoading: false,
         vibrantPalette: null,
@@ -213,10 +235,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       }
 
       if (get().lyricsPinned) {
-        set({ lyricsLoading: true });
-        fetchLyrics(track.ratingKey)
-          .then((result) => set({ lyrics: result, lyricsLoading: false }))
-          .catch(() => set({ lyricsLoading: false }));
+        get().loadLyrics(track.ratingKey);
       } else if (get().showLyrics) {
         set({ showLyrics: false });
       }
@@ -229,6 +248,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     if (!track) {
       set({
         lyrics: null,
+        lyricsStatus: null,
         waveformLevels: null,
         showLyrics: false,
         currentGenres: [],
@@ -307,13 +327,27 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     } catch {}
   },
 
+  loadLyrics: (ratingKey) => {
+    const gen = lyricsGen;
+    set({ lyricsLoading: true });
+    fetchLyrics(ratingKey)
+      .then((result) => {
+        if (gen !== lyricsGen) return; // track changed mid-flight
+        set({ lyrics: result.lyrics, lyricsStatus: result.status, lyricsLoading: false });
+      })
+      .catch(() => {
+        if (gen !== lyricsGen) return;
+        // A rejected IPC call is itself a connectivity failure; surface it
+        // honestly rather than as "no lyrics found".
+        set({ lyrics: null, lyricsStatus: "unreachable", lyricsLoading: false });
+      });
+  },
+
   toggleLyrics: () => {
     const { showLyrics, lyrics, lyricsLoading, currentTrack } = get();
     if (!showLyrics && !lyrics && !lyricsLoading && currentTrack) {
-      set({ lyricsLoading: true, showLyrics: true });
-      fetchLyrics(currentTrack.ratingKey)
-        .then((result) => set({ lyrics: result, lyricsLoading: false }))
-        .catch(() => set({ lyricsLoading: false }));
+      set({ showLyrics: true });
+      get().loadLyrics(currentTrack.ratingKey);
     } else {
       set({ showLyrics: !showLyrics });
     }
