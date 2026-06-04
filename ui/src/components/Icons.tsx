@@ -147,14 +147,6 @@ export function IconSearch({ size = defaults.size, className }: IconProps) {
   );
 }
 
-export function IconPin({ size = defaults.size, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
-      <path d="M16 4a1 1 0 0 0-1.41 0L9 9.59 5.41 6 4 7.41 7.59 11 3 15.59V17h1.41L9 12.41 14.59 18 16 16.59 12.41 13 18 7.41A1 1 0 0 0 18 6L16 4z" />
-    </svg>
-  );
-}
-
 export function IconClose({ size = defaults.size, className }: IconProps) {
   return (
     <svg

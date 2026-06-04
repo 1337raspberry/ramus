@@ -249,6 +249,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       set({
         lyrics: null,
         lyricsStatus: null,
+        lyricsLoading: false,
         waveformLevels: null,
         showLyrics: false,
         currentGenres: [],
@@ -344,8 +345,12 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
 
   toggleLyrics: () => {
-    const { showLyrics, lyrics, lyricsLoading, currentTrack } = get();
-    if (!showLyrics && !lyrics && !lyricsLoading && currentTrack) {
+    const { showLyrics, lyrics, lyricsLoading, lyricsStatus, currentTrack } = get();
+    // Fetch on open only when we lack a definitive answer. A "notFound" is
+    // definitive for the session (no re-pinging LRCLIB on every reopen);
+    // "offline"/"unreachable" are worth retrying — the user may have reconnected.
+    const needsFetch = !lyrics && lyricsStatus !== "notFound";
+    if (!showLyrics && needsFetch && !lyricsLoading && currentTrack) {
       set({ showLyrics: true });
       get().loadLyrics(currentTrack.ratingKey);
     } else {

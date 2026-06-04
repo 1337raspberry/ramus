@@ -208,24 +208,36 @@ pub async fn fetch_lyrics(
         .find(|t| t.rating_key == rating_key)
         .or(player_state.current_track.as_ref());
 
-    let outcome = match track {
-        Some(track) => {
-            lyrics::fetch_lyrics_full(
-                &state.client,
-                &state.http_client,
-                &rating_key,
-                &track.title,
-                track.display_artist(),
-                &track.album_title,
-                track.duration,
-            )
-            .await
+    // Bound the whole live fetch: the Plex client has no request timeout, so a
+    // stalled-but-connected server (or a long LRCLIB retry chain) could
+    // otherwise freeze the panel indefinitely. On timeout we fall through to
+    // the transient path, which reports an honest offline/unreachable status.
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(12), async {
+        match track {
+            Some(track) => {
+                lyrics::fetch_lyrics_full(
+                    &state.client,
+                    &state.http_client,
+                    &rating_key,
+                    &track.title,
+                    track.display_artist(),
+                    &track.album_title,
+                    track.duration,
+                )
+                .await
+            }
+            // No queue metadata for LRCLIB, so only Plex can answer. It collapses
+            // "no lyrics stream" and a transient failure into `None`; treat that
+            // as transient so the connectivity probe picks an honest status
+            // rather than claiming "not found" when we may just be offline.
+            None => match lyrics::fetch_from_plex(&state.client, &rating_key).await {
+                Some(found) => lyrics::LyricsOutcome::Found(found),
+                None => lyrics::LyricsOutcome::Transient,
+            },
         }
-        None => match lyrics::fetch_from_plex(&state.client, &rating_key).await {
-            Some(found) => lyrics::LyricsOutcome::Found(found),
-            None => lyrics::LyricsOutcome::NotFound,
-        },
-    };
+    })
+    .await
+    .unwrap_or(lyrics::LyricsOutcome::Transient);
 
     let result = match outcome {
         lyrics::LyricsOutcome::Found(found) => LyricsFetchResult {
