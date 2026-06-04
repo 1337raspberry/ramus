@@ -25,6 +25,17 @@ pub const STALL_THRESHOLD_SECS: u64 = 12;
 /// 10-band EQ center frequencies in Hz.
 pub const EQ_FREQUENCIES: [u32; 10] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
+/// A lookahead-window track whose audio is already on disk, paired with
+/// everything the prefetch worker needs to warm its ancillary caches
+/// (waveform sidecar + hero art). Only tracks with secured audio are
+/// returned — we never warm the extras for something we can't play offline.
+#[derive(Debug, Clone)]
+pub struct WarmTarget {
+    pub rating_key: String,
+    pub audio_path: PathBuf,
+    pub thumb: Option<String>,
+}
+
 /// Derived playback phase shown in the debug panel. Captures what mpv is
 /// actually doing rather than the optimistic `PlaybackStatus` flag the rest
 /// of the app uses.
@@ -1244,6 +1255,44 @@ impl AudioPlayer {
             if let Some(path) = inner.cache.get(&track.rating_key) {
                 out.push((track.rating_key.clone(), path.to_path_buf()));
             }
+        }
+        out
+    }
+
+    /// Returns a `WarmTarget` for every lookahead-window track whose audio
+    /// is already cached (LRU prefetch or permanent download), carrying its
+    /// on-disk audio path and album-art thumb. Drives the prefetch worker's
+    /// lowest-priority warming tier, which fills waveform sidecars and hero
+    /// art only for tracks that are already playable offline.
+    ///
+    /// Re-read fresh on each warming pass, so it tracks queue advancement
+    /// the same way `next_uncached_target_in_lookahead` does.
+    pub fn lookahead_warm_targets(&self, include_current: bool) -> Vec<WarmTarget> {
+        let persistent = self.persistent_cache.read();
+        let inner = self.inner.lock();
+        let depth = inner.config.lookahead_depth as usize;
+        let pos = inner.state.queue_index;
+        let start_offset = if include_current { 0 } else { 1 };
+        let mut out = Vec::new();
+        for offset in start_offset..=depth {
+            let idx = pos + offset;
+            let Some(track) = inner.state.queue.get(idx) else {
+                break;
+            };
+            // Audio-secured gate: a persistent download wins over the LRU
+            // copy. Tracks with no cached audio are skipped entirely.
+            let audio_path = if let Some(path) = persistent.get(&track.rating_key) {
+                path.clone()
+            } else if let Some(path) = inner.cache.get(&track.rating_key) {
+                path.to_path_buf()
+            } else {
+                continue;
+            };
+            out.push(WarmTarget {
+                rating_key: track.rating_key.clone(),
+                audio_path,
+                thumb: track.thumb.clone(),
+            });
         }
         out
     }
@@ -2639,6 +2688,38 @@ mod tests {
 
         // Only track "3" (index 2) rewritten; "1" is current, "2" has persistent download
         assert_eq!(removes.len(), 1);
+    }
+
+    #[test]
+    fn test_lookahead_warm_targets_only_includes_cached_audio() {
+        let (player, _mpv) = make_player();
+        let mut t1 = make_test_track("1");
+        t1.thumb = Some("/art/1".into());
+        let mut t2 = make_test_track("2");
+        t2.thumb = Some("/art/2".into());
+        let t3 = make_test_track("3"); // thumb stays None
+        player.load_queue(vec![t1, t2, t3], 0);
+
+        // "2" cached in the LRU, "3" as a permanent download. "1" (the
+        // current track) has no cached audio.
+        player.with_cache(|cache| {
+            cache.insert("2".into(), PathBuf::from("/tmp/2.flac"), 1000);
+        });
+        player.register_persistent_download("3".into(), PathBuf::from("/downloads/3.flac"));
+
+        // include_current = true, yet "1" is excluded because its audio
+        // isn't secured — we never warm extras for an unplayable track.
+        let targets = player.lookahead_warm_targets(true);
+        let keys: Vec<&str> = targets.iter().map(|t| t.rating_key.as_str()).collect();
+        assert_eq!(keys, vec!["2", "3"]);
+
+        let warm2 = targets.iter().find(|t| t.rating_key == "2").unwrap();
+        assert_eq!(warm2.thumb.as_deref(), Some("/art/2"));
+        assert_eq!(warm2.audio_path, PathBuf::from("/tmp/2.flac"));
+
+        let warm3 = targets.iter().find(|t| t.rating_key == "3").unwrap();
+        assert_eq!(warm3.thumb, None);
+        assert_eq!(warm3.audio_path, PathBuf::from("/downloads/3.flac"));
     }
 
     #[test]

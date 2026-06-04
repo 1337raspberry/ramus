@@ -256,7 +256,19 @@ pub async fn get_waveform(
         }
     }
 
-    // 2. Fall back to a live Plex fetch.
+    // 2. Prefetch-cache sidecar, warmed alongside the LRU audio prefetch.
+    //    Lets a replayed shuffle/album render its seek bar offline without
+    //    a Plex round-trip.
+    if let Some(audio_path) = state
+        .player
+        .with_cache(|c| c.get(&rating_key).map(|p| p.to_path_buf()))
+    {
+        if let Some(levels) = crate::commands::downloads::read_waveform_sidecar(&audio_path).await {
+            return Ok(Some(levels));
+        }
+    }
+
+    // 3. Fall back to a live Plex fetch.
     let stream = match state.client.fetch_audio_stream(&rating_key).await {
         Ok(Some(s)) => s,
         _ => return Ok(None),

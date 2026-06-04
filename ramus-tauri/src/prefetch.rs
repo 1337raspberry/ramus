@@ -922,6 +922,7 @@ async fn run_serial_downloads(
 ) {
     let mut prefetch_failed: HashSet<String> = HashSet::new();
     let mut user_failed: HashSet<String> = HashSet::new();
+    let mut warm_failed: HashSet<String> = HashSet::new();
     let mut consecutive_net_failures: u32 = 0;
 
     loop {
@@ -978,11 +979,27 @@ async fn run_serial_downloads(
             continue;
         }
 
-        // No user work — fall back to prefetch.
+        // No user work — fall back to prefetch audio.
         let Some((track_id, url)) = player.next_uncached_target_in_lookahead(include_current)
         else {
-            log::debug!("prefetch: lookahead window exhausted, idle");
-            return;
+            // All in-window audio is cached. Spend idle time on the
+            // lowest-priority warming tier — waveform sidecars (and, in a
+            // later pass, hero art) for tracks that are already playable
+            // offline. One bounded unit per loop, then fall through to the
+            // top so a fresh audio target, a queued user download, or a
+            // skip preempts before the next unit runs.
+            match next_warm_unit(player, &warm_failed) {
+                Some(unit) => {
+                    if !run_warm_unit(app, &unit).await {
+                        warm_failed.insert(unit.failed_key());
+                    }
+                    continue;
+                }
+                None => {
+                    log::debug!("prefetch: lookahead window fully cached and warmed, idle");
+                    return;
+                }
+            }
         };
 
         if prefetch_failed.contains(&track_id) {
@@ -1031,6 +1048,61 @@ fn is_network_error(err: &str) -> bool {
         || err.contains("connection reset")
 }
 
+// --- Lowest-priority cache warming (waveform sidecars + hero art) ---
+
+/// One unit of best-effort warming for a track whose audio is already
+/// cached. Each unit is a single bounded HTTP fetch so the worker can
+/// re-check for higher-priority audio work between units.
+#[derive(Debug, Clone)]
+enum WarmUnit {
+    Waveform { rating_key: String, audio_path: PathBuf },
+}
+
+impl WarmUnit {
+    /// Per-cycle dedupe key for the `warm_failed` set. Prefixed by kind so
+    /// a track's distinct artefacts never collide on the same rating key.
+    fn failed_key(&self) -> String {
+        match self {
+            WarmUnit::Waveform { rating_key, .. } => format!("wave:{rating_key}"),
+        }
+    }
+}
+
+/// Find the next missing warm artefact across the lookahead window's
+/// already-cached tracks, skipping anything that failed earlier this cycle.
+/// Returns `None` when every in-window track is fully warmed.
+fn next_warm_unit(player: &AudioPlayer, warm_failed: &HashSet<String>) -> Option<WarmUnit> {
+    for target in player.lookahead_warm_targets(true) {
+        let wave = WarmUnit::Waveform {
+            rating_key: target.rating_key.clone(),
+            audio_path: target.audio_path.clone(),
+        };
+        if !warm_failed.contains(&wave.failed_key())
+            && !crate::commands::downloads::waveform_sidecar_path(&target.audio_path).is_file()
+        {
+            return Some(wave);
+        }
+    }
+    None
+}
+
+/// Execute one warm unit. Returns `true` once the artefact is present on
+/// disk, `false` on any failure so the caller can suppress same-cycle
+/// retries.
+async fn run_warm_unit(app: &AppHandle, unit: &WarmUnit) -> bool {
+    let state = app.state::<crate::state::AppState>();
+    match unit {
+        WarmUnit::Waveform {
+            rating_key,
+            audio_path,
+        } => {
+            crate::commands::downloads::warm_waveform_sidecar(&state.client, rating_key, audio_path)
+                .await;
+            crate::commands::downloads::waveform_sidecar_path(audio_path).is_file()
+        }
+    }
+}
+
 // --- Prefetch downloads (ephemeral, go into LRU DownloadCache) ---
 
 async fn run_prefetch_download(
@@ -1062,8 +1134,10 @@ async fn run_prefetch_download(
     });
     for path in evicted {
         let spec = spec_file_path(&path);
+        let wave = crate::commands::downloads::waveform_sidecar_path(&path);
         let _ = tokio::fs::remove_file(&path).await;
         let _ = tokio::fs::remove_file(&spec).await;
+        let _ = tokio::fs::remove_file(&wave).await;
     }
 
     log::debug!("prefetch: cached {track_id} ({size} bytes)");
