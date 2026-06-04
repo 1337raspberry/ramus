@@ -89,7 +89,10 @@ export default memo(function MobileAlbumCard({ album }: Props) {
         <div className="mobile-album-artist" title={album.artistName}>
           {album.artistName}
         </div>
-        {album.year && <div className="mobile-album-year">{album.year}</div>}
+        {/* Always render the year line (its height is reserved in CSS even when
+            empty) so every card is a uniform height — the grid virtualizer
+            relies on a fixed row size. */}
+        <div className="mobile-album-year">{album.year}</div>
       </button>
 
       {sheetOpen && (

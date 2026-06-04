@@ -55,7 +55,7 @@ function SortIcon({ mode }: { mode: string }) {
 }
 
 const COLS = 3;
-/** Approximate row height; the virtualizer re-measures once rendered. */
+/** Initial row-height estimate, replaced by a one-time measurement of a real row. */
 const ROW_HEIGHT = 210;
 
 function findNode(nodes: GenreNode[], id: string): GenreNode | null {
@@ -296,8 +296,9 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
 const VirtualizedAlbumGrid = memo(function VirtualizedAlbumGrid({ albums }: { albums: Album[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [rowHeight, setRowHeight] = useState(ROW_HEIGHT);
   const rowCount = Math.ceil(albums.length / COLS);
-  const estimate = useCallback(() => ROW_HEIGHT, []);
+  const estimate = useCallback(() => rowHeight, [rowHeight]);
 
   const gridKey = `${albums.length}:${albums[0]?.ratingKey ?? ""}`;
   const gridKeyRef = useRef(gridKey);
@@ -324,6 +325,22 @@ const VirtualizedAlbumGrid = memo(function VirtualizedAlbumGrid({ albums }: { al
       }
     };
   }, []);
+
+  // Rows are a uniform height (square art + single-line title/artist + reserved
+  // year line), so we measure one rendered row and feed that as a *fixed* size
+  // instead of measuring every row. Per-row dynamic measurement re-anchors the
+  // scroll offset whenever an off-screen row's real height differs from the
+  // estimate; on iOS momentum scrolling, a scrollTop write mid-fling kills the
+  // fling. That only surfaced after scroll restoration — jumping straight to a
+  // saved offset leaves every row above it unmeasured, so scrolling back up
+  // crawled one row per gesture. A pixel-exact fixed height means no re-anchoring.
+  useLayoutEffect(() => {
+    const row = scrollRef.current?.querySelector<HTMLElement>(".mobile-album-grid-row");
+    if (row) {
+      const h = row.offsetHeight;
+      if (h > 0 && h !== rowHeight) setRowHeight(h);
+    }
+  }, [rowHeight, albums]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -357,7 +374,6 @@ const VirtualizedAlbumGrid = memo(function VirtualizedAlbumGrid({ albums }: { al
               key={row.key}
               className="mobile-album-grid-row"
               style={{ transform: `translateY(${row.start}px)` }}
-              ref={virtualizer.measureElement}
               data-index={row.index}
             >
               {rowAlbums.map((album) => (

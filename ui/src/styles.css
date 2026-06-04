@@ -4860,6 +4860,10 @@ body.is-fullscreen .focus-body {
 
 .mobile-album-year {
   font-size: 11px;
+  line-height: 14px;
+  /* Reserve the line height even when empty so every card is the same height
+     (keeps the grid's virtual rows a fixed size). */
+  min-height: 14px;
   color: rgba(255, 255, 255, 0.45);
 }
 
