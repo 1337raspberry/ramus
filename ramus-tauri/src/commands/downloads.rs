@@ -347,6 +347,8 @@ pub async fn remove_download(
         let _ = tokio::fs::remove_file(PathBuf::from(&p)).await;
         let spec = ramus_core::playback::spectrum::spec_file_path(std::path::Path::new(&p));
         let _ = tokio::fs::remove_file(spec).await;
+        let wave = waveform_sidecar_path(std::path::Path::new(&p));
+        let _ = tokio::fs::remove_file(wave).await;
     }
     recompute_image_pins(&state);
     emit_downloads_changed(&app);
@@ -375,6 +377,8 @@ pub async fn remove_album_downloads(
         let _ = tokio::fs::remove_file(PathBuf::from(p)).await;
         let spec = ramus_core::playback::spectrum::spec_file_path(std::path::Path::new(p));
         let _ = tokio::fs::remove_file(spec).await;
+        let wave = waveform_sidecar_path(std::path::Path::new(p));
+        let _ = tokio::fs::remove_file(wave).await;
     }
     recompute_image_pins(&state);
     emit_downloads_changed(&app);
@@ -391,6 +395,8 @@ pub async fn remove_all_downloads(app: AppHandle, state: State<'_, AppState>) ->
         let _ = tokio::fs::remove_file(PathBuf::from(p)).await;
         let spec = ramus_core::playback::spectrum::spec_file_path(std::path::Path::new(p));
         let _ = tokio::fs::remove_file(spec).await;
+        let wave = waveform_sidecar_path(std::path::Path::new(p));
+        let _ = tokio::fs::remove_file(wave).await;
     }
     recompute_image_pins(&state);
     emit_downloads_changed(&app);
