@@ -173,10 +173,34 @@ pub async fn fetch_lyrics(
     state: State<'_, AppState>,
     rating_key: String,
 ) -> CmdResult<LyricsFetchResult> {
-    // Resolve the requested track from the queue by rating_key — LRCLIB needs
-    // its title/artist/album/duration. Falling back to `current_track` covers
-    // the rare race where mpv advanced between the UI call and this handler.
-    // With no metadata, Plex can still answer by rating key alone.
+    // On-disk audio (persistent download wins over the LRU copy) lets us read a
+    // cached lyrics sidecar offline, and warm one back after a live fetch.
+    let audio_path = state
+        .player
+        .persistent_download_paths()
+        .get(&rating_key)
+        .cloned()
+        .or_else(|| {
+            state
+                .player
+                .with_cache(|c| c.get(&rating_key).map(|p| p.to_path_buf()))
+        });
+
+    // 1. Cached sidecar — no Plex/LRCLIB round-trip, works offline. Replaying an
+    //    album the next day reads lyrics from disk instead of re-pinging LRCLIB.
+    if let Some(ref audio_path) = audio_path {
+        if let Some(cached) = crate::commands::downloads::read_lyrics_sidecar(audio_path).await {
+            return Ok(LyricsFetchResult {
+                status: lyrics::LyricsStatus::Found,
+                lyrics: Some(cached),
+            });
+        }
+    }
+
+    // 2. Live fetch. Resolve the requested track from the queue by rating_key —
+    //    LRCLIB needs its title/artist/album/duration. Falling back to
+    //    `current_track` covers the rare race where mpv advanced between the UI
+    //    call and this handler. With no metadata, Plex can still answer by key.
     let player_state = state.player.state();
     let track = player_state
         .queue
@@ -227,6 +251,19 @@ pub async fn fetch_lyrics(
             }
         }
     };
+
+    // 3. Warm a sidecar from a live hit when the track's audio is already on
+    //    disk, so a later offline replay needs no network. Best-effort and off
+    //    the response path.
+    if let (lyrics::LyricsStatus::Found, Some(found), Some(audio_path)) =
+        (result.status, result.lyrics.as_ref(), audio_path.as_ref())
+    {
+        let audio_path = audio_path.clone();
+        let found = found.clone();
+        tauri::async_runtime::spawn(async move {
+            crate::commands::downloads::write_lyrics_sidecar(&audio_path, &found).await;
+        });
+    }
 
     Ok(result)
 }

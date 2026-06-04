@@ -12,6 +12,7 @@ use tauri::{AppHandle, State};
 
 use ramus_core::cache::image_cache::ImageCache;
 use ramus_core::models::{Album, AlbumFilterParams, DownloadQuality, Track};
+use ramus_core::playback::lyrics::{self, LyricsResult};
 use ramus_core::playback::transcode;
 use ramus_core::playback::waveform;
 use ramus_core::plex::client::PlexClient;
@@ -66,6 +67,55 @@ pub async fn read_waveform_sidecar(audio_path: &Path) -> Option<Vec<f32>> {
         .await
         .ok()?;
     postcard::from_bytes::<Vec<f32>>(&bytes).ok()
+}
+
+/// Sidecar path for cached lyrics: `audio.flac.lyrics`. Same pattern as the
+/// `.wave`/`.spec` sidecars — a postcard-serialised `LyricsResult` next to the
+/// audio file so a replayed album renders lyrics offline without re-pinging
+/// LRCLIB. Cleaned up alongside the other sidecars on eviction/removal.
+pub fn lyrics_sidecar_path(audio_path: &Path) -> PathBuf {
+    let mut s = audio_path.as_os_str().to_os_string();
+    s.push(".lyrics");
+    PathBuf::from(s)
+}
+
+/// Serialise a found `LyricsResult` next to its audio file. Best-effort.
+pub async fn write_lyrics_sidecar(audio_path: &Path, result: &LyricsResult) {
+    if let Ok(bytes) = postcard::to_stdvec(result) {
+        let _ = tokio::fs::write(lyrics_sidecar_path(audio_path), bytes).await;
+    }
+}
+
+/// Fetch a track's lyrics and write them next to the audio file. Only a `Found`
+/// outcome is persisted — a "not found" is left uncached so a track that later
+/// gains lyrics on crowdsourced LRCLIB is re-checked (mirrors the waveform
+/// no-negative-cache policy). Idempotent and best-effort.
+#[allow(clippy::too_many_arguments)]
+pub async fn warm_lyrics_sidecar(
+    client: &Arc<PlexClient>,
+    http: &reqwest::Client,
+    rating_key: &str,
+    audio_path: &Path,
+    title: &str,
+    artist: &str,
+    album: &str,
+    duration: f64,
+) {
+    if lyrics_sidecar_path(audio_path).is_file() {
+        return;
+    }
+    if let lyrics::LyricsOutcome::Found(result) =
+        lyrics::fetch_lyrics_full(client, http, rating_key, title, artist, album, duration).await
+    {
+        write_lyrics_sidecar(audio_path, &result).await;
+    }
+}
+
+/// Read a cached lyrics sidecar, returning `None` on any miss or corruption.
+/// Callers fall back to a live Plex/LRCLIB fetch.
+pub async fn read_lyrics_sidecar(audio_path: &Path) -> Option<LyricsResult> {
+    let bytes = tokio::fs::read(lyrics_sidecar_path(audio_path)).await.ok()?;
+    postcard::from_bytes::<LyricsResult>(&bytes).ok()
 }
 
 /// Album-art sizes warmed at download time. Shared with
@@ -349,6 +399,8 @@ pub async fn remove_download(
         let _ = tokio::fs::remove_file(spec).await;
         let wave = waveform_sidecar_path(std::path::Path::new(&p));
         let _ = tokio::fs::remove_file(wave).await;
+        let lyrics = lyrics_sidecar_path(std::path::Path::new(&p));
+        let _ = tokio::fs::remove_file(lyrics).await;
     }
     recompute_image_pins(&state);
     emit_downloads_changed(&app);
@@ -379,6 +431,8 @@ pub async fn remove_album_downloads(
         let _ = tokio::fs::remove_file(spec).await;
         let wave = waveform_sidecar_path(std::path::Path::new(p));
         let _ = tokio::fs::remove_file(wave).await;
+        let lyrics = lyrics_sidecar_path(std::path::Path::new(p));
+        let _ = tokio::fs::remove_file(lyrics).await;
     }
     recompute_image_pins(&state);
     emit_downloads_changed(&app);
@@ -397,6 +451,8 @@ pub async fn remove_all_downloads(app: AppHandle, state: State<'_, AppState>) ->
         let _ = tokio::fs::remove_file(spec).await;
         let wave = waveform_sidecar_path(std::path::Path::new(p));
         let _ = tokio::fs::remove_file(wave).await;
+        let lyrics = lyrics_sidecar_path(std::path::Path::new(p));
+        let _ = tokio::fs::remove_file(lyrics).await;
     }
     recompute_image_pins(&state);
     emit_downloads_changed(&app);
@@ -662,6 +718,7 @@ fn build_job(state: &State<'_, AppState>, track: &Track) -> Result<UserDownloadJ
         title: track.title.clone(),
         artist_name: track.display_artist().to_string(),
         album_title: track.album_title.clone(),
+        duration: track.duration,
         thumb: track.thumb.clone(),
         codec,
         url,

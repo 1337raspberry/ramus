@@ -140,6 +140,9 @@ pub struct UserDownloadJob {
     pub title: String,
     pub artist_name: String,
     pub album_title: String,
+    /// Track length in seconds. Carried so the download-time lyrics warm can
+    /// query LRCLIB, which matches on duration.
+    pub duration: f64,
     pub thumb: Option<String>,
     pub codec: String,
     pub url: String,
@@ -1170,9 +1173,11 @@ async fn run_prefetch_download(
     for path in evicted {
         let spec = spec_file_path(&path);
         let wave = crate::commands::downloads::waveform_sidecar_path(&path);
+        let lyrics = crate::commands::downloads::lyrics_sidecar_path(&path);
         let _ = tokio::fs::remove_file(&path).await;
         let _ = tokio::fs::remove_file(&spec).await;
         let _ = tokio::fs::remove_file(&wave).await;
+        let _ = tokio::fs::remove_file(&lyrics).await;
     }
 
     log::debug!("prefetch: cached {track_id} ({size} bytes)");
@@ -1344,6 +1349,10 @@ async fn run_user_download(
         let app_warm = app.clone();
         let rk = job.rating_key.clone();
         let thumb = job.thumb.clone();
+        let title = job.title.clone();
+        let artist = job.artist_name.clone();
+        let album = job.album_title.clone();
+        let duration = job.duration;
         let file_path_warm = file_path.clone();
         tauri::async_runtime::spawn(async move {
             let state = app_warm.state::<crate::state::AppState>();
@@ -1352,6 +1361,18 @@ async fn run_user_download(
             }
             crate::commands::downloads::warm_waveform_sidecar(&state.client, &rk, &file_path_warm)
                 .await;
+            // Permanent downloads are for offline use, so secure lyrics now too.
+            crate::commands::downloads::warm_lyrics_sidecar(
+                &state.client,
+                &state.http_client,
+                &rk,
+                &file_path_warm,
+                &title,
+                &artist,
+                &album,
+                duration,
+            )
+            .await;
             if let Some(thumb) = thumb {
                 crate::commands::downloads::warm_art_cache(
                     &state.image_cache,
