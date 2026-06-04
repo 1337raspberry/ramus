@@ -66,17 +66,17 @@ echo ">>> [1/6] Building frontend (pnpm run build)"
 echo ">>> [2/6] cargo build --target aarch64-apple-ios --release -p ramus-tauri --lib --features tauri/custom-protocol"
 cargo build --target aarch64-apple-ios --release -p ramus-tauri --lib --features tauri/custom-protocol
 
-# Place libapp.a in BOTH Release and Debug slots. Xcode 16 sometimes
-# links Debug variants as part of a Release build (debug-symbols
-# bundle, mergeable-libs pre-pass, scheme implicit deps — exact
-# trigger varies by Xcode point release). The Rust staticlib is the
-# same in either slot; the cost is one extra cp.
-for CONFIG in Release Debug; do
+# The Xcode build configurations are named lowercase `release`/`debug`
+# (see project.yml `configs:`), so LIBRARY_SEARCH_PATHS resolves
+# Externals/arm64/release. Place the release-built staticlib there; the
+# `debug` copy is cheap insurance against a stray debug-config link
+# step. The Rust staticlib is identical either way.
+for CONFIG in release debug; do
     DEST_DIR="ramus-tauri/gen/apple/Externals/arm64/$CONFIG"
     mkdir -p "$DEST_DIR"
     cp "target/aarch64-apple-ios/release/libramus_tauri.a" "$DEST_DIR/libapp.a"
 done
-echo "     placed libapp.a in Externals/arm64/{Release,Debug}/"
+echo "     placed libapp.a in Externals/arm64/{release,debug}/"
 
 echo ">>> [3/6] Patching project.yml (drop tauri xcode-script preBuildScript)"
 ruby -ryaml -e "
@@ -95,7 +95,7 @@ DERIVED_DATA="$PWD/build/DerivedData"
 xcodebuild build \
     -project ramus-tauri.xcodeproj \
     -scheme ramus-tauri_iOS \
-    -configuration Release \
+    -configuration release \
     -destination 'generic/platform=iOS' \
     -derivedDataPath "$DERIVED_DATA" \
     CODE_SIGNING_ALLOWED=NO \
@@ -105,13 +105,12 @@ xcodebuild build \
     DEVELOPMENT_TEAM="" \
     ENABLE_DEBUG_DYLIB=NO
 
-# Find the .app — Xcode 16 + xcodegen scheme combo doesn't always
-# honour `-configuration Release` and may produce `debug-iphoneos/`
-# instead. The cargo-built libapp.a is the release-optimised version
-# either way, so a "debug-built" wrapper still gives a usable IPA —
-# just with a slightly larger main binary. Search both spellings
-# (Apple's capitalisation has drifted between Xcode versions) and
-# warn if we picked up a non-Release variant.
+# Find the .app. The build config is named lowercase `release` (see
+# project.yml `configs:`), so the products land in `release-iphoneos/`.
+# Search the capitalised spellings and the debug variants too as a
+# safety net — if the config name or the -configuration flag ever drift
+# out of sync again, pick up whatever Xcode produced and let the check
+# below flag a non-release wrapper.
 UNSIGNED_APP=""
 ACTUAL_CFG=""
 for CFG_DIR in "Release-iphoneos" "release-iphoneos" "Debug-iphoneos" "debug-iphoneos"; do
@@ -130,7 +129,7 @@ if [ -z "$UNSIGNED_APP" ]; then
 fi
 
 if [[ "$ACTUAL_CFG" != Release-* && "$ACTUAL_CFG" != release-* ]]; then
-    echo "::warning:: Xcode produced $ACTUAL_CFG instead of Release — IPA will install fine but the main binary is debug-config (larger, unoptimised). The bundled libapp.a is still release-built. TODO: figure out why xcodebuild -configuration Release is being ignored." >&2
+    echo "::warning:: Xcode produced $ACTUAL_CFG instead of release — IPA installs fine but the Swift wrapper is debug-config (larger, unoptimised); the bundled libapp.a is release-built regardless. Check that xcodebuild's -configuration matches the config name in project.yml." >&2
 fi
 echo "     using app from $ACTUAL_CFG/"
 

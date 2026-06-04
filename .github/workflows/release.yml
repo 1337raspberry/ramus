@@ -529,13 +529,14 @@ jobs:
           # the CLI here to dodge the xcode-script RPC handshake, so it
           # has to go on by hand. Mirror in scripts/build-ios-ipa-local.sh.
           cargo build --target aarch64-apple-ios --release -p ramus-tauri --lib --features tauri/custom-protocol
-          # Place libapp.a in BOTH Release and Debug slots. Xcode 16
-          # sometimes links Debug variants as part of a Release build
-          # (debug-symbols bundle, mergeable-libs pre-pass, scheme
-          # implicit deps — exact trigger varies by Xcode point
-          # release). The Rust staticlib is the same in either slot;
-          # the cost is one extra cp. Mirrors build-ios-ipa-local.sh.
-          for CONFIG in Release Debug; do
+          # The Xcode build configurations are named lowercase
+          # `release`/`debug` (project.yml `configs:`), so
+          # LIBRARY_SEARCH_PATHS resolves Externals/arm64/release. Place
+          # the release-built staticlib there; the `debug` copy is cheap
+          # insurance against a stray debug-config link step. The Rust
+          # staticlib is identical either way. Mirrors
+          # build-ios-ipa-local.sh.
+          for CONFIG in release debug; do
             DEST_DIR="ramus-tauri/gen/apple/Externals/arm64/$CONFIG"
             mkdir -p "$DEST_DIR"
             cp target/aarch64-apple-ios/release/libramus_tauri.a "$DEST_DIR/libapp.a"
@@ -627,16 +628,15 @@ jobs:
           # dylib build (a separate <app>.debug.dylib that ships next
           # to the main binary for SwiftUI Previews / hot-swap
           # iteration). It builds in a Debug context even under
-          # `-configuration Release`, so it tries to link libapp.a
-          # from Externals/arm64/Debug/ — but we only pre-built and
-          # placed the Release variant. Disabling the debug dylib
-          # cuts the whole second link step; we don't ship previews
-          # in distributed builds so there's nothing to lose.
+          # `-configuration release`, so it would pull libapp.a from
+          # Externals/arm64/debug/ and add a whole second link step.
+          # Disabling the debug dylib cuts that step; we don't ship
+          # previews in distributed builds so there's nothing to lose.
           DERIVED_DATA="$PWD/build/DerivedData"
           xcodebuild build \
             -project ramus-tauri.xcodeproj \
             -scheme ramus-tauri_iOS \
-            -configuration Release \
+            -configuration release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$DERIVED_DATA" \
             CODE_SIGNING_ALLOWED=NO \
@@ -646,13 +646,13 @@ jobs:
             DEVELOPMENT_TEAM="" \
             ENABLE_DEBUG_DYLIB=NO
 
-          # Xcode 16 + xcodegen scheme combo doesn't always honour
-          # `-configuration Release` — the .app sometimes lands in
-          # `debug-iphoneos/` instead. The cargo-built libapp.a is the
-          # release-optimised variant either way, so a "debug-built"
-          # outer .app still produces a usable IPA — just with a
-          # larger main binary. Look in both spellings and warn if we
-          # picked the non-Release variant. Match build-ios-ipa-local.sh.
+          # The build config is named lowercase `release`, so the
+          # products land in `release-iphoneos/`. Search the capitalised
+          # spellings and the debug variants too as a safety net — if
+          # the config name or the -configuration flag ever drift out of
+          # sync again, pick up whatever Xcode produced and let the
+          # check below flag a non-release wrapper. Match
+          # build-ios-ipa-local.sh.
           UNSIGNED_APP=""
           ACTUAL_CFG=""
           for CFG_DIR in "Release-iphoneos" "release-iphoneos" "Debug-iphoneos" "debug-iphoneos"; do
@@ -669,7 +669,7 @@ jobs:
             exit 1
           fi
           if [[ "$ACTUAL_CFG" != Release-* && "$ACTUAL_CFG" != release-* ]]; then
-            echo "::warning::Xcode produced $ACTUAL_CFG instead of Release — IPA will install fine but the main binary is debug-config (TODO: figure out why -configuration Release is being silently dropped)"
+            echo "::warning::Xcode produced $ACTUAL_CFG instead of release — IPA installs fine but the Swift wrapper is debug-config (the bundled libapp.a is release-built regardless). Check that xcodebuild's -configuration matches the config name in project.yml."
           fi
           echo "Using app from $ACTUAL_CFG/"
 
