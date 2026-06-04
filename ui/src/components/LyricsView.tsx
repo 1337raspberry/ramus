@@ -1,17 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { LyricsResult } from "../lib/types";
 import { usePlaybackStore, activeLineIndex } from "../stores/playbackStore";
-import { IconClose, IconPin } from "./Icons";
+import { IconClose } from "./Icons";
 
 interface Props {
   lyrics: LyricsResult;
-  isPinned: boolean;
-  onTogglePin: () => void;
   onSeek: (seconds: number) => void;
   onDismiss: () => void;
 }
 
-export default function LyricsView({ lyrics, isPinned, onTogglePin, onSeek, onDismiss }: Props) {
+export default function LyricsView({ lyrics, onSeek, onDismiss }: Props) {
   const position = usePlaybackStore((s) => s.position);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [flashId, setFlashId] = useState<number | null>(null);
@@ -43,9 +41,6 @@ export default function LyricsView({ lyrics, isPinned, onTogglePin, onSeek, onDi
     <div className="lyrics-overlay" onClick={(e) => e.stopPropagation()}>
       <button className="lyrics-close" onClick={onDismiss}>
         <IconClose size={14} />
-      </button>
-      <button className={`lyrics-pin${isPinned ? " pinned" : ""}`} onClick={onTogglePin}>
-        <IconPin />
       </button>
       <div className="lyrics-scroll" ref={scrollRef}>
         {lyrics.lines.map((line, i) => {

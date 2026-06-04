@@ -2088,9 +2088,10 @@ textarea {
   flex-direction: column;
 }
 
-.lyrics-close,
-.lyrics-pin {
+.lyrics-close {
   position: absolute;
+  top: 0;
+  left: 0;
   z-index: 2;
   background: none;
   border: none;
@@ -2103,25 +2104,8 @@ textarea {
   align-items: center;
 }
 
-.lyrics-close:hover,
-.lyrics-pin:hover {
+.lyrics-close:hover {
   color: var(--text-primary);
-}
-
-.lyrics-close {
-  top: 0;
-  left: 0;
-}
-
-.lyrics-pin {
-  top: 0;
-  right: 0;
-  font-size: 14px;
-  opacity: 0.5;
-}
-
-.lyrics-pin.pinned {
-  opacity: 1;
 }
 
 .lyrics-scroll {

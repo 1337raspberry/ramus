@@ -27,9 +27,7 @@ export default function LyricsOverlay() {
   const lyrics = usePlaybackStore((s) => s.lyrics);
   const lyricsLoading = usePlaybackStore((s) => s.lyricsLoading);
   const lyricsStatus = usePlaybackStore((s) => s.lyricsStatus);
-  const lyricsPinned = usePlaybackStore((s) => s.lyricsPinned);
   const toggleLyrics = usePlaybackStore((s) => s.toggleLyrics);
-  const toggleLyricsPinned = usePlaybackStore((s) => s.toggleLyricsPinned);
   const seek = usePlaybackStore((s) => s.seek);
 
   if (!showLyrics) return null;
@@ -37,13 +35,7 @@ export default function LyricsOverlay() {
   return (
     <div className="np-lyrics-overlay">
       {lyrics ? (
-        <LyricsView
-          lyrics={lyrics}
-          isPinned={lyricsPinned}
-          onTogglePin={toggleLyricsPinned}
-          onSeek={seek}
-          onDismiss={toggleLyrics}
-        />
+        <LyricsView lyrics={lyrics} onSeek={seek} onDismiss={toggleLyrics} />
       ) : lyricsLoading ? (
         <div className="lyrics-loading">loading lyrics...</div>
       ) : (

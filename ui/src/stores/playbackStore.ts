@@ -50,8 +50,10 @@ interface PlaybackState {
   /// Honest result of the last fetch — drives the panel's empty-state copy
   /// (no lyrics vs offline vs server unreachable). `null` before any fetch.
   lyricsStatus: LyricsStatus | null;
+  /// Whether the lyrics panel is open. Once toggled on it stays on across
+  /// track changes for the whole session (re-fetching each track) and resets
+  /// to off only on app restart — there is no separate "pin" any more.
   showLyrics: boolean;
-  lyricsPinned: boolean;
 
   // --- Waveform ---
   waveformLevels: number[] | null;
@@ -102,7 +104,6 @@ interface PlaybackState {
   /// on a newer one (the retry path makes this race wider than it was).
   loadLyrics: (ratingKey: string) => void;
   toggleLyrics: () => void;
-  toggleLyricsPinned: () => void;
   toggleQueue: () => void;
   toggleFocusMode: () => void;
   cycleVisualizerMode: () => void;
@@ -149,7 +150,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   lyricsLoading: false,
   lyricsStatus: null,
   showLyrics: false,
-  lyricsPinned: false,
 
   waveformLevels: null,
 
@@ -234,10 +234,10 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         set({ currentGenres: [], nowPlayingAlbum: null });
       }
 
-      if (get().lyricsPinned) {
+      // The panel is "always pinned": if it's open, refetch lyrics for the
+      // new track and keep it open.
+      if (get().showLyrics) {
         get().loadLyrics(track.ratingKey);
-      } else if (get().showLyrics) {
-        set({ showLyrics: false });
       }
 
       getQueue()
@@ -352,8 +352,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       set({ showLyrics: !showLyrics });
     }
   },
-
-  toggleLyricsPinned: () => set((s) => ({ lyricsPinned: !s.lyricsPinned })),
 
   toggleQueue: () => {
     const { showQueue } = get();
