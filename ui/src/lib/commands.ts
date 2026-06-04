@@ -163,11 +163,15 @@ export const getArtUrl = (thumb: string, size?: number): Promise<string> => {
       const filePath = await invoke<string>("get_art_url", { thumb, size });
       return convertFileSrc(filePath);
     } finally {
+      // Drop the coalescing entry BEFORE freeing the slot. Releasing the
+      // slot can hand it straight to a queued waiter, so the map must
+      // already be clean — otherwise a same-key call racing in at that
+      // instant could latch onto this settled (possibly post-flush stale)
+      // promise instead of starting a fresh fetch.
+      inFlightArt.delete(key);
       releaseArtSlot();
     }
-  })().finally(() => {
-    inFlightArt.delete(key);
-  });
+  })();
   inFlightArt.set(key, pending);
   return pending;
 };
