@@ -212,7 +212,9 @@ pub async fn fetch_lyrics(
     // stalled-but-connected server (or a long LRCLIB retry chain) could
     // otherwise freeze the panel indefinitely. On timeout we fall through to
     // the transient path, which reports an honest offline/unreachable status.
-    let outcome = tokio::time::timeout(std::time::Duration::from_secs(12), async {
+    // Must comfortably exceed one full LRCLIB attempt (LRCLIB_TIMEOUT_SECS=15)
+    // plus a quick Plex probe, or we'd kill a slow-but-successful response.
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(20), async {
         match track {
             Some(track) => {
                 lyrics::fetch_lyrics_full(

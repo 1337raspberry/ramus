@@ -284,10 +284,12 @@ const LRCLIB_MAX_RESPONSE: usize = 512 * 1024;
 /// LRCLIB base URL. Split out so tests can target a mock server.
 const LRCLIB_BASE_URL: &str = "https://lrclib.net";
 
-/// Per-request LRCLIB timeout. Kept short because the orchestrator retries
-/// transient failures a few times — a long single-shot timeout would make the
-/// foreground fetch feel stuck.
-const LRCLIB_TIMEOUT_SECS: u64 = 6;
+/// Per-request LRCLIB timeout. LRCLIB's backend routinely takes 6-12s to
+/// answer a `/api/get` (occasionally longer, and rarely a 504), so this must
+/// comfortably exceed that window or we time out responses that were about to
+/// succeed. The retry count and the command-level overall budget bound the
+/// worst case.
+const LRCLIB_TIMEOUT_SECS: u64 = 15;
 
 /// Client identifier sent to LRCLIB (and reused as the User-Agent).
 const LRCLIB_CLIENT_TAG: &str = concat!(
@@ -430,8 +432,11 @@ pub async fn fetch_from_plex(
     })
 }
 
-/// Number of LRCLIB attempts before giving up with a transient status.
-const LRCLIB_MAX_ATTEMPTS: u32 = 3;
+/// Number of LRCLIB attempts before giving up with a transient status. A
+/// second attempt only helps a fast-failing transient (a quick 5xx/429); a
+/// merely-slow LRCLIB won't answer faster on retry, so we don't pile on more
+/// (and the command's overall budget caps the total wait regardless).
+const LRCLIB_MAX_ATTEMPTS: u32 = 2;
 
 /// Fetch lyrics for a track, preferring the user's Plex server and falling
 /// back to LRCLIB.
