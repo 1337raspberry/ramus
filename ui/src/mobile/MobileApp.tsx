@@ -11,6 +11,7 @@ import MobileArtistList from "./MobileArtistList";
 import MobileSuggestion from "./MobileSuggestion";
 import MobileSearch from "./MobileSearch";
 import MobileNowPlaying from "./MobileNowPlaying";
+import GenreInfoSheet from "./GenreInfoSheet";
 import type { GenreNode } from "../lib/types";
 
 function findNode(nodes: GenreNode[], id: string): GenreNode | null {
@@ -206,6 +207,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
           onCollapse={() => setSheetExpanded(false)}
         />
       )}
+      <GenreInfoSheet onNavigate={() => setSheetExpanded(false)} />
     </div>
   );
 }

@@ -2,6 +2,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use ramus_core::genre::mapper::GenreMapper;
+use ramus_core::genre::markup::{build_description_segments, ArtistIndex, DescriptionSegment};
 use ramus_core::genre::parser::CustomGenreParser;
 use ramus_core::models::{Bookmark, Settings};
 use ramus_core::playback::spectrum::spec_file_path;
@@ -107,6 +108,87 @@ pub async fn update_settings(
 #[tauri::command]
 pub async fn has_custom_genres() -> CmdResult<bool> {
     Ok(ramus_core::settings::load_custom_genres().is_some())
+}
+
+/// Upper bound on an imported genre JSON payload. Richer trees carry long-form
+/// descriptions for thousands of genres, so this is far larger than the plain
+/// text importer's cap — but still bounded against pathological input.
+const MAX_GENRE_JSON_BYTES: usize = 64 * 1024 * 1024;
+
+/// Import a pre-built genre tree from JSON (carrying optional per-genre
+/// metadata) and make it the active custom tree. Unlike `import_custom_genres`,
+/// which converts an indented plain-text outline, this consumes the richer JSON
+/// shape directly and preserves its descriptions and reference names. Returns
+/// the total genre count across all depths, for a confirmation message.
+#[tauri::command]
+pub async fn import_custom_genres_json(
+    state: State<'_, AppState>,
+    text: String,
+) -> CmdResult<usize> {
+    if text.len() > MAX_GENRE_JSON_BYTES {
+        return Err("genre file is too large".to_string());
+    }
+    let data = text.into_bytes();
+    // Building the mapper validates the JSON shape; reject before persisting.
+    let mapper = GenreMapper::from_json_bytes(&data).map_err(|e| e.to_string())?;
+    let count = mapper.node_count();
+    ramus_core::settings::save_custom_genres(&data).map_err(|e| e.to_string())?;
+    let mut settings = state.settings.read().clone();
+    settings.genre_source = ramus_core::models::GenreSource::Custom;
+    ramus_core::settings::save(&settings).map_err(|e| e.to_string())?;
+    *state.settings.write() = settings;
+    *state.genre_mapper.write() = Some(mapper);
+    Ok(count)
+}
+
+/// Display metadata for a single genre, with its description pre-segmented into
+/// text + genre links + artist links (the latter resolved against the library's
+/// artists). `None` when the active tree carries no metadata for the name.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenreMetadataResponse {
+    pub canonical_name: String,
+    pub short_summary: Option<String>,
+    pub cosmetic_aka: Vec<String>,
+    /// Ordered, non-overlapping description segments. Empty when the genre has
+    /// no long-form description.
+    pub description_segments: Vec<DescriptionSegment>,
+}
+
+#[tauri::command]
+pub async fn get_genre_metadata(
+    state: State<'_, AppState>,
+    name: String,
+) -> CmdResult<Option<GenreMetadataResponse>> {
+    // Library artist names feed the in-description artist linker. Absent before
+    // the cache is ready — fall back to no artist links (genre links still work).
+    let artist_names: Vec<String> = super::with_cache(&state, |db| {
+        Ok(db.all_artists()?.into_iter().map(|a| a.1).collect())
+    })
+    .unwrap_or_default();
+
+    let guard = state.genre_mapper.read();
+    let Some(mapper) = guard.as_ref() else {
+        return Ok(None);
+    };
+    let Some(meta) = mapper.genre_metadata(&name) else {
+        return Ok(None);
+    };
+
+    let description_segments = match &meta.full_description {
+        Some(desc) => {
+            let index = ArtistIndex::build(&artist_names);
+            build_description_segments(desc, mapper, &index)
+        }
+        None => Vec::new(),
+    };
+
+    Ok(Some(GenreMetadataResponse {
+        canonical_name: meta.canonical_name,
+        short_summary: meta.short_summary,
+        cosmetic_aka: meta.cosmetic_aka,
+        description_segments,
+    }))
 }
 
 #[tauri::command]

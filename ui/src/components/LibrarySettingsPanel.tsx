@@ -7,6 +7,7 @@ import {
   startIncrementalSync,
   startGenreSync,
   importCustomGenres,
+  importCustomGenresJson,
   removeCustomGenres,
   hasCustomGenres as checkCustomGenres,
   logout,
@@ -21,6 +22,7 @@ import AcknowledgementsPanel from "./AcknowledgementsPanel";
 import { useIsMobile } from "../lib/useIsMobile";
 import { TabBar } from "./TabBar";
 import { HelperText } from "./HelperText";
+import { useToastStore } from "./Toast";
 
 interface Props {
   onDismiss: () => void;
@@ -55,6 +57,10 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
   const [error, setError] = useState<string | null>(null);
   const [genreWarnings, setGenreWarnings] = useState<string[]>([]);
   const [hasCustomGenres, setHasCustomGenres] = useState(false);
+  // Hidden import mode: a 5-second hold on the import button swaps it from the
+  // plain-text importer to the richer JSON importer until used or the tab changes.
+  const [jsonImportMode, setJsonImportMode] = useState(false);
+  const [importHolding, setImportHolding] = useState(false);
   const [showAcknowledgements, setShowAcknowledgements] = useState(false);
   const [showSpectrumConfirm, setShowSpectrumConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("playback");
@@ -62,6 +68,9 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const importHoldTimerRef = useRef<number | null>(null);
+  // Set when a 5s hold completes, to swallow the click that ends the hold.
+  const importHoldCompletedRef = useRef(false);
 
   const showError = useCallback((msg: string) => {
     setError(msg);
@@ -180,33 +189,100 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
     [settings, showError],
   );
 
-  const handleImportGenres = useCallback(() => {
+  // Apply a freshly imported genre tree to local + global state.
+  const refreshAfterGenreImport = useCallback((fresh: Settings) => {
+    setSettings(fresh);
+    useSettingsStore.setState(fresh);
+    useLibraryStore.getState().loadGenreTree();
+  }, []);
+
+  // Open a hidden file picker and hand the chosen file's text to `onText`.
+  const pickGenreFile = useCallback((accept: string, onText: (text: string) => void) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".txt,.text";
+    input.accept = accept;
     input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return;
       const reader = new FileReader();
-      reader.onload = () => {
-        const text = reader.result as string;
-        importCustomGenres(text)
-          .then((warnings) => {
-            if (warnings.length > 0) setGenreWarnings(warnings);
-            setHasCustomGenres(true);
-            return getSettings();
-          })
-          .then((fresh) => {
-            setSettings(fresh);
-            useSettingsStore.setState(fresh);
-            useLibraryStore.getState().loadGenreTree();
-          })
-          .catch((e) => showError(`Failed to import genres: ${e}`));
-      };
+      reader.onload = () => onText(reader.result as string);
       reader.readAsText(file);
     };
     input.click();
-  }, [showError]);
+  }, []);
+
+  const handleImportGenres = useCallback(() => {
+    pickGenreFile(".txt,.text", (text) => {
+      importCustomGenres(text)
+        .then((warnings) => {
+          if (warnings.length > 0) setGenreWarnings(warnings);
+          setHasCustomGenres(true);
+          return getSettings();
+        })
+        .then(refreshAfterGenreImport)
+        .catch((e) => showError(`Failed to import genres: ${e}`));
+    });
+  }, [pickGenreFile, refreshAfterGenreImport, showError]);
+
+  // Richer JSON importer, revealed by a long hold on the import button. Accepts
+  // a pre-built genre tree (with optional per-genre metadata) rather than the
+  // plain-text outline, and makes it the active custom tree.
+  const handleImportGenresJson = useCallback(() => {
+    pickGenreFile(".json,application/json", (text) => {
+      importCustomGenresJson(text)
+        .then((count) => {
+          setGenreWarnings([]);
+          setHasCustomGenres(true);
+          setJsonImportMode(false);
+          useToastStore.getState().show(`Imported ${count} genres`);
+          return getSettings();
+        })
+        .then(refreshAfterGenreImport)
+        .catch((e) => showError(`Failed to import genres: ${e}`));
+    });
+  }, [pickGenreFile, refreshAfterGenreImport, showError]);
+
+  const cancelImportHold = useCallback(() => {
+    if (importHoldTimerRef.current !== null) {
+      window.clearTimeout(importHoldTimerRef.current);
+      importHoldTimerRef.current = null;
+    }
+    setImportHolding(false);
+  }, []);
+
+  const startImportHold = useCallback(() => {
+    if (jsonImportMode) return;
+    importHoldCompletedRef.current = false;
+    setImportHolding(true);
+    importHoldTimerRef.current = window.setTimeout(() => {
+      importHoldCompletedRef.current = true;
+      importHoldTimerRef.current = null;
+      setImportHolding(false);
+      setJsonImportMode(true);
+    }, 5000);
+  }, [jsonImportMode]);
+
+  const handleImportButtonClick = useCallback(() => {
+    if (importHoldCompletedRef.current) {
+      // Swallow the click that ends a completed hold — the button has just
+      // swapped to JSON mode; the user taps again to pick a file.
+      importHoldCompletedRef.current = false;
+      return;
+    }
+    if (jsonImportMode) handleImportGenresJson();
+    else handleImportGenres();
+  }, [jsonImportMode, handleImportGenresJson, handleImportGenres]);
+
+  // Drop out of the hidden JSON mode when leaving the library tab — and cancel
+  // any in-flight hold, so a timer started before the switch can't silently
+  // flip the mode while the tab is hidden. Also clears the timer on unmount.
+  useEffect(() => {
+    if (activeTab !== "library") {
+      cancelImportHold();
+      setJsonImportMode(false);
+    }
+  }, [activeTab, cancelImportHold]);
+  useEffect(() => () => cancelImportHold(), [cancelImportHold]);
 
   const handleRemoveGenres = useCallback(() => {
     removeCustomGenres()
@@ -557,8 +633,20 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
                   </button>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button className="settings-btn" onClick={handleImportGenres}>
-                    Import...
+                  <button
+                    className={`settings-btn settings-btn-hold${
+                      importHolding ? " holding" : ""
+                    }${jsonImportMode ? " json-mode" : ""}`}
+                    onClick={handleImportButtonClick}
+                    onPointerDown={startImportHold}
+                    onPointerUp={cancelImportHold}
+                    onPointerLeave={cancelImportHold}
+                    onPointerCancel={cancelImportHold}
+                  >
+                    <span className="settings-btn-hold-fill" aria-hidden="true" />
+                    <span className="settings-btn-hold-label">
+                      {jsonImportMode ? "Import JSON" : "Import..."}
+                    </span>
                   </button>
                   {hasCustomGenres && settings.genreSource === "custom" && (
                     <button className="settings-btn" onClick={handleRemoveGenres}>

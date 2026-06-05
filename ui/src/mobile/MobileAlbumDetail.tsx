@@ -19,6 +19,7 @@ import MarqueeText from "../components/MarqueeText";
 import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "../components/DownloadMenuItems";
 import { useDownloadsStore } from "../stores/downloadsStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useGenreInfoStore } from "../stores/genreInfoStore";
 import { useConnectionStatus } from "../lib/useConnectionStatus";
 
 /**
@@ -36,6 +37,7 @@ export default function MobileAlbumDetail() {
   const loadAlbumsForArtistName = useLibraryStore((s) => s.loadAlbumsForArtistName);
   const loadAlbumsForYear = useLibraryStore((s) => s.loadAlbumsForYear);
   const selectGenreByName = useLibraryStore((s) => s.selectGenreByName);
+  const openGenreInfo = useGenreInfoStore((s) => s.open);
   const popularityDisplay = useSettingsStore((s) => s.popularityDisplay);
   const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
 
@@ -217,7 +219,11 @@ export default function MobileAlbumDetail() {
         </div>
         {genres.length > 0 && (
           <div className="mobile-detail-genres">
-            <FlowLayout genres={genres} onGenreClick={handleGenreClick} />
+            <FlowLayout
+              genres={genres}
+              onGenreClick={handleGenreClick}
+              onGenreLongPress={openGenreInfo}
+            />
           </div>
         )}
         {album.format && album.format !== "Album" && (

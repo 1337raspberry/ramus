@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useGenreInfoStore } from "../stores/genreInfoStore";
 import {
   ART_SIZE,
   setAlbumPalette,
@@ -133,6 +134,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     handleAlbumClick,
     handleGenreClick,
   } = useNowPlayingActions({ onNavigate: onCollapse });
+  const openGenreInfo = useGenreInfoStore((s) => s.open);
 
   const thumb = track?.thumb ?? nowPlayingAlbum?.thumb ?? null;
   const { artSrc, artErr, setArtErr } = useArtUrl(thumb, ART_SIZE.LARGE);
@@ -723,7 +725,11 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
             <div className="mobile-sheet-bottom">
               {currentGenres.length > 0 && (
                 <div className="mobile-sheet-genres">
-                  <FlowLayout genres={currentGenres} onGenreClick={handleGenreClick} />
+                  <FlowLayout
+                    genres={currentGenres}
+                    onGenreClick={handleGenreClick}
+                    onGenreLongPress={openGenreInfo}
+                  />
                 </div>
               )}
 

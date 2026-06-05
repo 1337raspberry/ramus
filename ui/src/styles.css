@@ -3056,6 +3056,36 @@ textarea {
   color: var(--accent);
 }
 
+/* Hold-to-reveal import button. A 5s press fills an accent bar left-to-right;
+ * completing the hold swaps the button into the hidden JSON-import mode. */
+.settings-btn-hold {
+  position: relative;
+  overflow: hidden;
+}
+
+.settings-btn-hold-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--accent-35);
+  transition: width 0.15s ease;
+  pointer-events: none;
+}
+
+.settings-btn-hold.holding .settings-btn-hold-fill {
+  width: 100%;
+  transition: width 5s linear;
+}
+
+.settings-btn-hold-label {
+  position: relative;
+}
+
+.settings-btn-hold.json-mode {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .settings-signout {
   color: #e55;
   border-color: #e55;
@@ -6762,6 +6792,160 @@ body.is-fullscreen .focus-body {
 }
 .mobile-action-sheet-cancel:active {
   background: rgba(255, 255, 255, 0.06);
+}
+
+/* --- Genre info popover ---
+ * Reader sheet for the richer genre metadata (AKA + full summary). Floats
+ * above the now-playing sheet; the body scrolls while the header stays put.
+ */
+.genre-info-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: mobile-sheet-fade-in 150ms ease;
+}
+
+.genre-info-sheet {
+  width: 100%;
+  max-width: 560px;
+  max-height: 75vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 28, 32, 0.96);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border-radius: 18px 18px 0 0;
+  padding: 8px 20px calc(20px + var(--safe-bottom));
+  animation: mobile-sheet-slide-up 200ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.genre-info-grabber {
+  flex: none;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.25);
+  margin: 4px auto 10px;
+}
+
+.genre-info-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.genre-info-back {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  margin-left: -4px;
+  cursor: pointer;
+}
+
+.genre-info-title {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+
+.genre-info-title:active {
+  opacity: 0.7;
+}
+
+.genre-info-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.genre-info-section {
+  margin-bottom: 16px;
+}
+
+.genre-info-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.genre-info-aka {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.genre-info-aka-sep {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.genre-info-summary {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.genre-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: inherit;
+  font-family: inherit;
+  vertical-align: baseline;
+  padding: 0;
+  cursor: pointer;
+}
+
+.genre-link:active {
+  opacity: 0.7;
+}
+
+/* Artist links exit the popover to the artist's albums, unlike genre links
+ * which drill in place — the dotted underline hints at the difference. */
+.artist-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: inherit;
+  font-family: inherit;
+  vertical-align: baseline;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.artist-link:active {
+  opacity: 0.7;
+}
+
+.genre-info-empty {
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 8px 0 4px;
 }
 
 /* Offline-mode: fade unplayable tracks in the album detail list. */

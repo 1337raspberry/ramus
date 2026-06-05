@@ -24,6 +24,27 @@ export interface GenreTreeResponse {
   totalAlbumCount: number;
 }
 
+/** One rendered piece of a genre description: plain text, a genre
+ * cross-reference (drills the popover), or a library artist (navigates). */
+export type DescriptionSegment =
+  | { kind: "text"; value: string }
+  | { kind: "genreLink"; value: string }
+  | { kind: "artistLink"; value: string };
+
+/**
+ * Display-only metadata for a single genre, fetched on demand (e.g. when
+ * inspecting a genre pill). Present only when the active tree was imported
+ * with richer metadata; the bundled tree returns null from the lookup.
+ * The description arrives pre-segmented: `**Genre Name**` references and
+ * in-library artist names are already resolved into link segments.
+ */
+export interface GenreMetadata {
+  canonicalName: string;
+  shortSummary: string | null;
+  cosmeticAka: string[];
+  descriptionSegments: DescriptionSegment[];
+}
+
 export interface Album {
   ratingKey: string;
   title: string;

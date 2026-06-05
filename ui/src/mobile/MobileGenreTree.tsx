@@ -1,6 +1,8 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import type { GenreNode } from "../lib/types";
 import { useLibraryStore, hasActiveFilters } from "../stores/libraryStore";
+import { useGenreInfoStore } from "../stores/genreInfoStore";
+import { useLongPress } from "../lib/useLongPress";
 import { IconTriangleFilled, IconChevronOpenDown } from "../components/Icons";
 import MobileSettingsRow from "./MobileSettingsRow";
 
@@ -56,6 +58,12 @@ function MobileGenreRow({
 }) {
   const selectGenre = useLibraryStore((s) => s.selectGenre);
   const selectGenreOnly = useLibraryStore((s) => s.selectGenreOnly);
+  const openGenreInfo = useGenreInfoStore((s) => s.open);
+
+  const longPress = useLongPress({
+    onLongPress: () => openGenreInfo(row.node.name),
+    onClick: () => selectGenre(row.node),
+  });
 
   const count = row.node.deduplicatedTotalCount || row.node.albumCount;
   const showDualCount =
@@ -65,11 +73,7 @@ function MobileGenreRow({
     row.node.albumCount !== row.node.deduplicatedTotalCount;
 
   return (
-    <div
-      data-genre-id={row.node.id}
-      className="mobile-genre-row"
-      onClick={() => selectGenre(row.node)}
-    >
+    <div data-genre-id={row.node.id} className="mobile-genre-row" {...longPress}>
       {row.depth > 0 &&
         Array.from({ length: row.depth }, (_, i) => {
           const isElbow = i === row.depth - 1;
@@ -91,6 +95,7 @@ function MobileGenreRow({
       {row.hasChildren ? (
         <span
           className="mobile-genre-chev"
+          onTouchStart={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onToggleExpand();
@@ -106,6 +111,7 @@ function MobileGenreRow({
         <>
           <span
             className="mobile-genre-count mobile-genre-count-link"
+            onTouchStart={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               selectGenre(row.node);
@@ -116,6 +122,7 @@ function MobileGenreRow({
           <span className="mobile-genre-count mobile-genre-count-sep">|</span>
           <span
             className="mobile-genre-count mobile-genre-count-link mobile-genre-count-secondary"
+            onTouchStart={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               selectGenreOnly(row.node);

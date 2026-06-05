@@ -1274,6 +1274,8 @@ pub fn run() {
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::settings::import_custom_genres,
+            commands::settings::import_custom_genres_json,
+            commands::settings::get_genre_metadata,
             commands::settings::remove_custom_genres,
             commands::settings::has_custom_genres,
             commands::settings::flush_image_cache,

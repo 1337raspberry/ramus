@@ -8,6 +8,7 @@ import type {
   CacheStats,
   ConnectionStatusPayload,
   DownloadsOverview,
+  GenreMetadata,
   GenreTreeResponse,
   LibrarySection,
   LyricsFetchResult,
@@ -276,6 +277,14 @@ export const updateSettings = (settings: Settings) => invoke<void>("update_setti
 
 export const importCustomGenres = (text: string) =>
   invoke<string[]>("import_custom_genres", { text });
+
+/** Import a richer genre tree from JSON; returns the total genre count across all depths. */
+export const importCustomGenresJson = (text: string) =>
+  invoke<number>("import_custom_genres_json", { text });
+
+/** Display metadata for a genre, or null when the active tree carries none. */
+export const getGenreMetadata = (name: string) =>
+  invoke<GenreMetadata | null>("get_genre_metadata", { name });
 
 export const removeCustomGenres = () => invoke<void>("remove_custom_genres");
 

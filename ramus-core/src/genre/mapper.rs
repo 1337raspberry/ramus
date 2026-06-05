@@ -37,9 +37,29 @@ struct GenreNodeRaw {
     name: String,
     short_summary: Option<String>,
     /// Curated alternate names for this genre. Optional so user-imported
-    /// custom trees (and any pre-AKA JSON) keep parsing.
+    /// custom trees (and any pre-AKA JSON) keep parsing. Fed to matching.
     aka: Option<Vec<String>>,
+    /// Long-form description, present only in richer imported trees. May embed
+    /// `**Genre Name**` cross-references that the UI renders as links.
+    full_description: Option<String>,
+    /// Display-only alternate names. Unlike `aka`, these are never fed to
+    /// matching — they exist purely as reference text shown alongside a genre.
+    cosmetic_aka: Option<Vec<String>>,
     children: Option<Vec<GenreNodeRaw>>,
+}
+
+/// Display-only metadata for a single genre, surfaced on demand (e.g. when a
+/// user inspects a genre pill). Populated from a richer imported genre file;
+/// the bundled tree carries none of it, so every field can be empty.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenreMetadata {
+    /// Title-cased canonical name this metadata belongs to.
+    pub canonical_name: String,
+    pub short_summary: Option<String>,
+    pub full_description: Option<String>,
+    /// Reference-only alternate names. Never used for matching.
+    pub cosmetic_aka: Vec<String>,
 }
 
 // --- GenreMapper ---
@@ -68,6 +88,11 @@ pub struct GenreMapper {
     /// for lock-free reads). Updated via `set_threshold`; a value ≥1.0
     /// disables fuzzy.
     threshold_bits: AtomicU64,
+    /// Display metadata keyed by lowercased canonical name. Covers every node
+    /// that carries any summary/description/cosmetic-AKA — including genres
+    /// with zero albums in the library — so a long-press lookup always finds
+    /// the richest copy. Empty for trees that carry no metadata.
+    metadata_lookup: HashMap<String, GenreMetadata>,
     /// Cache for matchGenre results.
     cache: Mutex<MatchCache>,
 }
@@ -99,6 +124,9 @@ impl GenreMapper {
         let mut aka_lookup: HashMap<String, Vec<String>> = HashMap::new();
         Self::collect_akas(&raw.genres, &mut aka_lookup);
 
+        let mut metadata_lookup: HashMap<String, GenreMetadata> = HashMap::new();
+        Self::collect_metadata(&raw.genres, &mut metadata_lookup);
+
         // Fuzzy pool: every distinct canonical (deduplicated by lowercased
         // name so a node appearing in multiple subtrees is only scored
         // once) plus every AKA. Each entry carries the canonical lower
@@ -121,6 +149,7 @@ impl GenreMapper {
             aka_lookup,
             fuzzy_pool,
             threshold_bits: AtomicU64::new(DEFAULT_GENRE_FUZZY_THRESHOLD.to_bits()),
+            metadata_lookup,
             cache: Mutex::new(MatchCache {
                 matches: HashMap::new(),
                 misses: HashSet::new(),
@@ -238,6 +267,42 @@ impl GenreMapper {
 
         self.cache.lock().misses.insert(key);
         Vec::new()
+    }
+
+    /// Total number of nodes in the loaded hierarchy (every genre at every
+    /// depth). Used for a human-facing "imported N genres" confirmation.
+    pub fn node_count(&self) -> usize {
+        fn count(nodes: &[GenreNode]) -> usize {
+            nodes
+                .iter()
+                .map(|n| 1 + n.children.as_deref().map_or(0, count))
+                .sum()
+        }
+        count(&self.root_nodes)
+    }
+
+    /// Whether `name` is an exact (case-insensitive) canonical genre name in
+    /// the active tree. Used to stop free-text artist matching from linking a
+    /// word that is really a genre (e.g. "Industrial", "House").
+    pub fn is_known_genre_name(&self, name: &str) -> bool {
+        self.exact_lookup.contains_key(&name.to_lowercase())
+    }
+
+    /// Display metadata for a genre name, if the active tree carries any.
+    /// Resolves like matching: exact canonical (case-insensitive) first, then
+    /// via `match_all` (AKA/fuzzy) so a stray library tag still finds its
+    /// canonical entry. Returns `None` when no metadata exists for the name.
+    pub fn genre_metadata(&self, name: &str) -> Option<GenreMetadata> {
+        let key = name.to_lowercase();
+        if let Some(meta) = self.metadata_lookup.get(&key) {
+            return Some(meta.clone());
+        }
+        for node in self.match_all(name) {
+            if let Some(meta) = self.metadata_lookup.get(&node.name.to_lowercase()) {
+                return Some(meta.clone());
+            }
+        }
+        None
     }
 
     /// Build a display tree from album sets, pruning empty branches and computing
@@ -370,6 +435,36 @@ impl GenreMapper {
             }
             if let Some(children) = &raw.children {
                 Self::collect_akas(children, out);
+            }
+        }
+    }
+
+    /// Walk the raw tree collecting display metadata keyed by lowercased
+    /// canonical name. When a name appears in multiple subtrees, the first
+    /// entry carrying a `full_description` wins so the richest copy survives;
+    /// otherwise the last seen entry is kept.
+    fn collect_metadata(raws: &[GenreNodeRaw], out: &mut HashMap<String, GenreMetadata>) {
+        for raw in raws {
+            let has_cosmetic = raw.cosmetic_aka.as_ref().is_some_and(|v| !v.is_empty());
+            if raw.short_summary.is_some() || raw.full_description.is_some() || has_cosmetic {
+                let key = raw.name.to_lowercase();
+                let keep_existing = out
+                    .get(&key)
+                    .is_some_and(|existing| existing.full_description.is_some());
+                if !keep_existing {
+                    out.insert(
+                        key,
+                        GenreMetadata {
+                            canonical_name: title_case(&raw.name),
+                            short_summary: raw.short_summary.clone(),
+                            full_description: raw.full_description.clone(),
+                            cosmetic_aka: raw.cosmetic_aka.clone().unwrap_or_default(),
+                        },
+                    );
+                }
+            }
+            if let Some(children) = &raw.children {
+                Self::collect_metadata(children, out);
             }
         }
     }
@@ -1049,5 +1144,91 @@ mod tests {
         // not to "Funky" via the AKA "funk".
         let node = mapper.match_genre("Funk").unwrap();
         assert_eq!(node.name, "Funk");
+    }
+
+    // --- Display Metadata ---
+
+    const SAMPLE_JSON_WITH_METADATA: &str = r#"{
+      "genres": [
+        {
+          "name": "ambient",
+          "short_summary": "Texture over structure.",
+          "full_description": "Ambient draws on **Jazz** and **Modern Classical**.",
+          "cosmetic_aka": ["Atmospheric"],
+          "children": [
+            { "name": "dark ambient", "cosmetic_aka": ["Ambient Industrial"], "children": [] }
+          ]
+        },
+        { "name": "rock", "aka": ["rock music"], "children": [] }
+      ]
+    }"#;
+
+    #[test]
+    fn test_genre_metadata_exact_match() {
+        let mapper = make_mapper(SAMPLE_JSON_WITH_METADATA);
+        let meta = mapper.genre_metadata("Ambient").expect("ambient has metadata");
+        assert_eq!(meta.canonical_name, "Ambient");
+        assert_eq!(meta.short_summary.as_deref(), Some("Texture over structure."));
+        assert!(meta.full_description.as_deref().unwrap().contains("**Jazz**"));
+        assert_eq!(meta.cosmetic_aka, vec!["Atmospheric"]);
+    }
+
+    #[test]
+    fn test_genre_metadata_cosmetic_only_node() {
+        // A node with only cosmetic_aka (no summary/description) still gets metadata.
+        let mapper = make_mapper(SAMPLE_JSON_WITH_METADATA);
+        let meta = mapper.genre_metadata("Dark Ambient").expect("has cosmetic aka");
+        assert_eq!(meta.cosmetic_aka, vec!["Ambient Industrial"]);
+        assert!(meta.full_description.is_none());
+    }
+
+    #[test]
+    fn test_genre_metadata_absent_returns_none() {
+        let mapper = make_mapper(SAMPLE_JSON_WITH_METADATA);
+        // "rock" exists as a node but carries no metadata fields.
+        assert!(mapper.genre_metadata("Rock").is_none());
+        // A name not in the tree at all.
+        assert!(mapper.genre_metadata("Zydeco").is_none());
+    }
+
+    #[test]
+    fn test_cosmetic_aka_does_not_feed_matching() {
+        // "Atmospheric" is a cosmetic AKA of Ambient. It must NOT resolve a tag
+        // to Ambient the way a real `aka` would — cosmetic names are display-only.
+        let mapper = make_mapper(SAMPLE_JSON_WITH_METADATA);
+        assert!(
+            mapper.match_genre("Atmospheric").is_none(),
+            "cosmetic_aka must never participate in genre matching"
+        );
+    }
+
+    #[test]
+    fn test_genre_metadata_resolves_via_aka() {
+        // A real `aka` ("rock music") with a description on the canonical node
+        // should surface that canonical's metadata.
+        let json = r#"{
+          "genres": [
+            { "name": "Rock", "aka": ["rock music"], "short_summary": "Loud.", "children": [] }
+          ]
+        }"#;
+        let mapper = make_mapper(json);
+        let meta = mapper.genre_metadata("rock music").expect("aka resolves to Rock");
+        assert_eq!(meta.canonical_name, "Rock");
+        assert_eq!(meta.short_summary.as_deref(), Some("Loud."));
+    }
+
+    #[test]
+    fn test_genre_metadata_richest_duplicate_wins() {
+        // Same name in two subtrees: the one with a full_description wins
+        // regardless of order.
+        let json = r#"{
+          "genres": [
+            { "name": "Pop", "children": [{ "name": "Funk", "cosmetic_aka": ["Funky"], "children": [] }] },
+            { "name": "R&B", "children": [{ "name": "Funk", "full_description": "The one.", "children": [] }] }
+          ]
+        }"#;
+        let mapper = make_mapper(json);
+        let meta = mapper.genre_metadata("Funk").expect("funk has metadata");
+        assert_eq!(meta.full_description.as_deref(), Some("The one."));
     }
 }

@@ -3,6 +3,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { GENRE_ID_SEP, type Album, type GenreNode } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useGenreInfoStore } from "../stores/genreInfoStore";
+import { useLongPress } from "../lib/useLongPress";
 import { IconChevronLeft, IconChevronDown, IconFilter } from "../components/Icons";
 import { type AlbumSortOrder, hasActiveFilters } from "../stores/libraryStore";
 import MobileAlbumCard from "./MobileAlbumCard";
@@ -74,6 +76,41 @@ interface Props {
   onBack?: () => void;
 }
 
+type Crumb = { label: string; depth: number; node: GenreNode | null };
+
+/** One row in the breadcrumb trail dropdown: tap navigates to that crumb,
+ * long-press opens its genre-info popover. "All" (depth 0) isn't a genre, so
+ * it gets no popover. */
+function BreadcrumbItem({
+  crumb,
+  isLast,
+  onSelect,
+  onInfo,
+}: {
+  crumb: Crumb;
+  isLast: boolean;
+  onSelect: (crumb: Crumb) => void;
+  onInfo: (name: string) => void;
+}) {
+  const longPress = useLongPress({
+    onLongPress: () => {
+      if (crumb.depth > 0) onInfo(crumb.node?.name ?? crumb.label);
+    },
+    onClick: () => {
+      if (!isLast) onSelect(crumb);
+    },
+  });
+  return (
+    <button
+      className={`mobile-breadcrumb-item${isLast ? " current" : ""}`}
+      style={{ paddingLeft: 14 + crumb.depth * 16 }}
+      {...longPress}
+    >
+      {crumb.label}
+    </button>
+  );
+}
+
 /**
  * 3-column album grid with back + title + shuffle header. Title is the
  * current genre name (or artist, year, search query, "Favourites", "All").
@@ -94,6 +131,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
   const albumFilters = useLibraryStore((s) => s.albumFilters);
   const activeBookmarkName = useLibraryStore((s) => s.activeBookmarkName);
   const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
+  const openGenreInfo = useGenreInfoStore((s) => s.open);
 
   const [showBreadcrumb, setShowBreadcrumb] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
@@ -146,6 +184,16 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
     !(sidebarMode === "artists" && selectedArtistId) &&
     !!selectedGenreId &&
     selectedGenreId !== "__all__";
+
+  // Header title: tap toggles the breadcrumb trail, long-press opens the
+  // genre-info popover for the current (deepest) genre.
+  const titleLongPress = useLongPress({
+    onLongPress: () => {
+      setShowBreadcrumb(false);
+      openGenreInfo(title);
+    },
+    onClick: () => setShowBreadcrumb((s) => !s),
+  });
 
   const crumbs = useMemo(() => {
     if (!isGenreContext || !selectedGenreId) return [];
@@ -218,7 +266,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
         <div className="mobile-header-title-wrap">
           <div
             className={`mobile-header-title${isGenreContext ? " clickable" : ""}`}
-            onClick={isGenreContext ? () => setShowBreadcrumb((s) => !s) : undefined}
+            {...(isGenreContext ? titleLongPress : {})}
           >
             <span>{title}</span>
             {artistCountryFlag && <span className="adv-country-flag">{artistCountryFlag}</span>}
@@ -235,19 +283,18 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
                 onClick={() => setShowBreadcrumb(false)}
               />
               <div className="mobile-breadcrumb-dropdown">
-                {crumbs.map((crumb, i) => {
-                  const isLast = i === crumbs.length - 1;
-                  return (
-                    <button
-                      key={crumb.node?.id ?? "all"}
-                      className={`mobile-breadcrumb-item${isLast ? " current" : ""}`}
-                      style={{ paddingLeft: 14 + crumb.depth * 16 }}
-                      onClick={isLast ? undefined : () => handleCrumbClick(crumb)}
-                    >
-                      {crumb.label}
-                    </button>
-                  );
-                })}
+                {crumbs.map((crumb, i) => (
+                  <BreadcrumbItem
+                    key={crumb.node?.id ?? "all"}
+                    crumb={crumb}
+                    isLast={i === crumbs.length - 1}
+                    onSelect={handleCrumbClick}
+                    onInfo={(name) => {
+                      setShowBreadcrumb(false);
+                      openGenreInfo(name);
+                    }}
+                  />
+                ))}
               </div>
             </>
           )}

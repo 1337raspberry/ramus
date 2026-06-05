@@ -3585,6 +3585,7 @@ name = "ramus-core"
 version = "1.0.2"
 dependencies = [
  "aes-gcm",
+ "aho-corasick",
  "core-foundation 0.10.1",
  "directories",
  "fuzzy-matcher",
