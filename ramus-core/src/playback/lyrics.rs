@@ -271,6 +271,29 @@ pub fn parse_plex_json_lyrics(data: &[u8]) -> Option<Vec<LyricLine>> {
     }
 }
 
+/// Parse a Plex lyrics stream payload into lines, sniffing its shape.
+///
+/// Plex serves lyrics in more than one format depending on the source:
+/// embedded and online lyrics come back as the timed-lyrics JSON
+/// (`MediaContainer > Lyrics > Line > Span`), while sidecar files are served as
+/// their raw bytes — an `.lrc` as LRC text, a `.txt` as plain unsynced text.
+/// The stream key's extension is unreliable (sidecar streams can carry an
+/// extensionless `/library/streams/<id>` key), so we sniff the content: try
+/// JSON, then timestamped LRC, then fall back to plain text.
+pub fn parse_plex_lyrics_payload(data: &[u8]) -> Vec<LyricLine> {
+    if let Some(lines) = parse_plex_json_lyrics(data) {
+        return lines;
+    }
+    let text = String::from_utf8_lossy(data);
+    // `parse_lrc` keeps only lines carrying a valid `[mm:ss.cc]` timestamp, so
+    // an empty result means this isn't LRC — treat it as plain text instead.
+    let lrc = parse_lrc(&text);
+    if !lrc.is_empty() {
+        return lrc;
+    }
+    parse_plain_lyrics(&text)
+}
+
 /// Validate a Plex lyrics stream path: must start with `/library/` or
 /// `/file/`, and must not contain path traversal.
 pub fn validate_lyrics_path(path: &str) -> bool {
@@ -406,25 +429,63 @@ async fn fetch_from_lrclib_at(
 /// absence of a lyrics stream, an invalid path, or any fetch/parse failure.
 /// Plex is a preferred-but-optional source: a failure here simply falls
 /// through to LRCLIB, so it deliberately does not surface transient errors.
+/// Each early-out logs at debug level so "why didn't Plex lyrics load" can be
+/// traced; the stream key is a token-free `/library/...` path, safe to log.
 pub async fn fetch_from_plex(
     plex: &crate::plex::client::PlexClient,
     rating_key: &str,
 ) -> Option<LyricsResult> {
-    let stream = plex.fetch_lyrics_stream(rating_key).await.ok()??;
-    let key = stream.key.as_deref()?;
-    if !validate_lyrics_path(key) {
-        return None;
-    }
-    let data = plex.download_lyrics_data(key).await.ok()?;
-    let lines = if key.ends_with(".lrc") {
-        parse_lrc(&String::from_utf8_lossy(&data))
-    } else {
-        parse_plex_json_lyrics(&data)?
+    let stream = match plex.fetch_lyrics_stream(rating_key).await {
+        Ok(Some(stream)) => stream,
+        Ok(None) => {
+            log::debug!("lyrics: Plex exposes no lyrics stream for track {rating_key}");
+            return None;
+        }
+        Err(_) => {
+            log::debug!("lyrics: Plex metadata lookup failed for track {rating_key}");
+            return None;
+        }
     };
-    if lines.is_empty() {
+
+    let Some(key) = stream.key.as_deref() else {
+        log::debug!(
+            "lyrics: Plex lyrics stream for {rating_key} has no fetchable key \
+             (format={:?}, codec={:?}, timed={:?})",
+            stream.format,
+            stream.codec,
+            stream.timed
+        );
+        return None;
+    };
+
+    if !validate_lyrics_path(key) {
+        log::debug!("lyrics: Plex lyrics key for {rating_key} failed path validation: {key}");
         return None;
     }
+
+    let data = match plex.download_lyrics_data(key).await {
+        Ok(data) => data,
+        Err(_) => {
+            log::debug!("lyrics: Plex lyrics download failed for {rating_key} (key {key})");
+            return None;
+        }
+    };
+
+    let lines = parse_plex_lyrics_payload(&data);
+    if lines.is_empty() {
+        log::debug!(
+            "lyrics: Plex lyrics payload for {rating_key} parsed to zero lines \
+             (key={key}, {} bytes)",
+            data.len()
+        );
+        return None;
+    }
+
     let is_synced = lines.iter().any(|l| l.timestamp.is_some());
+    log::debug!(
+        "lyrics: using Plex lyrics for {rating_key} ({} lines, synced={is_synced}, key={key})",
+        lines.len()
+    );
     Some(LyricsResult {
         lines,
         is_synced,
@@ -713,6 +774,49 @@ mod tests {
         let lines = parse_plex_json_lyrics(json.as_bytes()).unwrap();
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].text, "Real line");
+    }
+
+    #[test]
+    fn test_parse_plex_payload_json() {
+        let json = br#"{
+            "MediaContainer": {
+                "Lyrics": [{
+                    "Line": [
+                        {"Span": [{"text": "Hello world", "startOffset": 12340}]}
+                    ]
+                }]
+            }
+        }"#;
+        let lines = parse_plex_lyrics_payload(json);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "Hello world");
+        assert!(lines[0].timestamp.is_some());
+    }
+
+    #[test]
+    fn test_parse_plex_payload_lrc_sidecar() {
+        // A `.lrc` sidecar is served as raw LRC text, not JSON.
+        let lrc = b"[00:05.00] Synced line\n[00:10.00] Another";
+        let lines = parse_plex_lyrics_payload(lrc);
+        assert_eq!(lines.len(), 2);
+        assert!(lines.iter().all(|l| l.timestamp.is_some()));
+    }
+
+    #[test]
+    fn test_parse_plex_payload_plain_txt_sidecar() {
+        // A `.txt` sidecar is served as raw plain text — no JSON, no timestamps.
+        let txt = b"First line of lyrics\nSecond line\n\nThird line";
+        let lines = parse_plex_lyrics_payload(txt);
+        assert_eq!(lines.len(), 3);
+        assert!(lines.iter().all(|l| l.timestamp.is_none()));
+        assert_eq!(lines[0].text, "First line of lyrics");
+        assert_eq!(lines[2].text, "Third line");
+    }
+
+    #[test]
+    fn test_parse_plex_payload_empty_is_empty() {
+        assert!(parse_plex_lyrics_payload(b"").is_empty());
+        assert!(parse_plex_lyrics_payload(b"   \n  \n").is_empty());
     }
 
     #[test]
