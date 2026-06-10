@@ -281,11 +281,29 @@ impl GenreMapper {
         count(&self.root_nodes)
     }
 
-    /// Whether `name` is an exact (case-insensitive) canonical genre name in
-    /// the active tree. Used to stop free-text artist matching from linking a
-    /// word that is really a genre (e.g. "Industrial", "House").
-    pub fn is_known_genre_name(&self, name: &str) -> bool {
-        self.exact_lookup.contains_key(&name.to_lowercase())
+    /// Lowercased names of every genre that has at least one album in its
+    /// subtree — i.e. the genres that would survive into the pruned display
+    /// tree. A genre qualifies when it, or any descendant, carries a library
+    /// album tag; ancestors come for free from each matched node's path-id.
+    /// Used to tell whether a genre reference actually leads to albums.
+    pub fn library_genre_names(
+        &self,
+        genre_album_sets: &HashMap<String, HashSet<i64>>,
+    ) -> HashSet<String> {
+        let mut out = HashSet::new();
+        for (tag, albums) in genre_album_sets {
+            if albums.is_empty() {
+                continue;
+            }
+            for node in self.match_all(tag) {
+                // node.id is the lowercased ancestor names joined by the
+                // separator, so splitting yields the node plus every ancestor.
+                for ancestor in node.id.split(crate::genre::node::GENRE_ID_SEP) {
+                    out.insert(ancestor.to_string());
+                }
+            }
+        }
+        out
     }
 
     /// Display metadata for a genre name, if the active tree carries any.
@@ -1215,6 +1233,28 @@ mod tests {
         let meta = mapper.genre_metadata("rock music").expect("aka resolves to Rock");
         assert_eq!(meta.canonical_name, "Rock");
         assert_eq!(meta.short_summary.as_deref(), Some("Loud."));
+    }
+
+    #[test]
+    fn test_library_genre_names_includes_ancestors() {
+        // An album tagged "Death Metal" should mark Death Metal AND its
+        // ancestor Metal as in-library; untagged genres stay out.
+        let mapper = make_mapper(SAMPLE_JSON);
+        let mut sets: HashMap<String, HashSet<i64>> = HashMap::new();
+        sets.insert("Death Metal".into(), [1, 2].into());
+        let lib = mapper.library_genre_names(&sets);
+        assert!(lib.contains("death metal"));
+        assert!(lib.contains("metal"));
+        assert!(!lib.contains("thrash metal"));
+        assert!(!lib.contains("rock"));
+    }
+
+    #[test]
+    fn test_library_genre_names_ignores_empty_album_sets() {
+        let mapper = make_mapper(SAMPLE_JSON);
+        let mut sets: HashMap<String, HashSet<i64>> = HashMap::new();
+        sets.insert("Death Metal".into(), HashSet::new());
+        assert!(mapper.library_genre_names(&sets).is_empty());
     }
 
     #[test]

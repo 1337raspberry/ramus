@@ -6862,10 +6862,17 @@ body.is-fullscreen .focus-body {
   line-height: 1.2;
   text-align: left;
   padding: 0;
-  cursor: pointer;
+  /* Non-clickable by default — only a genre with library albums is a link. */
+  cursor: default;
 }
 
-.genre-info-title:active {
+.genre-info-title.linked {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.genre-info-title.linked:active {
   opacity: 0.7;
 }
 
@@ -6873,6 +6880,14 @@ body.is-fullscreen .focus-body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+}
+
+.genre-info-short {
+  margin: 0 0 16px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.5;
 }
 
 .genre-info-section {
@@ -6906,39 +6921,41 @@ body.is-fullscreen .focus-body {
   white-space: pre-wrap;
 }
 
-.genre-link {
+/* In-description references. All accent-coloured; `.owned` (a genre with
+ * library albums, or an owned artist) adds bold + dotted underline. Genre links
+ * always drill into the genre's info (pointer); artist links navigate only when
+ * owned, so a non-owned artist (`.artist-ref`) is non-interactive. */
+.genre-link,
+.artist-link,
+.artist-ref {
   background: none;
   border: none;
+  padding: 0;
   color: var(--accent);
-  font-weight: 700;
   font-size: inherit;
   font-family: inherit;
+  font-weight: inherit;
   vertical-align: baseline;
-  padding: 0;
+}
+
+.genre-link {
   cursor: pointer;
 }
 
-.genre-link:active {
-  opacity: 0.7;
+.artist-ref {
+  cursor: default;
 }
 
-/* Artist links exit the popover to the artist's albums, unlike genre links
- * which drill in place — the dotted underline hints at the difference. */
-.artist-link {
-  background: none;
-  border: none;
-  color: var(--accent);
+.genre-link.owned,
+.artist-link.owned {
   font-weight: 700;
-  font-size: inherit;
-  font-family: inherit;
-  vertical-align: baseline;
-  padding: 0;
   cursor: pointer;
   text-decoration: underline dotted;
   text-underline-offset: 2px;
 }
 
-.artist-link:active {
+.genre-link:active,
+.artist-link.owned:active {
   opacity: 0.7;
 }
 

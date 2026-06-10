@@ -22,9 +22,6 @@ directories = "5"
 rand = "0.8"
 fuzzy-matcher = "0.3"
 strsim = "0.11"
-# Multi-pattern string scanner for detecting known names in free-text genre
-# descriptions (one sweep finds all library artist names at once).
-aho-corasick = "1"
 rusqlite = { version = "0.31", features = ["bundled", "column_decltype"] }
 # Pure-Rust real FFT powering the focus-mode spectrum visualiser. No
 # system deps, no libav linkage, compiles on every platform.

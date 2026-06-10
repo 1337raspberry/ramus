@@ -100,9 +100,11 @@ export default function GenreInfoSheet({ onNavigate }: Props) {
   const key = current.toLowerCase();
   const loading = !(key in cache);
   const meta = cache[key] ?? null;
+  const shortSummary = meta?.shortSummary ?? null;
   const akas = meta?.cosmeticAka ?? [];
   const segments = meta?.descriptionSegments ?? [];
-  const showMinimal = !loading && akas.length === 0 && segments.length === 0;
+  const titleInLibrary = meta?.inLibrary ?? false;
+  const showMinimal = !loading && !shortSummary && akas.length === 0 && segments.length === 0;
 
   const navigateToGenre = (genre: string) => {
     close();
@@ -131,16 +133,22 @@ export default function GenreInfoSheet({ onNavigate }: Props) {
               <IconChevronLeft size={22} />
             </button>
           )}
-          <button
-            className="genre-info-title"
-            onClick={() => navigateToGenre(current)}
-            title="Show albums for this genre"
-          >
-            {meta?.canonicalName ?? current}
-          </button>
+          {titleInLibrary ? (
+            <button
+              className="genre-info-title linked"
+              onClick={() => navigateToGenre(current)}
+              title="Show albums for this genre"
+            >
+              {meta?.canonicalName ?? current}
+            </button>
+          ) : (
+            <span className="genre-info-title">{meta?.canonicalName ?? current}</span>
+          )}
         </div>
 
         <div className="genre-info-body">
+          {shortSummary && <p className="genre-info-short">{shortSummary}</p>}
+
           {akas.length > 0 && (
             <div className="genre-info-section">
               <div className="genre-info-label">AKA</div>
@@ -157,25 +165,40 @@ export default function GenreInfoSheet({ onNavigate }: Props) {
 
           {segments.length > 0 && (
             <div className="genre-info-section">
-              <div className="genre-info-label">Full Summary</div>
               <p className="genre-info-summary">
                 {segments.map((seg, i) => {
                   if (seg.kind === "text") return <span key={i}>{seg.value}</span>;
                   if (seg.kind === "genreLink") {
+                    // Genre links always drill into the genre's info; the
+                    // library flag only adds the bold + underlined treatment.
                     return (
-                      <button key={i} className="genre-link" onClick={() => drillInto(seg.value)}>
+                      <button
+                        key={i}
+                        className={`genre-link${seg.inLibrary ? " owned" : ""}`}
+                        onClick={() => drillInto(seg.value)}
+                      >
+                        {seg.value}
+                      </button>
+                    );
+                  }
+                  // Artist links navigate only when owned; otherwise they're
+                  // accent-coloured but non-interactive.
+                  if (seg.inLibrary) {
+                    const navName = seg.navName ?? seg.value;
+                    return (
+                      <button
+                        key={i}
+                        className="artist-link owned"
+                        onClick={() => navigateToArtist(navName)}
+                      >
                         {seg.value}
                       </button>
                     );
                   }
                   return (
-                    <button
-                      key={i}
-                      className="artist-link"
-                      onClick={() => navigateToArtist(seg.value)}
-                    >
+                    <span key={i} className="artist-ref">
                       {seg.value}
-                    </button>
+                    </span>
                   );
                 })}
               </p>

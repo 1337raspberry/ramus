@@ -2,7 +2,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use ramus_core::genre::mapper::GenreMapper;
-use ramus_core::genre::markup::{build_description_segments, ArtistIndex, DescriptionSegment};
+use ramus_core::genre::markup::{build_description_segments, normalize_artist, DescriptionSegment};
 use ramus_core::genre::parser::CustomGenreParser;
 use ramus_core::models::{Bookmark, Settings};
 use ramus_core::playback::spectrum::spec_file_path;
@@ -148,6 +148,9 @@ pub async fn import_custom_genres_json(
 #[serde(rename_all = "camelCase")]
 pub struct GenreMetadataResponse {
     pub canonical_name: String,
+    /// Whether this genre has albums in the library — drives whether the title
+    /// is a navigable link (and is underlined) in the UI.
+    pub in_library: bool,
     pub short_summary: Option<String>,
     pub cosmetic_aka: Vec<String>,
     /// Ordered, non-overlapping description segments. Empty when the genre has
@@ -160,12 +163,14 @@ pub async fn get_genre_metadata(
     state: State<'_, AppState>,
     name: String,
 ) -> CmdResult<Option<GenreMetadataResponse>> {
-    // Library artist names feed the in-description artist linker. Absent before
-    // the cache is ready — fall back to no artist links (genre links still work).
+    // Library membership flags each genre/artist reference. Both come from the
+    // cache; if it isn't ready yet, fall back to empty sets (everything reads as
+    // not-in-library — genre links still drill, they just aren't underlined).
     let artist_names: Vec<String> = super::with_cache(&state, |db| {
         Ok(db.all_artists()?.into_iter().map(|a| a.1).collect())
     })
     .unwrap_or_default();
+    let genre_album_sets = super::with_cache(&state, |db| db.genre_album_sets()).unwrap_or_default();
 
     let guard = state.genre_mapper.read();
     let Some(mapper) = guard.as_ref() else {
@@ -175,16 +180,23 @@ pub async fn get_genre_metadata(
         return Ok(None);
     };
 
+    let library_genres = mapper.library_genre_names(&genre_album_sets);
+    // Normalized artist name -> actual library name, so a tolerant match (e.g.
+    // "blink-182" vs "Blink 182") still navigates to the real artist.
+    let library_artists: std::collections::HashMap<String, String> = artist_names
+        .iter()
+        .map(|n| (normalize_artist(n), n.clone()))
+        .collect();
+
+    let in_library = library_genres.contains(&meta.canonical_name.to_lowercase());
     let description_segments = match &meta.full_description {
-        Some(desc) => {
-            let index = ArtistIndex::build(&artist_names);
-            build_description_segments(desc, mapper, &index)
-        }
+        Some(desc) => build_description_segments(desc, &library_genres, &library_artists),
         None => Vec::new(),
     };
 
     Ok(Some(GenreMetadataResponse {
         canonical_name: meta.canonical_name,
+        in_library,
         short_summary: meta.short_summary,
         cosmetic_aka: meta.cosmetic_aka,
         description_segments,
