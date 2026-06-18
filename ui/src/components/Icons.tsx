@@ -342,6 +342,27 @@ export function IconFilter({ size = defaults.size, className }: IconProps) {
   );
 }
 
+export function IconStopwatch({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <circle cx="12" cy="14" r="8" />
+      <path d="M12 14V9.5" />
+      <path d="M9 2h6" />
+      <path d="M19 5.5l1.6 1.6" />
+    </svg>
+  );
+}
+
 export function IconChevronOpenDown({ size = defaults.size, className }: IconProps) {
   return (
     <svg

@@ -75,6 +75,10 @@ export const DEFAULT_FILTERS: AlbumFilters = {
   collection: "",
 };
 
+/// Half-width (in minutes) of the suggestion target-length window: a target of
+/// T minutes matches albums whose total runtime is within T ± this value.
+export const SUGGEST_TOLERANCE_MIN = 3;
+
 // Migrate the pre-chip shape (`country: string`, single `favourite` toggle) to
 // the current shape (`countries: string[]`, split favourite booleans, `genres`
 // array). Keeps existing users' filter preferences working on first load after
@@ -319,7 +323,15 @@ interface LibraryState {
 
   // --- Suggestion ---
   suggestion: Album | null;
+  /// Target album runtime in minutes for the mobile suggestion page; `null`
+  /// means "any length". Session-only — deliberately kept out of the persisted
+  /// `albumFilters` so it never leaks into the album grid or desktop.
+  suggestionTargetMinutes: number | null;
+  /// True when the last suggestion query found no album (read by the mobile
+  /// suggestion view to show a "no match" state). Desktop ignores it.
+  suggestionMissed: boolean;
   loadSuggestion: () => Promise<void>;
+  setSuggestionTargetMinutes: (minutes: number | null) => void;
   clearSuggestion: () => void;
 
   // --- Album Detail ---
@@ -853,18 +865,36 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   // --- Suggestion ---
   suggestion: null,
+  suggestionTargetMinutes: null,
+  suggestionMissed: false,
 
   loadSuggestion: async () => {
     try {
       const filters = get().albumFilters;
-      const album = hasActiveFilters(filters)
-        ? await getFilteredRandomAlbum(filtersToIPC(filters))
+      const target = get().suggestionTargetMinutes;
+      // A target length alone (no other filters) still needs the filtered path.
+      const useFiltered = hasActiveFilters(filters) || target != null;
+      const album = useFiltered
+        ? await getFilteredRandomAlbum({
+            ...filtersToIPC(filters),
+            durationMinMs: target != null ? (target - SUGGEST_TOLERANCE_MIN) * 60_000 : null,
+            durationMaxMs: target != null ? (target + SUGGEST_TOLERANCE_MIN) * 60_000 : null,
+          })
         : await getRandomAlbum();
-      if (album) set({ suggestion: album });
+      if (album) set({ suggestion: album, suggestionMissed: false });
+      // Keep the stale `suggestion` so desktop's view switch is unaffected; the
+      // mobile view reads `suggestionMissed` to show its "no match" state.
+      else set({ suggestionMissed: true });
     } catch {}
   },
 
-  clearSuggestion: () => set({ suggestion: null }),
+  setSuggestionTargetMinutes: (minutes) => {
+    set({ suggestionTargetMinutes: minutes });
+    // Picking a target reshuffles immediately within the new constraint.
+    get().loadSuggestion();
+  },
+
+  clearSuggestion: () => set({ suggestion: null, suggestionMissed: false }),
 
   // --- Album Detail ---
   detailAlbum: null,

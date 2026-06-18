@@ -22,6 +22,11 @@ export interface AlbumFilterParamsIPC {
   countries: string[];
   genres: string[];
   collection: string | null;
+  /** Total-runtime window in milliseconds (sum of an album's track durations).
+   * Only the mobile suggestion "target length" filter sets these; every other
+   * caller leaves them null. */
+  durationMinMs: number | null;
+  durationMaxMs: number | null;
 }
 
 /// Translate the client-side filter shape into the IPC shape. Year string is
@@ -38,5 +43,7 @@ export function filtersToIPC(filters: AlbumFilters): AlbumFilterParamsIPC {
     countries: filters.countries,
     genres: filters.genres,
     collection: filters.collection || null,
+    durationMinMs: null,
+    durationMaxMs: null,
   };
 }

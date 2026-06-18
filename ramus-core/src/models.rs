@@ -190,6 +190,11 @@ pub struct AlbumFilterParams {
     #[serde(default)]
     pub genres: Vec<String>,
     pub collection: Option<String>,
+    /// Total-runtime window in milliseconds, matched against the sum of an
+    /// album's track durations. Used by the mobile "target album length"
+    /// suggestion filter; `None` on every other path.
+    pub duration_min_ms: Option<i64>,
+    pub duration_max_ms: Option<i64>,
 }
 
 impl AlbumFilterParams {
@@ -202,6 +207,8 @@ impl AlbumFilterParams {
             && self.countries.is_empty()
             && self.genres.is_empty()
             && self.collection.is_none()
+            && self.duration_min_ms.is_none()
+            && self.duration_max_ms.is_none()
     }
 }
 

@@ -754,7 +754,59 @@ impl CacheDatabase {
             ids.retain(|id| col_ids.contains(id));
         }
 
+        if params.duration_min_ms.is_some() || params.duration_max_ms.is_some() {
+            let dur_ids =
+                self.album_ids_within_duration(params.duration_min_ms, params.duration_max_ms)?;
+            ids.retain(|id| dur_ids.contains(id));
+        }
+
         Ok(ids)
+    }
+
+    /// Album IDs whose total runtime (the sum of their tracks' `durationMs`)
+    /// falls within the given inclusive millisecond window. At least one bound
+    /// must be present; an all-`None` call returns every album with tracks.
+    ///
+    /// `SUM` skips NULL durations, so an album whose tracks all lack a duration
+    /// has a NULL sum and fails the `HAVING` comparison — it's excluded, which
+    /// is correct: we can't place an album of unknown length in a window.
+    pub fn album_ids_within_duration(
+        &self,
+        min_ms: Option<i64>,
+        max_ms: Option<i64>,
+    ) -> Result<HashSet<i64>, CacheError> {
+        let conn = self.conn.lock();
+
+        let mut having = Vec::new();
+        let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        if let Some(min) = min_ms {
+            bind_values.push(Box::new(min));
+            having.push("SUM(durationMs) >= ?");
+        }
+        if let Some(max) = max_ms {
+            bind_values.push(Box::new(max));
+            having.push("SUM(durationMs) <= ?");
+        }
+
+        let having_clause = if having.is_empty() {
+            "SUM(durationMs) IS NOT NULL".to_string()
+        } else {
+            having.join(" AND ")
+        };
+        let sql = format!(
+            "SELECT albumId FROM tracks GROUP BY albumId HAVING {}",
+            having_clause
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            bind_values.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(param_refs.as_slice(), |row| row.get::<_, i64>(0))?;
+        let mut set = HashSet::new();
+        for row in rows {
+            set.insert(row?);
+        }
+        Ok(set)
     }
 
     /// Distinct, individual country tags across all artists. Plex sometimes
@@ -1742,5 +1794,110 @@ mod tests {
         assert_eq!(canada_count, 1);
         // No raw "Scotland, United Kingdom" compound left over.
         assert!(!names.iter().any(|n| n.contains(',')));
+    }
+
+    /// Seed a single track with an explicit (or absent) duration so duration
+    /// filtering can be exercised. Track/disc numbers are irrelevant here.
+    fn seed_track_dur(
+        db: &CacheDatabase,
+        source_id: &str,
+        album_id: i64,
+        artist_id: i64,
+        duration_ms: Option<i64>,
+    ) {
+        db.batch_upsert_tracks(&[TrackUpsertRow {
+            title: source_id.into(),
+            album_id,
+            artist_id,
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration_ms,
+            source_id: source_id.into(),
+            codec: Some("flac".into()),
+            part_key: None,
+            stream_id: None,
+            user_rating: None,
+            bitrate: Some(1411),
+            track_artist: None,
+            updated_at: Some(1000),
+            file_size_bytes: None,
+            rating_count: None,
+        }])
+        .unwrap();
+    }
+
+    #[test]
+    fn test_album_ids_within_duration_bounds() {
+        let db = setup();
+        let ar = seed_artist(&db, "ar1", "Various");
+        // Three albums of distinct total runtime (two tracks each).
+        let short = seed_album(&db, "al_short", "Short", ar, None); // 20 min
+        seed_track_dur(&db, "t_s1", short, ar, Some(600_000));
+        seed_track_dur(&db, "t_s2", short, ar, Some(600_000));
+        let mid = seed_album(&db, "al_mid", "Mid", ar, None); // 40 min
+        seed_track_dur(&db, "t_m1", mid, ar, Some(1_200_000));
+        seed_track_dur(&db, "t_m2", mid, ar, Some(1_200_000));
+        let long = seed_album(&db, "al_long", "Long", ar, None); // 80 min
+        seed_track_dur(&db, "t_l1", long, ar, Some(2_400_000));
+        seed_track_dur(&db, "t_l2", long, ar, Some(2_400_000));
+
+        // Window 37-43 min around a 40 min target: only the mid album.
+        let win = db
+            .album_ids_within_duration(Some(37 * 60_000), Some(43 * 60_000))
+            .unwrap();
+        assert_eq!(win, HashSet::from([mid]));
+
+        // Min-only: 40 min and up.
+        let min_only = db.album_ids_within_duration(Some(40 * 60_000), None).unwrap();
+        assert_eq!(min_only, HashSet::from([mid, long]));
+
+        // Max-only: 40 min and under.
+        let max_only = db.album_ids_within_duration(None, Some(40 * 60_000)).unwrap();
+        assert_eq!(max_only, HashSet::from([short, mid]));
+    }
+
+    #[test]
+    fn test_album_ids_within_duration_excludes_null_durations() {
+        let db = setup();
+        let ar = seed_artist(&db, "ar1", "Various");
+        let known = seed_album(&db, "al_known", "Known", ar, None);
+        seed_track_dur(&db, "t_k1", known, ar, Some(1_200_000)); // 20 min
+        // An album whose every track lacks a duration: SUM is NULL → excluded.
+        let unknown = seed_album(&db, "al_unknown", "Unknown", ar, None);
+        seed_track_dur(&db, "t_u1", unknown, ar, None);
+        seed_track_dur(&db, "t_u2", unknown, ar, None);
+
+        let ids = db
+            .album_ids_within_duration(Some(10 * 60_000), Some(120 * 60_000))
+            .unwrap();
+        assert_eq!(ids, HashSet::from([known]));
+        assert!(!ids.contains(&unknown));
+    }
+
+    #[test]
+    fn test_filtered_album_internal_ids_duration_and_year_combine() {
+        let db = setup();
+        let ar = seed_artist(&db, "ar1", "Various");
+        // Two ~40 min albums, different years; one 80 min album in range year.
+        let a_80s = seed_album(&db, "al_80s", "Eighties Forty", ar, Some(1985));
+        seed_track_dur(&db, "t_80a", a_80s, ar, Some(1_200_000));
+        seed_track_dur(&db, "t_80b", a_80s, ar, Some(1_200_000));
+        let a_90s = seed_album(&db, "al_90s", "Nineties Forty", ar, Some(1995));
+        seed_track_dur(&db, "t_90a", a_90s, ar, Some(1_200_000));
+        seed_track_dur(&db, "t_90b", a_90s, ar, Some(1_200_000));
+        let a_80s_long = seed_album(&db, "al_80s_long", "Eighties Eighty", ar, Some(1986));
+        seed_track_dur(&db, "t_80l1", a_80s_long, ar, Some(2_400_000));
+        seed_track_dur(&db, "t_80l2", a_80s_long, ar, Some(2_400_000));
+
+        // 80s AND ~40 min → only the 40 min 80s album (AND, not OR).
+        let params = AlbumFilterParams {
+            year_min: Some(1980),
+            year_max: Some(1989),
+            duration_min_ms: Some(37 * 60_000),
+            duration_max_ms: Some(43 * 60_000),
+            ..Default::default()
+        };
+        let ids = db.filtered_album_internal_ids(&params).unwrap();
+        assert_eq!(ids, HashSet::from([a_80s]));
     }
 }

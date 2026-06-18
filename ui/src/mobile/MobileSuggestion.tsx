@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -12,10 +12,21 @@ import {
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import { applyAccent } from "../lib/accent";
 import { countryToFlag } from "../lib/countryFlag";
-import { IconMusicNote, IconShuffle, IconChevronLeft, IconFilter } from "../components/Icons";
+import {
+  IconMusicNote,
+  IconShuffle,
+  IconChevronLeft,
+  IconFilter,
+  IconStopwatch,
+} from "../components/Icons";
 import FlowLayout from "../components/FlowLayout";
 import MobileFilterPanel from "./MobileFilterPanel";
-import { hasActiveFilters } from "../stores/libraryStore";
+import MobileDurationPicker from "./MobileDurationPicker";
+import { hasActiveFilters, SUGGEST_TOLERANCE_MIN } from "../stores/libraryStore";
+
+function formatTarget(minutes: number): string {
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
+}
 
 interface Props {
   onClose: () => void;
@@ -32,8 +43,13 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
   const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
 
   const albumFilters = useLibraryStore((s) => s.albumFilters);
+  const targetMinutes = useLibraryStore((s) => s.suggestionTargetMinutes);
+  const suggestionMissed = useLibraryStore((s) => s.suggestionMissed);
   const [showFilter, setShowFilter] = useState(false);
+  const [showDuration, setShowDuration] = useState(false);
+  const durationBtnRef = useRef<HTMLButtonElement>(null);
   const filterActive = hasActiveFilters(albumFilters);
+  const targetActive = targetMinutes != null;
 
   const [artSrc, setArtSrc] = useState<string | null>(null);
   const [artErr, setArtErr] = useState(false);
@@ -113,31 +129,67 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
     onClose();
   };
 
+  const renderHeader = () => (
+    <header className="mobile-header mobile-header-5col">
+      <button className="mobile-header-circle" onClick={handleClose} aria-label="Back">
+        <IconChevronLeft size={22} />
+      </button>
+      <button
+        ref={durationBtnRef}
+        className={`mobile-header-circle${targetActive ? " accent" : ""}`}
+        onClick={() => setShowDuration((v) => !v)}
+        aria-label="Target album length"
+      >
+        <IconStopwatch size={20} />
+        {targetActive && <span className="mobile-filter-dot" />}
+      </button>
+      <div className="mobile-header-title">{targetActive ? formatTarget(targetMinutes!) : " "}</div>
+      <button
+        className={`mobile-header-circle${filterActive ? " accent" : ""}`}
+        onClick={() => setShowFilter(true)}
+        aria-label="Filter suggestions"
+      >
+        <IconFilter size={18} />
+        {filterActive && <span className="mobile-filter-dot" />}
+      </button>
+      <button className="mobile-header-circle" onClick={loadSuggestion} aria-label="New suggestion">
+        <IconShuffle size={22} />
+      </button>
+    </header>
+  );
+
+  const overlays = (
+    <>
+      {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
+      {showDuration && (
+        <MobileDurationPicker anchorRef={durationBtnRef} onDismiss={() => setShowDuration(false)} />
+      )}
+    </>
+  );
+
+  // A "missed" query keeps the stale `suggestion` (so desktop is unaffected),
+  // so check the miss flag before falling through to the album render.
+  if (suggestionMissed) {
+    return (
+      <div className="mobile-screen mobile-suggestion">
+        {renderHeader()}
+        {overlays}
+        <div className="mobile-empty">
+          {targetActive
+            ? `No albums within ±${SUGGEST_TOLERANCE_MIN} min of ${formatTarget(targetMinutes!)}. Try another length or adjust your filters.`
+            : filterActive
+              ? "No albums match your current filters."
+              : "No albums to suggest yet."}
+        </div>
+      </div>
+    );
+  }
+
   if (!album) {
     return (
       <div className="mobile-screen mobile-suggestion">
-        <header className="mobile-header mobile-header-4col">
-          <button className="mobile-header-circle" onClick={handleClose} aria-label="Back">
-            <IconChevronLeft size={22} />
-          </button>
-          <div className="mobile-header-title"> </div>
-          <button
-            className={`mobile-header-circle${filterActive ? " accent" : ""}`}
-            onClick={() => setShowFilter(true)}
-            aria-label="Filter suggestions"
-          >
-            <IconFilter size={18} />
-            {filterActive && <span className="mobile-filter-dot" />}
-          </button>
-          <button
-            className="mobile-header-circle"
-            onClick={loadSuggestion}
-            aria-label="New suggestion"
-          >
-            <IconShuffle size={22} />
-          </button>
-        </header>
-        {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
+        {renderHeader()}
+        {overlays}
         <div className="mobile-empty">Loading suggestion...</div>
       </div>
     );
@@ -145,28 +197,8 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
 
   return (
     <div className="mobile-screen mobile-suggestion">
-      <header className="mobile-header mobile-header-4col">
-        <button className="mobile-header-circle" onClick={handleClose} aria-label="Back">
-          <IconChevronLeft size={22} />
-        </button>
-        <div className="mobile-header-title"> </div>
-        <button
-          className={`mobile-header-circle${filterActive ? " accent" : ""}`}
-          onClick={() => setShowFilter(true)}
-          aria-label="Filter suggestions"
-        >
-          <IconFilter size={18} />
-          {filterActive && <span className="mobile-filter-dot" />}
-        </button>
-        <button
-          className="mobile-header-circle"
-          onClick={loadSuggestion}
-          aria-label="New suggestion"
-        >
-          <IconShuffle size={22} />
-        </button>
-      </header>
-      {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
+      {renderHeader()}
+      {overlays}
 
       <div className="mobile-suggestion-body">
         <button
