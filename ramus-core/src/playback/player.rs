@@ -236,6 +236,14 @@ struct PlayerInner {
     /// bytes mpv pulls during playback so the spectrum analyser can
     /// process them without a second HTTP fetch.
     stream_record_dir: Option<PathBuf>,
+    /// Seconds the current mpv stream is shifted from the track's true
+    /// timeline. Non-zero only after a transcode `offset=` resume, where
+    /// mpv sees a fresh 0-based stream that is really the track's tail;
+    /// `handle_position_change` adds this so the seek bar reads correctly
+    /// and `seek` subtracts it. Reset to 0 on every normal (from-the-top)
+    /// load. Always 0 for direct-play, whose mpv `start=` keeps the
+    /// timeline absolute.
+    position_base: f64,
 }
 
 /// Core audio player managing queue state, mpv commands, and track resolution.
@@ -273,6 +281,7 @@ impl AudioPlayer {
                 load_started_at: None,
                 last_load_error: None,
                 stream_record_dir: None,
+                position_base: 0.0,
             }),
             persistent_cache: RwLock::new(HashMap::new()),
         }
@@ -393,6 +402,7 @@ impl AudioPlayer {
             inner.state.status = PlaybackStatus::Playing;
             inner.play_session_id = uuid::Uuid::new_v4().to_string();
             inner.position = 0.0;
+            inner.position_base = 0.0;
             // Seed from Plex metadata. mpv's reported duration for our
             // chunked-Opus transcode stream (no Content-Length) flutters
             // as it reads ahead — the metadata value is stable and the
@@ -605,6 +615,13 @@ impl AudioPlayer {
         let mut inner = self.inner.lock();
 
         if inner.position > PREVIOUS_RESTART_THRESHOLD {
+            // A transcode `offset=` stream can't rewind before its resume
+            // point; reload the track fresh from the top instead.
+            if inner.position_base > 0.0 {
+                drop(inner);
+                self.reload_current_track(None);
+                return;
+            }
             inner.position = 0.0;
             drop(inner);
             self.mpv.seek(0.0);
@@ -674,9 +691,21 @@ impl AudioPlayer {
     pub fn seek(&self, position: f64) {
         let mut inner = self.inner.lock();
         let clamped = position.max(0.0).min((inner.duration - 0.5).max(0.0));
+        let base = inner.position_base;
+        // On a transcode `offset=` stream mpv can only reach [base, end];
+        // seeking before the resume point needs a fresh transcode from the
+        // target, so reload rather than seek. `base` is 0 for direct-play
+        // and local files, so this never fires for them.
+        if base > 0.0 && clamped < base {
+            drop(inner);
+            self.reload_current_track(Some(clamped));
+            return;
+        }
         inner.position = clamped;
         drop(inner);
-        self.mpv.seek(clamped);
+        // For a transcode offset stream mpv's 0 maps to `base` on the
+        // track timeline, so translate before issuing the seek.
+        self.mpv.seek(clamped - base);
     }
 
     /// Set playback volume (0–100).
@@ -694,6 +723,7 @@ impl AudioPlayer {
         inner.state.queue.clear();
         inner.state.queue_index = 0;
         inner.position = 0.0;
+        inner.position_base = 0.0;
         inner.duration = 0.0;
         inner.load_started_at = None;
         inner.last_position_update = None;
@@ -856,7 +886,10 @@ impl AudioPlayer {
     /// Handle mpv position change (called by event loop, ~30fps).
     pub fn handle_position_change(&self, pos: f64) {
         let mut inner = self.inner.lock();
-        inner.position = pos;
+        // `position_base` is non-zero while a transcode `offset=` resume
+        // stream plays (mpv reports 0-based; the real position is shifted
+        // by the resume point).
+        inner.position = pos + inner.position_base;
         inner.last_position_update = Some(Instant::now());
         // Audio is actually flowing — clear the retry guard so a *later*
         // failure on this same track (e.g. a network blip mid-song) can
@@ -918,6 +951,7 @@ impl AudioPlayer {
         inner.state.queue_index = pos;
         inner.state.current_track = Some(inner.state.queue[pos].clone());
         inner.position = 0.0;
+        inner.position_base = 0.0;
         // Reseed duration from metadata on every gapless advance — see
         // load_queue's note. Stable across UI ticks regardless of mpv's
         // streamed-source duration estimation.
@@ -1051,6 +1085,9 @@ impl AudioPlayer {
                 return false;
             }
             inner.last_retried_track = Some(track.rating_key.clone());
+            // Restart-from-top fallback — clear any transcode offset base
+            // left by a failed resume so positions map straight through.
+            inner.position_base = 0.0;
             (idx, url)
         };
 
@@ -1063,33 +1100,30 @@ impl AudioPlayer {
         true
     }
 
-    /// Force-reload the currently-playing track using the current
-    /// `server_url` and `token`. Called after a connection failover so an
-    /// in-flight transcode session (whose URL is now pointing at the dead
-    /// upstream) doesn't keep mpv hung for the full `network-timeout=15`
-    /// before the file-ended retry path kicks in. Returns `true` if a
-    /// reload was issued.
+    /// Reload the current track's mpv entry, optionally resuming at
+    /// `resume` seconds. Shared by the connection-failover reload
+    /// ([`force_reload_current_track`]) and the seek/restart paths that
+    /// must re-open a transcode `offset=` stream from a new point. Returns
+    /// `true` if a reload was issued. Skips stopped, LRU-cached, and
+    /// persistent-download (`file://`) tracks — their local URL is
+    /// unaffected by a server change and mpv can seek them directly.
     ///
-    /// Differs from `try_recover_current_track` in two ways:
-    /// 1. **Not gated on `last_retried_track`** — connection just changed,
-    ///    so a previous retry on the same track is no longer informative.
-    /// 2. **Skipped when stopped** — there's nothing to reload if the
-    ///    queue isn't actively playing.
-    ///
-    /// Direct-play tracks that are happily buffering will see a brief
-    /// audio gap, but the alternative is a 15s hang the next time mpv
-    /// needs to reach the demuxer source. Cached tracks (LRU and
-    /// persistent downloads) are skipped — their `file://` URL is
-    /// unaffected by server changes.
-    pub fn force_reload_current_track(&self) -> bool {
-        let (idx, new_url) = {
+    /// Direct-play/local resume is an mpv `start=` seek (timeline stays
+    /// absolute); a transcode resume is a server-side `offset=` with
+    /// `position_base` remapping mpv's 0-based stream onto the track
+    /// timeline. A transcode reload with no resume (or a resume the server
+    /// rejects → file-ended → `try_recover_current_track`) simply starts
+    /// from the top — the graceful fallback so a refused resume never
+    /// skips the track.
+    fn reload_current_track(&self, resume: Option<f64>) -> bool {
+        let (idx, url, opts) = {
             let persistent = self.persistent_cache.read();
-            let inner = self.inner.lock();
+            let mut inner = self.inner.lock();
             if inner.state.status == PlaybackStatus::Stopped {
                 return false;
             }
             let idx = inner.state.queue_index;
-            let Some(track) = inner.state.queue.get(idx) else {
+            let Some(track) = inner.state.queue.get(idx).cloned() else {
                 return false;
             };
             if persistent.contains_key(&track.rating_key) {
@@ -1098,23 +1132,49 @@ impl AudioPlayer {
             if inner.cache.get(&track.rating_key).is_some() {
                 return false;
             }
-            let Some(url) = resolve_url(track, &inner, &persistent) else {
+            let Some((url, plan)) =
+                resolve_url_with_resume(&track, &inner, &persistent, resume)
+            else {
                 return false;
             };
             if url.starts_with("file://") {
                 return false;
             }
-            (idx, url)
+            let (opts, base) = match plan {
+                ResumePlan::None => (None, 0.0),
+                ResumePlan::MpvSeek(secs) => (Some(format!("start={secs:.3}")), 0.0),
+                ResumePlan::StreamOffset(secs) => (None, secs),
+            };
+            inner.position_base = base;
+            // Reflect the resume point immediately so the seek bar doesn't
+            // flash back to 0:00 before mpv's first position event lands.
+            if let Some(r) = resume.filter(|p| *p > 0.0) {
+                inner.position = r;
+            }
+            (idx, url, opts)
         };
 
-        log::info!("force-reloading current track after connection change");
-        // Same insert/play/remove dance as try_recover_current_track —
-        // can't playlist_remove the active index, so shift it to idx+1
-        // by inserting fresh, playing fresh, then removing the stale.
-        self.mpv.load_file_at(&new_url, idx as i64, None);
+        log::info!("reloading current track (resume={resume:?})");
+        // Insert/play/remove dance — can't playlist_remove the active
+        // index (mpv may still hold it), so insert fresh before it, play
+        // the fresh entry, then remove the stale one shifted to idx+1.
+        self.mpv.load_file_at(&url, idx as i64, opts.as_deref());
         self.mpv.playlist_play_index(idx as i64);
         self.mpv.playlist_remove((idx + 1) as i64);
         true
+    }
+
+    /// Force-reload the currently-playing track after a connection
+    /// failover, resuming at the current playback position so a wifi→
+    /// cellular switch (or any connection change) doesn't restart it from
+    /// 0:00. Not gated on `last_retried_track` — the connection just
+    /// changed, so a prior retry is no longer informative. Direct-play
+    /// tracks that are happily buffering see a brief audio gap, but the
+    /// alternative is a 15s hang the next time mpv reaches the now-dead
+    /// upstream. See [`reload_current_track`] for the resume mechanics.
+    pub fn force_reload_current_track(&self) -> bool {
+        let resume = self.inner.lock().position;
+        self.reload_current_track(Some(resume))
     }
 
     /// Handle mpv idle-active (queue completed).
@@ -1123,6 +1183,7 @@ impl AudioPlayer {
         inner.state.status = PlaybackStatus::Stopped;
         inner.state.current_track = None;
         inner.position = 0.0;
+        inner.position_base = 0.0;
         inner.load_started_at = None;
         inner.last_position_update = None;
     }
@@ -1188,6 +1249,7 @@ impl AudioPlayer {
                     &inner.client_identifier,
                     &session,
                     inner.config.transcode_bitrate,
+                    None,
                 ) else {
                     continue;
                 };
@@ -1418,16 +1480,51 @@ impl AudioPlayer {
 
 }
 
+/// How a resume position should be realised after (re)loading a track.
+/// The two seek mechanisms are kept distinct because a transcode stream
+/// can't be byte-range sought.
+enum ResumePlan {
+    /// No resume — play from the top.
+    None,
+    /// Seek via an mpv `start=<secs>` per-file option. Used for local
+    /// files and direct-play URLs (HTTP-Range-seekable), so mpv's reported
+    /// timeline stays absolute and no position remap is needed.
+    MpvSeek(f64),
+    /// The resume is baked into a transcode `offset=` URL. mpv sees a
+    /// fresh stream starting at 0, so the player shifts reported positions
+    /// by this many seconds (`position_base`) back onto the track timeline.
+    StreamOffset(f64),
+}
+
+/// Resolve a track's playback URL for a normal (from-the-top) load.
 fn resolve_url(
     track: &Track,
     inner: &PlayerInner,
     persistent: &HashMap<String, PathBuf>,
 ) -> Option<String> {
+    resolve_url_with_resume(track, inner, persistent, None).map(|(url, _)| url)
+}
+
+/// Resolve a track's playback URL, optionally resuming `resume` seconds in
+/// (connection-failover reload / backward-seek of an offset stream).
+/// Returns the URL and a [`ResumePlan`] telling the caller how to reach
+/// the resume point. `resume` of `Some(v)` with `v <= 0` is treated as no
+/// resume.
+fn resolve_url_with_resume(
+    track: &Track,
+    inner: &PlayerInner,
+    persistent: &HashMap<String, PathBuf>,
+    resume: Option<f64>,
+) -> Option<(String, ResumePlan)> {
+    let resume = resume.filter(|p| *p > 0.0);
+
     if let Some(path) = persistent.get(&track.rating_key) {
-        return Some(format!("file://{}", path.display()));
+        let plan = resume.map_or(ResumePlan::None, ResumePlan::MpvSeek);
+        return Some((format!("file://{}", path.display()), plan));
     }
     if let Some(path) = inner.cache.get(&track.rating_key) {
-        return Some(format!("file://{}", path.display()));
+        let plan = resume.map_or(ResumePlan::None, ResumePlan::MpvSeek);
+        return Some((format!("file://{}", path.display()), plan));
     }
 
     let server_url = inner.server_url.as_ref()?;
@@ -1451,18 +1548,31 @@ fn resolve_url(
         // grouping, so extra suffixes risk it conflating two sessions
         // for the same client.
         let session = format!("{}-{}", inner.client_identifier, track.rating_key);
-        transcode::build_transcode_download_url(
+        // Resume is served by the server-side `offset=` (see
+        // `build_transcode_download_url`) rather than an mpv seek: a
+        // transcode stream is `Accept-Ranges: none`, so an mpv `start=`
+        // would force a read-through from byte 0. Sub-second offsets are
+        // dropped (meaningless, and Plex's offset is integer seconds).
+        let offset = resume.map(|p| p as u64).filter(|s| *s > 0);
+        let url = transcode::build_transcode_download_url(
             server_url,
             token,
             &track.rating_key,
             &inner.client_identifier,
             &session,
             inner.config.transcode_bitrate,
-        )
-        .map(|u| u.to_string())
+            offset,
+        )?;
+        let plan = match offset {
+            Some(secs) => ResumePlan::StreamOffset(secs as f64),
+            None => ResumePlan::None,
+        };
+        Some((url.to_string(), plan))
     } else {
         let part_key = track.part_key.as_ref()?;
-        transcode::build_direct_play_url(server_url, part_key, token).map(|u| u.to_string())
+        let url = transcode::build_direct_play_url(server_url, part_key, token)?;
+        let plan = resume.map_or(ResumePlan::None, ResumePlan::MpvSeek);
+        Some((url.to_string(), plan))
     }
 }
 
@@ -2805,5 +2915,135 @@ mod tests {
 
         assert!(!reloaded);
         assert!(mpv.calls().is_empty());
+    }
+
+    #[test]
+    fn test_force_reload_resumes_direct_play_with_start_option() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        // ~60s of playback elapsed before the connection changed.
+        player.handle_position_change(60.0);
+        mpv.calls.lock().clear();
+
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        assert!(player.force_reload_current_track());
+
+        // Direct-play (default mode is Never) resumes via an mpv `start=`
+        // seek: the URL stays a plain part URL, the option carries the seek.
+        let (url, options) = mpv
+            .calls()
+            .into_iter()
+            .find_map(|c| match c {
+                MockCall::LoadFileAt {
+                    index: 0,
+                    url,
+                    options,
+                } => Some((url, options)),
+                _ => None,
+            })
+            .expect("expected a LoadFileAt at index 0");
+        assert!(
+            !url.contains("offset="),
+            "direct-play must not use a transcode offset"
+        );
+        let opts = options.expect("expected a start= option for the resume");
+        assert!(opts.contains("start=60"), "expected start=60.x, got {opts}");
+    }
+
+    #[test]
+    fn test_force_reload_resumes_transcode_with_offset() {
+        let (player, mpv) = make_player();
+        player.update_config(PlaybackConfig {
+            playback_mode: PlaybackMode::Always,
+            ..PlaybackConfig::default()
+        });
+        player.load_queue(vec![make_test_track("1")], 0);
+        player.handle_position_change(75.0);
+        mpv.calls.lock().clear();
+
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        assert!(player.force_reload_current_track());
+
+        let (url, options) = mpv
+            .calls()
+            .into_iter()
+            .find_map(|c| match c {
+                MockCall::LoadFileAt {
+                    index: 0,
+                    url,
+                    options,
+                } => Some((url, options)),
+                _ => None,
+            })
+            .expect("expected a LoadFileAt at index 0");
+        // Transcode resume bakes the offset into the URL (server-side seek)
+        // with its companion params — and carries no mpv start= option.
+        assert!(url.contains("offset=75"), "expected offset=75 in url, got {url}");
+        assert!(
+            url.contains("mediaBufferSize=1024"),
+            "expected offset companions, got {url}"
+        );
+        assert!(
+            options.is_none(),
+            "transcode resume must not use start=, got {options:?}"
+        );
+
+        // `position_base` now remaps mpv's 0-based stream: a fresh time-pos
+        // of 5s reads as 80s on the track timeline.
+        player.handle_position_change(5.0);
+        assert!(
+            (player.snapshot().position - 80.0).abs() < 0.01,
+            "position should map through the offset base, got {}",
+            player.snapshot().position
+        );
+    }
+
+    #[test]
+    fn test_transcode_resume_failure_falls_back_to_restart() {
+        let (player, mpv) = make_player();
+        player.update_config(PlaybackConfig {
+            playback_mode: PlaybackMode::Always,
+            ..PlaybackConfig::default()
+        });
+        player.load_queue(vec![make_test_track("1")], 0);
+        player.handle_position_change(90.0);
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        assert!(player.force_reload_current_track()); // offset resume, base = 90
+        mpv.calls.lock().clear();
+
+        // The offset transcode start is refused (e.g. HTTP 400) → mpv errors.
+        player.handle_file_ended(FileEndReason::Error("HTTP 400 Bad Request".into()));
+
+        // `try_recover_current_track` restarts the track from the top (no
+        // offset) rather than skipping it, and clears the position base.
+        let url = mpv
+            .calls()
+            .into_iter()
+            .find_map(|c| match c {
+                MockCall::LoadFileAt { index: 0, url, .. } => Some(url),
+                _ => None,
+            })
+            .expect("expected a recovery LoadFileAt at index 0");
+        assert!(
+            !url.contains("offset="),
+            "fallback must restart from the top, got {url}"
+        );
+        player.handle_position_change(3.0);
+        assert!(
+            (player.snapshot().position - 3.0).abs() < 0.01,
+            "position base should be cleared after the restart fallback"
+        );
     }
 }

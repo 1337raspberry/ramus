@@ -683,6 +683,7 @@ fn build_job(state: &State<'_, AppState>, track: &Track) -> Result<UserDownloadJ
             &state.client.client_identifier,
             &session,
             bitrate,
+            None,
         )
         .ok_or_else(|| "could not build transcode url".to_string())?;
         // Chunked Ogg/Opus has no Content-Length; estimate from
