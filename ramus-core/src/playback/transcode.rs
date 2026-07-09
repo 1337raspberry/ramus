@@ -83,6 +83,14 @@ pub fn build_direct_play_url(server_url: &Url, part_key: &str, token: &str) -> O
 ///
 /// The `X-Plex-Client-Profile-Extra` value contains pre-encoded chars and
 /// must not be re-encoded.
+///
+/// `offset_secs`, when `Some`, starts the transcode partway through the
+/// track (used on the connection-failover resume path, never on a fresh
+/// first play). The audio transcoder only honours a resume `offset` when
+/// it's accompanied by the standard universal-transcode companion params
+/// (`mediaIndex`/`partIndex`/`copyts`/`mediaBufferSize`/`protocol`); sent
+/// on its own the start request is rejected. Those companions are added
+/// only on this path, so the proven minimal `None` call shape is untouched.
 pub fn build_transcode_download_url(
     server_url: &Url,
     token: &str,
@@ -90,6 +98,7 @@ pub fn build_transcode_download_url(
     client_identifier: &str,
     session: &str,
     bitrate: TranscodeBitrate,
+    offset_secs: Option<u64>,
 ) -> Option<Url> {
     let base = server_url.as_str().trim_end_matches('/');
     let endpoint = "/audio/:/transcode/universal/start";
@@ -122,7 +131,7 @@ pub fn build_transcode_download_url(
     // - X-Plex-Device-Name / Platform-Version / Version are sent for
     //   parity even though they're informational; Plex's session
     //   bookkeeping seems happier when they're present.
-    let params = [
+    let mut params: Vec<String> = vec![
         "directPlay=0".into(),
         format!("musicBitrate={}", bitrate.as_kbps()),
         format!("path={}", percent_encode("/library/metadata/")) + &percent_encode(track_rating_key),
@@ -143,6 +152,20 @@ pub fn build_transcode_download_url(
         format!("X-Plex-Token={}", percent_encode(token)),
         format!("X-Plex-Version={}", percent_encode(env!("CARGO_PKG_VERSION"))),
     ];
+
+    // Resume offset — only present on the connection-failover reload path.
+    // `offset` alone is rejected by the audio transcoder; it needs the
+    // companion params below (the shape a universal-transcode client
+    // sends). Order is irrelevant to Plex; appended so the normal call
+    // shape stays byte-for-byte identical when there's no offset.
+    if let Some(secs) = offset_secs {
+        params.push(format!("offset={secs}"));
+        params.push("mediaIndex=0".into());
+        params.push("partIndex=0".into());
+        params.push("copyts=1".into());
+        params.push("mediaBufferSize=1024".into());
+        params.push("protocol=http".into());
+    }
 
     let query = params.join("&");
     Url::parse(&format!("{}{}?{}", base, endpoint, query)).ok()
@@ -424,6 +447,7 @@ mod tests {
             "test-client-id",
             "test-client-id-99251",
             TranscodeBitrate::Kbps128,
+            None,
         );
         let url_str = url.unwrap().to_string();
         // Endpoint must be /audio/:/, no .m3u8 — distinct from the
@@ -453,6 +477,53 @@ mod tests {
     }
 
     #[test]
+    fn test_transcode_download_url_offset_adds_companions() {
+        let server = Url::parse("http://192.168.1.100:32400").unwrap();
+        // No offset: the minimal proven call shape — none of the resume
+        // companions must leak in.
+        let plain = build_transcode_download_url(
+            &server,
+            "t",
+            "99251",
+            "c",
+            "s",
+            TranscodeBitrate::Kbps320,
+            None,
+        )
+        .unwrap()
+        .to_string();
+        assert!(!plain.contains("offset="));
+        assert!(!plain.contains("mediaIndex="));
+        assert!(!plain.contains("partIndex="));
+        assert!(!plain.contains("copyts="));
+        assert!(!plain.contains("mediaBufferSize="));
+        assert!(!plain.contains("protocol="));
+
+        // With an offset: the resume offset plus every companion the audio
+        // transcoder needs for a seekable start.
+        let resume = build_transcode_download_url(
+            &server,
+            "t",
+            "99251",
+            "c",
+            "s",
+            TranscodeBitrate::Kbps320,
+            Some(137),
+        )
+        .unwrap()
+        .to_string();
+        assert!(resume.contains("offset=137"));
+        assert!(resume.contains("mediaIndex=0"));
+        assert!(resume.contains("partIndex=0"));
+        assert!(resume.contains("copyts=1"));
+        assert!(resume.contains("mediaBufferSize=1024"));
+        assert!(resume.contains("protocol=http"));
+        // Companions must not disturb the base call shape.
+        assert!(resume.contains("X-Plex-Chunked=1"));
+        assert!(resume.contains("musicBitrate=320"));
+    }
+
+    #[test]
     fn test_transcode_download_url_carries_opus_profile() {
         let server = Url::parse("http://192.168.1.100:32400").unwrap();
         let url = build_transcode_download_url(
@@ -462,6 +533,7 @@ mod tests {
             "c",
             "s",
             TranscodeBitrate::Kbps128,
+            None,
         );
         let url_str = url.unwrap().to_string();
         // The Opus / Ogg target must survive into the final URL — these
@@ -482,6 +554,7 @@ mod tests {
             "c",
             "s",
             TranscodeBitrate::Kbps128,
+            None,
         )
         .unwrap()
         .to_string();
@@ -501,7 +574,7 @@ mod tests {
             (TranscodeBitrate::Kbps192, "musicBitrate=192"),
             (TranscodeBitrate::Kbps128, "musicBitrate=128"),
         ] {
-            let url = build_transcode_download_url(&server, "t", "99251", "c", "s", bitrate)
+            let url = build_transcode_download_url(&server, "t", "99251", "c", "s", bitrate, None)
                 .unwrap()
                 .to_string();
             assert!(

@@ -99,6 +99,7 @@ pub type PrefetchHandleRef = Arc<parking_lot::Mutex<Option<PrefetchHandle>>>;
 pub fn create_mpv_player(
     app_handle: AppHandle,
     prefetch_handle_ref: PrefetchHandleRef,
+    mc_reanchor: Arc<std::sync::atomic::AtomicBool>,
 ) -> (
     Arc<ramus_core::playback::player::AudioPlayer>,
     ReporterRef,
@@ -135,6 +136,7 @@ pub fn create_mpv_player(
     let mc2 = media_controls_ref.clone();
     let mc3 = media_controls_ref.clone();
     let mc4 = media_controls_ref.clone();
+    let mc5 = media_controls_ref.clone();
 
     let ph1 = prefetch_handle_ref.clone();
     let ph2 = prefetch_handle_ref.clone();
@@ -151,6 +153,17 @@ pub fn create_mpv_player(
                         duration: dur,
                     },
                 );
+                // A connection-failover reload freezes the OS now-playing
+                // scrubber (rate=0); the first position tick once audio is
+                // flowing again re-anchors it to the true position so it
+                // resumes from the truth instead of staying frozen. Uses
+                // `p.position()` (not raw `pos`) so a transcode offset
+                // resume's remapped timeline is respected.
+                if mc_reanchor.swap(false, std::sync::atomic::Ordering::AcqRel) {
+                    if let Some(ref mc) = *mc5.lock() {
+                        mc.update_playback_state(true, p.position());
+                    }
+                }
             }
         })),
         on_duration_change: Some(Box::new(move |dur| {
@@ -601,8 +614,14 @@ pub fn run() {
             let prefetch_handle_ref: Arc<
                 parking_lot::Mutex<Option<crate::prefetch::PrefetchHandle>>,
             > = Arc::new(parking_lot::Mutex::new(None));
-            let (player, reporter_ref, media_controls_ref) =
-                create_mpv_player(app_handle.clone(), prefetch_handle_ref.clone());
+            // Signals `on_position_change` to re-anchor the OS now-playing
+            // scrubber after a connection-failover reload froze it.
+            let mc_reanchor = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let (player, reporter_ref, media_controls_ref) = create_mpv_player(
+                app_handle.clone(),
+                prefetch_handle_ref.clone(),
+                mc_reanchor.clone(),
+            );
 
             // Capture mpv's source bytes to a sibling directory of the
             // prefetch cache so the spectrum analyser can run against the
@@ -793,6 +812,8 @@ pub fn run() {
                                 let monitor_app = app_handle.clone();
                                 let monitor_settings_for_changed = state.settings.clone();
                                 let monitor_prefetch = state.prefetch_handle.clone();
+                                let monitor_mc = state.media_controls.clone();
+                                let monitor_reanchor = mc_reanchor.clone();
                                 connection_monitor.set_on_connection_changed(
                                     std::sync::Arc::new(move |url, token, is_local, _is_http| {
                                         let is_remote = !is_local;
@@ -804,6 +825,17 @@ pub fn run() {
                                         // the full `network-timeout=15` before file-ended retry kicks
                                         // in. This forces a fresh load of the current track too.
                                         // Cached and stopped paths no-op internally.
+                                        //
+                                        // Freeze the OS now-playing scrubber first: the reload stops
+                                        // and restarts the track, but nothing else reports that, so
+                                        // the system would keep extrapolating position forward as if
+                                        // still playing. `on_position_change` re-anchors it once audio
+                                        // resumes (via the `mc_reanchor` flag).
+                                        if let Some(ref mc) = *monitor_mc.lock() {
+                                            mc.update_playback_state(false, monitor_player.position());
+                                        }
+                                        monitor_reanchor
+                                            .store(true, std::sync::atomic::Ordering::Release);
                                         monitor_player.force_reload_current_track();
                                         monitor_prefetch.notify_skip();
                                         monitor_reachable
