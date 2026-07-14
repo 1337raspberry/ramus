@@ -43,6 +43,12 @@ interface PlaybackState {
   position: number;
   duration: number;
   volume: number;
+  /// True while audio has stalled mid-playback (position events stopped
+  /// arriving while status is "playing") — initial buffer, a mid-track
+  /// network hiccup, or the reload gap during a failover resume. Drives the
+  /// sweeping "scanning" indicator on the waveform. Derived on the frontend
+  /// (no dedicated backend event); see `usePlaybackEvents`.
+  isBuffering: boolean;
 
   // --- Lyrics ---
   lyrics: LyricsResult | null;
@@ -89,6 +95,7 @@ interface PlaybackState {
   // --- Event Handlers ---
   onPlaybackState: (status: string, track: Track | null, queueIndex: number) => void;
   onPlaybackPosition: (position: number, duration: number) => void;
+  setBuffering: (buffering: boolean) => void;
   /// Called on `spectrum-ready` events from Rust and on track change to
   /// hydrate from the cache. Safe to call unconditionally; it only invokes
   /// `getSpectrum` when there is a current track.
@@ -145,6 +152,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   position: 0,
   duration: 0,
   volume: 100,
+  isBuffering: false,
 
   lyrics: null,
   lyricsLoading: false,
@@ -261,6 +269,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   onPlaybackPosition: (position, duration) => {
     set({ position, duration });
+  },
+
+  setBuffering: (buffering) => {
+    // Guard so an idempotent write doesn't churn subscribers each watchdog tick.
+    if (get().isBuffering !== buffering) set({ isBuffering: buffering });
   },
 
   refreshSpectrum: (forRatingKey) => {

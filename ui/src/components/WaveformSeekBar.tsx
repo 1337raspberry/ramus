@@ -10,6 +10,7 @@ export default function WaveformSeekBar() {
   const position = usePlaybackStore((s) => s.position);
   const duration = usePlaybackStore((s) => s.duration);
   const seek = usePlaybackStore((s) => s.seek);
+  const isBuffering = usePlaybackStore((s) => s.isBuffering);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -114,85 +115,132 @@ export default function WaveformSeekBar() {
     }
   }, [levels, sizeVersion]);
 
-  // Progress overlay; runs on every position tick.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const shape = shapeCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+  // Draw one frame: the waveform silhouette + accent-tinted played fill at
+  // the current `fraction`, plus — when `sweepFrac` is non-null — a sweeping
+  // "scanner" bar at that x (0..1). Shared by the normal position-tick redraw
+  // and the buffering RAF loop so both render an identical base.
+  const drawFrame = useCallback(
+    (sweepFrac: number | null) => {
+      const canvas = canvasRef.current;
+      const shape = shapeCanvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    const w = lastSizeRef.current.w;
-    const h = lastSizeRef.current.h;
-    if (w === 0) return;
+      const dpr = window.devicePixelRatio || 1;
+      const w = lastSizeRef.current.w;
+      const h = lastSizeRef.current.h;
+      if (w === 0) return;
 
-    const midY = h / 2;
-    const progressX = fraction * w;
+      const midY = h / 2;
+      const progressX = fraction * w;
 
-    const style = getComputedStyle(document.documentElement);
-    const r = style.getPropertyValue("--accent-r").trim();
-    const g = style.getPropertyValue("--accent-g").trim();
-    const b = style.getPropertyValue("--accent-b").trim();
+      const style = getComputedStyle(document.documentElement);
+      const r = style.getPropertyValue("--accent-r").trim();
+      const g = style.getPropertyValue("--accent-g").trim();
+      const b = style.getPropertyValue("--accent-b").trim();
 
-    ctx.save();
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
 
-    if (shape && levels && levels.length > 0) {
-      // Unplayed silhouette.
-      ctx.globalAlpha = UNPLAYED_ALPHA;
-      ctx.globalCompositeOperation = "source-over";
-      ctx.drawImage(shape, 0, 0, w, h);
-
-      if (progressX > 0) {
-        // Played portion, tinted with the accent colour.
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, 0, progressX, h);
-        ctx.clip();
-        ctx.globalAlpha = 0.9;
-        // Mask with the shape, then multiply with the accent.
+      if (shape && levels && levels.length > 0) {
+        // Unplayed silhouette.
+        ctx.globalAlpha = UNPLAYED_ALPHA;
         ctx.globalCompositeOperation = "source-over";
         ctx.drawImage(shape, 0, 0, w, h);
-        ctx.globalCompositeOperation = "multiply";
-        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-        ctx.fillRect(0, 0, w, h);
-        // Restore alpha from the shape.
-        ctx.globalCompositeOperation = "destination-in";
-        ctx.drawImage(shape, 0, 0, w, h);
-        ctx.restore();
-      }
 
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = "source-over";
-      ctx.beginPath();
-      ctx.moveTo(0, midY);
-      ctx.lineTo(w, midY);
-      ctx.strokeStyle = "rgba(153, 153, 153, 0.3)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    } else {
-      ctx.globalAlpha = 1;
-      ctx.beginPath();
-      ctx.moveTo(0, midY);
-      ctx.lineTo(w, midY);
-      ctx.strokeStyle = "rgba(153, 153, 153, 0.3)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
+        if (progressX > 0) {
+          // Played portion, tinted with the accent colour.
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(0, 0, progressX, h);
+          ctx.clip();
+          ctx.globalAlpha = 0.9;
+          // Mask with the shape, then multiply with the accent.
+          ctx.globalCompositeOperation = "source-over";
+          ctx.drawImage(shape, 0, 0, w, h);
+          ctx.globalCompositeOperation = "multiply";
+          ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+          ctx.fillRect(0, 0, w, h);
+          // Restore alpha from the shape.
+          ctx.globalCompositeOperation = "destination-in";
+          ctx.drawImage(shape, 0, 0, w, h);
+          ctx.restore();
+        }
 
-      if (progressX > 0) {
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = "source-over";
         ctx.beginPath();
         ctx.moveTo(0, midY);
-        ctx.lineTo(progressX, midY);
-        ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.lineTo(w, midY);
+        ctx.strokeStyle = "rgba(153, 153, 153, 0.3)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      } else {
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, midY);
+        ctx.lineTo(w, midY);
+        ctx.strokeStyle = "rgba(153, 153, 153, 0.3)";
         ctx.lineWidth = 2;
         ctx.stroke();
-      }
-    }
 
-    ctx.restore();
-  }, [levels, fraction, sizeVersion]);
+        if (progressX > 0) {
+          ctx.beginPath();
+          ctx.moveTo(0, midY);
+          ctx.lineTo(progressX, midY);
+          ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+
+      // Buffering "scanner" — a KITT-style accent bar with a soft glow that
+      // sweeps back and forth across the full width while audio is stalled.
+      if (sweepFrac !== null) {
+        const cx = sweepFrac * w;
+        const glowW = Math.max(24, w * 0.1);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = "source-over";
+        const grad = ctx.createLinearGradient(cx - glowW, 0, cx + glowW, 0);
+        grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0)`);
+        grad.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, 0.5)`);
+        grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(cx - glowW, 0, glowW * 2, h);
+        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.fillRect(cx - 1.5, 0, 3, h);
+      }
+
+      ctx.restore();
+    },
+    [levels, fraction, sizeVersion],
+  );
+
+  // Static redraw on position/levels/size change. While buffering the RAF
+  // loop below owns the canvas, so skip here to avoid the two fighting.
+  useEffect(() => {
+    if (!isBuffering) drawFrame(null);
+  }, [drawFrame, isBuffering]);
+
+  // Buffering scanner: triangle-wave sweep (0→1→0), 1.6s period — slow enough
+  // that the bounce reads as deliberate, fast enough to feel alive.
+  useEffect(() => {
+    if (!isBuffering) return;
+    const SWEEP_MS = 1600;
+    let raf = 0;
+    let start: number | null = null;
+    const tick = (t: number) => {
+      if (start === null) start = t;
+      const elapsed = (t - start) % SWEEP_MS;
+      const phase = elapsed / (SWEEP_MS / 2);
+      drawFrame(phase < 1 ? phase : 2 - phase);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isBuffering, drawFrame]);
 
   const handleSeekStart = useCallback(
     (clientX: number) => {
