@@ -153,10 +153,14 @@ pub fn create_mpv_player(
             if let Some(ref p) = *pr1.lock() {
                 p.handle_position_change(pos);
                 let dur = p.duration();
+                // `p.position()` (the `position_base`-remapped value), NOT the
+                // raw callback `pos`: a transcode `offset=` resume stream is
+                // 0-based, so raw `pos` would report the seek bar back at 0:00
+                // even though the track is playing from its resume point.
                 emit_playback_position(
                     &app1,
                     PlaybackPositionPayload {
-                        position: pos,
+                        position: p.position(),
                         duration: dur,
                     },
                 );
@@ -207,7 +211,14 @@ pub fn create_mpv_player(
                 // Capture previous track before state update for scrobble reporting.
                 let prev_track = p.state().current_track.clone();
 
-                p.handle_playlist_pos_change(pos);
+                // A `false` return is not a real advance (invalid index, the
+                // start_at phantom, or our own current-track reload). Skip the
+                // track-switch emit, metadata refresh, prefetch nudge, session
+                // report, and stream-record re-ingest — otherwise a failover
+                // resume looks like a track restart and the UI snaps to 0:00.
+                if !p.handle_playlist_pos_change(pos) {
+                    return;
+                }
                 let state = p.state();
                 emit_playback_state(
                     &app3,

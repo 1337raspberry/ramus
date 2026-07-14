@@ -262,6 +262,14 @@ struct PlayerInner {
     /// plain unpause (mpv is idle after a failed stream, so unpausing is
     /// silent). Cleared on real playback progress or a successful re-attempt.
     held_for_recovery: bool,
+    /// Queue index of an in-flight current-track reload. The reload re-enters
+    /// its own index via `playlist_play_index`, firing a `playlist-pos-change`
+    /// that is NOT a real track advance. `handle_playlist_pos_change` consumes
+    /// this to skip resetting `position`/`position_base` to 0 and to tell the
+    /// platform layer not to report a phantom track (re)start — otherwise the
+    /// seek bar and lock screen snap to 0:00 on every failover resume. `None`
+    /// except during the reload's insert/play/remove dance.
+    reloading_pos: Option<usize>,
 }
 
 impl PlayerInner {
@@ -331,6 +339,7 @@ impl AudioPlayer {
                 position_base: 0.0,
                 last_auto_reload_at: None,
                 held_for_recovery: false,
+                reloading_pos: None,
             }),
             persistent_cache: RwLock::new(HashMap::new()),
         }
@@ -1001,14 +1010,32 @@ impl AudioPlayer {
     /// subsequent `on_position_change` tick to emit `duration=0` to the
     /// frontend (since `observe_property` won't re-fire for a value that
     /// hasn't changed from mpv's perspective), breaking the seek bar.
-    pub fn handle_playlist_pos_change(&self, pos: i64) {
+    /// Returns `true` if this was a real track advance (the platform layer
+    /// should emit a track-switch + refresh now-playing metadata), or `false`
+    /// for a transient/self-inflicted pos-change — an invalid index, the
+    /// phantom pos=0 during a `start_at` load, or our own current-track reload
+    /// — which must NOT be reported as a (re)start (that snaps the seek bar and
+    /// lock screen to 0:00).
+    #[must_use]
+    pub fn handle_playlist_pos_change(&self, pos: i64) -> bool {
         if pos < 0 {
-            return;
+            return false;
         }
         let mut inner = self.inner.lock();
         let pos = pos as usize;
         if pos >= inner.state.queue.len() {
-            return;
+            return false;
+        }
+
+        // A current-track reload (failover/recovery resume, or a seek that
+        // re-opens a transcode offset stream) re-enters its own index and
+        // fires this event. It is not a track change: preserve the resume
+        // position/base that `reload_current_track` just set and report it as
+        // "not an advance" so the platform layer leaves the UI position alone.
+        if let Some(reload_idx) = inner.reloading_pos.take() {
+            if pos == reload_idx {
+                return false;
+            }
         }
 
         // Drop the transient pos=0 event mpv fires from the first loadfile
@@ -1017,7 +1044,7 @@ impl AudioPlayer {
         // to queue[0] and emit a phantom track-switch session report to Plex.
         if let Some(target) = inner.pending_initial_pos {
             if pos != target {
-                return;
+                return false;
             }
             inner.pending_initial_pos = None;
         }
@@ -1037,6 +1064,7 @@ impl AudioPlayer {
         // A different track is now current — it can't be the one we were
         // holding after exhausted recovery.
         inner.held_for_recovery = false;
+        true
     }
 
     /// Handle mpv pause state change.
@@ -1258,6 +1286,11 @@ impl AudioPlayer {
             if let Some(r) = resume.filter(|p| *p > 0.0) {
                 inner.position = r;
             }
+            // The play-index below re-enters this index and fires a
+            // playlist-pos-change; mark it so `handle_playlist_pos_change`
+            // treats it as a reload, not a track advance (preserving the
+            // resume position/base instead of zeroing them).
+            inner.reloading_pos = Some(idx);
             (idx, url, opts)
         };
 
@@ -2028,8 +2061,8 @@ mod tests {
         player.load_queue(tracks, 2);
         assert_eq!(player.state().current_track.as_ref().unwrap().rating_key, "C");
 
-        // Transient pos=0 event from mpv: must be ignored.
-        player.handle_playlist_pos_change(0);
+        // Transient pos=0 event from mpv: must be ignored (not an advance).
+        assert!(!player.handle_playlist_pos_change(0));
         assert_eq!(
             player.state().current_track.as_ref().unwrap().rating_key,
             "C",
@@ -2038,12 +2071,12 @@ mod tests {
         assert_eq!(player.state().queue_index, 2);
 
         // Real pos=2 event arrives; gate clears, state stays consistent.
-        player.handle_playlist_pos_change(2);
+        assert!(player.handle_playlist_pos_change(2));
         assert_eq!(player.state().current_track.as_ref().unwrap().rating_key, "C");
 
         // Subsequent natural advance to pos=0 (e.g. user clicks back to start)
         // is now processed normally because the gate cleared.
-        player.handle_playlist_pos_change(0);
+        assert!(player.handle_playlist_pos_change(0));
         assert_eq!(player.state().current_track.as_ref().unwrap().rating_key, "A");
         assert_eq!(player.state().queue_index, 0);
     }
@@ -2502,7 +2535,7 @@ mod tests {
             0,
         );
 
-        player.handle_playlist_pos_change(2);
+        assert!(player.handle_playlist_pos_change(2));
 
         let state = player.state();
         assert_eq!(state.queue_index, 2);
@@ -2511,11 +2544,44 @@ mod tests {
     }
 
     #[test]
+    fn test_reload_pos_change_preserves_resume_position() {
+        let (player, _) = make_player();
+        player.update_config(PlaybackConfig {
+            playback_mode: PlaybackMode::Always,
+            ..PlaybackConfig::default()
+        });
+        player.load_queue(vec![make_test_track("1")], 0);
+        player.handle_position_change(90.0);
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        // Failover reload arms `reloading_pos` and bakes in the transcode
+        // offset base (=90).
+        assert!(player.force_reload_current_track());
+
+        // mpv's insert/play/remove dance re-enters index 0 and fires a
+        // pos-change. It must report "not an advance" AND must not zero the
+        // resume position/base (which would snap the seek bar to 0:00).
+        assert!(!player.handle_playlist_pos_change(0));
+
+        // The base is preserved, so a fresh 0-based transcode tick maps back
+        // onto the real timeline (~95s), not ~5s.
+        player.handle_position_change(5.0);
+        assert!(
+            (player.position() - 95.0).abs() < 0.5,
+            "reload must preserve the transcode offset base, got {}",
+            player.position()
+        );
+    }
+
+    #[test]
     fn test_handle_playlist_pos_change_negative_is_ignored() {
         let (player, _) = make_player();
         player.load_queue(vec![make_test_track("1")], 0);
 
-        player.handle_playlist_pos_change(-1);
+        assert!(!player.handle_playlist_pos_change(-1));
         assert_eq!(player.state().queue_index, 0);
     }
 
