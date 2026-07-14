@@ -90,6 +90,13 @@ const SKIP_GAP: Duration = Duration::from_secs(2);
 /// re-ingest catches any later growth.
 const LIVE_DRAIN_CEILING: Duration = Duration::from_secs(30);
 
+/// Absolute cap on the live-drain wait, used only while the source is still
+/// actively feeding mpv (so the soft `LIVE_DRAIN_CEILING` is being extended to
+/// avoid cutting a realtime-paced live transcode). Normally the wait is bounded
+/// by the track's own duration (`dur + slack`); this is the fallback when the
+/// track duration is unknown, so a stuck source can't hang the worker forever.
+const HARD_LIVE_DRAIN_CEILING: Duration = Duration::from_secs(600);
+
 /// Poll interval for the live-drain wait. Cheap (a single mpv property
 /// read per tick), so a tight cadence makes the post-drain prefetch
 /// fire promptly.
@@ -669,9 +676,13 @@ fn spawn_cycle(
 ///    broke symphonia's Ogg probe.
 ///
 /// All three must hold for `STABLE_POLLS` consecutive checks before we
-/// declare drain. `LIVE_DRAIN_CEILING` caps total wait so a missing
-/// demuxer-cache-time bridge or stuck recorder can't deadlock the
-/// worker.
+/// declare drain. The wait gives up at `LIVE_DRAIN_CEILING` only if the
+/// source has stopped advancing by then; while demuxer-cache-time is still
+/// climbing (a realtime-paced live transcode actively feeding), it extends
+/// up to a hard ceiling tied to the track length so it doesn't open a
+/// competing prefetch session that would cut the live one. The hard ceiling
+/// (or `HARD_LIVE_DRAIN_CEILING` when the duration is unknown) is the
+/// anti-hang backstop for a missing demuxer-cache-time bridge.
 async fn wait_for_source_drain(
     player: &AudioPlayer,
     rating_key: Option<&str>,
@@ -702,16 +713,35 @@ async fn wait_for_source_drain(
         if shared_gen.load(Ordering::SeqCst) != my_gen {
             return;
         }
-        if started.elapsed() >= LIVE_DRAIN_CEILING {
+        let drain_met = player.current_source_fully_drained();
+        let cur_cache = player.demuxer_cache_time();
+
+        // While the source is still actively feeding mpv (demuxer-cache-time
+        // advancing), extend the wait past the soft ceiling rather than open a
+        // competing prefetch session that would cut a realtime-paced live
+        // transcode (Plex's ~1-transcoder cap). Give up only once the source
+        // has stopped advancing (fully arrived or stalled) past the soft
+        // ceiling, or a hard ceiling tied to the track length elapses — the
+        // anti-hang backstop when demuxer-cache-time is unavailable.
+        let cache_advancing =
+            matches!((cur_cache, prev_cache_time), (Some(c), Some(p)) if c - p > 0.05);
+        let hard_ceiling = {
+            let dur = player.duration();
+            if dur > 0.0 {
+                Duration::from_secs_f64(dur + 15.0).max(LIVE_DRAIN_CEILING)
+            } else {
+                HARD_LIVE_DRAIN_CEILING
+            }
+        };
+        if started.elapsed() >= hard_ceiling
+            || (started.elapsed() >= LIVE_DRAIN_CEILING && !cache_advancing)
+        {
             log::warn!(
-                "stream_record: source never reported drained after {:.0}s, giving up on in-track ingest",
-                LIVE_DRAIN_CEILING.as_secs_f64()
+                "stream_record: source not drained after {:.0}s (cache_advancing={cache_advancing}), proceeding",
+                started.elapsed().as_secs_f64()
             );
             return;
         }
-
-        let drain_met = player.current_source_fully_drained();
-        let cur_cache = player.demuxer_cache_time();
         // Re-glob the file each iteration: at run_cycle entry the file
         // typically doesn't exist yet (mpv hasn't written anything).
         // `find_stream_record_file` returns None until the first byte
@@ -840,18 +870,23 @@ async fn run_cycle(
     // Plex Ogg/Opus is just as safe to capture as direct-play FLAC/MP3.
     let try_in_cycle = !spectrum_disabled;
 
-    // Skip the second download entirely, ingest mpv's stream-record
-    // capture instead. Poll demuxer-cache-time until the source has
-    // fully drained, then hand the file to the analyser + DownloadCache.
-    // From that point `next_uncached_target_in_lookahead` skips the
-    // current track because cache.get(rk) returns Some.
-    if try_in_cycle
-        && player
-            .state()
-            .current_track
-            .as_ref()
-            .is_some_and(|t| !player.with_cache(|c| c.get(&t.rating_key).is_some()))
-    {
+    // Hold serial downloads until the live track has stopped pulling from its
+    // source. Opening a competing transcode session while Plex is still feeding
+    // the current track cuts the live one (Plex's ~1-transcoder cap) — the
+    // cause of "9/9 cached but song 1 keeps stalling" on a slow link. This gate
+    // previously rode on the stream-record ingest path (`try_in_cycle`), so it
+    // was skipped whenever the spectrum analyser was off — including ALL of
+    // mobile, where the contention bites hardest. It now runs on every
+    // platform; the stream-record capture/ingest below stays desktop +
+    // spectrum-on only. `wait_for_source_drain` also drives the stream-record
+    // analyser: after it, `next_uncached_target_in_lookahead` skips the current
+    // track because `cache.get(rk)` returns Some once ingested.
+    let current_uncached = player
+        .state()
+        .current_track
+        .as_ref()
+        .is_some_and(|t| !player.with_cache(|c| c.get(&t.rating_key).is_some()));
+    if current_uncached {
         // Pass the rating_key down so wait_for_source_drain can re-glob
         // the file each iteration: at this point mpv has only just
         // started loading and the stream-record file typically doesn't
@@ -861,8 +896,11 @@ async fn run_cycle(
         if shared_gen.load(Ordering::SeqCst) != my_gen {
             return;
         }
-        if let Some(rk) = player.state().current_track.map(|t| t.rating_key) {
-            try_ingest_stream_record(player.clone(), app.clone(), rk);
+        // Stream-record capture → analyser is desktop + spectrum-on only.
+        if try_in_cycle {
+            if let Some(rk) = player.state().current_track.map(|t| t.rating_key) {
+                try_ingest_stream_record(player.clone(), app.clone(), rk);
+            }
         }
     }
 
