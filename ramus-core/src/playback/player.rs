@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use parking_lot::{Mutex, RwLock};
 use url::Url;
@@ -21,6 +21,14 @@ use crate::util::redact_urls;
 /// from `Buffering` to `Stalled`. The frontend uses this to colour the row,
 /// the watchdog uses it to trigger a connection re-evaluation.
 pub const STALL_THRESHOLD_SECS: u64 = 12;
+
+/// Minimum gap between two *automatic* current-track reloads (connection
+/// failover or file-ended recovery). Three uncoordinated triggers — the iOS
+/// network-path monitor, the stall watchdog, and prefetch's failure counter —
+/// can otherwise fire back-to-back and reload the same track several times for
+/// one hiccup. User-initiated seeks/`previous` bypass this (they call
+/// `reload_current_track` directly and must stay responsive).
+const RELOAD_COOLDOWN: Duration = Duration::from_secs(6);
 
 /// 10-band EQ center frequencies in Hz.
 pub const EQ_FREQUENCIES: [u32; 10] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -244,6 +252,45 @@ struct PlayerInner {
     /// load. Always 0 for direct-play, whose mpv `start=` keeps the
     /// timeline absolute.
     position_base: f64,
+    /// Wall-clock of the last *automatic* current-track reload (failover or
+    /// file-ended recovery). Enforces `RELOAD_COOLDOWN` so a burst of triggers
+    /// can't stack multiple reloads onto one hiccup. `None` until the first.
+    last_auto_reload_at: Option<Instant>,
+    /// Set when recovery has been exhausted and the track is paused holding its
+    /// position (rather than reset to 0:00 or skipped). While `true`, `resume`/
+    /// `toggle_play_pause` re-attempt a resume-at-position load instead of a
+    /// plain unpause (mpv is idle after a failed stream, so unpausing is
+    /// silent). Cleared on real playback progress or a successful re-attempt.
+    held_for_recovery: bool,
+}
+
+impl PlayerInner {
+    /// True if an automatic reload fired within `RELOAD_COOLDOWN`. Used to
+    /// coalesce a burst of failover/recovery triggers (network-path monitor,
+    /// stall watchdog, prefetch) into a single reload per hiccup.
+    fn within_reload_cooldown(&self) -> bool {
+        self.last_auto_reload_at
+            .is_some_and(|t| t.elapsed() < RELOAD_COOLDOWN)
+    }
+}
+
+/// Outcome of a file-ended recovery attempt, returned by `handle_file_ended`
+/// so the platform layer can keep the OS media controls and the in-app seek
+/// bar honest about what happened (a silent reload otherwise leaves both
+/// extrapolating the old position forward as if still playing).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RecoverOutcome {
+    /// Nothing to do — a natural end-of-file, or an event we don't act on.
+    None,
+    /// A resume-at-position reload was issued; freeze the controls at `pos`
+    /// and re-anchor on the next position tick.
+    Reloading(f64),
+    /// Recovery exhausted; the track is paused holding `pos` (not reset, not
+    /// skipped). Reflect a paused state at `pos`.
+    Held(f64),
+    /// Unrecoverable (e.g. a local file that failed to decode); the player has
+    /// already advanced to the next track.
+    Skipped,
 }
 
 /// Core audio player managing queue state, mpv commands, and track resolution.
@@ -282,6 +329,8 @@ impl AudioPlayer {
                 last_load_error: None,
                 stream_record_dir: None,
                 position_base: 0.0,
+                last_auto_reload_at: None,
+                held_for_recovery: false,
             }),
             persistent_cache: RwLock::new(HashMap::new()),
         }
@@ -649,6 +698,12 @@ impl AudioPlayer {
 
     /// Toggle between playing and paused.
     pub fn toggle_play_pause(&self) {
+        // A track held after exhausted recovery re-attempts the resume rather
+        // than toggling a dead (idle) stream.
+        if self.inner.lock().held_for_recovery {
+            self.resume();
+            return;
+        }
         let mut inner = self.inner.lock();
         match inner.state.status {
             PlaybackStatus::Playing => {
@@ -679,6 +734,19 @@ impl AudioPlayer {
     /// Unconditionally resume playback. Safe to call when already playing.
     pub fn resume(&self) {
         let mut inner = self.inner.lock();
+        if inner.held_for_recovery {
+            // The stream died and we're holding at position; mpv is idle so a
+            // plain unpause is silent. Re-attempt a resume-at-position load.
+            inner.held_for_recovery = false;
+            inner.last_retried_track = None;
+            inner.last_auto_reload_at = None;
+            inner.state.status = PlaybackStatus::Playing;
+            inner.last_position_update = Some(Instant::now());
+            let resume = inner.position;
+            drop(inner);
+            self.reload_current_track(Some(resume));
+            return;
+        }
         if inner.state.status == PlaybackStatus::Paused {
             inner.state.status = PlaybackStatus::Playing;
             inner.last_position_update = Some(Instant::now());
@@ -728,6 +796,8 @@ impl AudioPlayer {
         inner.load_started_at = None;
         inner.last_position_update = None;
         inner.last_load_error = None;
+        inner.held_for_recovery = false;
+        inner.last_auto_reload_at = None;
         drop(inner);
         self.mpv.stop();
     }
@@ -900,6 +970,10 @@ impl AudioPlayer {
         // → retry → file-loaded → file-ended → retry forever, never
         // converging because the guard kept clearing.
         inner.last_retried_track = None;
+        // Audio is flowing again — a recovery reload (from any trigger)
+        // succeeded, so clear the hold guard even if it wasn't `resume` that
+        // re-attempted it.
+        inner.held_for_recovery = false;
     }
 
     /// Handle mpv duration change.
@@ -960,6 +1034,9 @@ impl AudioPlayer {
         inner.last_position_update = None;
         inner.last_load_error = None;
         inner.last_retried_track = None;
+        // A different track is now current — it can't be the one we were
+        // holding after exhausted recovery.
+        inner.held_for_recovery = false;
     }
 
     /// Handle mpv pause state change.
@@ -1037,67 +1114,97 @@ impl AudioPlayer {
         inner.last_load_error = None;
     }
 
-    /// Handle mpv file-ended event.
-    pub fn handle_file_ended(&self, reason: FileEndReason) {
+    /// Handle mpv file-ended event. Returns a [`RecoverOutcome`] the platform
+    /// layer uses to keep the OS media controls and seek bar in sync.
+    pub fn handle_file_ended(&self, reason: FileEndReason) -> RecoverOutcome {
         match reason {
             FileEndReason::Eof => {
                 // Natural end — mpv auto-advances via gapless playback;
                 // if last track, idle-active will fire.
+                RecoverOutcome::None
             }
             FileEndReason::Error(ref msg) => {
                 let redacted = redact_urls(msg);
                 self.inner.lock().last_load_error = Some(redacted.clone());
-                if self.try_recover_current_track() {
-                    log::warn!("handle_file_ended: load error, retrying once: {redacted}");
-                    return;
+                match self.try_recover_current_track() {
+                    RecoverOutcome::Reloading(pos) => {
+                        log::warn!("handle_file_ended: load error, resuming at {pos:.1}s: {redacted}");
+                        RecoverOutcome::Reloading(pos)
+                    }
+                    RecoverOutcome::Held(pos) => {
+                        // Recovery exhausted (already retried, or within the
+                        // reload cooldown). Hold at position instead of
+                        // resetting to 0:00 or skipping — a play tap
+                        // re-attempts the resume (see `resume`).
+                        {
+                            let mut inner = self.inner.lock();
+                            inner.state.status = PlaybackStatus::Paused;
+                            inner.held_for_recovery = true;
+                        }
+                        log::warn!("handle_file_ended: recovery exhausted, holding at {pos:.1}s: {redacted}");
+                        RecoverOutcome::Held(pos)
+                    }
+                    _ => {
+                        // Only a genuinely local/undownloadable track reaches
+                        // here — skipping is the sole sensible recovery.
+                        log::warn!("handle_file_ended: unrecoverable error, skipping: {redacted}");
+                        self.next();
+                        RecoverOutcome::Skipped
+                    }
                 }
-                log::warn!("handle_file_ended: unrecoverable error, skipping: {redacted}");
-                self.next();
             }
-            _ => {}
+            _ => RecoverOutcome::None,
         }
     }
 
-    /// Attempt to recover from a failed track load by rebuilding its URL
-    /// from the current server connection. Returns `true` if a retry was
-    /// issued (the track hadn't been retried yet and we have a fresh URL).
-    fn try_recover_current_track(&self) -> bool {
-        let (idx, new_url) = {
+    /// Attempt to recover from a failed track load by resuming it at the last
+    /// known position over the current server connection. A network track's
+    /// first failure resumes ([`RecoverOutcome::Reloading`]); a second failure
+    /// on the same track, or one inside the reload cooldown, holds at position
+    /// ([`RecoverOutcome::Held`]) rather than thrash or reset. A local file
+    /// that failed to decode yields [`RecoverOutcome::Skipped`] via the caller.
+    fn try_recover_current_track(&self) -> RecoverOutcome {
+        let resume = {
             let persistent = self.persistent_cache.read();
-            let mut inner = self.inner.lock();
+            let inner = self.inner.lock();
             let idx = inner.state.queue_index;
             let Some(track) = inner.state.queue.get(idx) else {
-                return false;
+                return RecoverOutcome::Skipped;
             };
-            if inner.last_retried_track.as_deref() == Some(&track.rating_key) {
-                return false;
+            // Local files: a file-ended error is a genuine decode/file problem,
+            // not a transient stream drop — let the caller skip.
+            if persistent.contains_key(&track.rating_key)
+                || inner.cache.get(&track.rating_key).is_some()
+            {
+                return RecoverOutcome::Skipped;
             }
-            if persistent.contains_key(&track.rating_key) {
-                return false;
+            // Network stream. Hold (don't thrash/reset) if we already retried
+            // this track, or if the last automatic reload was too recent.
+            if inner.last_retried_track.as_deref() == Some(&track.rating_key)
+                || inner.within_reload_cooldown()
+            {
+                return RecoverOutcome::Held(inner.position);
             }
-            if inner.cache.get(&track.rating_key).is_some() {
-                return false;
-            }
-            let Some(url) = resolve_url(track, &inner, &persistent) else {
-                return false;
-            };
-            if url.starts_with("file://") {
-                return false;
-            }
-            inner.last_retried_track = Some(track.rating_key.clone());
-            // Restart-from-top fallback — clear any transcode offset base
-            // left by a failed resume so positions map straight through.
-            inner.position_base = 0.0;
-            (idx, url)
+            inner.position
         };
 
-        // Can't playlist_remove the active index (mpv may still hold it).
-        // Instead: insert the fresh URL before it, play it, then remove
-        // the stale entry that shifted to idx+1.
-        self.mpv.load_file_at(&new_url, idx as i64, None);
-        self.mpv.playlist_play_index(idx as i64);
-        self.mpv.playlist_remove((idx + 1) as i64);
-        true
+        {
+            let mut inner = self.inner.lock();
+            let idx = inner.state.queue_index;
+            if let Some(track) = inner.state.queue.get(idx) {
+                inner.last_retried_track = Some(track.rating_key.clone());
+            }
+            inner.last_auto_reload_at = Some(Instant::now());
+        }
+        // Resume at the captured position (transcode `offset=` / direct-play
+        // `start=` per `reload_current_track`), never a restart from 0:00.
+        if self.reload_current_track(Some(resume)) {
+            RecoverOutcome::Reloading(resume)
+        } else {
+            // Reload declined (became file:// or stopped meanwhile) — hold
+            // rather than reset; there's nothing safe to skip to.
+            RecoverOutcome::Held(resume)
+        }
     }
 
     /// Reload the current track's mpv entry, optionally resuming at
@@ -1173,7 +1280,17 @@ impl AudioPlayer {
     /// alternative is a 15s hang the next time mpv reaches the now-dead
     /// upstream. See [`reload_current_track`] for the resume mechanics.
     pub fn force_reload_current_track(&self) -> bool {
-        let resume = self.inner.lock().position;
+        let resume = {
+            let mut inner = self.inner.lock();
+            // Coalesce a burst of failover triggers: if an automatic reload
+            // just fired, let it play out rather than stacking another.
+            if inner.within_reload_cooldown() {
+                log::debug!("force_reload_current_track: within reload cooldown, skipping");
+                return false;
+            }
+            inner.last_auto_reload_at = Some(Instant::now());
+            inner.position
+        };
         self.reload_current_track(Some(resume))
     }
 
@@ -1186,6 +1303,8 @@ impl AudioPlayer {
         inner.position_base = 0.0;
         inner.load_started_at = None;
         inner.last_position_update = None;
+        inner.held_for_recovery = false;
+        inner.last_auto_reload_at = None;
     }
 
     /// Access the download cache under the player lock.
@@ -2535,20 +2654,45 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_file_ended_error_retries_then_skips() {
+    fn test_handle_file_ended_error_resumes_then_holds() {
         let (player, _) = make_player();
         player.load_queue(
             vec![make_test_track("1"), make_test_track("2")],
             0,
         );
 
-        // First error: player retries by rebuilding the URL — stays on track 0
-        player.handle_file_ended(FileEndReason::Error("test".into()));
+        // First error: resume-at-position reload — stays on track 0.
+        let out = player.handle_file_ended(FileEndReason::Error("test".into()));
+        assert!(matches!(out, RecoverOutcome::Reloading(_)), "got {out:?}");
         assert_eq!(player.state().queue_index, 0);
 
-        // Second error on the same track: guard prevents infinite loop, skips
-        player.handle_file_ended(FileEndReason::Error("test".into()));
-        assert_eq!(player.state().queue_index, 1);
+        // Second error on the same track: hold at position (never skip or reset
+        // to 0:00), so playback stays on track 0, paused, awaiting a play tap.
+        let out = player.handle_file_ended(FileEndReason::Error("test".into()));
+        assert!(matches!(out, RecoverOutcome::Held(_)), "got {out:?}");
+        assert_eq!(player.state().queue_index, 0);
+        assert_eq!(player.state().status, PlaybackStatus::Paused);
+    }
+
+    #[test]
+    fn test_force_reload_coalesces_within_cooldown() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+        player.handle_position_change(30.0);
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        // First failover reload fires.
+        assert!(player.force_reload_current_track());
+        // A second trigger arriving immediately (network-path flap + stall
+        // watchdog + prefetch all firing for one hiccup) is coalesced by the
+        // reload cooldown rather than stacked into another reload.
+        assert!(
+            !player.force_reload_current_track(),
+            "second reload within cooldown must be suppressed"
+        );
     }
 
     #[test]
@@ -3007,7 +3151,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transcode_resume_failure_falls_back_to_restart() {
+    fn test_transcode_resume_failure_holds_at_position() {
         let (player, mpv) = make_player();
         player.update_config(PlaybackConfig {
             playback_mode: PlaybackMode::Always,
@@ -3024,10 +3168,22 @@ mod tests {
         mpv.calls.lock().clear();
 
         // The offset transcode start is refused (e.g. HTTP 400) → mpv errors.
-        player.handle_file_ended(FileEndReason::Error("HTTP 400 Bad Request".into()));
+        // Recovery must NOT reset to 0:00 or skip — it holds the track at its
+        // position so a play tap can re-attempt. (The immediate retry lands
+        // inside the reload cooldown, so it holds rather than thrashing.)
+        let out = player.handle_file_ended(FileEndReason::Error("HTTP 400 Bad Request".into()));
+        assert!(matches!(out, RecoverOutcome::Held(_)), "got {out:?}");
+        assert_eq!(player.state().queue_index, 0, "must not skip the track");
+        assert_eq!(player.state().status, PlaybackStatus::Paused);
+        assert!(
+            (player.snapshot().position - 90.0).abs() < 0.5,
+            "held position must stay at ~90s, not reset to 0:00"
+        );
 
-        // `try_recover_current_track` restarts the track from the top (no
-        // offset) rather than skipping it, and clears the position base.
+        // A play tap re-attempts a resume-at-position (offset) load, never a
+        // restart from the top.
+        mpv.calls.lock().clear();
+        player.resume();
         let url = mpv
             .calls()
             .into_iter()
@@ -3035,15 +3191,10 @@ mod tests {
                 MockCall::LoadFileAt { index: 0, url, .. } => Some(url),
                 _ => None,
             })
-            .expect("expected a recovery LoadFileAt at index 0");
+            .expect("expected a re-attempt LoadFileAt at index 0");
         assert!(
-            !url.contains("offset="),
-            "fallback must restart from the top, got {url}"
-        );
-        player.handle_position_change(3.0);
-        assert!(
-            (player.snapshot().position - 3.0).abs() < 0.01,
-            "position base should be cleared after the restart fallback"
+            url.contains("offset="),
+            "re-attempt must resume at position, got {url}"
         );
     }
 }

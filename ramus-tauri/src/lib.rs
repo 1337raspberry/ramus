@@ -68,6 +68,7 @@ use tauri::AppHandle;
 
 use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
 use ramus_core::playback::mpv::MpvCallbacks;
+use ramus_core::playback::player::RecoverOutcome;
 
 use crate::events::{
     emit_playback_position, emit_playback_state,
@@ -110,6 +111,11 @@ pub fn create_mpv_player(
     let app3 = app_handle.clone();
     let app4 = app_handle.clone();
     let app5 = app_handle.clone();
+    let app6 = app_handle.clone();
+
+    // `mc_reanchor` is moved into `on_position_change`; clone it for the
+    // file-ended recovery path, which arms the same re-anchor.
+    let reanchor_fe = mc_reanchor.clone();
 
     // The player is needed inside callbacks but owns the MpvController. A
     // shared Arc populated after construction breaks the cycle.
@@ -137,6 +143,7 @@ pub fn create_mpv_player(
     let mc3 = media_controls_ref.clone();
     let mc4 = media_controls_ref.clone();
     let mc5 = media_controls_ref.clone();
+    let mc6 = media_controls_ref.clone();
 
     let ph1 = prefetch_handle_ref.clone();
     let ph2 = prefetch_handle_ref.clone();
@@ -351,7 +358,38 @@ pub fn create_mpv_player(
         })),
         on_file_ended: Some(Box::new(move |reason| {
             if let Some(ref p) = *pr7.lock() {
-                p.handle_file_ended(reason);
+                match p.handle_file_ended(reason) {
+                    RecoverOutcome::Reloading(pos) => {
+                        // A resume-at-position reload was issued. Freeze the OS
+                        // now-playing scrubber at the resume point (rate=0) and
+                        // arm the re-anchor so the first position tick once
+                        // audio flows again snaps it to the truth — otherwise
+                        // it sails forward through the reload gap as if playing.
+                        if let Some(ref mc) = *mc6.lock() {
+                            mc.update_playback_state(false, pos);
+                        }
+                        reanchor_fe.store(true, std::sync::atomic::Ordering::Release);
+                    }
+                    RecoverOutcome::Held(pos) => {
+                        // Recovery exhausted; the track is paused holding its
+                        // position (a play tap re-attempts). Reflect paused to
+                        // both the OS controls and the in-app seek bar so
+                        // neither keeps extrapolating "playing" forward.
+                        if let Some(ref mc) = *mc6.lock() {
+                            mc.update_playback_state(false, pos);
+                        }
+                        let state = p.state();
+                        emit_playback_state(
+                            &app6,
+                            PlaybackStatePayload {
+                                status: "paused".to_string(),
+                                current_track: state.current_track,
+                                queue_index: state.queue_index,
+                            },
+                        );
+                    }
+                    RecoverOutcome::Skipped | RecoverOutcome::None => {}
+                }
             }
         })),
     });
