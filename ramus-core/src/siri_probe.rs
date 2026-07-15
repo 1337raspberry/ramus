@@ -17,6 +17,13 @@ use serde::Serialize;
 /// Number of recently-played artists to surface in a spoken answer.
 const RECENT_LIMIT: usize = 5;
 
+/// Cap on the number of entities returned to the assistant when it builds a
+/// picker or resolves a spoken name. The full library can hold thousands of
+/// artists; a bounded, relevance-sorted slice keeps the suggestion list usable.
+/// The cap only limits *suggestions* — playback resolves a name against the
+/// whole library regardless.
+const LIST_LIMIT: usize = 100;
+
 /// Structured result serialised to JSON for the native intent layer. The
 /// assistant only needs `ok` + `spoken`; the remaining fields are for
 /// on-device diagnostics.
@@ -117,6 +124,24 @@ fn query_probe(conn: &Connection, genre: Option<&str>) -> ProbeResult {
         }
     };
 
+    // When the term isn't a genre it might be an artist ("what My Chemical
+    // Romance albums do I have"). Fall back to an artist answer before giving up.
+    if let Some(term) = genre {
+        if genre_album_count == 0 {
+            if let Some((artist_name, album_count, played)) = artist_probe(conn, term) {
+                return ProbeResult {
+                    ok: true,
+                    spoken: build_artist_spoken(&artist_name, album_count, played),
+                    genre: Some(term.to_owned()),
+                    total_albums,
+                    genre_album_count: album_count,
+                    recent_artists: Vec::new(),
+                    error: None,
+                };
+            }
+        }
+    }
+
     let spoken = build_spoken(genre, total_albums, genre_album_count, &recent_artists);
     ProbeResult {
         ok: true,
@@ -126,6 +151,46 @@ fn query_probe(conn: &Connection, genre: Option<&str>) -> ProbeResult {
         genre_album_count,
         recent_artists,
         error: None,
+    }
+}
+
+/// Resolve a probe term as an artist: the best-matching in-library artist's
+/// actual name, its album count, and how many of those albums have been played.
+/// Prefers an exact (case-insensitive) name, else the most-stocked substring
+/// match. `None` when no artist matches, so the caller falls through to
+/// "not found".
+fn artist_probe(conn: &Connection, term: &str) -> Option<(String, i64, i64)> {
+    let like = format!("%{term}%");
+    let (name, album_count): (String, i64) = conn
+        .query_row(
+            "SELECT ar.name, COUNT(*) AS c FROM albums a \
+             JOIN artists ar ON ar.id = a.artistId \
+             WHERE ar.name = ?1 COLLATE NOCASE OR ar.name LIKE ?2 COLLATE NOCASE \
+             GROUP BY ar.id ORDER BY (ar.name = ?1 COLLATE NOCASE) DESC, c DESC LIMIT 1",
+            rusqlite::params![term, like],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok()?;
+    let played: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM albums a JOIN artists ar ON ar.id = a.artistId \
+             WHERE ar.name = ?1 COLLATE NOCASE \
+               AND a.viewCount IS NOT NULL AND a.viewCount > 0",
+            rusqlite::params![name],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    Some((name, album_count, played))
+}
+
+fn build_artist_spoken(artist: &str, album_count: i64, played: i64) -> String {
+    let album_word = if album_count == 1 { "album" } else { "albums" };
+    if played == 0 {
+        format!("You have {album_count} {artist} {album_word} in ramus, but haven't played any yet.")
+    } else if played >= album_count {
+        format!("You have {album_count} {artist} {album_word} in ramus.")
+    } else {
+        format!("You have {album_count} {artist} {album_word} in ramus, and you've played {played}.")
     }
 }
 
@@ -174,6 +239,298 @@ fn human_list(items: &[String]) -> String {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Entity listing — backs the assistant's genre/artist vocabulary.
+//
+// The voice layer models genres and artists as resolvable "entities" so the
+// assistant can turn a spoken word ("post-hardcore", "Touché Amoré") into a
+// concrete library item. These helpers feed two assistant needs: the initial
+// picker list (`query = None`) and spoken-name search (`query = Some(text)`).
+// Both are read-only and open their own connection, so they answer even when
+// the app isn't running.
+// ---------------------------------------------------------------------------
+
+/// A genre present in the library, with how many albums carry the tag (used to
+/// surface the most-represented genres first).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct GenreItem {
+    pub name: String,
+    pub album_count: i64,
+}
+
+/// An artist present in the library.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ArtistItem {
+    pub name: String,
+}
+
+/// An album present in the library. `source_id` is the stable Plex rating key —
+/// the assistant plays an album by this id (titles aren't unique), while `title`
+/// and `artist` are for display / disambiguation.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct AlbumItem {
+    pub source_id: String,
+    pub title: String,
+    pub artist: String,
+}
+
+#[derive(Debug, Serialize)]
+struct GenreList {
+    ok: bool,
+    items: Vec<GenreItem>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ArtistList {
+    ok: bool,
+    items: Vec<ArtistItem>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AlbumList {
+    ok: bool,
+    items: Vec<AlbumItem>,
+    error: Option<String>,
+}
+
+/// Open a read-only-style connection to the on-disk cache. Shares the probe's
+/// philosophy: only ever issues `SELECT`s, so it is WAL-safe alongside the live
+/// app. Errors are returned as short strings for the JSON `error` field.
+fn open_cache() -> Result<Connection, String> {
+    let db_path = crate::plex::token_store::config_dir()
+        .map_err(|e| format!("config dir: {e}"))?
+        .join("library_cache.db");
+    if !db_path.exists() {
+        return Err("library not synced yet".to_string());
+    }
+    Connection::open(&db_path).map_err(|e| format!("open: {e}"))
+}
+
+fn map_genre(r: &rusqlite::Row) -> rusqlite::Result<GenreItem> {
+    Ok(GenreItem {
+        name: r.get(0)?,
+        album_count: r.get(1)?,
+    })
+}
+
+fn map_artist(r: &rusqlite::Row) -> rusqlite::Result<ArtistItem> {
+    Ok(ArtistItem { name: r.get(0)? })
+}
+
+fn map_album(r: &rusqlite::Row) -> rusqlite::Result<AlbumItem> {
+    Ok(AlbumItem {
+        source_id: r.get(0)?,
+        title: r.get(1)?,
+        artist: r.get(2)?,
+    })
+}
+
+/// Run a genre `SELECT name, count` statement and collect the rows. Any error
+/// yields an empty list rather than failing the caller.
+fn run_genre_query(conn: &Connection, sql: &str, params: impl rusqlite::Params) -> Vec<GenreItem> {
+    let mut out = Vec::new();
+    if let Ok(mut stmt) = conn.prepare(sql) {
+        if let Ok(rows) = stmt.query_map(params, map_genre) {
+            out.extend(rows.flatten());
+        }
+    }
+    out
+}
+
+/// The genres actually present in the library, most-represented first. With a
+/// `query`, an exact (case-insensitive) name match wins outright — so a spoken
+/// genre ("metal") resolves to the single "Metal" tag rather than every genre
+/// that merely contains the word (Metalcore, Death Metal, …), which the
+/// assistant can't disambiguate. Only when nothing matches exactly does it fall
+/// back to substring search, so a partial word ("hardcore") still surfaces
+/// "Post-Hardcore". Separated from the JSON wrapper so tests exercise it directly.
+fn query_genres(conn: &Connection, query: Option<&str>) -> Vec<GenreItem> {
+    let genre_select = "SELECT g.name, COUNT(DISTINCT ag.albumId) AS c \
+         FROM genres g JOIN album_genres ag ON ag.genreId = g.id";
+    match query {
+        Some(q) => {
+            let exact = run_genre_query(
+                conn,
+                &format!(
+                    "{genre_select} WHERE g.name = ?1 COLLATE NOCASE \
+                     GROUP BY g.id ORDER BY c DESC, g.name ASC LIMIT ?2"
+                ),
+                rusqlite::params![q, LIST_LIMIT as i64],
+            );
+            if !exact.is_empty() {
+                return exact;
+            }
+            let like = format!("%{q}%");
+            run_genre_query(
+                conn,
+                &format!(
+                    "{genre_select} WHERE g.name LIKE ?1 COLLATE NOCASE \
+                     GROUP BY g.id ORDER BY c DESC, g.name ASC LIMIT ?2"
+                ),
+                rusqlite::params![like, LIST_LIMIT as i64],
+            )
+        }
+        None => run_genre_query(
+            conn,
+            &format!("{genre_select} GROUP BY g.id ORDER BY c DESC, g.name ASC LIMIT ?1"),
+            rusqlite::params![LIST_LIMIT as i64],
+        ),
+    }
+}
+
+/// Run an artist `SELECT name` statement and collect the rows. Any error yields
+/// an empty list rather than failing the caller.
+fn run_artist_query(conn: &Connection, sql: &str, params: impl rusqlite::Params) -> Vec<ArtistItem> {
+    let mut out = Vec::new();
+    if let Ok(mut stmt) = conn.prepare(sql) {
+        if let Ok(rows) = stmt.query_map(params, map_artist) {
+            out.extend(rows.flatten());
+        }
+    }
+    out
+}
+
+/// The artists present in the library, most-played first (by summed album
+/// `viewCount`). With a `query`, an exact (case-insensitive) name match wins
+/// outright (mirrors [`query_genres`]) so a spoken artist resolves to one
+/// entity; otherwise it falls back to substring search.
+fn query_artists_list(conn: &Connection, query: Option<&str>) -> Vec<ArtistItem> {
+    let artist_select = "SELECT ar.name FROM artists ar JOIN albums a ON a.artistId = ar.id";
+    let order = "GROUP BY ar.id ORDER BY COALESCE(SUM(a.viewCount), 0) DESC, ar.name ASC LIMIT ?2";
+    match query {
+        Some(q) => {
+            let exact = run_artist_query(
+                conn,
+                &format!("{artist_select} WHERE ar.name = ?1 COLLATE NOCASE {order}"),
+                rusqlite::params![q, LIST_LIMIT as i64],
+            );
+            if !exact.is_empty() {
+                return exact;
+            }
+            let like = format!("%{q}%");
+            run_artist_query(
+                conn,
+                &format!("{artist_select} WHERE ar.name LIKE ?1 COLLATE NOCASE {order}"),
+                rusqlite::params![like, LIST_LIMIT as i64],
+            )
+        }
+        None => run_artist_query(
+            conn,
+            &format!(
+                "{artist_select} \
+                 GROUP BY ar.id ORDER BY COALESCE(SUM(a.viewCount), 0) DESC, ar.name ASC LIMIT ?1"
+            ),
+            rusqlite::params![LIST_LIMIT as i64],
+        ),
+    }
+}
+
+/// Run an album `SELECT sourceId, title, artist` statement and collect the rows.
+fn run_album_query(conn: &Connection, sql: &str, params: impl rusqlite::Params) -> Vec<AlbumItem> {
+    let mut out = Vec::new();
+    if let Ok(mut stmt) = conn.prepare(sql) {
+        if let Ok(rows) = stmt.query_map(params, map_album) {
+            out.extend(rows.flatten());
+        }
+    }
+    out
+}
+
+/// The albums present in the library, most-played first. With a `query`, an
+/// exact (case-insensitive) title match wins outright (mirrors [`query_genres`])
+/// so a spoken album resolves cleanly; otherwise it falls back to substring
+/// search. Albums are keyed by `source_id` because titles aren't unique.
+fn query_albums(conn: &Connection, query: Option<&str>) -> Vec<AlbumItem> {
+    let album_select =
+        "SELECT a.sourceId, a.title, ar.name FROM albums a JOIN artists ar ON ar.id = a.artistId";
+    let order = "ORDER BY COALESCE(a.viewCount, 0) DESC, a.title ASC LIMIT ?2";
+    match query {
+        Some(q) => {
+            let exact = run_album_query(
+                conn,
+                &format!("{album_select} WHERE a.title = ?1 COLLATE NOCASE {order}"),
+                rusqlite::params![q, LIST_LIMIT as i64],
+            );
+            if !exact.is_empty() {
+                return exact;
+            }
+            let like = format!("%{q}%");
+            run_album_query(
+                conn,
+                &format!("{album_select} WHERE a.title LIKE ?1 COLLATE NOCASE {order}"),
+                rusqlite::params![like, LIST_LIMIT as i64],
+            )
+        }
+        None => run_album_query(
+            conn,
+            &format!(
+                "{album_select} ORDER BY COALESCE(a.viewCount, 0) DESC, a.title ASC LIMIT ?1"
+            ),
+            rusqlite::params![LIST_LIMIT as i64],
+        ),
+    }
+}
+
+/// JSON list of in-library genres for the assistant. `query` is an optional
+/// case-insensitive substring filter (null → the top suggestions).
+pub fn list_genres_json(query: Option<&str>) -> String {
+    let result = match open_cache() {
+        Ok(conn) => GenreList {
+            ok: true,
+            items: query_genres(&conn, query),
+            error: None,
+        },
+        Err(e) => GenreList {
+            ok: false,
+            items: Vec::new(),
+            error: Some(e),
+        },
+    };
+    serde_json::to_string(&result)
+        .unwrap_or_else(|_| "{\"ok\":false,\"items\":[],\"error\":\"serialize\"}".to_string())
+}
+
+/// JSON list of in-library artists for the assistant. `query` is an optional
+/// case-insensitive substring filter (null → the top suggestions).
+pub fn list_artists_json(query: Option<&str>) -> String {
+    let result = match open_cache() {
+        Ok(conn) => ArtistList {
+            ok: true,
+            items: query_artists_list(&conn, query),
+            error: None,
+        },
+        Err(e) => ArtistList {
+            ok: false,
+            items: Vec::new(),
+            error: Some(e),
+        },
+    };
+    serde_json::to_string(&result)
+        .unwrap_or_else(|_| "{\"ok\":false,\"items\":[],\"error\":\"serialize\"}".to_string())
+}
+
+/// JSON list of in-library albums for the assistant. `query` is an optional
+/// case-insensitive title filter (null → the top suggestions). Each item carries
+/// `sourceId` (the stable play key), `title`, and `artist`.
+pub fn list_albums_json(query: Option<&str>) -> String {
+    let result = match open_cache() {
+        Ok(conn) => AlbumList {
+            ok: true,
+            items: query_albums(&conn, query),
+            error: None,
+        },
+        Err(e) => AlbumList {
+            ok: false,
+            items: Vec::new(),
+            error: Some(e),
+        },
+    };
+    serde_json::to_string(&result)
+        .unwrap_or_else(|_| "{\"ok\":false,\"items\":[],\"error\":\"serialize\"}".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,18 +539,20 @@ mod tests {
         conn.execute_batch(
             "CREATE TABLE artists (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
              CREATE TABLE albums (id INTEGER PRIMARY KEY, title TEXT, artistId INTEGER, \
-                viewCount INTEGER, lastViewedAt INTEGER);
+                viewCount INTEGER, lastViewedAt INTEGER, sourceId TEXT);
              CREATE TABLE genres (id INTEGER PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE);
              CREATE TABLE album_genres (albumId INTEGER, genreId INTEGER);
 
              INSERT INTO artists (id, name) VALUES (1,'Touché Amoré'),(2,'Defeater'),(3,'Cave In');
-             INSERT INTO genres (id, name) VALUES (1,'Post-Hardcore'),(2,'Metal');
-             -- Two played post-hardcore albums (Touché Amoré most recent), one unplayed metal.
-             INSERT INTO albums (id,title,artistId,viewCount,lastViewedAt) VALUES
-                (10,'Stage Four',1,7,2000),
-                (11,'Empty Days',2,3,1000),
-                (12,'Heavy Pendulum',3,NULL,NULL);
-             INSERT INTO album_genres (albumId,genreId) VALUES (10,1),(11,1),(12,2);",
+             -- Metal + Metalcore both contain 'metal', to exercise exact-vs-substring.
+             INSERT INTO genres (id, name) VALUES (1,'Post-Hardcore'),(2,'Metal'),(3,'Metalcore');
+             -- Two played post-hardcore albums (Touché Amoré most recent), one unplayed
+             -- album tagged both Metal and Metalcore.
+             INSERT INTO albums (id,title,artistId,viewCount,lastViewedAt,sourceId) VALUES
+                (10,'Stage Four',1,7,2000,'rk10'),
+                (11,'Empty Days',2,3,1000,'rk11'),
+                (12,'Heavy Pendulum',3,NULL,NULL,'rk12');
+             INSERT INTO album_genres (albumId,genreId) VALUES (10,1),(11,1),(12,2),(12,3);",
         )
         .unwrap();
     }
@@ -223,10 +582,33 @@ mod tests {
     fn unknown_genre_reports_none_found() {
         let conn = Connection::open_in_memory().unwrap();
         seed(&conn);
+        // "polka" is neither a genre nor an artist here.
         let r = query_probe(&conn, Some("polka"));
         assert_eq!(r.genre_album_count, 0);
         assert!(r.recent_artists.is_empty());
         assert!(r.spoken.contains("couldn't find any polka"));
+    }
+
+    #[test]
+    fn probe_resolves_a_term_that_is_an_artist_not_a_genre() {
+        let conn = Connection::open_in_memory().unwrap();
+        seed(&conn);
+        // "Defeater" is an artist (1 played album), not a genre.
+        let r = query_probe(&conn, Some("defeater"));
+        assert!(r.ok);
+        assert_eq!(r.genre_album_count, 1);
+        assert!(r.spoken.contains("Defeater"), "spoken was: {}", r.spoken);
+        assert!(r.spoken.contains("1 Defeater album"), "spoken was: {}", r.spoken);
+    }
+
+    #[test]
+    fn probe_artist_with_no_plays_says_so() {
+        let conn = Connection::open_in_memory().unwrap();
+        seed(&conn);
+        // "Cave In" has one album (Heavy Pendulum) that has never been played.
+        let r = query_probe(&conn, Some("Cave In"));
+        assert!(r.spoken.contains("Cave In"), "spoken was: {}", r.spoken);
+        assert!(r.spoken.contains("haven't played"), "spoken was: {}", r.spoken);
     }
 
     #[test]
@@ -244,5 +626,118 @@ mod tests {
         assert_eq!(human_list(&["A".into()]), "A");
         assert_eq!(human_list(&["A".into(), "B".into()]), "A and B");
         assert_eq!(human_list(&["A".into(), "B".into(), "C".into()]), "A, B, and C");
+    }
+
+    #[test]
+    fn genre_list_returns_in_library_sorted_by_album_count() {
+        let conn = Connection::open_in_memory().unwrap();
+        seed(&conn);
+        let items = query_genres(&conn, None);
+        // Post-Hardcore (2 albums) ranks above Metal and Metalcore (1 each,
+        // broken by name ASC).
+        assert_eq!(
+            items,
+            vec![
+                GenreItem {
+                    name: "Post-Hardcore".into(),
+                    album_count: 2
+                },
+                GenreItem {
+                    name: "Metal".into(),
+                    album_count: 1
+                },
+                GenreItem {
+                    name: "Metalcore".into(),
+                    album_count: 1
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn genre_query_exact_match_wins_over_substring_siblings() {
+        let conn = Connection::open_in_memory().unwrap();
+        seed(&conn);
+        // "metal" matches both Metal and Metalcore by substring, but an exact
+        // (case-insensitive) hit must resolve to just "Metal" so the assistant
+        // isn't handed an ambiguous pile of candidates.
+        let items = query_genres(&conn, Some("METAL"));
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "Metal");
+    }
+
+    #[test]
+    fn genre_query_falls_back_to_substring_without_exact() {
+        let conn = Connection::open_in_memory().unwrap();
+        seed(&conn);
+        // No genre is exactly "core", so both "Post-Hardcore" and "Metalcore"
+        // surface via the substring fallback.
+        let names: Vec<String> = query_genres(&conn, Some("core"))
+            .into_iter()
+            .map(|g| g.name)
+            .collect();
+        assert!(names.contains(&"Post-Hardcore".to_string()));
+        assert!(names.contains(&"Metalcore".to_string()));
+    }
+
+    #[test]
+    fn artist_query_exact_match_resolves_single() {
+        let conn = Connection::open_in_memory().unwrap();
+        seed(&conn);
+        let items = query_artists_list(&conn, Some("defeater"));
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "Defeater");
+    }
+
+    #[test]
+    fn album_list_ranks_most_played_first() {
+        let conn = Connection::open_in_memory().unwrap();
+        seed(&conn);
+        let titles: Vec<String> = query_albums(&conn, None)
+            .into_iter()
+            .map(|a| a.title)
+            .collect();
+        // Stage Four (7 plays) > Empty Days (3) > Heavy Pendulum (unplayed → 0).
+        assert_eq!(titles, vec!["Stage Four", "Empty Days", "Heavy Pendulum"]);
+    }
+
+    #[test]
+    fn album_query_exact_title_resolves_to_source_id_and_artist() {
+        let conn = Connection::open_in_memory().unwrap();
+        seed(&conn);
+        let items = query_albums(&conn, Some("stage four"));
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].source_id, "rk10");
+        assert_eq!(items[0].title, "Stage Four");
+        assert_eq!(items[0].artist, "Touché Amoré");
+    }
+
+    #[test]
+    fn album_query_falls_back_to_substring_without_exact() {
+        let conn = Connection::open_in_memory().unwrap();
+        seed(&conn);
+        // No album is exactly "days"; the substring fallback finds "Empty Days".
+        let items = query_albums(&conn, Some("days"));
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Empty Days");
+    }
+
+    #[test]
+    fn artist_list_ranks_most_played_first() {
+        let conn = Connection::open_in_memory().unwrap();
+        seed(&conn);
+        let items = query_artists_list(&conn, None);
+        // Touché Amoré (7 plays) > Defeater (3) > Cave In (unplayed → 0).
+        let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, vec!["Touché Amoré", "Defeater", "Cave In"]);
+    }
+
+    #[test]
+    fn artist_list_substring_filter_matches_partial_name() {
+        let conn = Connection::open_in_memory().unwrap();
+        seed(&conn);
+        let items = query_artists_list(&conn, Some("def"));
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "Defeater");
     }
 }

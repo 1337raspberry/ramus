@@ -552,6 +552,11 @@ pub fn run() {
                         let vc_ptr = pw.view_controller() as usize;
                         let webview_ptr = pw.inner() as usize;
 
+                        // Hand the view controller to the scene-window bridge so
+                        // the scene delegate can reach this window and adopt it
+                        // into the connected UIWindowScene (see siri_ffi.rs).
+                        crate::siri_ffi::set_main_view_controller(vc_ptr);
+
                         dispatch2::DispatchQueue::main().exec_async(move || unsafe {
                             use objc2::msg_send;
                             use objc2::runtime::AnyObject;
@@ -1260,6 +1265,11 @@ pub fn run() {
             }
 
             app.manage(state);
+
+            // Hand the live app to the voice-assistant / App Intents layer so a
+            // playback intent can reach the configured player. Done after
+            // `manage` so its presence signals the app is ready to play.
+            crate::siri_ffi::set_app_handle(app_handle.clone());
 
             session_reporter.ensure_loop_spawned();
 

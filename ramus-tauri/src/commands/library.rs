@@ -151,24 +151,24 @@ pub async fn get_genre_tree(state: State<'_, AppState>) -> CmdResult<GenreTreeRe
     })
 }
 
-#[tauri::command]
-pub async fn get_albums_for_genre(
-    state: State<'_, AppState>,
-    genre: String,
-) -> CmdResult<Vec<Album>> {
-    // Resolve the canonical to its full subtree, then translate that subtree
-    // back to user-library tags via AKA/fuzzy match — DB stores raw user tags
-    // (e.g. "Hip-Hop"), so querying with canonical names alone misses anything
-    // tagged via an AKA. Guard against bad fuzzy: if expanded doesn't include
-    // the original genre, the mapper landed in the wrong family — fall back
-    // to the raw name (covers "Other" bucket clicks).
+/// Resolve a genre name to the set of user-library tags that should be queried
+/// for it. Expands the canonical to its full subtree (via `GenreMapper`), then
+/// translates that subtree back to the raw tags the DB actually stores
+/// (e.g. "Hip-Hop") via AKA/fuzzy match — querying with canonical names alone
+/// would miss anything tagged via an AKA. Guards against bad fuzzy: if the
+/// expansion doesn't include the original genre, the mapper landed in the wrong
+/// family, so fall back to the raw name (covers "Other" bucket clicks).
+///
+/// Shared by the album view (`get_albums_for_genre`) and the voice-assistant
+/// play path so both resolve a genre to the same library tags.
+pub(crate) fn library_genre_names(state: &AppState, genre: &str) -> CmdResult<Vec<String>> {
     let mapper_guard = state.genre_mapper.read();
     let names: Vec<String> = match mapper_guard.as_ref() {
-        Some(mapper) => match mapper.expand_genre(&genre) {
-            Some(expanded) if expanded.iter().any(|n| n.eq_ignore_ascii_case(&genre)) => {
-                let lower_subtree: std::collections::HashSet<String> =
+        Some(mapper) => match mapper.expand_genre(genre) {
+            Some(expanded) if expanded.iter().any(|n| n.eq_ignore_ascii_case(genre)) => {
+                let lower_subtree: HashSet<String> =
                     expanded.iter().map(|s| s.to_lowercase()).collect();
-                let user_tags = with_cache(&state, |db| db.genre_album_sets())?
+                let user_tags = with_cache(state, |db| db.genre_album_sets())?
                     .into_keys()
                     .collect::<Vec<_>>();
                 let mut matching: Vec<String> = user_tags
@@ -185,12 +185,19 @@ pub async fn get_albums_for_genre(
                 matching.extend(expanded);
                 matching
             }
-            _ => vec![genre.clone()],
+            _ => vec![genre.to_string()],
         },
-        None => vec![genre.clone()],
+        None => vec![genre.to_string()],
     };
-    drop(mapper_guard);
+    Ok(names)
+}
 
+#[tauri::command]
+pub async fn get_albums_for_genre(
+    state: State<'_, AppState>,
+    genre: String,
+) -> CmdResult<Vec<Album>> {
+    let names = library_genre_names(&state, &genre)?;
     let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
     let albums = with_cache(&state, |db| db.albums_for_genres(&name_refs))?;
     Ok(filter_albums(albums, offline_album_source_ids(&state)?))

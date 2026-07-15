@@ -92,6 +92,20 @@ targets:
         NSLocalNetworkUsageDescription: ramus needs local network access to find Plex servers on your home network.
         NSBonjourServices:
           - _plex._tcp
+        # iOS 26 made UIScene lifecycle adoption mandatory; the iOS 27 SDK turns
+        # non-adoption into a hard launch crash (EXC_BREAKPOINT in
+        # UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption), before any
+        # app code runs. Tauri/tao (0.34.x) manages its own UIWindow from the app
+        # delegate and never assigns a windowScene, so a bare manifest stops the
+        # crash but leaves the window orphaned → black screen. RamusSceneDelegate
+        # re-parents tao's window onto the scene. Required to launch AND render on
+        # iOS 27; harmless on older iOS.
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default Configuration
+                UISceneDelegateClassName: RamusSceneDelegate
     entitlements:
       path: ramus-tauri_iOS/ramus-tauri_iOS.entitlements
     scheme:
@@ -111,6 +125,13 @@ targets:
         # live here rather than in the static-library plugin.
         SWIFT_VERSION: "5.0"
         SWIFT_OBJC_BRIDGING_HEADER: Sources/ramus-tauri/ramus-Bridging-Header.h
+        # Extra Swift compilation conditions, substituted from the environment at
+        # generate time (empty by default → normal builds are unaffected).
+        # scripts/ios-dev-ai.sh sets RAMUS_SWIFT_CONDITIONS=RAMUS_IOS27_SCHEMAS to
+        # compile the iOS-27 audio assistant-schema tier in RamusSiriIntents.swift,
+        # which only builds under the Xcode 27 beta SDK. regen-ios-project.sh
+        # exports the var (defaulting empty) so a plain regen leaves it off.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) ${RAMUS_SWIFT_CONDITIONS}
         LIBRARY_SEARCH_PATHS[arch=x86_64]: $(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)
         LIBRARY_SEARCH_PATHS[arch=arm64]: $(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64

@@ -30,6 +30,12 @@ if [[ -f signing.local.env ]]; then
 fi
 export DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-}"
 
+# Extra Swift compilation conditions (empty by default). scripts/ios-dev-ai.sh
+# sets this to RAMUS_IOS27_SCHEMAS to bake the Xcode-27-only assistant-schema
+# tier into the generated project; a plain regen leaves it empty so normal
+# (Xcode 26) builds exclude that code.
+export RAMUS_SWIFT_CONDITIONS="${RAMUS_SWIFT_CONDITIONS:-}"
+
 # xcodegen validates that every `sources:` path in project.yml exists on
 # disk before generating, otherwise it fails with "missing source
 # directory". Two such paths are absent on a fresh clone (and on CI):
