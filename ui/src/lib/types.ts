@@ -226,6 +226,10 @@ export interface PlaybackPositionPayload {
   duration: number;
 }
 
+export interface PlaybackBufferingPayload {
+  buffering: boolean;
+}
+
 export interface AccentColorPayload {
   r: number;
   g: number;

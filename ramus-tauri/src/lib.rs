@@ -33,6 +33,7 @@ pub mod mpv_android;
 pub mod mpv_mobile;
 
 pub mod ios_backup;
+pub mod now_playing_keeper;
 pub mod prefetch;
 pub mod session_reporter;
 pub mod spectrum_analyzer;
@@ -71,7 +72,7 @@ use ramus_core::playback::mpv::MpvCallbacks;
 use ramus_core::playback::player::RecoverOutcome;
 
 use crate::events::{
-    emit_playback_position, emit_playback_state,
+    emit_playback_buffering, emit_playback_position, emit_playback_state,
     PlaybackPositionPayload, PlaybackStatePayload,
 };
 use crate::media_controls::MediaControlsRef;
@@ -380,6 +381,12 @@ pub fn create_mpv_player(
                             mc.update_playback_state(false, pos);
                         }
                         reanchor_fe.store(true, std::sync::atomic::Ordering::Release);
+                        // Show the scanning indicator during the reconnect gap.
+                        // Status stays "playing" through a resume reload, so the
+                        // frontend's own starvation heuristic is slow to catch
+                        // it — this drives the scanner immediately. Cleared on
+                        // the first position tick once audio flows again.
+                        emit_playback_buffering(&app6, true);
                     }
                     RecoverOutcome::Held(pos) => {
                         // Recovery exhausted; the track is paused holding its
@@ -885,7 +892,16 @@ pub fn run() {
                                         }
                                         monitor_reanchor
                                             .store(true, std::sync::atomic::Ordering::Release);
-                                        monitor_player.force_reload_current_track();
+                                        // Reconnecting — drive the scanning
+                                        // indicator until audio flows again (a
+                                        // position tick clears it frontend-side).
+                                        // Only when a live track was actually
+                                        // reloaded: a stopped/cached track or a
+                                        // coalesced-away reload (return false)
+                                        // must not leave a stale scanner armed.
+                                        if monitor_player.force_reload_current_track() {
+                                            emit_playback_buffering(&monitor_app, true);
+                                        }
                                         monitor_prefetch.notify_skip();
                                         monitor_reachable
                                             .store(true, std::sync::atomic::Ordering::Release);
@@ -1281,6 +1297,12 @@ pub fn run() {
             // runs to detect the failure itself) and any other case where
             // mpv is silently stuck.
             crate::stall_watchdog::spawn(app_handle.clone());
+
+            // Now-playing keeper: freezes the OS lock-screen / Control Center
+            // scrubber at the true position whenever mid-track audio stalls
+            // (a hiccup or the failover reload gap), so it stops sailing
+            // forward as if still playing, and re-syncs it on resume.
+            crate::now_playing_keeper::spawn(app_handle.clone());
 
             Ok(())
         })

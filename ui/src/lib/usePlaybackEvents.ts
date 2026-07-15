@@ -4,6 +4,7 @@ import type {
   AccentColorPayload,
   PlaybackStatePayload,
   PlaybackPositionPayload,
+  PlaybackBufferingPayload,
   SpectrumReadyPayload,
 } from "./types";
 import { usePlaybackStore } from "../stores/playbackStore";
@@ -55,6 +56,15 @@ export function usePlaybackEvents(): void {
     const u3 = listen<SpectrumReadyPayload>("spectrum-ready", (event) => {
       store.refreshSpectrum(event.payload.ratingKey);
     });
+    // Backend-driven buffering signal for the reconnect/reload gap (a
+    // connection failover or file-ended resume). The frontend can't infer
+    // these from position starvation — the status stays "playing" and no
+    // position events flow through the gap — so the backend tells us directly.
+    // The scanner is cleared again by the next real position tick (above) or a
+    // non-playing state (the watchdog only ever sets it, never unsets).
+    const u4 = listen<PlaybackBufferingPayload>("playback-buffering", (event) => {
+      store.setBuffering(event.payload.buffering);
+    });
 
     // While playing, if position events stop arriving for BUFFERING_STALE_MS
     // the audio has stalled (initial buffer, a mid-track network hiccup, or
@@ -74,6 +84,7 @@ export function usePlaybackEvents(): void {
       u1.then((fn) => fn());
       u2.then((fn) => fn());
       u3.then((fn) => fn());
+      u4.then((fn) => fn());
     };
   }, []);
 }

@@ -30,6 +30,18 @@ pub const STALL_THRESHOLD_SECS: u64 = 12;
 /// `reload_current_track` directly and must stay responsive).
 const RELOAD_COOLDOWN: Duration = Duration::from_secs(6);
 
+/// How long after an automatic reload to treat playlist-pos churn as part of
+/// the reload's insert/play/remove dance rather than a real track advance. The
+/// dance re-enters the *same* index, but on platforms whose mpv reports the
+/// intermediate insert shift (the playing entry momentarily moves to idx+1),
+/// the pos-change arrives as a *different* index first. Suppressing events
+/// until we land back on the reload index — or this window elapses — stops
+/// that intermediate index being mistaken for a real advance, which would
+/// snap the UI to the wrong track / 0:00 and clobber the transcode
+/// `position_base`. The window is a backstop only; the common case closes it
+/// the instant a pos-change lands on the reload index (well under a second).
+const RELOAD_SETTLE_WINDOW: Duration = Duration::from_millis(1500);
+
 /// 10-band EQ center frequencies in Hz.
 pub const EQ_FREQUENCIES: [u32; 10] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
@@ -263,13 +275,20 @@ struct PlayerInner {
     /// silent). Cleared on real playback progress or a successful re-attempt.
     held_for_recovery: bool,
     /// Queue index of an in-flight current-track reload. The reload re-enters
-    /// its own index via `playlist_play_index`, firing a `playlist-pos-change`
-    /// that is NOT a real track advance. `handle_playlist_pos_change` consumes
-    /// this to skip resetting `position`/`position_base` to 0 and to tell the
-    /// platform layer not to report a phantom track (re)start — otherwise the
-    /// seek bar and lock screen snap to 0:00 on every failover resume. `None`
-    /// except during the reload's insert/play/remove dance.
+    /// its own index via `playlist_play_index`, firing one or more
+    /// `playlist-pos-change` events that are NOT real track advances (some
+    /// platforms also report the transient insert shift at idx+1 first).
+    /// `handle_playlist_pos_change` suppresses every pos-change until it lands
+    /// back on this index (see [`RELOAD_SETTLE_WINDOW`]), so it never resets
+    /// `position`/`position_base` to 0 or tells the platform layer to report a
+    /// phantom track (re)start — otherwise the seek bar and lock screen snap to
+    /// 0:00 on every failover resume. `None` except during a reload.
     reloading_pos: Option<usize>,
+    /// Wall-clock when `reloading_pos` was armed. Bounds the reload settle
+    /// window so a reload that never re-fires a landing pos-change (e.g. mpv
+    /// coalesced the churn to a net-zero index change) can't suppress a later
+    /// genuine advance indefinitely.
+    reload_started_at: Option<Instant>,
 }
 
 impl PlayerInner {
@@ -299,6 +318,22 @@ pub enum RecoverOutcome {
     /// Unrecoverable (e.g. a local file that failed to decode); the player has
     /// already advanced to the next track.
     Skipped,
+}
+
+/// Snapshot of playback progress for the lock-screen now-playing keeper,
+/// returned by [`AudioPlayer::media_position_snapshot`].
+#[derive(Debug, Clone, Copy)]
+pub struct MediaPositionSnapshot {
+    /// The player believes it should be playing (status == Playing).
+    pub is_playing: bool,
+    /// Playing, at least one position tick has arrived for the current load,
+    /// but none within the requested threshold — mid-track audio has stalled
+    /// (a network hiccup or the reload gap on a failover resume). The OS
+    /// scrubber must be frozen at `position` while this holds, else it keeps
+    /// extrapolating forward as if still playing.
+    pub progress_stalled: bool,
+    /// Last known true playback position (already `position_base`-remapped).
+    pub position: f64,
 }
 
 /// Core audio player managing queue state, mpv commands, and track resolution.
@@ -340,6 +375,7 @@ impl AudioPlayer {
                 last_auto_reload_at: None,
                 held_for_recovery: false,
                 reloading_pos: None,
+                reload_started_at: None,
             }),
             persistent_cache: RwLock::new(HashMap::new()),
         }
@@ -807,6 +843,8 @@ impl AudioPlayer {
         inner.last_load_error = None;
         inner.held_for_recovery = false;
         inner.last_auto_reload_at = None;
+        inner.reloading_pos = None;
+        inner.reload_started_at = None;
         drop(inner);
         self.mpv.stop();
     }
@@ -948,6 +986,26 @@ impl AudioPlayer {
         }
     }
 
+    /// Snapshot the current playback progress for the lock-screen now-playing
+    /// keeper. `stall_threshold` is how long without a `time-pos` tick (while
+    /// Playing, after at least one tick has arrived) counts as a mid-track
+    /// stall. Distinct from [`is_stalled`], which uses the longer
+    /// connection-recovery threshold and also treats pre-first-tick buffering
+    /// as a stall.
+    pub fn media_position_snapshot(&self, stall_threshold: Duration) -> MediaPositionSnapshot {
+        let inner = self.inner.lock();
+        let is_playing = inner.state.status == PlaybackStatus::Playing;
+        let progress_stalled = is_playing
+            && inner
+                .last_position_update
+                .is_some_and(|t| t.elapsed() >= stall_threshold);
+        MediaPositionSnapshot {
+            is_playing,
+            progress_stalled,
+            position: inner.position,
+        }
+    }
+
     /// Whether mpv has had no `time-pos` activity for `STALL_THRESHOLD_SECS`
     /// while we believe it should be playing. Used by the stall watchdog
     /// to fire a connection re-evaluation (the only thing that might
@@ -1024,18 +1082,42 @@ impl AudioPlayer {
         let mut inner = self.inner.lock();
         let pos = pos as usize;
         if pos >= inner.state.queue.len() {
+            // An insert-at during a current-track reload transiently shifts the
+            // playing entry to queue.len() (mpv's playlist momentarily holds
+            // the extra entry). That is never a real advance either.
             return false;
         }
 
         // A current-track reload (failover/recovery resume, or a seek that
-        // re-opens a transcode offset stream) re-enters its own index and
-        // fires this event. It is not a track change: preserve the resume
-        // position/base that `reload_current_track` just set and report it as
-        // "not an advance" so the platform layer leaves the UI position alone.
-        if let Some(reload_idx) = inner.reloading_pos.take() {
+        // re-opens a transcode offset stream) re-enters its own index via an
+        // insert/play/remove dance. That dance can fire *several*
+        // playlist-pos-change events — including a transient one at the
+        // insert-shifted index (idx+1) before it settles back on the reload
+        // index. None are track changes: suppress every event until we land on
+        // the reload index (which closes the window) or the settle window
+        // elapses. Reporting any of them as an advance would reset the resume
+        // position/base to 0 and make the platform layer snap the UI to the
+        // wrong track / 0:00.
+        if let Some(reload_idx) = inner.reloading_pos {
+            let expired = inner
+                .reload_started_at
+                .is_none_or(|t| t.elapsed() >= RELOAD_SETTLE_WINDOW);
             if pos == reload_idx {
+                // Landed — the reload has settled on its own index.
+                inner.reloading_pos = None;
+                inner.reload_started_at = None;
                 return false;
             }
+            if !expired {
+                // Transient churn from the dance (e.g. the insert shift) —
+                // keep the window open and wait for the landing event.
+                return false;
+            }
+            // The window elapsed without a landing event (mpv coalesced the
+            // churn to a net-zero index change, or the reload failed over to a
+            // genuine advance). Clear and fall through to normal handling.
+            inner.reloading_pos = None;
+            inner.reload_started_at = None;
         }
 
         // Drop the transient pos=0 event mpv fires from the first loadfile
@@ -1286,11 +1368,13 @@ impl AudioPlayer {
             if let Some(r) = resume.filter(|p| *p > 0.0) {
                 inner.position = r;
             }
-            // The play-index below re-enters this index and fires a
-            // playlist-pos-change; mark it so `handle_playlist_pos_change`
-            // treats it as a reload, not a track advance (preserving the
-            // resume position/base instead of zeroing them).
+            // The play-index below re-enters this index and fires one or more
+            // playlist-pos-change events; arm the settle window so
+            // `handle_playlist_pos_change` treats them as a reload, not a track
+            // advance (preserving the resume position/base instead of zeroing
+            // them), including any transient insert-shift index.
             inner.reloading_pos = Some(idx);
+            inner.reload_started_at = Some(Instant::now());
             (idx, url, opts)
         };
 
@@ -1338,6 +1422,8 @@ impl AudioPlayer {
         inner.last_position_update = None;
         inner.held_for_recovery = false;
         inner.last_auto_reload_at = None;
+        inner.reloading_pos = None;
+        inner.reload_started_at = None;
     }
 
     /// Access the download cache under the player lock.
@@ -2577,6 +2663,82 @@ mod tests {
     }
 
     #[test]
+    fn test_reload_suppresses_intermediate_insert_shift() {
+        // Reproduces the mobile failover glitch: mpv's insert-at pushes the
+        // playing entry from idx 0 to idx 1, firing a pos-change at the shifted
+        // index *before* play_index lands it back on 0. The intermediate event
+        // must not be mistaken for an advance to track 2 (which cleared the
+        // waveform and snapped the seek bar to 0:00).
+        let (player, _) = make_player();
+        player.update_config(PlaybackConfig {
+            playback_mode: PlaybackMode::Always,
+            ..PlaybackConfig::default()
+        });
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        player.handle_position_change(90.0);
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        assert!(player.force_reload_current_track());
+
+        // Transient insert-shift event at idx+1 (= track "2"): suppressed, and
+        // it must NOT switch the current track or zero the resume base.
+        assert!(!player.handle_playlist_pos_change(1));
+        assert_eq!(player.state().queue_index, 0);
+        assert_eq!(
+            player.state().current_track.as_ref().unwrap().rating_key,
+            "1"
+        );
+
+        // Landing event back on the reload index: also "not an advance".
+        assert!(!player.handle_playlist_pos_change(0));
+        assert_eq!(player.state().queue_index, 0);
+
+        // Base survived both events, so a fresh 0-based transcode tick maps
+        // back onto the real timeline (~95s), not ~5s.
+        player.handle_position_change(5.0);
+        assert!(
+            (player.position() - 95.0).abs() < 0.5,
+            "reload must preserve the transcode offset base through the insert \
+             shift, got {}",
+            player.position()
+        );
+    }
+
+    #[test]
+    fn test_reload_settle_window_elapses_to_allow_advance() {
+        // Once the settle window elapses without a landing event, a genuine
+        // advance must be honoured again (the window is a backstop, not a
+        // permanent gag).
+        let (player, _) = make_player();
+        player.update_config(PlaybackConfig {
+            playback_mode: PlaybackMode::Always,
+            ..PlaybackConfig::default()
+        });
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        player.update_server_connection(
+            Url::parse("http://new.server:32400").unwrap(),
+            "new-token".into(),
+            true,
+        );
+        assert!(player.force_reload_current_track());
+
+        // Force the window open long enough to expire.
+        player.inner.lock().reload_started_at =
+            Some(Instant::now() - RELOAD_SETTLE_WINDOW - Duration::from_millis(1));
+
+        // A real advance to track "2" is now honoured.
+        assert!(player.handle_playlist_pos_change(1));
+        assert_eq!(player.state().queue_index, 1);
+        assert_eq!(
+            player.state().current_track.as_ref().unwrap().rating_key,
+            "2"
+        );
+    }
+
+    #[test]
     fn test_handle_playlist_pos_change_negative_is_ignored() {
         let (player, _) = make_player();
         player.load_queue(vec![make_test_track("1")], 0);
@@ -2705,6 +2867,35 @@ mod tests {
 
         assert_eq!(player.debug_snapshot().phase, Phase::Playing);
         assert!(!player.is_stalled());
+    }
+
+    #[test]
+    fn test_media_position_snapshot_detects_mid_track_stall() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+        // A fresh position tick: playing, progressing, not stalled.
+        player.handle_position_change(40.0);
+        let threshold = Duration::from_millis(2000);
+        let snap = player.media_position_snapshot(threshold);
+        assert!(snap.is_playing);
+        assert!(!snap.progress_stalled);
+        assert!((snap.position - 40.0).abs() < 0.01);
+
+        // Backdate the last tick past the threshold: audio has stalled, the OS
+        // scrubber must be frozen at the true position (still 40s, not
+        // extrapolated forward).
+        player.inner.lock().last_position_update =
+            Some(Instant::now() - threshold - Duration::from_millis(500));
+        let snap = player.media_position_snapshot(threshold);
+        assert!(snap.is_playing);
+        assert!(snap.progress_stalled);
+        assert!((snap.position - 40.0).abs() < 0.01);
+
+        // Paused is never a "stall" — the pause push owns the OS surface.
+        player.handle_pause_change(true);
+        let snap = player.media_position_snapshot(threshold);
+        assert!(!snap.is_playing);
+        assert!(!snap.progress_stalled);
     }
 
     #[test]

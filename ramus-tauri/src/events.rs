@@ -19,6 +19,19 @@ pub struct PlaybackPositionPayload {
     pub duration: f64,
 }
 
+/// Whether playback is currently stalled and reconnecting/rebuffering. Drives
+/// the "scanning" indicator on the waveform. Emitted `true` at the moments the
+/// backend knows audio has stopped flowing but is being recovered (a
+/// connection failover or a file-ended resume reload) — the frontend can't
+/// infer those from position-event starvation alone, since the status stays
+/// "playing" and phantom-free through the reload gap. Cleared frontend-side on
+/// the next real position tick (or a non-playing state).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackBufferingPayload {
+    pub buffering: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccentColorPayload {
@@ -33,6 +46,10 @@ pub fn emit_playback_state(app: &AppHandle, payload: PlaybackStatePayload) {
 
 pub fn emit_playback_position(app: &AppHandle, payload: PlaybackPositionPayload) {
     let _ = app.emit("playback-position", payload);
+}
+
+pub fn emit_playback_buffering(app: &AppHandle, buffering: bool) {
+    let _ = app.emit("playback-buffering", PlaybackBufferingPayload { buffering });
 }
 
 pub fn emit_sync_progress(app: &AppHandle, progress: SyncProgress) {

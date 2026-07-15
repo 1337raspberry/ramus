@@ -202,6 +202,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         waveformLevels: null,
         lyricsLoading: false,
         vibrantPalette: null,
+        // A genuine track change starts fresh — drop any leftover reconnect
+        // scanner (a failover reload never reaches here; it's suppressed).
+        isBuffering: false,
       });
 
       // Do NOT clear `spectrumState` here. `refreshSpectrum` debounces
@@ -263,6 +266,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         currentGenres: [],
         nowPlayingAlbum: null,
         queue: [],
+        isBuffering: false,
       });
     }
   },
