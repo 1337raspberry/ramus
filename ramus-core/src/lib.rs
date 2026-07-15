@@ -5,4 +5,5 @@ pub mod playback;
 pub mod plex;
 pub mod search;
 pub mod settings;
+pub mod siri_probe;
 pub mod util;

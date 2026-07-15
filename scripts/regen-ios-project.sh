@@ -20,6 +20,16 @@ echo "regen-ios-project: RAMUS_VERSION=${RAMUS_VERSION}"
 
 cd ramus-tauri/gen/apple
 
+# Optional local signing config (gitignored) so the regenerated project keeps
+# your Apple Developer team across regens — otherwise xcodegen substitutes an
+# empty ${DEVELOPMENT_TEAM} and blanks the signing team every time. Absent on a
+# fresh clone / CI, where signing is configured separately.
+if [[ -f signing.local.env ]]; then
+  # shellcheck disable=SC1091
+  source ./signing.local.env
+fi
+export DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-}"
+
 # xcodegen validates that every `sources:` path in project.yml exists on
 # disk before generating, otherwise it fails with "missing source
 # directory". Two such paths are absent on a fresh clone (and on CI):

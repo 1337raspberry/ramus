@@ -27,7 +27,18 @@ settingGroups:
   app:
     base:
       PRODUCT_NAME: ramus
+      # Committed/release iOS identity, matching tauri.conf.json. This App ID may
+      # not be registrable under a personal dev team, so local dev builds
+      # override it to a signable identifier via scripts/ios-dev.sh
+      # (`--config '{"identifier":"…"}'`) — see that script. Release/CI builds
+      # keep com.ramus.app.
       PRODUCT_BUNDLE_IDENTIFIER: com.ramus.app
+      # Signing team. xcodegen substitutes ${DEVELOPMENT_TEAM} from the
+      # environment at generate-time; regen-ios-project.sh sources the
+      # gitignored signing.local.env so a regen no longer blanks the team.
+      # Empty (unset) leaves signing to be selected in Xcode / CI's own config.
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
 targetTemplates:
   app:
     type: application
@@ -92,6 +103,14 @@ targets:
         ENABLE_BITCODE: false
         ARCHS: [arm64]
         VALID_ARCHS: arm64
+        # The app target gained hand-written Swift (App Intents / Siri) alongside
+        # main.mm, making it a mixed Obj-C++/Swift target. SWIFT_VERSION is
+        # required once any .swift is present; the bridging header exposes the
+        # Rust C ABI (libapp.a) to that Swift. App Intents metadata extraction
+        # scans this target's own compiled Swift, which is why the intents must
+        # live here rather than in the static-library plugin.
+        SWIFT_VERSION: "5.0"
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/ramus-tauri/ramus-Bridging-Header.h
         LIBRARY_SEARCH_PATHS[arch=x86_64]: $(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)
         LIBRARY_SEARCH_PATHS[arch=arm64]: $(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
@@ -112,6 +131,8 @@ targets:
       # surface explicit.
       - sdk: AVFoundation.framework
       - sdk: MediaPlayer.framework
+      # App Intents / Siri surface (RamusSiriIntents.swift).
+      - sdk: AppIntents.framework
       # Resolves `_mpv_*` symbols from `libapp.a`.
       - package: MPVKit
     preBuildScripts:

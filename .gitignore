@@ -39,6 +39,9 @@ localdev/
 *.jks
 signing.properties
 
+# iOS local signing — account-specific Team ID, never committed
+signing.local.env
+
 # Environment + local override files (Vite reads .env.local etc. at runtime)
 .env
 .env.*

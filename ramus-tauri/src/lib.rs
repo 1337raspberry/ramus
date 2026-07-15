@@ -35,6 +35,7 @@ pub mod mpv_mobile;
 pub mod ios_backup;
 pub mod prefetch;
 pub mod session_reporter;
+pub mod siri_ffi;
 pub mod spectrum_analyzer;
 pub mod stall_watchdog;
 pub mod state;
