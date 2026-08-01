@@ -209,7 +209,7 @@ export interface LyricsFetchResult {
 }
 
 export interface SyncProgress {
-  phase: "artists" | "albums" | "tracks" | "deepGenres" | "done";
+  phase: "artists" | "albums" | "tracks" | "deepGenres" | "done" | "error";
   current: number;
   total: number;
   detail: string;

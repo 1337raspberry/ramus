@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { genreSurfaceHandlers } from "../lib/genreSurface";
 import type { GenreNode } from "../lib/types";
 import { useLibraryStore, hasActiveFilters } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -216,6 +217,10 @@ export default function GenreTreeView() {
               className={`genre-row${isSelected ? " selected" : ""}`}
               style={{ ...rowStyle, top: vItem.start }}
               onClick={() => selectGenre(row.node)}
+              // Right-click anywhere on the row opens the info modal; the
+              // dwell-hover card is scoped to the name span below so it
+              // can't double up with the count links' native tooltips.
+              onContextMenu={genreSurfaceHandlers(row.node.name).onContextMenu}
             >
               {!flatGenres &&
                 row.depth > 0 &&
@@ -251,7 +256,9 @@ export default function GenreTreeView() {
               ) : (
                 <span style={{ width: CHEVRON_WIDTH, flexShrink: 0 }} />
               )}
-              <span className="genre-name">{row.node.name}</span>
+              <span className="genre-name" {...genreSurfaceHandlers(row.node.name)}>
+                {row.node.name}
+              </span>
               {showDualCount ? (
                 <>
                   <span

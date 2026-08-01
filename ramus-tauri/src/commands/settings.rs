@@ -132,6 +132,12 @@ pub async fn import_custom_genres_json(
     // Building the mapper validates the JSON shape; reject before persisting.
     let mapper = GenreMapper::from_json_bytes(&data).map_err(|e| e.to_string())?;
     let count = mapper.node_count();
+    // A valid-but-empty tree (e.g. a truncated export reduced to the bare
+    // envelope) would silently gut genre browsing until manually removed —
+    // reject it like the plain-text importer does.
+    if count == 0 {
+        return Err("no genres found in file".to_string());
+    }
     ramus_core::settings::save_custom_genres(&data).map_err(|e| e.to_string())?;
     let mut settings = state.settings.read().clone();
     settings.genre_source = ramus_core::models::GenreSource::Custom;
@@ -166,11 +172,36 @@ pub async fn get_genre_metadata(
     // Library membership flags each genre/artist reference. Both come from the
     // cache; if it isn't ready yet, fall back to empty sets (everything reads as
     // not-in-library — genre links still drill, they just aren't underlined).
-    let artist_names: Vec<String> = super::with_cache(&state, |db| {
+    let mut artist_names: Vec<String> = super::with_cache(&state, |db| {
         Ok(db.all_artists()?.into_iter().map(|a| a.1).collect())
     })
     .unwrap_or_default();
-    let genre_album_sets = super::with_cache(&state, |db| db.genre_album_sets()).unwrap_or_default();
+    let mut genre_album_sets =
+        super::with_cache(&state, |db| db.genre_album_sets()).unwrap_or_default();
+
+    // Offline mode filters every navigation target these flags gate (genre
+    // grids, artist browse) down to downloaded content — an underlined link
+    // that lands on an empty grid defeats the flag's purpose, so intersect
+    // here too. Mirrors the offline blocks in get_genre_tree/get_all_artists.
+    if state.effective_offline() {
+        let downloaded =
+            super::with_cache(&state, |db| db.downloaded_album_internal_ids()).unwrap_or_default();
+        genre_album_sets = genre_album_sets
+            .into_iter()
+            .filter_map(|(name, ids)| {
+                let kept: std::collections::HashSet<i64> =
+                    ids.intersection(&downloaded).copied().collect();
+                if kept.is_empty() {
+                    None
+                } else {
+                    Some((name, kept))
+                }
+            })
+            .collect();
+        let allowed =
+            super::with_cache(&state, |db| db.downloaded_artist_names()).unwrap_or_default();
+        artist_names.retain(|n| allowed.contains(n));
+    }
 
     let guard = state.genre_mapper.read();
     let Some(mapper) = guard.as_ref() else {
@@ -182,10 +213,21 @@ pub async fn get_genre_metadata(
 
     let library_genres = mapper.library_genre_names(&genre_album_sets);
     // Normalized artist name -> actual library name, so a tolerant match (e.g.
-    // "blink-182" vs "Blink 182") still navigates to the real artist.
+    // "blink-182" vs "Blink 182") still navigates to the real artist. Names
+    // that normalize to nothing (all-punctuation bands like "!!!") get an
+    // exact-lowercase key behind a NUL prefix instead — normalized keys are
+    // alphanumeric-only, so the prefix can't collide, and the tokenizer falls
+    // back to that slot for exact matches only (no cross-name looseness).
     let library_artists: std::collections::HashMap<String, String> = artist_names
         .iter()
-        .map(|n| (normalize_artist(n), n.clone()))
+        .map(|n| {
+            let key = normalize_artist(n);
+            if key.is_empty() {
+                (format!("\u{0}{}", n.trim().to_lowercase()), n.clone())
+            } else {
+                (key, n.clone())
+            }
+        })
         .collect();
 
     let in_library = library_genres.contains(&meta.canonical_name.to_lowercase());

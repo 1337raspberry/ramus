@@ -136,6 +136,7 @@ pub fn create_mpv_player(
     let sr1 = reporter_ref.clone();
     let sr2 = reporter_ref.clone();
     let sr3 = reporter_ref.clone();
+    let sr4 = reporter_ref.clone();
 
     // Deferred media controls; populated after window creation in main.rs.
     let media_controls_ref: MediaControlsRef = Arc::new(parking_lot::Mutex::new(None));
@@ -391,10 +392,17 @@ pub fn create_mpv_player(
                     RecoverOutcome::Held(pos) => {
                         // Recovery exhausted; the track is paused holding its
                         // position (a play tap re-attempts). Reflect paused to
-                        // both the OS controls and the in-app seek bar so
-                        // neither keeps extrapolating "playing" forward.
+                        // the OS controls, the in-app seek bar AND the Plex
+                        // session reporter — the hold sets the logical status
+                        // without an mpv pause event, so `on_pause_change`
+                        // never fires and the reporter would otherwise keep
+                        // sending "playing" timelines at a frozen position
+                        // for as long as the hold lasts.
                         if let Some(ref mc) = *mc6.lock() {
                             mc.update_playback_state(false, pos);
+                        }
+                        if let Some(ref reporter) = *sr4.lock() {
+                            reporter.playback_paused();
                         }
                         let state = p.state();
                         emit_playback_state(
@@ -882,24 +890,30 @@ pub fn run() {
                                         // in. This forces a fresh load of the current track too.
                                         // Cached and stopped paths no-op internally.
                                         //
-                                        // Freeze the OS now-playing scrubber first: the reload stops
-                                        // and restarts the track, but nothing else reports that, so
-                                        // the system would keep extrapolating position forward as if
-                                        // still playing. `on_position_change` re-anchors it once audio
-                                        // resumes (via the `mc_reanchor` flag).
-                                        if let Some(ref mc) = *monitor_mc.lock() {
-                                            mc.update_playback_state(false, monitor_player.position());
-                                        }
-                                        monitor_reanchor
-                                            .store(true, std::sync::atomic::Ordering::Release);
-                                        // Reconnecting — drive the scanning
-                                        // indicator until audio flows again (a
-                                        // position tick clears it frontend-side).
-                                        // Only when a live track was actually
-                                        // reloaded: a stopped/cached track or a
-                                        // coalesced-away reload (return false)
-                                        // must not leave a stale scanner armed.
+                                        // Everything below is gated on a live track actually being
+                                        // reloaded: a stopped/cached track or a coalesced-away reload
+                                        // (return false) must not freeze the OS scrubber (which would
+                                        // resurrect a ghost "paused" card after the queue ended on
+                                        // desktop souvlaki), leave a stale re-anchor armed, or arm a
+                                        // stale scanner. The reload has already stamped the resume
+                                        // point into the player position, so reading position() after
+                                        // the call still freezes at the right value.
                                         if monitor_player.force_reload_current_track() {
+                                            // Freeze the OS now-playing scrubber: the reload stops
+                                            // and restarts the track, but nothing else reports that,
+                                            // so the system would keep extrapolating position forward
+                                            // as if still playing. `on_position_change` re-anchors it
+                                            // once audio resumes (via the `mc_reanchor` flag).
+                                            if let Some(ref mc) = *monitor_mc.lock() {
+                                                mc.update_playback_state(
+                                                    false,
+                                                    monitor_player.position(),
+                                                );
+                                            }
+                                            monitor_reanchor
+                                                .store(true, std::sync::atomic::Ordering::Release);
+                                            // Reconnecting — drive the scanning indicator until audio
+                                            // flows again (a position tick clears it frontend-side).
                                             emit_playback_buffering(&monitor_app, true);
                                         }
                                         monitor_prefetch.notify_skip();
@@ -1278,7 +1292,12 @@ pub fn run() {
 
             session_reporter.ensure_loop_spawned();
 
-            crate::auto_sync::spawn(auto_sync_settings, auto_sync_engine, auto_sync_flag);
+            crate::auto_sync::spawn(
+                app.handle().clone(),
+                auto_sync_settings,
+                auto_sync_engine,
+                auto_sync_flag,
+            );
 
             // Mobile: NWPathMonitor (iOS) / ConnectivityManager.NetworkCallback
             // (Android) → ConnectionMonitor failover + cellular signal for

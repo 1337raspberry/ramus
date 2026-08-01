@@ -19,6 +19,9 @@ export default function InitialSync({ onComplete, onSkip }: Props) {
       if (event.payload.phase === "done") {
         setSyncing(false);
         setDone(true);
+      } else if (event.payload.phase === "error") {
+        // Terminal failure: drop back to the start-sync button for a retry.
+        setSyncing(false);
       }
     });
     return () => {
@@ -41,6 +44,7 @@ export default function InitialSync({ onComplete, onSkip }: Props) {
         tracks: "Syncing tracks...",
         deepGenres: "Fetching genres...",
         done: "Sync complete!",
+        error: "Sync failed",
       }[progress.phase]
     : null;
 

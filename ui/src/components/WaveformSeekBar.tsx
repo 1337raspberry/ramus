@@ -226,6 +226,14 @@ export default function WaveformSeekBar() {
 
   // Buffering scanner: triangle-wave sweep (0→1→0), 1.6s period — slow enough
   // that the bounce reads as deliberate, fast enough to feel alive.
+  //
+  // The loop reads `drawFrame` through a ref so the effect keys on
+  // `isBuffering` alone: `drawFrame`'s identity changes with every
+  // `fraction` update, and scrubbing mid-stall fires those at pointer-move
+  // rate — restarting the effect each time would snap the sweep phase back
+  // to 0 and pin the scanner at the left edge for the whole drag.
+  const drawFrameRef = useRef(drawFrame);
+  drawFrameRef.current = drawFrame;
   useEffect(() => {
     if (!isBuffering) return;
     const SWEEP_MS = 1600;
@@ -235,12 +243,12 @@ export default function WaveformSeekBar() {
       if (start === null) start = t;
       const elapsed = (t - start) % SWEEP_MS;
       const phase = elapsed / (SWEEP_MS / 2);
-      drawFrame(phase < 1 ? phase : 2 - phase);
+      drawFrameRef.current(phase < 1 ? phase : 2 - phase);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [isBuffering, drawFrame]);
+  }, [isBuffering]);
 
   const handleSeekStart = useCallback(
     (clientX: number) => {

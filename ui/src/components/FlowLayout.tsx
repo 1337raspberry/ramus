@@ -1,3 +1,4 @@
+import { genreSurfaceHandlers } from "../lib/genreSurface";
 import { useLongPress } from "../lib/useLongPress";
 
 interface Props {
@@ -40,11 +41,16 @@ function GenrePill({ genre, onGenreClick, onGenreLongPress }: PillProps) {
     onClick: () => onGenreClick?.(genre),
   });
 
-  // Without a long-press handler (desktop), keep the pill a plain link so
-  // touch timers and the context-menu override aren't installed.
+  // Without a long-press handler (desktop), skip the touch timers and use
+  // the desktop genre-surface affordances instead: dwell-hover summary card
+  // and right-click for the full info modal.
   if (!onGenreLongPress) {
     return (
-      <button className="genre-pill" onClick={() => onGenreClick?.(genre)}>
+      <button
+        className="genre-pill"
+        onClick={() => onGenreClick?.(genre)}
+        {...genreSurfaceHandlers(genre)}
+      >
         {genre}
       </button>
     );

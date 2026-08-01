@@ -13,6 +13,7 @@ import {
   logout,
 } from "../lib/commands";
 import type { Settings, CacheStats, PlaybackMode } from "../lib/types";
+import { clearGenreMetadataCache } from "../lib/genreMetadataCache";
 import { listen } from "@tauri-apps/api/event";
 import type { SyncProgress } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
@@ -57,10 +58,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
   const [error, setError] = useState<string | null>(null);
   const [genreWarnings, setGenreWarnings] = useState<string[]>([]);
   const [hasCustomGenres, setHasCustomGenres] = useState(false);
-  // Hidden import mode: a 5-second hold on the import button swaps it from the
-  // plain-text importer to the richer JSON importer until used or the tab changes.
-  const [jsonImportMode, setJsonImportMode] = useState(false);
-  const [importHolding, setImportHolding] = useState(false);
   const [showAcknowledgements, setShowAcknowledgements] = useState(false);
   const [showSpectrumConfirm, setShowSpectrumConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("playback");
@@ -68,9 +65,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const importHoldTimerRef = useRef<number | null>(null);
-  // Set when a 5s hold completes, to swallow the click that ends the hold.
-  const importHoldCompletedRef = useRef(false);
 
   const showError = useCallback((msg: string) => {
     setError(msg);
@@ -93,20 +87,30 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
   useEffect(() => {
     const unlisten = listen<SyncProgress>("sync-progress", (event) => {
       setSyncProgress(event.payload);
-      if (event.payload.phase === "done") {
+      const phase = event.payload.phase;
+      if (phase === "done" || phase === "error") {
         setSyncing(null);
-        getCacheStats()
-          .then(setStats)
-          .catch(() => {});
-        // Auto-clear the banner shortly after the "done" frame lands so
-        // the user sees the completion state then it fades. Stored in
+        // Genre-metadata cache invalidation for sync-done lives at the App
+        // root, not here — this listener dies with the panel, and most
+        // syncs finish after it closes.
+        if (phase === "done") {
+          getCacheStats()
+            .then(setStats)
+            .catch(() => {});
+        }
+        // Auto-clear the banner shortly after the terminal frame lands so
+        // the completion state shows briefly then fades. Stored in
         // a ref so a follow-up sync (or unmount) cancels the pending
         // clear and doesn't wipe the new sync's progress mid-flight.
+        // Failures linger a little longer.
         if (syncBannerTimerRef.current) clearTimeout(syncBannerTimerRef.current);
-        syncBannerTimerRef.current = setTimeout(() => {
-          setSyncProgress(null);
-          syncBannerTimerRef.current = null;
-        }, 2000);
+        syncBannerTimerRef.current = setTimeout(
+          () => {
+            setSyncProgress(null);
+            syncBannerTimerRef.current = null;
+          },
+          phase === "error" ? 4000 : 2000,
+        );
       }
     });
     return () => {
@@ -182,6 +186,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
       updateSettings(next)
         .then(() => {
           useSettingsStore.setState(next);
+          clearGenreMetadataCache();
           useLibraryStore.getState().loadGenreTree();
         })
         .catch((e) => showError(`Failed to switch genre source: ${e}`));
@@ -193,26 +198,36 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
   const refreshAfterGenreImport = useCallback((fresh: Settings) => {
     setSettings(fresh);
     useSettingsStore.setState(fresh);
+    clearGenreMetadataCache();
     useLibraryStore.getState().loadGenreTree();
   }, []);
 
-  // Open a hidden file picker and hand the chosen file's text to `onText`.
-  const pickGenreFile = useCallback((accept: string, onText: (text: string) => void) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = accept;
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => onText(reader.result as string);
-      reader.readAsText(file);
-    };
-    input.click();
-  }, []);
+  // Open a hidden file picker and hand the chosen file's name + text to `onFile`.
+  const pickGenreFile = useCallback(
+    (accept: string, onFile: (name: string, text: string) => void) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = accept;
+      input.onchange = () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        // Reject before reading — readAsText materialises the whole file as
+        // a JS string, and the backend caps genre imports at 64 MB anyway.
+        if (file.size > 64 * 1024 * 1024) {
+          showError("Genre file is too large (max 64 MB)");
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => onFile(file.name, reader.result as string);
+        reader.readAsText(file);
+      };
+      input.click();
+    },
+    [showError],
+  );
 
-  const handleImportGenres = useCallback(() => {
-    pickGenreFile(".txt,.text", (text) => {
+  const importGenresText = useCallback(
+    (text: string) => {
       importCustomGenres(text)
         .then((warnings) => {
           if (warnings.length > 0) setGenreWarnings(warnings);
@@ -221,68 +236,42 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
         })
         .then(refreshAfterGenreImport)
         .catch((e) => showError(`Failed to import genres: ${e}`));
-    });
-  }, [pickGenreFile, refreshAfterGenreImport, showError]);
+    },
+    [refreshAfterGenreImport, showError],
+  );
 
-  // Richer JSON importer, revealed by a long hold on the import button. Accepts
-  // a pre-built genre tree (with optional per-genre metadata) rather than the
-  // plain-text outline, and makes it the active custom tree.
-  const handleImportGenresJson = useCallback(() => {
-    pickGenreFile(".json,application/json", (text) => {
+  // Richer JSON importer: accepts a pre-built genre tree (with optional
+  // per-genre metadata) rather than the plain-text outline, and makes it
+  // the active custom tree.
+  const importGenresJson = useCallback(
+    (text: string) => {
       importCustomGenresJson(text)
         .then((count) => {
           setGenreWarnings([]);
           setHasCustomGenres(true);
-          setJsonImportMode(false);
           useToastStore.getState().show(`Imported ${count} genres`);
           return getSettings();
         })
         .then(refreshAfterGenreImport)
         .catch((e) => showError(`Failed to import genres: ${e}`));
+    },
+    [refreshAfterGenreImport, showError],
+  );
+
+  // One picker for both formats: dispatch on the file extension, falling
+  // back to a content sniff (JSON must open with `{` or `[`) for unknown
+  // extensions. The Rust text parser rejects JSON-shaped input, so a
+  // mis-routed file still fails with a sensible message.
+  const handleImportGenres = useCallback(() => {
+    pickGenreFile(".txt,.text,.json,application/json", (name, text) => {
+      const ext = name.split(".").pop()?.toLowerCase();
+      // `\s` covers the BOM (U+FEFF), so byte-order-marked JSON sniffs fine.
+      const looksJson = /^\s*[[{]/.test(text);
+      const isJson = ext === "json" || (ext !== "txt" && ext !== "text" && looksJson);
+      if (isJson) importGenresJson(text);
+      else importGenresText(text);
     });
-  }, [pickGenreFile, refreshAfterGenreImport, showError]);
-
-  const cancelImportHold = useCallback(() => {
-    if (importHoldTimerRef.current !== null) {
-      window.clearTimeout(importHoldTimerRef.current);
-      importHoldTimerRef.current = null;
-    }
-    setImportHolding(false);
-  }, []);
-
-  const startImportHold = useCallback(() => {
-    if (jsonImportMode) return;
-    importHoldCompletedRef.current = false;
-    setImportHolding(true);
-    importHoldTimerRef.current = window.setTimeout(() => {
-      importHoldCompletedRef.current = true;
-      importHoldTimerRef.current = null;
-      setImportHolding(false);
-      setJsonImportMode(true);
-    }, 5000);
-  }, [jsonImportMode]);
-
-  const handleImportButtonClick = useCallback(() => {
-    if (importHoldCompletedRef.current) {
-      // Swallow the click that ends a completed hold — the button has just
-      // swapped to JSON mode; the user taps again to pick a file.
-      importHoldCompletedRef.current = false;
-      return;
-    }
-    if (jsonImportMode) handleImportGenresJson();
-    else handleImportGenres();
-  }, [jsonImportMode, handleImportGenresJson, handleImportGenres]);
-
-  // Drop out of the hidden JSON mode when leaving the library tab — and cancel
-  // any in-flight hold, so a timer started before the switch can't silently
-  // flip the mode while the tab is hidden. Also clears the timer on unmount.
-  useEffect(() => {
-    if (activeTab !== "library") {
-      cancelImportHold();
-      setJsonImportMode(false);
-    }
-  }, [activeTab, cancelImportHold]);
-  useEffect(() => () => cancelImportHold(), [cancelImportHold]);
+  }, [pickGenreFile, importGenresJson, importGenresText]);
 
   const handleRemoveGenres = useCallback(() => {
     removeCustomGenres()
@@ -294,6 +283,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
         setSettings(fresh);
         useSettingsStore.setState(fresh);
         setGenreWarnings([]);
+        clearGenreMetadataCache();
         useLibraryStore.getState().loadGenreTree();
       })
       .catch((e) => showError(`Failed to remove genres: ${e}`));
@@ -633,20 +623,8 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
                   </button>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    className={`settings-btn settings-btn-hold${
-                      importHolding ? " holding" : ""
-                    }${jsonImportMode ? " json-mode" : ""}`}
-                    onClick={handleImportButtonClick}
-                    onPointerDown={startImportHold}
-                    onPointerUp={cancelImportHold}
-                    onPointerLeave={cancelImportHold}
-                    onPointerCancel={cancelImportHold}
-                  >
-                    <span className="settings-btn-hold-fill" aria-hidden="true" />
-                    <span className="settings-btn-hold-label">
-                      {jsonImportMode ? "Import JSON" : "Import..."}
-                    </span>
+                  <button className="settings-btn" onClick={handleImportGenres}>
+                    Import...
                   </button>
                   {hasCustomGenres && settings.genreSource === "custom" && (
                     <button className="settings-btn" onClick={handleRemoveGenres}>
@@ -780,13 +758,14 @@ interface SyncProgressBannerProps {
 
 function SyncProgressBanner({ progress }: SyncProgressBannerProps) {
   const done = progress.phase === "done";
+  const failed = progress.phase === "error";
   const pct =
     progress.total > 0 ? Math.min(100, (progress.current / progress.total) * 100) : done ? 100 : 0;
   return (
-    <div className={`sync-banner${done ? " done" : ""}`}>
-      <div className="sync-banner-fill" style={{ width: `${pct}%` }} />
+    <div className={`sync-banner${done ? " done" : ""}${failed ? " failed" : ""}`}>
+      {!failed && <div className="sync-banner-fill" style={{ width: `${pct}%` }} />}
       <div className="sync-banner-caption">
-        {done ? "Sync complete" : progress.detail || "Syncing…"}
+        {failed ? "Sync failed" : done ? "Sync complete" : progress.detail || "Syncing…"}
       </div>
     </div>
   );

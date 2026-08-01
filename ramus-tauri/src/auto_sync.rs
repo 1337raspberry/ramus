@@ -3,8 +3,9 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use parking_lot::{Mutex, RwLock};
+use tauri::AppHandle;
 
-use ramus_core::cache::sync::SyncEngine;
+use ramus_core::cache::sync::{SyncEngine, SyncPhase, SyncProgress};
 use ramus_core::models::Settings;
 
 /// RAII guard that resets the shared `sync_in_progress` atomic on drop —
@@ -23,14 +24,16 @@ impl Drop for SyncGuard {
 /// Spawns a background task that periodically runs incremental sync
 /// based on the `sync_interval_hours` setting.
 pub fn spawn(
+    app: AppHandle,
     settings: Arc<RwLock<Settings>>,
     sync_engine: Arc<Mutex<Option<SyncEngine>>>,
     sync_in_progress: Arc<AtomicBool>,
 ) {
-    tauri::async_runtime::spawn(auto_sync_loop(settings, sync_engine, sync_in_progress));
+    tauri::async_runtime::spawn(auto_sync_loop(app, settings, sync_engine, sync_in_progress));
 }
 
 async fn auto_sync_loop(
+    app: AppHandle,
     settings: Arc<RwLock<Settings>>,
     sync_engine: Arc<Mutex<Option<SyncEngine>>>,
     sync_in_progress: Arc<AtomicBool>,
@@ -94,14 +97,32 @@ async fn auto_sync_loop(
         );
 
         let include_styles = s.include_plex_styles;
+        // Emit real progress like the manual sync commands do, so the
+        // running UI (settings banner, genre-metadata cache invalidation,
+        // sync toasts) sees background syncs instead of only discovering
+        // the changes after a restart.
+        let progress_app = app.clone();
         let result = sync
-            .incremental_sync(&library_key, include_styles, |_| {})
+            .incremental_sync(&library_key, include_styles, move |progress| {
+                crate::events::emit_sync_progress(&progress_app, progress);
+            })
             .await;
 
         match result {
             Ok(_) => log::info!("auto-sync: completed successfully"),
             Err(e) => {
                 log::warn!("auto-sync: failed: {e}");
+                // Generic detail on purpose — sync errors can wrap reqwest
+                // errors whose Display includes the full URL.
+                crate::events::emit_sync_progress(
+                    &app,
+                    SyncProgress {
+                        phase: SyncPhase::Error,
+                        current: 0,
+                        total: 0,
+                        detail: "Sync failed".to_string(),
+                    },
+                );
                 continue;
             }
         }

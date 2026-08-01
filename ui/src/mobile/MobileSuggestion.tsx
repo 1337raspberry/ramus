@@ -23,6 +23,7 @@ import FlowLayout from "../components/FlowLayout";
 import MobileFilterPanel from "./MobileFilterPanel";
 import MobileDurationPicker from "./MobileDurationPicker";
 import { hasActiveFilters, SUGGEST_TOLERANCE_MIN } from "../stores/libraryStore";
+import { useGenreInfoStore } from "../stores/genreInfoStore";
 
 function formatTarget(minutes: number): string {
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
@@ -51,9 +52,18 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
   const filterActive = hasActiveFilters(albumFilters);
   const targetActive = targetMinutes != null;
 
+  const openGenreInfo = useGenreInfoStore((s) => s.open);
+
   const [artSrc, setArtSrc] = useState<string | null>(null);
   const [artErr, setArtErr] = useState(false);
   const [genres, setGenres] = useState<string[]>([]);
+
+  // The miss message describes the query-time state; re-run the query when
+  // filters change so it can't keep claiming "no albums match your filters"
+  // after the filters were relaxed.
+  useEffect(() => {
+    if (useLibraryStore.getState().suggestionMissed) loadSuggestion();
+  }, [albumFilters, loadSuggestion]);
 
   useEffect(() => {
     if (!album?.thumb) {
@@ -256,6 +266,7 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
                 clearSuggestion();
                 selectGenreByName(g);
               }}
+              onGenreLongPress={openGenreInfo}
             />
           </div>
         )}

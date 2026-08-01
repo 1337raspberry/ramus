@@ -29,8 +29,10 @@ export function usePlaybackEvents(): void {
     const store = usePlaybackStore.getState();
 
     // Timestamp of the last position tick — drives the buffering watchdog
-    // below. There's no dedicated backend buffering event; we infer a stall
-    // from position events drying up while the status is still "playing".
+    // below. The watchdog is the fallback heuristic for ordinary stalls
+    // (position events drying up while status is "playing"); the dedicated
+    // backend `playback-buffering` event handled further down covers the
+    // failover-reload gap this heuristic can't see.
     let lastPositionAt = performance.now();
     const BUFFERING_STALE_MS = 1500;
 
@@ -63,6 +65,11 @@ export function usePlaybackEvents(): void {
     // The scanner is cleared again by the next real position tick (above) or a
     // non-playing state (the watchdog only ever sets it, never unsets).
     const u4 = listen<PlaybackBufferingPayload>("playback-buffering", (event) => {
+      // A non-playing player can never be "buffering" (same invariant the
+      // watchdog and state handler enforce). A failover reload of a PAUSED
+      // remote track still emits true, and with no position ticks coming
+      // nothing would ever clear the scanner.
+      if (event.payload.buffering && usePlaybackStore.getState().status !== "playing") return;
       store.setBuffering(event.payload.buffering);
     });
 

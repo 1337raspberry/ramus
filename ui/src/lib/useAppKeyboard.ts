@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { togglePlayPause, nextTrack, previousTrack } from "./commands";
+import { useGenreInfoStore } from "../stores/genreInfoStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 
 interface UseAppKeyboardParams {
@@ -23,6 +24,13 @@ export function useAppKeyboard({
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
+
+      // While the genre-info modal/sheet is open, ALL shell shortcuts yield:
+      // Escape belongs to the modal's own listener (this one registers
+      // earlier and would exit focus mode underneath it), and the rest
+      // (search operators, Cmd+F/E/,/N, Space) would open sibling overlays
+      // BEHIND the modal's z-1100 backdrop or mutate playback invisibly.
+      if (useGenreInfoStore.getState().target) return;
 
       // Esc exits focus mode before any other Esc-based dismissal.
       if (e.key === "Escape" && usePlaybackStore.getState().isFocusMode) {

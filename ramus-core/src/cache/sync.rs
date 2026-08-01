@@ -16,6 +16,10 @@ pub enum SyncPhase {
     Tracks,
     DeepGenres,
     Done,
+    /// Terminal failure frame. The engine itself returns `Err` rather than
+    /// emitting this; callers (manual sync commands, auto-sync) emit it so
+    /// progress listeners can settle instead of showing a stuck banner.
+    Error,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

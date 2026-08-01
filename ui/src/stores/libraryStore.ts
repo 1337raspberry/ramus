@@ -414,6 +414,10 @@ function findDeepestNodeByName(nodes: GenreNode[], name: string): GenreNode | nu
 
 let genreFetchGen = 0;
 
+// Suggestion-load generation: only the newest in-flight query may write
+// `suggestion`/`suggestionMissed` (see `loadSuggestion`).
+let suggestGen = 0;
+
 // Module-level so the dedupe survives `set()` calls without polluting state.
 // Cleared on success or failure of the IPC.
 const inFlightGenreExpansions = new Set<string>();
@@ -869,6 +873,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   suggestionMissed: false,
 
   loadSuggestion: async () => {
+    // Only the newest in-flight query may write results — a slow filtered
+    // query racing a fast "any length" reshuffle must not land afterwards
+    // and flag a miss against the wrong target (mirrors `genreFetchGen`).
+    const gen = ++suggestGen;
     try {
       const filters = get().albumFilters;
       const target = get().suggestionTargetMinutes;
@@ -881,6 +889,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             durationMaxMs: target != null ? (target + SUGGEST_TOLERANCE_MIN) * 60_000 : null,
           })
         : await getRandomAlbum();
+      if (gen !== suggestGen) return;
       if (album) set({ suggestion: album, suggestionMissed: false });
       // Keep the stale `suggestion` so desktop's view switch is unaffected; the
       // mobile view reads `suggestionMissed` to show its "no match" state.
@@ -901,7 +910,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   detailTracks: [],
 
   openAlbumDetail: async (album) => {
-    set({ detailAlbum: album, suggestion: null });
+    set({ detailAlbum: album, suggestion: null, suggestionMissed: false });
     try {
       const tracks = await getTracksForAlbum(album.ratingKey);
       set({ detailTracks: tracks, selectedAlbum: album, tracks });

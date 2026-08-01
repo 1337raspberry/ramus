@@ -57,6 +57,22 @@ fn update_last_sync_time(settings: &Arc<RwLock<Settings>>) {
     let _ = ramus_core::settings::save(&s);
 }
 
+/// Terminal failure frame so progress listeners (banner, toasts, cache
+/// invalidation) settle instead of hanging on the last progress value.
+/// Generic detail on purpose — sync errors can wrap reqwest errors whose
+/// Display includes the full URL.
+fn emit_sync_error(app: &AppHandle) {
+    events::emit_sync_progress(
+        app,
+        ramus_core::cache::sync::SyncProgress {
+            phase: ramus_core::cache::sync::SyncPhase::Error,
+            current: 0,
+            total: 0,
+            detail: "Sync failed".to_string(),
+        },
+    );
+}
+
 #[tauri::command]
 pub async fn start_full_sync(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     let guard = acquire_sync_guard(&state.sync_in_progress)?;
@@ -71,6 +87,7 @@ pub async fn start_full_sync(app: AppHandle, state: State<'_, AppState>) -> CmdR
 
     let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
     let app_handle = app.clone();
+    let app_err = app.clone();
     let settings = state.settings.clone();
     let include_styles = settings.read().include_plex_styles;
 
@@ -86,6 +103,8 @@ pub async fn start_full_sync(app: AppHandle, state: State<'_, AppState>) -> CmdR
             .await;
         if result.is_ok() {
             update_last_sync_time(&settings);
+        } else {
+            emit_sync_error(&app_err);
         }
     });
 
@@ -106,6 +125,7 @@ pub async fn start_incremental_sync(app: AppHandle, state: State<'_, AppState>) 
 
     let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
     let app_handle = app.clone();
+    let app_err = app.clone();
     let settings = state.settings.clone();
     let include_styles = settings.read().include_plex_styles;
 
@@ -118,6 +138,8 @@ pub async fn start_incremental_sync(app: AppHandle, state: State<'_, AppState>) 
             .await;
         if result.is_ok() {
             update_last_sync_time(&settings);
+        } else {
+            emit_sync_error(&app_err);
         }
     });
 
@@ -137,6 +159,7 @@ pub async fn start_genre_sync(app: AppHandle, state: State<'_, AppState>) -> Cmd
 
     let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
     let app_handle = app.clone();
+    let app_err = app.clone();
     let settings = state.settings.clone();
     let include_styles = settings.read().include_plex_styles;
 
@@ -149,6 +172,8 @@ pub async fn start_genre_sync(app: AppHandle, state: State<'_, AppState>) -> Cmd
             .await;
         if result.is_ok() {
             update_last_sync_time(&settings);
+        } else {
+            emit_sync_error(&app_err);
         }
     });
 

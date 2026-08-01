@@ -92,10 +92,11 @@ function BreadcrumbItem({
   onSelect: (crumb: Crumb) => void;
   onInfo: (name: string) => void;
 }) {
+  // Omit the handler entirely for "All": arming a do-nothing hold would
+  // still swallow the tap that follows it, leaving the row dead after a
+  // slightly-too-long press.
   const longPress = useLongPress({
-    onLongPress: () => {
-      if (crumb.depth > 0) onInfo(crumb.node?.name ?? crumb.label);
-    },
+    onLongPress: crumb.depth > 0 ? () => onInfo(crumb.node?.name ?? crumb.label) : undefined,
     onClick: () => {
       if (!isLast) onSelect(crumb);
     },

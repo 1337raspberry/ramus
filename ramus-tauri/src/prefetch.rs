@@ -77,17 +77,17 @@ const NATURAL_GAP: Duration = Duration::from_secs(1);
 /// fire pointless downloads.
 const SKIP_GAP: Duration = Duration::from_secs(2);
 
-/// Hard ceiling on how long we'll wait for the live transcode body to
-/// drain before proceeding. Plex transcodes that arrive faster than
-/// realtime drain in 5–15s; transcodes that arrive at near-realtime
-/// pace would never drain within ceiling because the source is
-/// actively delivering the whole way through, so a long ceiling just
-/// holds up the in-cycle ingest (and the visualiser the user is
-/// waiting on) for nothing. 30s is enough for fast bursts to land and
-/// short enough that slow-Plex cases proceed to a partial-file
-/// in-cycle ingest within a tolerable wait. After ceiling, the
-/// bounded Ogg reader handles whatever's on disk; the track-end
-/// re-ingest catches any later growth.
+/// Soft ceiling on the live-drain wait. Plex transcodes that arrive
+/// faster than realtime drain in 5–15s and exit before this. At the
+/// ceiling two things happen: the one-shot early spectrum ingest fires
+/// (a local partial-file read via the bounded Ogg reader — so the
+/// on-screen visualiser isn't held back by the wait), and, if the
+/// source has also stopped advancing (debounced over `STABLE_POLLS`),
+/// the wait gives up. While the source is still delivering (a
+/// realtime-paced live transcode) the wait extends toward the hard
+/// ceiling, holding back only the serial downloads whose competing
+/// transcode session would cut the live stream. The track-end
+/// re-ingest catches any growth after the early ingest.
 const LIVE_DRAIN_CEILING: Duration = Duration::from_secs(30);
 
 /// Absolute cap on the live-drain wait, used only while the source is still
@@ -683,11 +683,17 @@ fn spawn_cycle(
 /// competing prefetch session that would cut the live one. The hard ceiling
 /// (or `HARD_LIVE_DRAIN_CEILING` when the duration is unknown) is the
 /// anti-hang backstop for a missing demuxer-cache-time bridge.
+///
+/// `on_soft_ceiling` fires once when the soft ceiling passes while the wait
+/// extends — the caller uses it for an early partial spectrum ingest (a
+/// local file read that opens no Plex session), so a long extension delays
+/// only the serial downloads it exists to hold back, not the visualiser.
 async fn wait_for_source_drain(
     player: &AudioPlayer,
     rating_key: Option<&str>,
     shared_gen: &Arc<AtomicU64>,
     my_gen: u64,
+    mut on_soft_ceiling: Option<Box<dyn FnOnce() + Send>>,
 ) {
     /// Number of consecutive polls where ALL drain signals must hold
     /// stable before we trust drain. The first poll seeds prev_*, so
@@ -705,9 +711,20 @@ async fn wait_for_source_drain(
 
     let started = Instant::now();
     let mut steady_count = 0u32;
+    let mut not_advancing_polls = 0u32;
     let mut prev_cache_time: Option<f64> = None;
     let mut prev_file_size: Option<u64> = None;
-    let expected_bytes = player.expected_source_bytes_for_current();
+    // The file-size prongs (bytes_met / file_steady) can only ever be
+    // satisfied where stream-record actually writes a file. Without it
+    // (mobile, or spectrum off before capture starts) `cur_file` stays None
+    // forever, and a known expected size would make `bytes_met` permanently
+    // false — turning every wait into a full ceiling burn. Disable the
+    // expectation so drain can fire on drain_met + cache_steady alone.
+    let expected_bytes = if player.stream_record_dir().is_some() {
+        player.expected_source_bytes_for_current()
+    } else {
+        None
+    };
 
     loop {
         if shared_gen.load(Ordering::SeqCst) != my_gen {
@@ -725,6 +742,16 @@ async fn wait_for_source_drain(
         // anti-hang backstop when demuxer-cache-time is unavailable.
         let cache_advancing =
             matches!((cur_cache, prev_cache_time), (Some(c), Some(p)) if c - p > 0.05);
+        // Debounce "stopped advancing" the same way drain is debounced:
+        // Plex's chunked transcode delivery is bursty, and a single >500ms
+        // chunk gap on a flaky link must not collapse the past-ceiling
+        // extension — opening a competing session mid-body cuts the live
+        // transcode (the exact stall this extension exists to prevent).
+        if cache_advancing {
+            not_advancing_polls = 0;
+        } else {
+            not_advancing_polls += 1;
+        }
         let hard_ceiling = {
             let dur = player.duration();
             if dur > 0.0 {
@@ -733,8 +760,16 @@ async fn wait_for_source_drain(
                 HARD_LIVE_DRAIN_CEILING
             }
         };
+        // Crossing the soft ceiling while still extending: give the caller
+        // its one-shot early-ingest hook. Fast drains exit before this and
+        // never fire it; the post-wait ingest covers them.
+        if started.elapsed() >= LIVE_DRAIN_CEILING {
+            if let Some(hook) = on_soft_ceiling.take() {
+                hook();
+            }
+        }
         if started.elapsed() >= hard_ceiling
-            || (started.elapsed() >= LIVE_DRAIN_CEILING && !cache_advancing)
+            || (started.elapsed() >= LIVE_DRAIN_CEILING && not_advancing_polls >= STABLE_POLLS)
         {
             log::warn!(
                 "stream_record: source not drained after {:.0}s (cache_advancing={cache_advancing}), proceeding",
@@ -881,22 +916,47 @@ async fn run_cycle(
     // spectrum-on only. `wait_for_source_drain` also drives the stream-record
     // analyser: after it, `next_uncached_target_in_lookahead` skips the current
     // track because `cache.get(rk)` returns Some once ingested.
-    let current_uncached = player
-        .state()
-        .current_track
-        .as_ref()
-        .is_some_and(|t| !player.with_cache(|c| c.get(&t.rating_key).is_some()));
+    // Persistent downloads play from file:// — nothing is streaming, so
+    // waiting for a "live source" to drain would just burn the ceiling.
+    let current_uncached = player.state().current_track.as_ref().is_some_and(|t| {
+        !player.has_persistent_download(&t.rating_key)
+            && !player.with_cache(|c| c.get(&t.rating_key).is_some())
+    });
     if current_uncached {
         // Pass the rating_key down so wait_for_source_drain can re-glob
         // the file each iteration: at this point mpv has only just
         // started loading and the stream-record file typically doesn't
         // exist on disk yet.
         let drain_rating_key = player.state().current_track.as_ref().map(|t| t.rating_key.clone());
-        wait_for_source_drain(&player, drain_rating_key.as_deref(), &shared_gen, my_gen).await;
+        // When the wait extends past the soft ceiling (realtime-paced live
+        // transcode still feeding), ingest whatever's on disk right then —
+        // the bounded Ogg reader clamps torn pages, and this is a local
+        // read that can't disturb the live session. Without it, a slow
+        // link would show no visualiser until near track end.
+        let soft_ceiling_ingest: Option<Box<dyn FnOnce() + Send>> = if try_in_cycle {
+            drain_rating_key.clone().map(|rk| {
+                let player = player.clone();
+                let app = app.clone();
+                Box::new(move || try_ingest_stream_record(player, app, rk)) as Box<dyn FnOnce() + Send>
+            })
+        } else {
+            None
+        };
+        wait_for_source_drain(
+            &player,
+            drain_rating_key.as_deref(),
+            &shared_gen,
+            my_gen,
+            soft_ceiling_ingest,
+        )
+        .await;
         if shared_gen.load(Ordering::SeqCst) != my_gen {
             return;
         }
         // Stream-record capture → analyser is desktop + spectrum-on only.
+        // (Re-run after the wait too: the early soft-ceiling ingest, if it
+        // fired, only saw a partial file; growth-gated re-analysis inside
+        // makes this a no-op when nothing new arrived.)
         if try_in_cycle {
             if let Some(rk) = player.state().current_track.map(|t| t.rating_key) {
                 try_ingest_stream_record(player.clone(), app.clone(), rk);

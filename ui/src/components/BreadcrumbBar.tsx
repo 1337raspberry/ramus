@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { countryToFlag } from "../lib/countryFlag";
+import { genreSurfaceHandlers } from "../lib/genreSurface";
 import { GENRE_ID_SEP, type GenreNode } from "../lib/types";
 
 const FONT_SIZE = 11;
@@ -16,6 +17,8 @@ interface Crumb {
   label: string;
   flag?: string | null;
   onClick?: () => void;
+  /** Set only for genre crumbs — enables the hover card + right-click info. */
+  genreName?: string;
 }
 
 /** Walk the genre tree to find a node by its path-based id. */
@@ -82,7 +85,11 @@ export default function BreadcrumbBar() {
 
     if (flatGenres) {
       const node = findNodeById(genreTree, selectedGenreId);
-      return [{ label: "All", onClick: selectAll }, { label: node?.name ?? selectedGenreId }];
+      const name = node?.name ?? selectedGenreId;
+      return [
+        { label: "All", onClick: selectAll },
+        { label: name, genreName: name },
+      ];
     }
 
     // Hierarchical: split the path-based id to build the trail.
@@ -94,12 +101,14 @@ export default function BreadcrumbBar() {
       const node = findNodeById(genreTree, partialId);
       const isLast = i === segments.length - 1;
 
+      const name = node?.name ?? segments[i];
       if (isLast) {
-        trail.push({ label: node?.name ?? segments[i] });
+        trail.push({ label: name, genreName: name });
       } else {
         const clickNode = node;
         trail.push({
-          label: node?.name ?? segments[i],
+          label: name,
+          genreName: name,
           onClick: clickNode ? () => selectGenre(clickNode) : undefined,
         });
       }
@@ -145,6 +154,7 @@ export default function BreadcrumbBar() {
                 className={`crumb${crumb.onClick && !isLast ? " crumb-link" : ""}`}
                 style={{ padding: `${CRUMB_PAD_V}px ${CRUMB_PAD_H}px` }}
                 onClick={crumb.onClick}
+                {...(crumb.genreName ? genreSurfaceHandlers(crumb.genreName) : undefined)}
               >
                 {crumb.label}
                 {crumb.flag && <span className="crumb-flag">{crumb.flag}</span>}

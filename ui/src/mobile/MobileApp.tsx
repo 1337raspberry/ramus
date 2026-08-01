@@ -93,7 +93,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
     }
 
     if (view === "suggestion") {
-      useLibraryStore.setState({ suggestion: null });
+      useLibraryStore.setState({ suggestion: null, suggestionMissed: false });
       setView("genres");
       return;
     }

@@ -1,5 +1,6 @@
-import { useLayoutEffect, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { pushBackHandler } from "../lib/backHandler";
 import { useLibraryStore } from "../stores/libraryStore";
 
 // Target-length options: 0h 15m up to 2h 00m in 5-minute steps.
@@ -33,6 +34,17 @@ export default function MobileDurationPicker({ anchorRef, onDismiss }: Props) {
     const r = el.getBoundingClientRect();
     setPos({ top: r.bottom + 4, left: r.left });
   }, [anchorRef]);
+
+  // Android hardware back / edge swipe dismisses the menu, not the whole
+  // suggestion screen beneath it.
+  useEffect(
+    () =>
+      pushBackHandler(() => {
+        onDismiss();
+        return true;
+      }),
+    [onDismiss],
+  );
 
   const options: number[] = [];
   for (let m = MIN_MINUTES; m <= MAX_MINUTES; m += STEP_MINUTES) options.push(m);

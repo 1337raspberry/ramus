@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { isAuthenticated } from "./lib/commands";
+import { clearGenreMetadataCache } from "./lib/genreMetadataCache";
+import type { SyncProgress } from "./lib/types";
 import { usePlaybackEvents } from "./lib/usePlaybackEvents";
 import { useWindowTitle } from "./lib/useWindowTitle";
 import { useFullscreenSync } from "./lib/useFullscreenSync";
@@ -22,11 +25,13 @@ import SearchOverlay from "./components/SearchOverlay";
 import EqualizerPanel from "./components/EqualizerPanel";
 import LibrarySettingsPanel from "./components/LibrarySettingsPanel";
 import DownloadsPanel from "./components/DownloadsPanel";
+import GenreInfoModal from "./components/GenreInfoModal";
+import GenreHoverCard from "./components/GenreHoverCard";
 import OnboardingFlow, { clearOnboardingStorage } from "./components/onboarding/OnboardingFlow";
 import { clearPin } from "./components/onboarding/OAuthSignIn";
 import UltraBlurBackground from "./components/UltraBlurBackground";
 import MobileApp from "./mobile/MobileApp";
-import Toast from "./components/Toast";
+import Toast, { useToastStore } from "./components/Toast";
 import { applyAccent, DEFAULT_ACCENT, DEFAULT_BLUR_COLORS } from "./lib/accent";
 import { accentFromPalette } from "./lib/vibrantColor";
 import { handleAndroidBack, pushBackHandler } from "./lib/backHandler";
@@ -101,12 +106,47 @@ export default function App() {
   usePlaybackEvents();
   useWindowTitle();
 
+  // App-lifetime sync listener: invalidates cached genre metadata on any
+  // completion (in-library flags are baked into the responses — the settings
+  // panel's own listener dies with the panel, and auto-syncs never open it),
+  // and surfaces background syncs as toasts. Toasts are suppressed while the
+  // settings panel is open, since its progress banner already shows the sync.
+  const showSettingsRef = useRef(showSettings);
+  showSettingsRef.current = showSettings;
+  useEffect(() => {
+    let syncActive = false;
+    const unlisten = listen<SyncProgress>("sync-progress", (event) => {
+      const phase = event.payload.phase;
+      const toast = (msg: string) => {
+        if (!showSettingsRef.current) useToastStore.getState().show(msg);
+      };
+      if (phase === "done") {
+        clearGenreMetadataCache();
+        if (syncActive) toast("Library sync finished");
+        syncActive = false;
+      } else if (phase === "error") {
+        if (syncActive) toast("Library sync failed");
+        syncActive = false;
+      } else {
+        if (!syncActive) toast("Syncing library…");
+        syncActive = true;
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   // When effective-offline flips (either manually or because the server
   // became reachable / went away), reload the library so filtered vs full
   // results take effect without the user having to navigate.
   const connection = useConnectionStatus();
   useEffect(() => {
     if (authed !== true) return;
+    // Offline mode also changes the in-library flags baked into cached
+    // genre metadata (they follow the downloaded-only view), so the
+    // session cache must flip with the library.
+    clearGenreMetadataCache();
     const lib = useLibraryStore.getState();
     lib.loadAllAlbums?.();
     lib.loadGenreTree?.();
@@ -252,6 +292,8 @@ export default function App() {
         />
       )}
       {showDownloads && <DownloadsPanel onDismiss={() => setShowDownloads(false)} />}
+      <GenreInfoModal />
+      <GenreHoverCard />
       <Toast />
     </>
   );

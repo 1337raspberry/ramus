@@ -531,6 +531,10 @@ textarea {
   background: #4caf50;
 }
 
+.sync-banner.failed .sync-banner-caption {
+  color: #e55;
+}
+
 .sync-banner-caption {
   font-size: 11px;
   color: var(--text-muted);
@@ -3052,36 +3056,6 @@ textarea {
 
 .settings-btn.active {
   background: var(--accent-20);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* Hold-to-reveal import button. A 5s press fills an accent bar left-to-right;
- * completing the hold swaps the button into the hidden JSON-import mode. */
-.settings-btn-hold {
-  position: relative;
-  overflow: hidden;
-}
-
-.settings-btn-hold-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 0;
-  background: var(--accent-35);
-  transition: width 0.15s ease;
-  pointer-events: none;
-}
-
-.settings-btn-hold.holding .settings-btn-hold-fill {
-  width: 100%;
-  transition: width 5s linear;
-}
-
-.settings-btn-hold-label {
-  position: relative;
-}
-
-.settings-btn-hold.json-mode {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -7010,6 +6984,80 @@ body.is-fullscreen .focus-body {
   color: var(--text-muted);
   font-size: 14px;
   padding: 8px 0 4px;
+}
+
+/* --- Desktop genre-info modal + hover card ---
+ * The modal reuses the settings chassis (.settings-backdrop/.settings-panel)
+ * one z-layer above it, matching the mobile sheet's layer so it clears the
+ * focus overlay. Hover replaces :hover on desktop genre surfaces with a
+ * dwell-intent summary card driven by lib/genreSurface.ts. */
+.genre-info-modal-backdrop {
+  z-index: 1100;
+}
+
+.genre-info-modal-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 20px 12px;
+}
+
+.genre-info-modal-header .genre-info-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.genre-info-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 20px 20px;
+}
+
+/* Purely informational — never interactive. pointer-events: none keeps the
+ * anchor beneath it hoverable/right-clickable and rules out flicker loops. */
+.genre-hover-card {
+  position: fixed;
+  z-index: 1200;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  pointer-events: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  animation: genre-hover-fade-in 120ms ease;
+}
+
+.genre-hover-hint {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.genre-hover-summary {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-style: italic;
+  color: var(--text-secondary);
+  /* Cap runaway summaries; the card is deliberately unscrollable. */
+  display: -webkit-box;
+  -webkit-line-clamp: 8;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@keyframes genre-hover-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Offline-mode: fade unplayable tracks in the album detail list. */

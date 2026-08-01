@@ -1,43 +1,31 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 
-import GenreInfoContent from "../components/GenreInfoContent";
-import { IconChevronLeft } from "../components/Icons";
-import { pushBackHandler } from "../lib/backHandler";
+import GenreInfoContent from "./GenreInfoContent";
+import { IconChevronLeft } from "./Icons";
 import { useGenreInfoStack } from "../lib/useGenreInfoStack";
 import { useGenreInfoStore } from "../stores/genreInfoStore";
 import { useLibraryStore } from "../stores/libraryStore";
-
-interface Props {
-  /** Run before navigating to a genre's albums — e.g. collapse the now-playing
-   * sheet so the destination grid is visible. */
-  onNavigate?: () => void;
-}
+import { usePlaybackStore } from "../stores/playbackStore";
 
 /**
- * Reader popover for the richer genre metadata. Opened by long-pressing a genre
- * pill (via `genreInfoStore`); mounted once near the app root so it can float
- * above the now-playing sheet. Tapping a `**reference**` inside a description
- * drills into that genre (wiki-style, with a back affordance); tapping the
- * title navigates to that genre's albums.
+ * Desktop counterpart of the mobile GenreInfoSheet: a centered, scrollable
+ * settings-style modal for the richer genre metadata. Opened by right-clicking
+ * any genre surface (via `genreInfoStore`); mounted once in the desktop app
+ * root. Same drill/click semantics as mobile via the shared stack + content.
  */
-export default function GenreInfoSheet({ onNavigate }: Props) {
+export default function GenreInfoModal() {
   const target = useGenreInfoStore((s) => s.target);
   const close = useGenreInfoStore((s) => s.close);
   const selectGenreByName = useLibraryStore((s) => s.selectGenreByName);
   const loadAlbumsForArtistName = useLibraryStore((s) => s.loadAlbumsForArtistName);
 
-  const { current, meta, loading, canGoBack, drillInto, goBack, popOrClose } =
-    useGenreInfoStack(target);
+  const { current, meta, loading, canGoBack, drillInto, goBack } = useGenreInfoStack(target);
 
-  // Dismiss wiring while open: Android hardware back pops a drill level (or
-  // closes at the root); Escape closes the whole sheet.
+  // Escape closes the whole modal (the header back button covers drill pops).
+  // `useAppKeyboard` yields to us while the modal is open.
   useEffect(() => {
     if (!target) return;
-    const removeBack = pushBackHandler(() => {
-      popOrClose(close);
-      return true;
-    });
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -45,38 +33,41 @@ export default function GenreInfoSheet({ onNavigate }: Props) {
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => {
-      removeBack();
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [target, close, popOrClose]);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [target, close]);
 
   if (!target || !current) return null;
 
   const titleInLibrary = meta?.inLibrary ?? false;
 
-  const navigateToGenre = (genre: string) => {
+  // Navigating away: drop focus mode too, so the destination grid is
+  // actually visible (the desktop analogue of mobile's `onNavigate`).
+  const beforeNavigate = () => {
     close();
-    onNavigate?.();
+    if (usePlaybackStore.getState().isFocusMode) {
+      usePlaybackStore.setState({ isFocusMode: false });
+    }
+  };
+
+  const navigateToGenre = (genre: string) => {
+    beforeNavigate();
     void selectGenreByName(genre);
   };
 
   const navigateToArtist = (artist: string) => {
-    close();
-    onNavigate?.();
+    beforeNavigate();
     void loadAlbumsForArtistName(artist);
   };
 
   return createPortal(
     <div
-      className="genre-info-backdrop"
+      className="settings-backdrop genre-info-modal-backdrop"
       onClick={(e) => {
         if (e.target === e.currentTarget) close();
       }}
     >
-      <div className="genre-info-sheet" role="dialog" aria-modal="true">
-        <div className="genre-info-grabber" />
-        <div className="genre-info-header">
+      <div className="settings-panel glass genre-info-modal" role="dialog" aria-modal="true">
+        <div className="genre-info-modal-header">
           {canGoBack && (
             <button className="genre-info-back" onClick={goBack} aria-label="Back">
               <IconChevronLeft size={22} />
@@ -93,9 +84,12 @@ export default function GenreInfoSheet({ onNavigate }: Props) {
           ) : (
             <span className="genre-info-title">{meta?.canonicalName ?? current}</span>
           )}
+          <button className="settings-close" onClick={close} aria-label="Close">
+            x
+          </button>
         </div>
 
-        <div className="genre-info-body">
+        <div className="genre-info-modal-body">
           <GenreInfoContent
             meta={meta}
             loading={loading}

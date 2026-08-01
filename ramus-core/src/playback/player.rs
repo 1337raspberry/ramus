@@ -674,6 +674,12 @@ impl AudioPlayer {
         inner.load_started_at = Some(Instant::now());
         inner.last_position_update = None;
         inner.last_load_error = None;
+        // A deliberate track switch moots any in-flight current-track
+        // reload: close the settle window and drop the offset base so a
+        // suppressed pos-change can't leave them applied to the new track.
+        inner.reloading_pos = None;
+        inner.reload_started_at = None;
+        inner.position_base = 0.0;
         drop(inner);
         self.mpv.playlist_play_index(index as i64);
     }
@@ -699,6 +705,12 @@ impl AudioPlayer {
         inner.load_started_at = Some(Instant::now());
         inner.last_position_update = None;
         inner.last_load_error = None;
+        // A deliberate track switch moots any in-flight current-track
+        // reload: close the settle window and drop the offset base so a
+        // suppressed pos-change can't leave them applied to the new track.
+        inner.reloading_pos = None;
+        inner.reload_started_at = None;
+        inner.position_base = 0.0;
         let idx = inner.state.queue_index;
         drop(inner);
         self.mpv.playlist_play_index(idx as i64);
@@ -712,8 +724,9 @@ impl AudioPlayer {
             // A transcode `offset=` stream can't rewind before its resume
             // point; reload the track fresh from the top instead.
             if inner.position_base > 0.0 {
+                let idx = inner.state.queue_index;
                 drop(inner);
-                self.reload_current_track(None);
+                self.reload_current_track(None, Some(idx));
                 return;
             }
             inner.position = 0.0;
@@ -723,6 +736,13 @@ impl AudioPlayer {
         }
 
         if inner.state.queue_index == 0 {
+            // Same restart-current outcome as above, reached via the other
+            // threshold — an offset stream can't rewind here either.
+            if inner.position_base > 0.0 {
+                drop(inner);
+                self.reload_current_track(None, Some(0));
+                return;
+            }
             inner.position = 0.0;
             drop(inner);
             self.mpv.seek(0.0);
@@ -736,6 +756,10 @@ impl AudioPlayer {
         inner.load_started_at = Some(Instant::now());
         inner.last_position_update = None;
         inner.last_load_error = None;
+        // See `next`: a deliberate switch closes the reload settle window.
+        inner.reloading_pos = None;
+        inner.reload_started_at = None;
+        inner.position_base = 0.0;
         let idx = inner.state.queue_index;
         drop(inner);
         self.mpv.playlist_play_index(idx as i64);
@@ -782,14 +806,16 @@ impl AudioPlayer {
         if inner.held_for_recovery {
             // The stream died and we're holding at position; mpv is idle so a
             // plain unpause is silent. Re-attempt a resume-at-position load.
-            inner.held_for_recovery = false;
+            // reload_current_track clears the hold and flips status to
+            // Playing only when it actually issues a load — a declined
+            // reload keeps holding instead of claiming Playing over an
+            // idle mpv.
             inner.last_retried_track = None;
             inner.last_auto_reload_at = None;
-            inner.state.status = PlaybackStatus::Playing;
-            inner.last_position_update = Some(Instant::now());
             let resume = inner.position;
+            let idx = inner.state.queue_index;
             drop(inner);
-            self.reload_current_track(Some(resume));
+            self.reload_current_track(Some(resume), Some(idx));
             return;
         }
         if inner.state.status == PlaybackStatus::Paused {
@@ -804,6 +830,15 @@ impl AudioPlayer {
     pub fn seek(&self, position: f64) {
         let mut inner = self.inner.lock();
         let clamped = position.max(0.0).min((inner.duration - 0.5).max(0.0));
+        let idx = inner.state.queue_index;
+        // A track held after exhausted recovery has no live stream — a plain
+        // mpv seek would be a silent no-op. Re-attempt the load at the drag
+        // target instead (reload_current_track exits the hold).
+        if inner.held_for_recovery {
+            drop(inner);
+            self.reload_current_track(Some(clamped), Some(idx));
+            return;
+        }
         let base = inner.position_base;
         // On a transcode `offset=` stream mpv can only reach [base, end];
         // seeking before the resume point needs a fresh transcode from the
@@ -811,7 +846,7 @@ impl AudioPlayer {
         // and local files, so this never fires for them.
         if base > 0.0 && clamped < base {
             drop(inner);
-            self.reload_current_track(Some(clamped));
+            self.reload_current_track(Some(clamped), Some(idx));
             return;
         }
         inner.position = clamped;
@@ -1274,41 +1309,36 @@ impl AudioPlayer {
     /// ([`RecoverOutcome::Held`]) rather than thrash or reset. A local file
     /// that failed to decode yields [`RecoverOutcome::Skipped`] via the caller.
     fn try_recover_current_track(&self) -> RecoverOutcome {
-        let resume = {
+        // Capture, guard, and stamp in ONE lock window so idx/track/resume
+        // stay consistent; `expected_idx` then lets reload_current_track
+        // decline if a user skip lands before it re-acquires the lock.
+        let (resume, idx) = {
             let persistent = self.persistent_cache.read();
-            let inner = self.inner.lock();
+            let mut inner = self.inner.lock();
             let idx = inner.state.queue_index;
             let Some(track) = inner.state.queue.get(idx) else {
                 return RecoverOutcome::Skipped;
             };
+            let rating_key = track.rating_key.clone();
             // Local files: a file-ended error is a genuine decode/file problem,
             // not a transient stream drop — let the caller skip.
-            if persistent.contains_key(&track.rating_key)
-                || inner.cache.get(&track.rating_key).is_some()
-            {
+            if persistent.contains_key(&rating_key) || inner.cache.get(&rating_key).is_some() {
                 return RecoverOutcome::Skipped;
             }
             // Network stream. Hold (don't thrash/reset) if we already retried
             // this track, or if the last automatic reload was too recent.
-            if inner.last_retried_track.as_deref() == Some(&track.rating_key)
+            if inner.last_retried_track.as_deref() == Some(rating_key.as_str())
                 || inner.within_reload_cooldown()
             {
                 return RecoverOutcome::Held(inner.position);
             }
-            inner.position
-        };
-
-        {
-            let mut inner = self.inner.lock();
-            let idx = inner.state.queue_index;
-            if let Some(track) = inner.state.queue.get(idx) {
-                inner.last_retried_track = Some(track.rating_key.clone());
-            }
+            inner.last_retried_track = Some(rating_key);
             inner.last_auto_reload_at = Some(Instant::now());
-        }
+            (inner.position, idx)
+        };
         // Resume at the captured position (transcode `offset=` / direct-play
         // `start=` per `reload_current_track`), never a restart from 0:00.
-        if self.reload_current_track(Some(resume)) {
+        if self.reload_current_track(Some(resume), Some(idx)) {
             RecoverOutcome::Reloading(resume)
         } else {
             // Reload declined (became file:// or stopped meanwhile) — hold
@@ -1332,7 +1362,7 @@ impl AudioPlayer {
     /// rejects → file-ended → `try_recover_current_track`) simply starts
     /// from the top — the graceful fallback so a refused resume never
     /// skips the track.
-    fn reload_current_track(&self, resume: Option<f64>) -> bool {
+    fn reload_current_track(&self, resume: Option<f64>, expected_idx: Option<usize>) -> bool {
         let (idx, url, opts) = {
             let persistent = self.persistent_cache.read();
             let mut inner = self.inner.lock();
@@ -1340,6 +1370,13 @@ impl AudioPlayer {
                 return false;
             }
             let idx = inner.state.queue_index;
+            // The caller captured its resume position under an earlier lock
+            // acquisition; if a skip/jump landed in between, that position
+            // belongs to a different track — decline rather than resume the
+            // wrong track at the old track's position.
+            if expected_idx.is_some_and(|e| e != idx) {
+                return false;
+            }
             let Some(track) = inner.state.queue.get(idx).cloned() else {
                 return false;
             };
@@ -1365,8 +1402,25 @@ impl AudioPlayer {
             inner.position_base = base;
             // Reflect the resume point immediately so the seek bar doesn't
             // flash back to 0:00 before mpv's first position event lands.
-            if let Some(r) = resume.filter(|p| *p > 0.0) {
+            // For a stream-offset resume use the truncated base the server
+            // was actually asked for, so the first real tick doesn't step
+            // backwards by the sub-second remainder.
+            if base > 0.0 {
+                inner.position = base;
+            } else if let Some(r) = resume.filter(|p| *p > 0.0) {
                 inner.position = r;
+            }
+            // A track held after exhausted recovery has mpv idle: its logical
+            // status is Paused but mpv's own pause flag was never set. The
+            // load below genuinely starts audio, so restore the logical state
+            // to match — every reload path (resume tap, seek, connection
+            // failover) exits the hold consistently. An ordinary user pause
+            // is unaffected: mpv's sticky pause=true carries across loadfile,
+            // and held_for_recovery is false so this branch never fires.
+            if inner.held_for_recovery {
+                inner.held_for_recovery = false;
+                inner.state.status = PlaybackStatus::Playing;
+                inner.last_position_update = Some(Instant::now());
             }
             // The play-index below re-enters this index and fires one or more
             // playlist-pos-change events; arm the settle window so
@@ -1397,7 +1451,7 @@ impl AudioPlayer {
     /// alternative is a 15s hang the next time mpv reaches the now-dead
     /// upstream. See [`reload_current_track`] for the resume mechanics.
     pub fn force_reload_current_track(&self) -> bool {
-        let resume = {
+        let (resume, idx) = {
             let mut inner = self.inner.lock();
             // Coalesce a burst of failover triggers: if an automatic reload
             // just fired, let it play out rather than stacking another.
@@ -1406,9 +1460,9 @@ impl AudioPlayer {
                 return false;
             }
             inner.last_auto_reload_at = Some(Instant::now());
-            inner.position
+            (inner.position, inner.state.queue_index)
         };
-        self.reload_current_track(Some(resume))
+        self.reload_current_track(Some(resume), Some(idx))
     }
 
     /// Handle mpv idle-active (queue completed).

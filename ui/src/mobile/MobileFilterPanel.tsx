@@ -8,6 +8,7 @@ import {
   type AlbumFilters,
 } from "../stores/libraryStore";
 import { getDistinctCountries, getAllCollectionNames, getGenreSuggestions } from "../lib/commands";
+import { pushBackHandler } from "../lib/backHandler";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { countryToFlag } from "../lib/countryFlag";
@@ -34,6 +35,17 @@ export default function MobileFilterPanel({ onDismiss }: Props) {
       .then(setCollections)
       .catch(() => {});
   }, []);
+
+  // Android hardware back / edge swipe dismisses the panel, not the whole
+  // screen beneath it.
+  useEffect(
+    () =>
+      pushBackHandler(() => {
+        onDismiss();
+        return true;
+      }),
+    [onDismiss],
+  );
 
   const update = useCallback(
     (patch: Partial<AlbumFilters>) => {

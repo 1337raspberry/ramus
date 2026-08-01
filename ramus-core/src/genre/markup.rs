@@ -63,43 +63,62 @@ pub fn build_description_segments(
     let mut out: Vec<DescriptionSegment> = Vec::new();
     let mut i = 0;
     let mut text_start = 0;
+    // "No closer ahead" is monotone: once a forward `find` fails at some
+    // position it fails at every later one. Memoise the failure so a long
+    // run of unclosed openers scans forward once instead of per position —
+    // without this, a degenerate imported description (megabytes of `{{`)
+    // makes the loop quadratic while holding the mapper read lock.
+    let mut no_genre_close = false;
+    let mut no_artist_close = false;
 
     while i < bytes.len() {
         // **genre**
-        if bytes[i] == b'*' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
-            if let Some(rel) = text[i + 2..].find("**") {
-                let inner = text[i + 2..i + 2 + rel].trim();
-                if !inner.is_empty() {
-                    push_text(&mut out, text, text_start, i);
-                    out.push(DescriptionSegment::GenreLink {
-                        in_library: library_genres.contains(&inner.to_lowercase()),
-                        value: inner.to_string(),
-                    });
-                    i += 2 + rel + 2;
-                    text_start = i;
-                    continue;
+        if !no_genre_close && bytes[i] == b'*' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            match text[i + 2..].find("**") {
+                Some(rel) => {
+                    let inner = text[i + 2..i + 2 + rel].trim();
+                    if !inner.is_empty() {
+                        push_text(&mut out, text, text_start, i);
+                        out.push(DescriptionSegment::GenreLink {
+                            in_library: library_genres.contains(&inner.to_lowercase()),
+                            value: inner.to_string(),
+                        });
+                        i += 2 + rel + 2;
+                        text_start = i;
+                        continue;
+                    }
                 }
+                None => no_genre_close = true,
             }
         }
         // {{artist}}
-        if bytes[i] == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
-            if let Some(rel) = text[i + 2..].find("}}") {
-                let inner = text[i + 2..i + 2 + rel].trim();
-                if !inner.is_empty() {
-                    push_text(&mut out, text, text_start, i);
-                    let key = normalize_artist(inner);
-                    let nav = (!key.is_empty())
-                        .then(|| library_artists.get(&key))
-                        .flatten();
-                    out.push(DescriptionSegment::ArtistLink {
-                        value: inner.to_string(),
-                        in_library: nav.is_some(),
-                        nav_name: nav.cloned(),
-                    });
-                    i += 2 + rel + 2;
-                    text_start = i;
-                    continue;
+        if !no_artist_close && bytes[i] == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            match text[i + 2..].find("}}") {
+                Some(rel) => {
+                    let inner = text[i + 2..i + 2 + rel].trim();
+                    if !inner.is_empty() {
+                        push_text(&mut out, text, text_start, i);
+                        let key = normalize_artist(inner);
+                        // All-punctuation names normalize to nothing; fall
+                        // back to the exact-name slot the caller keys behind
+                        // a NUL prefix, so "!!!" still links against an owned
+                        // "!!!" without any cross-name looseness.
+                        let nav = if key.is_empty() {
+                            library_artists.get(&format!("\u{0}{}", inner.to_lowercase()))
+                        } else {
+                            library_artists.get(&key)
+                        };
+                        out.push(DescriptionSegment::ArtistLink {
+                            value: inner.to_string(),
+                            in_library: nav.is_some(),
+                            nav_name: nav.cloned(),
+                        });
+                        i += 2 + rel + 2;
+                        text_start = i;
+                        continue;
+                    }
                 }
+                None => no_artist_close = true,
             }
         }
         i += 1;
@@ -116,11 +135,20 @@ mod tests {
         items.iter().map(|s| s.to_lowercase()).collect()
     }
 
-    /// Build a library-artist map keyed by `normalize_artist`, mirroring the command.
+    /// Build a library-artist map keyed by `normalize_artist`, mirroring the
+    /// command layer (including its NUL-prefixed exact keys for names that
+    /// normalize to nothing).
     fn artists(names: &[&str]) -> HashMap<String, String> {
         names
             .iter()
-            .map(|n| (normalize_artist(n), n.to_string()))
+            .map(|n| {
+                let key = normalize_artist(n);
+                if key.is_empty() {
+                    (format!("\u{0}{}", n.trim().to_lowercase()), n.to_string())
+                } else {
+                    (key, n.to_string())
+                }
+            })
             .collect()
     }
 
@@ -130,6 +158,47 @@ mod tests {
             in_library,
             nav_name: nav.map(|s| s.to_string()),
         }
+    }
+
+    #[test]
+    fn punctuation_only_artists_match_exactly_not_loosely() {
+        let lib = artists(&["!!!"]);
+        // Exact all-punctuation reference resolves against the owned name…
+        let segs = build_description_segments("see {{!!!}} live", &set(&[]), &lib);
+        assert_eq!(segs[1], artist("!!!", true, Some("!!!")));
+        // …but a different all-punctuation reference must NOT collide.
+        let segs = build_description_segments("see {{...}} live", &set(&[]), &lib);
+        assert_eq!(segs[1], artist("...", false, None));
+    }
+
+    #[test]
+    fn unclosed_openers_stay_plain_text_in_linear_time() {
+        // A long run of openers with no closer must come back as one text
+        // segment — and quickly. Without the no-closer memo the loop
+        // rescans to end-of-string from every position (quadratic), which
+        // a degenerate imported description could weaponise.
+        let hostile = "{{".repeat(100_000) + &"**".repeat(100_000);
+        let segs = build_description_segments(&hostile, &set(&[]), &artists(&[]));
+        assert_eq!(segs, vec![DescriptionSegment::Text { value: hostile }]);
+    }
+
+    #[test]
+    fn markup_after_unclosed_opener_of_other_kind_still_parses() {
+        // An unclosed `{{` must not stop later `**…**` from tokenizing
+        // (and vice versa) — the memo flags are per-delimiter.
+        let segs = build_description_segments(
+            "broken {{ then **Punk Rock** after",
+            &set(&["Punk Rock"]),
+            &artists(&[]),
+        );
+        assert_eq!(
+            segs,
+            vec![
+                DescriptionSegment::Text { value: "broken {{ then ".into() },
+                DescriptionSegment::GenreLink { value: "Punk Rock".into(), in_library: true },
+                DescriptionSegment::Text { value: " after".into() },
+            ]
+        );
     }
 
     #[test]

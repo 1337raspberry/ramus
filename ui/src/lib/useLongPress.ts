@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
 
 interface Options {
-  onLongPress: () => void;
+  /** Omit to disable the hold entirely — the element keeps plain tap
+   * semantics and no timer is armed, so a long hold can't swallow the
+   * subsequent click. */
+  onLongPress?: () => void;
   onClick?: () => void;
   /** Hold duration before the long-press fires. */
   ms?: number;
@@ -39,6 +42,7 @@ export function useLongPress({ onLongPress, onClick, ms = 500, moveCancelSq = 10
       const t = e.touches[0];
       startRef.current = t ? { x: t.clientX, y: t.clientY } : null;
       clear();
+      if (!onLongPress) return;
       timerRef.current = window.setTimeout(() => {
         longPressedRef.current = true;
         onLongPress();
@@ -71,6 +75,7 @@ export function useLongPress({ onLongPress, onClick, ms = 500, moveCancelSq = 10
   const onContextMenu = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
+      if (!onLongPress) return;
       // Some platforms synthesize contextmenu from a touch long-press that
       // also fired the timer; the guard avoids a double-fire.
       if (longPressedRef.current) return;
