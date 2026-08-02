@@ -1,7 +1,8 @@
 import { useCallback, useRef } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { ART_SIZE, setAlbumPalette } from "../lib/commands";
-import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
+import { extractPalette, accentFromPalette } from "../lib/vibrantColor";
+import { extractCornerColors } from "../lib/blurArt";
 import { applyAccent } from "../lib/accent";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
@@ -74,6 +75,12 @@ export default function NowPlayingView({
       if (lastAccentThumb.current === thumb) return;
       lastAccentThumb.current = thumb;
       const capturedThumb = thumb;
+      // Art-derived corner colours override the server-provided instant
+      // paint the moment the art decodes (spatial extraction, see
+      // lib/blurArt.ts). Independent of the palette cache below, which
+      // only feeds the accent.
+      const corners = extractCornerColors(img);
+      if (corners) usePlaybackStore.setState({ ultraBlurColors: corners });
       // Skip extraction when a palette is already cached via getAlbumColors.
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
@@ -85,8 +92,9 @@ export default function NowPlayingView({
         if (!palette || lastAccentThumb.current !== capturedThumb) return;
         const [r, g, b] = accentFromPalette(palette);
         applyAccent(r, g, b);
-        const blurColors = blurColorsFromPalette(palette);
-        usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
+        // Palette feeds the accent + DB cache only; the UltraBlur corners
+        // come from the server-provided colours via getAlbumColors.
+        usePlaybackStore.setState({ vibrantPalette: palette });
         if (track?.albumKey) {
           setAlbumPalette(track.albumKey, palette).catch(() => {});
         }

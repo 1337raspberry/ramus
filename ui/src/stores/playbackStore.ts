@@ -232,13 +232,15 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
               // happened while only the mini-player was visible.
               const [r, g, b] = accentFromPalette(result.palette);
               applyAccent(r, g, b);
-              set({
-                vibrantPalette: result.palette,
-                ultraBlurColors: blurColorsFromPalette(result.palette),
-              });
-            } else if (result.colors) {
-              set({ ultraBlurColors: result.colors });
+              set({ vibrantPalette: result.palette });
             }
+            // Server-provided UltraBlur corners are spatially derived from
+            // the artwork (each corner reflects that region of the image),
+            // so they take precedence; the palette-derived mapping is only
+            // a fallback when the server has none.
+            const blur =
+              result.colors ?? (result.palette ? blurColorsFromPalette(result.palette) : null);
+            if (blur) set({ ultraBlurColors: blur });
           })
           .catch(() => {});
       } else {

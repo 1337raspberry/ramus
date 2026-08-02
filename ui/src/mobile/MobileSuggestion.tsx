@@ -10,6 +10,7 @@ import {
   setAlbumPalette,
 } from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
+import { extractCornerColors } from "../lib/blurArt";
 import { applyAccent } from "../lib/accent";
 import { countryToFlag } from "../lib/countryFlag";
 import {
@@ -103,11 +104,13 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
         .then((result) => {
           if (usePlaybackStore.getState().currentTrack) return;
           if (result.palette) {
-            usePlaybackStore.setState({
-              vibrantPalette: result.palette,
-              ultraBlurColors: blurColorsFromPalette(result.palette),
-            });
+            usePlaybackStore.setState({ vibrantPalette: result.palette });
           }
+          // Server-provided UltraBlur corners take precedence; the
+          // palette-derived mapping is only a fallback.
+          const blur =
+            result.colors ?? (result.palette ? blurColorsFromPalette(result.palette) : null);
+          if (blur) usePlaybackStore.setState({ ultraBlurColors: blur });
         })
         .catch(() => {});
     }
@@ -116,6 +119,12 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
   const handleArtLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
       if (usePlaybackStore.getState().currentTrack) return;
+      // Art-derived corner colours override the server-provided instant
+      // paint the moment the art decodes (spatial extraction, see
+      // lib/blurArt.ts). Independent of the palette cache below, which
+      // only feeds the accent.
+      const corners = extractCornerColors(e.currentTarget);
+      if (corners) usePlaybackStore.setState({ ultraBlurColors: corners });
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);
@@ -126,8 +135,9 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
         if (!palette || usePlaybackStore.getState().currentTrack) return;
         const [r, g, b] = accentFromPalette(palette);
         applyAccent(r, g, b);
-        const blur = blurColorsFromPalette(palette);
-        usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blur });
+        // Palette feeds the accent + DB cache only; the UltraBlur corners
+        // come from the server-provided colours in the effect above.
+        usePlaybackStore.setState({ vibrantPalette: palette });
         if (album) setAlbumPalette(album.ratingKey, palette).catch(() => {});
       });
     },
