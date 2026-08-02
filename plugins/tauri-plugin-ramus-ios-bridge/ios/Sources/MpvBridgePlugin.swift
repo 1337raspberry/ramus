@@ -23,7 +23,6 @@ class MpvBridgePlugin: Plugin {
     private var nowPlaying: NowPlayingBridge?
     private weak var webView: WKWebView?
     private var searchBar: UISearchBar?
-    private var allowEndEditing = false
     private var interruptionObserver: NSObjectProtocol?
     private var pathMonitor: NWPathMonitor?
     private let pathMonitorQueue = DispatchQueue(label: "com.raspsoft.ramus.path-monitor")
@@ -505,19 +504,16 @@ extension MpvBridgePlugin: UISearchBarDelegate {
     }
 
     func searchBarShouldEndEditing(_ searchBar: UISearchBar) -> Bool {
-        if allowEndEditing { return true }
-        // User tapped outside (e.g. on a search result). Yank the bar
-        // before UIKit transfers first-responder to the WKWebView.
-        removeSearchBar()
-        return false
+        // Dismiss the keyboard but keep the bar mounted — the search view
+        // is still open (scrolling results, expanding a section), so the
+        // user must be able to edit the query or hit Cancel. The bar is
+        // only removed by Cancel or an explicit hideNativeSearchBar
+        // (which fires when the search view unmounts after navigation).
+        true
     }
 
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
-        // Flag lets shouldEndEditing return true so resignFirstResponder
-        // dismisses the keyboard normally, keeping the bar visible.
-        allowEndEditing = true
         searchBar.resignFirstResponder()
-        allowEndEditing = false
     }
 
     func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
