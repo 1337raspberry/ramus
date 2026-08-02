@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Album } from "../lib/types";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useLibraryStore } from "../stores/libraryStore";
@@ -95,50 +96,58 @@ export default memo(function MobileAlbumCard({ album }: Props) {
         <div className="mobile-album-year">{album.year}</div>
       </button>
 
-      {sheetOpen && (
-        <div
-          className="mobile-action-sheet-backdrop"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setSheetOpen(false);
-          }}
-        >
-          <div className="mobile-action-sheet">
-            <div className="mobile-action-sheet-group">
-              <button
-                onClick={() => {
-                  setSheetOpen(false);
-                  playAlbum(album);
-                }}
-              >
-                Play
+      {/* Portal to body: the card lives inside a virtualizer row that is
+          positioned with a CSS transform, and a transformed ancestor
+          becomes the containing block for position:fixed — without the
+          portal the "full-screen" backdrop and sheet lay out relative to
+          the row (sheet clipped on the top row, darkening cut off at the
+          row's bottom edge). */}
+      {sheetOpen &&
+        createPortal(
+          <div
+            className="mobile-action-sheet-backdrop"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setSheetOpen(false);
+            }}
+          >
+            <div className="mobile-action-sheet">
+              <div className="mobile-action-sheet-group">
+                <button
+                  onClick={() => {
+                    setSheetOpen(false);
+                    playAlbum(album);
+                  }}
+                >
+                  Play
+                </button>
+                <button
+                  onClick={() => {
+                    setSheetOpen(false);
+                    queueTracks("next").catch(() => {});
+                  }}
+                >
+                  Play Next
+                </button>
+                <button
+                  onClick={() => {
+                    setSheetOpen(false);
+                    queueTracks("append").catch(() => {});
+                  }}
+                >
+                  Add to Queue
+                </button>
+                <AlbumDownloadMenuItem
+                  albumRatingKey={album.ratingKey}
+                  onDone={() => setSheetOpen(false)}
+                />
+              </div>
+              <button className="mobile-action-sheet-cancel" onClick={() => setSheetOpen(false)}>
+                Cancel
               </button>
-              <button
-                onClick={() => {
-                  setSheetOpen(false);
-                  queueTracks("next").catch(() => {});
-                }}
-              >
-                Play Next
-              </button>
-              <button
-                onClick={() => {
-                  setSheetOpen(false);
-                  queueTracks("append").catch(() => {});
-                }}
-              >
-                Add to Queue
-              </button>
-              <AlbumDownloadMenuItem
-                albumRatingKey={album.ratingKey}
-                onDone={() => setSheetOpen(false)}
-              />
             </div>
-            <button className="mobile-action-sheet-cancel" onClick={() => setSheetOpen(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 });
