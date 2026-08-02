@@ -241,6 +241,8 @@ If you've found a vulnerability, please **don't open a public issue**. See [SECU
 
 - Speaking of colour, because we're using tauri, each individual platform uses it's own native webview/kit/etc and each one treats the 4 way background gradient (and dithering/banding reduction of it) differently. Looks great on apple, pretty good on windows, but Webkitgtk on linux is particularly poor tbh. We've got a manual dither pattern only on linux to try and cover that up a bit but its not perfect. How much it bothers you may vary.
 
+- Album matching in search is limited to 50k. I'll fix it properly one day but for now if you have a library over 50k albums 1) nice 2) you might see inconsistencies in search.
+
 - I want to implement the new JWT short-lived token auth system that plex has recently rolled out, but as far as I can tell it only applies to plex.tv auth, not PMS server auth, so that token is always going to be perma and long standing. Mixing the two isn't ideal and is only really half a solution and requires different approaches to auth depending on what token we are talking about, so when that _is_ fully baked into PMS, i would like to roll that out. No harm in extra hardening. 
   
   </details>

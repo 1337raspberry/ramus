@@ -46,7 +46,10 @@ const FUZZY_SIM_THRESHOLD: f64 = 0.75;
 /// Queries shorter than this never fuzzy-match (too noisy).
 const FUZZY_MIN_QUERY_LEN: usize = 4;
 
-const ALBUM_CANDIDATE_CAP: usize = 20_000;
+// KNOWN LIMIT: album text matching only sees this many candidate rows
+// (unfiltered, arbitrary order), so libraries beyond it can miss matches.
+// Documented in the README's limitations section.
+const ALBUM_CANDIDATE_CAP: usize = 50_000;
 const TRACK_FUZZY_CANDIDATE_CAP: usize = 5_000;
 
 /// A query string pre-folded for comparison, with its whitespace tokens.
