@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
-import { usePlaybackStore } from "../stores/playbackStore";
+import {
+  usePlaybackStore,
+  applyUltraBlurColors,
+  resetUltraBlurGate,
+  ultraBlurColorsGen,
+} from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import {
   ART_SIZE,
@@ -105,14 +110,20 @@ export default function SuggestionView() {
     // Clear the previous suggestion's palette so handleArtLoad falls
     // through to extractPalette() for the new image.
     usePlaybackStore.setState({ vibrantPalette: null, ultraBlurColors: null });
+    // New suggestion = new write-gate generation: a slower colour fetch
+    // for a previous suggestion (reroll mashing) can no longer land late.
+    resetUltraBlurGate();
+    const gen = ultraBlurColorsGen();
     getAlbumColors(album.ratingKey)
       .then((result) => {
         if (result.palette) {
           usePlaybackStore.setState({ vibrantPalette: result.palette });
         }
-        const blur =
-          result.colors ?? (result.palette ? blurColorsFromPalette(result.palette) : null);
-        if (blur) usePlaybackStore.setState({ ultraBlurColors: blur });
+        if (result.colors) {
+          applyUltraBlurColors(result.colors, "server", gen);
+        } else if (result.palette) {
+          applyUltraBlurColors(blurColorsFromPalette(result.palette), "palette", gen);
+        }
       })
       .catch(() => {});
   }, [album]);
@@ -125,7 +136,7 @@ export default function SuggestionView() {
       // lib/blurArt.ts). Independent of the palette cache below, which
       // only feeds the accent.
       const corners = extractCornerColors(e.currentTarget);
-      if (corners) usePlaybackStore.setState({ ultraBlurColors: corners });
+      if (corners) applyUltraBlurColors(corners, "extracted");
       // Skip when a palette was already loaded from the DB cache.
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {

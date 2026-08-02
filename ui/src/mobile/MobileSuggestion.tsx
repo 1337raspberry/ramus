@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
-import { usePlaybackStore } from "../stores/playbackStore";
+import {
+  usePlaybackStore,
+  applyUltraBlurColors,
+  resetUltraBlurGate,
+  ultraBlurColorsGen,
+} from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import {
   ART_SIZE,
@@ -100,17 +105,23 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
     const isPlaying = !!usePlaybackStore.getState().currentTrack;
     if (!isPlaying) {
       usePlaybackStore.setState({ vibrantPalette: null, ultraBlurColors: null });
+      // New suggestion = new write-gate generation: a slower colour fetch
+      // for a previous suggestion (reroll mashing) can no longer land late.
+      resetUltraBlurGate();
+      const gen = ultraBlurColorsGen();
       getAlbumColors(album.ratingKey)
         .then((result) => {
           if (usePlaybackStore.getState().currentTrack) return;
           if (result.palette) {
             usePlaybackStore.setState({ vibrantPalette: result.palette });
           }
-          // Server-provided UltraBlur corners take precedence; the
-          // palette-derived mapping is only a fallback.
-          const blur =
-            result.colors ?? (result.palette ? blurColorsFromPalette(result.palette) : null);
-          if (blur) usePlaybackStore.setState({ ultraBlurColors: blur });
+          // Server-provided UltraBlur corners beat the palette fallback;
+          // the gate keeps both below a landed art extraction.
+          if (result.colors) {
+            applyUltraBlurColors(result.colors, "server", gen);
+          } else if (result.palette) {
+            applyUltraBlurColors(blurColorsFromPalette(result.palette), "palette", gen);
+          }
         })
         .catch(() => {});
     }
@@ -124,7 +135,7 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
       // lib/blurArt.ts). Independent of the palette cache below, which
       // only feeds the accent.
       const corners = extractCornerColors(e.currentTarget);
-      if (corners) usePlaybackStore.setState({ ultraBlurColors: corners });
+      if (corners) applyUltraBlurColors(corners, "extracted");
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);

@@ -152,8 +152,9 @@ textarea {
  * first-listed layer on top (front-to-back in declaration order).
  * Order: TL → TR → BR → BL. Top-left dominates wherever opaque;
  * the other three show through where TL has faded. The baked
- * brightness (0.9) and saturation (1.2) in
- * `UltraBlurBackground.tsx` were tuned against this ordering.
+ * BRIGHTNESS/SATURATION constants in `UltraBlurBackground.tsx`
+ * were tuned against this ordering (and against the extraction-side
+ * chroma cap in `lib/blurArt.ts` — see the comments at both sites).
  * Reordering or switching to a symmetric blend mode will change
  * every preset and requires a full re-tuning pass.
  */

@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import { usePlaybackStore } from "../stores/playbackStore";
+import { usePlaybackStore, applyUltraBlurColors } from "../stores/playbackStore";
 import { ART_SIZE, setAlbumPalette } from "../lib/commands";
 import { extractPalette, accentFromPalette } from "../lib/vibrantColor";
 import { extractCornerColors } from "../lib/blurArt";
@@ -80,7 +80,7 @@ export default function NowPlayingView({
       // lib/blurArt.ts). Independent of the palette cache below, which
       // only feeds the accent.
       const corners = extractCornerColors(img);
-      if (corners) usePlaybackStore.setState({ ultraBlurColors: corners });
+      if (corners) applyUltraBlurColors(corners, "extracted");
       // Skip extraction when a palette is already cached via getAlbumColors.
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {

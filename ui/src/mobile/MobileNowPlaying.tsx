@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePlaybackStore } from "../stores/playbackStore";
+import { usePlaybackStore, applyUltraBlurColors } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useGenreInfoStore } from "../stores/genreInfoStore";
 import {
@@ -152,7 +152,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
       // lib/blurArt.ts). Independent of the palette cache below, which
       // only feeds the accent.
       const corners = extractCornerColors(img);
-      if (corners) usePlaybackStore.setState({ ultraBlurColors: corners });
+      if (corners) applyUltraBlurColors(corners, "extracted");
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);

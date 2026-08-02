@@ -145,6 +145,51 @@ let spectrumGen = 0;
 // every track change; each `loadLyrics` captures it and drops a stale result.
 let lyricsGen = 0;
 
+// --- UltraBlur write gate ---
+//
+// `ultraBlurColors` has multiple unguarded async writers (the DB
+// instant-paint fetch and the art-decode extraction across several
+// components) with an intended priority: art-derived extraction beats
+// server-provided colours beats palette-derived fallback. Because the
+// writers race (a cached image can decode BEFORE the DB round-trip
+// resolves), plain last-write-wins frequently inverts that priority and
+// the coarser colours stick for the whole track. All writes therefore go
+// through `applyUltraBlurColors`, which enforces:
+//   1. generation: a write captured under an older generation (previous
+//      track / previous suggestion) is dropped, and
+//   2. rank: within a generation, a lower-priority source never
+//      overwrites a higher-priority one.
+let ultraBlurGen = 0;
+let ultraBlurRank = -1;
+
+const ULTRABLUR_RANK = { palette: 0, server: 1, extracted: 2 } as const;
+export type UltraBlurSource = keyof typeof ULTRABLUR_RANK;
+
+/** Current generation — capture BEFORE starting an async fetch and pass
+ * back to `applyUltraBlurColors` so a stale resolution is dropped. */
+export function ultraBlurColorsGen(): number {
+  return ultraBlurGen;
+}
+
+/** Open a new generation (track change / suggestion change): any
+ * in-flight writes captured under the old generation become no-ops. */
+export function resetUltraBlurGate(): void {
+  ultraBlurGen += 1;
+  ultraBlurRank = -1;
+}
+
+export function applyUltraBlurColors(
+  colors: UltraBlurColors,
+  source: UltraBlurSource,
+  gen: number = ultraBlurGen,
+): void {
+  if (gen !== ultraBlurGen) return;
+  const rank = ULTRABLUR_RANK[source];
+  if (rank < ultraBlurRank) return;
+  ultraBlurRank = rank;
+  usePlaybackStore.setState({ ultraBlurColors: colors });
+}
+
 export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   status: "stopped",
   currentTrack: null,
@@ -180,10 +225,15 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     const trackChanged = track?.ratingKey !== prev?.ratingKey;
 
     // Invalidate in-flight spectrum + lyrics refreshes so stale data from the
-    // previous track cannot land on the new one.
+    // previous track cannot land on the new one. UltraBlur colours reset per
+    // ALBUM, not per track: on a same-album track change the art (and the
+    // views' lastAccentThumb guard) is unchanged, so extraction never
+    // re-runs — reopening the gate would just let the coarser instant-paint
+    // colours displace the landed art-derived ones mid-album.
     if (trackChanged) {
       spectrumGen += 1;
       lyricsGen += 1;
+      if (track?.albumKey !== prev?.albumKey) resetUltraBlurGate();
     }
 
     set({
@@ -223,6 +273,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         getAlbumGenres(track.albumKey)
           .then((genres) => set({ currentGenres: genres }))
           .catch(() => set({ currentGenres: [] }));
+        const blurGen = ultraBlurColorsGen();
         getAlbumColors(track.albumKey)
           .then((result) => {
             if (result.palette) {
@@ -234,13 +285,16 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
               applyAccent(r, g, b);
               set({ vibrantPalette: result.palette });
             }
-            // Server-provided UltraBlur corners are spatially derived from
-            // the artwork (each corner reflects that region of the image),
-            // so they take precedence; the palette-derived mapping is only
-            // a fallback when the server has none.
-            const blur =
-              result.colors ?? (result.palette ? blurColorsFromPalette(result.palette) : null);
-            if (blur) set({ ultraBlurColors: blur });
+            // Instant paint until the art decodes: server colours beat the
+            // palette-derived mapping, and the write gate stops this
+            // resolution from clobbering an already-landed art-derived
+            // extraction (cached art can decode before this IPC round-trip
+            // resolves) or from landing on a later track.
+            if (result.colors) {
+              applyUltraBlurColors(result.colors, "server", blurGen);
+            } else if (result.palette) {
+              applyUltraBlurColors(blurColorsFromPalette(result.palette), "palette", blurGen);
+            }
           })
           .catch(() => {});
       } else {

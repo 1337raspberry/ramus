@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePlaybackStore } from "../stores/playbackStore";
+import {
+  usePlaybackStore,
+  applyUltraBlurColors,
+  resetUltraBlurGate,
+  ultraBlurColorsGen,
+} from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { ART_SIZE, setAlbumPalette, getAlbumGenres, getAlbumColors } from "../lib/commands";
 import { togglePlayPause, nextTrack, previousTrack } from "../lib/commands";
-import { extractPalette, accentFromPalette } from "../lib/vibrantColor";
+import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import { extractCornerColors } from "../lib/blurArt";
 import { applyAccent } from "../lib/accent";
 import { useArtUrl } from "../lib/useArtUrl";
@@ -152,15 +157,26 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
     }
   }, [suggestion]);
 
-  // Server-provided UltraBlur corners take precedence for the suggestion
-  // background (spatially derived from the artwork); the palette-derived
-  // mapping in handleSuggestionArtLoad is only a fallback.
+  // Instant-paint colours for the suggestion card (server colours, else
+  // palette fallback), gated on nothing playing: `suggestion` can be set
+  // while a track plays (sidebar Suggest button) and the card itself only
+  // renders in the stopped state — without the guard this repainted the
+  // playing track's background with the suggestion's colours.
   useEffect(() => {
     if (!suggestion) return;
+    if (usePlaybackStore.getState().currentTrack) return;
+    resetUltraBlurGate();
+    const gen = ultraBlurColorsGen();
     getAlbumColors(suggestion.ratingKey)
       .then((result) => {
+        if (usePlaybackStore.getState().currentTrack) return;
+        if (result.palette) {
+          usePlaybackStore.setState({ vibrantPalette: result.palette });
+        }
         if (result.colors) {
-          usePlaybackStore.setState({ ultraBlurColors: result.colors });
+          applyUltraBlurColors(result.colors, "server", gen);
+        } else if (result.palette) {
+          applyUltraBlurColors(blurColorsFromPalette(result.palette), "palette", gen);
         }
       })
       .catch(() => {});
@@ -172,7 +188,7 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
       // paint the moment the art decodes (spatial extraction, see
       // lib/blurArt.ts). The palette below only feeds the accent.
       const corners = extractCornerColors(e.currentTarget);
-      if (corners) usePlaybackStore.setState({ ultraBlurColors: corners });
+      if (corners) applyUltraBlurColors(corners, "extracted");
       extractPalette(e.currentTarget).then((palette) => {
         if (!palette) return;
         const [r, g, b] = accentFromPalette(palette);
