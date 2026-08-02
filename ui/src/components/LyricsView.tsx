@@ -16,6 +16,10 @@ export default function LyricsView({ lyrics, onSeek, onDismiss }: Props) {
   const lastActiveRef = useRef(-1);
 
   const active = activeLineIndex(lyrics, position);
+  // Unsynced lyrics have no active line to highlight; flag the container
+  // so styling can keep every line readable instead of dimming them all
+  // as "upcoming".
+  const anySynced = lyrics.lines.some((l) => l.timestamp !== null);
 
   // Auto-scroll only when the active line changes.
   useEffect(() => {
@@ -38,19 +42,23 @@ export default function LyricsView({ lyrics, onSeek, onDismiss }: Props) {
   };
 
   return (
-    <div className="lyrics-overlay" onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`lyrics-overlay${anySynced ? "" : " unsynced"}`}
+      onClick={(e) => e.stopPropagation()}
+    >
       <button className="lyrics-close" onClick={onDismiss}>
         <IconClose size={14} />
       </button>
       <div className="lyrics-scroll" ref={scrollRef}>
         {lyrics.lines.map((line, i) => {
           const isActive = active === i;
+          const isPast = active >= 0 && i < active;
           const isSynced = line.timestamp !== null;
           return (
             <div
               key={line.id}
               data-line-index={i}
-              className={`lyrics-line${isActive ? " active" : ""}${isSynced ? " synced" : ""}${flashId === line.id ? " flash" : ""}`}
+              className={`lyrics-line${isActive ? " active" : ""}${isPast ? " past" : ""}${isSynced ? " synced" : ""}${flashId === line.id ? " flash" : ""}`}
               onClick={() => handleLineTap(i)}
             >
               {line.text}

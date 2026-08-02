@@ -333,6 +333,15 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     if (el) setMainMinHeight(el.clientHeight);
   }, [expanded, track?.ratingKey]);
 
+  // Entering lyrics mode pins the body (overflow: hidden) — snap any
+  // existing scroll offset back to the top so the fixed lyrics layout
+  // isn't stuck half-scrolled with the Up Next queue peeking through.
+  useEffect(() => {
+    if (showLyrics && sheetBodyRef.current) {
+      sheetBodyRef.current.scrollTop = 0;
+    }
+  }, [showLyrics]);
+
   useEffect(() => {
     const el = sheetHeaderRef.current;
     if (!el) return;
@@ -606,19 +615,28 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
         </div>
         <header ref={sheetHeaderRef} className="mobile-sheet-header">
           <div className="mobile-sheet-hint-bar" />
-          <button
-            className={`mobile-sheet-fav${albumFav ? " active" : ""}`}
-            onClick={handleAlbumFavToggle}
-            aria-label={albumFav ? "Remove album favourite" : "Favourite album"}
-            style={{ top: -6 }}
-          >
-            {albumFav ? <IconStarFilled /> : <IconStarEmpty />}
-          </button>
+          {!showLyrics && (
+            <button
+              className={`mobile-sheet-fav${albumFav ? " active" : ""}`}
+              onClick={handleAlbumFavToggle}
+              aria-label={albumFav ? "Remove album favourite" : "Favourite album"}
+              style={{ top: -6 }}
+            >
+              {albumFav ? <IconStarFilled /> : <IconStarEmpty />}
+            </button>
+          )}
         </header>
-        <div className="mobile-sheet-body" ref={sheetBodyRef}>
+        <div
+          className={`mobile-sheet-body${showLyrics ? " lyrics-active" : ""}`}
+          ref={sheetBodyRef}
+        >
           <div
-            className="mobile-sheet-main"
-            style={mainMinHeight ? { minHeight: mainMinHeight } : undefined}
+            className={`mobile-sheet-main${showLyrics ? " lyrics-mode" : ""}`}
+            // Lyrics mode needs a DEFINITE height (CSS height: 100%) for
+            // the grid's 1fr lyrics row to constrain its content — with
+            // only a min-height the row sizes to content and pushes the
+            // transport below the fold.
+            style={mainMinHeight && !showLyrics ? { minHeight: mainMinHeight } : undefined}
           >
             <div ref={artRef} className="mobile-sheet-art" style={{ marginBottom: 12 }}>
               {artSrc && !artErr ? (
@@ -635,8 +653,14 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                   <IconMusicNote size={64} />
                 </div>
               )}
-              <LyricsOverlay />
             </div>
+
+            {/* Sibling of the art box (not inside it): lyrics mode turns
+                the main container into a grid where the art shrinks to a
+                thumbnail and the overlay takes the whole middle row. The
+                art <img> stays mounted so palette extraction keeps
+                working across track changes while lyrics are open. */}
+            <LyricsOverlay />
 
             <div className="mobile-sheet-title" style={{ fontSize: 16 }}>
               {track.title}
@@ -650,6 +674,15 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
             >
               {hasTrackArtist ? `${track.artistName} (${track.trackArtist})` : track.artistName}
             </div>
+            {showLyrics && (
+              <button
+                className="mobile-lyrics-exit"
+                onClick={toggleLyrics}
+                aria-label="Hide lyrics"
+              >
+                <IconClose size={16} />
+              </button>
+            )}
             {nowPlayingAlbum && (
               <div
                 className="mobile-sheet-album"

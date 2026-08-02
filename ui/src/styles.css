@@ -6044,6 +6044,171 @@ body.is-fullscreen .focus-body {
   padding: 8px 0;
 }
 
+/* --- Mobile lyrics mode ---
+   With lyrics open the sheet regrids: album art becomes a header
+   thumbnail, title/artist sit beside it, the lyrics overlay takes the
+   whole middle, and only seek bar + transport remain below. Pure CSS
+   re-layout so the art <img> (palette source) never re-mounts. */
+/* Lyrics own all scrolling; the body must not scroll underneath. */
+.mobile-sheet-body.lyrics-active {
+  overflow: hidden;
+  padding-bottom: 12px;
+}
+
+.mobile-sheet-main.lyrics-mode {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 40px;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "art title close"
+    "art artist close"
+    "lyrics lyrics lyrics"
+    "wave wave wave"
+    "transport transport transport";
+  column-gap: 12px;
+  row-gap: 0;
+  align-items: center;
+  text-align: left;
+}
+
+/* Dedicated exit button in the header row, in line with title/artist. */
+.mobile-lyrics-exit {
+  grid-area: close;
+  justify-self: end;
+  align-self: center;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+}
+
+.mobile-sheet-main.lyrics-mode .mobile-sheet-art {
+  grid-area: art;
+  --_art-size: 44px;
+  margin-bottom: 0 !important; /* beats the inline marginBottom used in normal layout */
+  border-radius: 8px;
+}
+
+.mobile-sheet-main.lyrics-mode .mobile-sheet-title {
+  grid-area: title;
+  align-self: end;
+  text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-sheet-main.lyrics-mode .mobile-sheet-artist {
+  grid-area: artist;
+  align-self: start;
+  text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-sheet-main.lyrics-mode .mobile-sheet-album,
+.mobile-sheet-main.lyrics-mode .mobile-sheet-actions,
+.mobile-sheet-main.lyrics-mode .mobile-sheet-bottom {
+  display: none;
+}
+
+.mobile-sheet-main.lyrics-mode .np-lyrics-overlay {
+  grid-area: lyrics;
+  position: relative;
+  inset: auto;
+  height: 100%;
+  min-height: 0;
+  border-radius: 0;
+  /* Full-bleed past the sheet body's 24px side padding. */
+  margin: 8px -24px 0;
+  width: calc(100% + 48px);
+}
+
+.mobile-sheet-main.lyrics-mode .lyrics-overlay {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.mobile-sheet-main.lyrics-mode .lyrics-scroll {
+  padding: 28px 24px 44px;
+  gap: 10px;
+  overscroll-behavior: contain;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 28px,
+    #000 calc(100% - 28px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 28px,
+    #000 calc(100% - 28px),
+    transparent 100%
+  );
+}
+
+.mobile-sheet-main.lyrics-mode .lyrics-line {
+  text-align: left;
+  font-size: clamp(22px, 6.5vw, 30px);
+  font-weight: 700;
+  line-height: 1.32;
+  letter-spacing: -0.01em;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 3px 0;
+}
+
+.mobile-sheet-main.lyrics-mode .lyrics-line.past {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.mobile-sheet-main.lyrics-mode .lyrics-line.active {
+  color: var(--accent);
+}
+
+/* Unsynced lyrics have no active line — keep everything readable. */
+.mobile-sheet-main.lyrics-mode .lyrics-overlay.unsynced .lyrics-line {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* The overlay's built-in close is superseded by .mobile-lyrics-exit in
+   the header row. */
+.mobile-sheet-main.lyrics-mode .lyrics-close {
+  display: none;
+}
+
+.mobile-sheet-main.lyrics-mode .lyrics-source {
+  text-align: left;
+  font-size: 11px;
+  padding: 18px 0 0;
+}
+
+.mobile-sheet-main.lyrics-mode .lyrics-loading,
+.mobile-sheet-main.lyrics-mode .lyrics-empty {
+  background: transparent;
+  font-size: 15px;
+}
+
+.mobile-sheet-main.lyrics-mode .mobile-sheet-wave {
+  grid-area: wave;
+}
+
+.mobile-sheet-main.lyrics-mode .mobile-sheet-transport {
+  grid-area: transport;
+}
+
 .mobile-sheet-art {
   --_art-size: clamp(
     160px,
