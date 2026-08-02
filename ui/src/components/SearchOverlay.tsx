@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ART_SIZE,
   search as searchCmd,
@@ -12,8 +12,23 @@ import {
 } from "../lib/commands";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
-import type { SearchResult, Track } from "../lib/types";
-import { IconMusicNote, IconPlay, IconStarFilled, IconMoreDots, IconSearch } from "./Icons";
+import type {
+  SearchAlbumResult,
+  SearchArtistResult,
+  SearchGenreResult,
+  SearchResponse,
+  SearchSection,
+  SearchTrackResult,
+  Track,
+} from "../lib/types";
+import {
+  IconMusicNote,
+  IconPlay,
+  IconStarFilled,
+  IconMoreDots,
+  IconSearch,
+  IconWave,
+} from "./Icons";
 import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "./DownloadMenuItems";
 
 interface Props {
@@ -21,7 +36,53 @@ interface Props {
   initialQuery?: string;
 }
 
-function SearchThumb({ artPath, onPlay }: { artPath: string | null; onPlay: () => void }) {
+const SECTION_TITLES: Record<SearchSection["kind"], string> = {
+  artists: "Artists",
+  albums: "Albums",
+  tracks: "Tracks",
+  genres: "Genres",
+};
+
+/** One selectable row, flattened across sections for keyboard nav. */
+type FlatRow =
+  | { kind: "artist"; id: string; item: SearchArtistResult }
+  | { kind: "album"; id: string; item: SearchAlbumResult }
+  | { kind: "track"; id: string; item: SearchTrackResult }
+  | { kind: "genre"; id: string; item: SearchGenreResult };
+
+function flattenSections(sections: SearchSection[]): FlatRow[] {
+  const rows: FlatRow[] = [];
+  for (const section of sections) {
+    switch (section.kind) {
+      case "artists":
+        for (const item of section.items)
+          rows.push({ kind: "artist", id: `ar-${item.sourceId}`, item });
+        break;
+      case "albums":
+        for (const item of section.items)
+          rows.push({ kind: "album", id: `al-${item.sourceId}`, item });
+        break;
+      case "tracks":
+        for (const item of section.items)
+          rows.push({ kind: "track", id: `tr-${item.sourceId}`, item });
+        break;
+      case "genres":
+        for (const item of section.items) rows.push({ kind: "genre", id: `ge-${item.name}`, item });
+        break;
+    }
+  }
+  return rows;
+}
+
+function SearchThumb({
+  artPath,
+  round,
+  onPlay,
+}: {
+  artPath: string | null;
+  round?: boolean;
+  onPlay?: () => void;
+}) {
   const [src, setSrc] = useState<string | null>(null);
   const [err, setErr] = useState(false);
 
@@ -41,7 +102,7 @@ function SearchThumb({ artPath, onPlay }: { artPath: string | null; onPlay: () =
   }, [artPath]);
 
   return (
-    <div className="search-thumb-wrap">
+    <div className={`search-thumb-wrap${round ? " search-thumb-round" : ""}`}>
       {src && !err ? (
         <img className="search-thumb" src={src} alt="" onError={() => setErr(true)} />
       ) : (
@@ -49,24 +110,25 @@ function SearchThumb({ artPath, onPlay }: { artPath: string | null; onPlay: () =
           <IconMusicNote />
         </div>
       )}
-      <button
-        className="search-thumb-play"
-        onClick={(e) => {
-          e.stopPropagation();
-          onPlay();
-        }}
-        title="Play"
-      >
-        <IconPlay />
-      </button>
+      {onPlay && (
+        <button
+          className="search-thumb-play"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPlay();
+          }}
+          title="Play"
+        >
+          <IconPlay />
+        </button>
+      )}
     </div>
   );
 }
 
 /** Fetch the full Track from the DB and run an action with it. */
-async function withFullTrack(result: SearchResult, action: (track: Track) => void | Promise<void>) {
-  if (!result.trackSourceId) return;
-  const track = await getTrack(result.trackSourceId);
+async function withFullTrack(sourceId: string, action: (track: Track) => void | Promise<void>) {
+  const track = await getTrack(sourceId);
   if (track) await action(track);
 }
 
@@ -78,17 +140,17 @@ function refreshQueue() {
 
 export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
   const [query, setQuery] = useState(initialQuery ?? "");
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [response, setResponse] = useState<SearchResponse | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searching, setSearching] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const hasResults = results.length > 0;
-  const albums = results.filter((r) => r.kind === "album");
-  const tracks = results.filter((r) => r.kind === "track");
-  const ordered = [...albums, ...tracks];
+  const sections = useMemo(() => response?.sections ?? [], [response]);
+  const flat = useMemo(() => flattenSections(sections), [sections]);
+  const hasResults = flat.length > 0;
+  const hasAlbums = sections.some((s) => s.kind === "albums");
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -109,7 +171,7 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const trimmed = query.trim();
     if (!trimmed || /^[/@!%#]$/.test(trimmed) || trimmed.toLowerCase() === "col:") {
-      setResults([]);
+      setResponse(null);
       setSelectedIndex(0);
       // Reset the spinner — clearing the input cancels the pending
       // timeout that would otherwise have flipped it back to false,
@@ -121,7 +183,7 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
     debounceRef.current = setTimeout(() => {
       searchCmd(query)
         .then((res) => {
-          setResults(res);
+          setResponse(res);
           setSelectedIndex(0);
           setSearching(false);
         })
@@ -133,70 +195,85 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
   }, [query]);
 
   const handleSelect = useCallback(
-    (result: SearchResult) => {
+    (row: FlatRow) => {
       onDismiss();
-      if (result.kind === "album") {
-        const store = useLibraryStore.getState();
-        store.openAlbumDetail({
-          ratingKey: result.albumSourceId,
-          title: result.albumTitle,
-          artistName: result.artistName,
-          year: result.year,
-          thumb: result.albumArtPath,
-          genres: [],
-          collections: [],
-          isFavourite: result.isFavourite,
-          hasFavouriteTrack: false,
-          studio: null,
-          addedAt: null,
-          lastViewedAt: null,
-          viewCount: null,
-          format: null,
-          artistCountry: null,
-        });
-      } else {
-        withFullTrack(result, (t) => playTracks([t], 0)).catch(() => {});
+      const store = useLibraryStore.getState();
+      switch (row.kind) {
+        case "artist":
+          void store.loadAlbumsForArtistName(row.item.name);
+          break;
+        case "album":
+          store.openAlbumDetail({
+            ratingKey: row.item.sourceId,
+            title: row.item.title,
+            artistName: row.item.artistName,
+            year: row.item.year,
+            thumb: row.item.artUrl,
+            genres: [],
+            collections: [],
+            isFavourite: row.item.isFavourite,
+            hasFavouriteTrack: false,
+            studio: null,
+            addedAt: null,
+            lastViewedAt: null,
+            viewCount: null,
+            format: null,
+            artistCountry: null,
+          });
+          break;
+        case "track":
+          withFullTrack(row.item.sourceId, (t) => playTracks([t], 0)).catch(() => {});
+          break;
+        case "genre":
+          void store.selectGenreByName(row.item.name);
+          break;
       }
     },
     [onDismiss],
   );
 
-  const handlePlay = useCallback(
-    (result: SearchResult) => {
-      if (result.kind === "album") {
-        getTracksForAlbum(result.albumSourceId)
-          .then((tracks) => {
-            if (tracks.length > 0) playTracks(tracks, 0);
-          })
-          .catch(() => {});
-      } else {
-        withFullTrack(result, (t) => playTracks([t], 0)).catch(() => {});
-      }
+  const handlePlayAlbum = useCallback(
+    (item: SearchAlbumResult) => {
+      getTracksForAlbum(item.sourceId)
+        .then((tracks) => {
+          if (tracks.length > 0) playTracks(tracks, 0);
+        })
+        .catch(() => {});
       onDismiss();
     },
     [onDismiss],
   );
 
-  const handlePlayNext = useCallback((result: SearchResult) => {
-    if (result.kind === "album") {
-      getTracksForAlbum(result.albumSourceId)
+  const handlePlayTrack = useCallback(
+    (item: SearchTrackResult) => {
+      withFullTrack(item.sourceId, (t) => playTracks([t], 0)).catch(() => {});
+      onDismiss();
+    },
+    [onDismiss],
+  );
+
+  const handlePlayNext = useCallback((row: FlatRow) => {
+    if (row.kind === "album") {
+      getTracksForAlbum(row.item.sourceId)
         .then((tracks) => insertNext(tracks))
         .then(refreshQueue)
         .catch(() => {});
-    } else {
-      withFullTrack(result, (t) => insertNext([t]).then(refreshQueue)).catch(() => {});
+    } else if (row.kind === "track") {
+      withFullTrack(row.item.sourceId, (t) => insertNext([t]).then(refreshQueue)).catch(() => {});
     }
     setOpenMenuId(null);
   }, []);
 
-  const handleAddToQueue = useCallback((result: SearchResult) => {
-    if (result.kind === "album") {
-      getTracksForAlbum(result.albumSourceId)
+  const handleAddToQueue = useCallback((row: FlatRow) => {
+    if (row.kind === "album") {
+      getTracksForAlbum(row.item.sourceId)
         .then((tracks) => appendToQueue(tracks))
         .then(refreshQueue)
         .catch(() => {});
-    } else {
-      withFullTrack(result, (t) => appendToQueue([t]).then(refreshQueue)).catch(() => {});
+    } else if (row.kind === "track") {
+      withFullTrack(row.item.sourceId, (t) => appendToQueue([t]).then(refreshQueue)).catch(
+        () => {},
+      );
     }
     setOpenMenuId(null);
   }, []);
@@ -210,7 +287,7 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
       }
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedIndex((i) => Math.min(i + 1, ordered.length - 1));
+        setSelectedIndex((i) => Math.min(i + 1, flat.length - 1));
         return;
       }
       if (e.key === "ArrowUp") {
@@ -228,13 +305,13 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
       }
       if (e.key === "Enter") {
         e.preventDefault();
-        if (ordered[selectedIndex]) {
-          handleSelect(ordered[selectedIndex]);
+        if (flat[selectedIndex]) {
+          handleSelect(flat[selectedIndex]);
         }
         return;
       }
     },
-    [ordered, selectedIndex, onDismiss, handleSelect, query],
+    [flat, selectedIndex, onDismiss, handleSelect, query],
   );
 
   const handleBackdropClick = useCallback(
@@ -244,76 +321,123 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
     [onDismiss],
   );
 
-  const renderRow = (result: SearchResult, index: number) => {
-    const isAlbum = result.kind === "album";
-    const isMenuOpen = openMenuId === result.id;
+  const renderMenu = (row: FlatRow) => {
+    if (row.kind !== "album" && row.kind !== "track") return null;
+    const isMenuOpen = openMenuId === row.id;
+    return (
+      <div className="search-menu-wrap">
+        <button
+          className="search-dots-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpenMenuId((prev) => (prev === row.id ? null : row.id));
+          }}
+        >
+          <IconMoreDots />
+        </button>
+        {isMenuOpen && (
+          <div className="search-dropdown">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePlayNext(row);
+              }}
+            >
+              Play Next
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAddToQueue(row);
+              }}
+            >
+              Add to Queue
+            </button>
+            {row.kind === "track" ? (
+              <TrackDownloadMenuItem
+                ratingKey={row.item.sourceId}
+                onDone={() => setOpenMenuId(null)}
+              />
+            ) : (
+              <AlbumDownloadMenuItem
+                albumRatingKey={row.item.sourceId}
+                onDone={() => setOpenMenuId(null)}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderRow = (row: FlatRow, index: number) => {
+    let thumb: React.ReactNode;
+    let title: string;
+    let sub: React.ReactNode;
+    let fav = false;
+
+    switch (row.kind) {
+      case "artist":
+        thumb = <SearchThumb artPath={row.item.artUrl} round />;
+        title = row.item.name;
+        sub = row.item.albumCount === 1 ? "1 album" : `${row.item.albumCount} albums`;
+        break;
+      case "album":
+        thumb = <SearchThumb artPath={row.item.artUrl} onPlay={() => handlePlayAlbum(row.item)} />;
+        title = row.item.title;
+        sub = (
+          <>
+            {row.item.artistName}
+            {row.item.year ? ` (${row.item.year})` : ""}
+            {row.item.quality && <span className="search-quality">{row.item.quality}</span>}
+          </>
+        );
+        fav = row.item.isFavourite;
+        break;
+      case "track":
+        thumb = <SearchThumb artPath={row.item.artUrl} onPlay={() => handlePlayTrack(row.item)} />;
+        title = row.item.title;
+        sub = `${row.item.displayArtist} — ${row.item.albumTitle}`;
+        fav = row.item.isFavourite;
+        break;
+      case "genre":
+        thumb = (
+          <div className="search-thumb-wrap">
+            <div className="search-thumb search-thumb-placeholder search-genre-icon">
+              <IconWave />
+            </div>
+          </div>
+        );
+        title = row.item.name;
+        sub = row.item.albumCount === 1 ? "1 album" : `${row.item.albumCount} albums`;
+        break;
+    }
 
     return (
       <div
-        key={result.id}
+        key={row.id}
         className={`search-row${selectedIndex === index ? " selected" : ""}`}
-        onClick={() => handleSelect(result)}
+        onClick={() => handleSelect(row)}
         onMouseEnter={() => setSelectedIndex(index)}
       >
-        <SearchThumb artPath={result.albumArtPath} onPlay={() => handlePlay(result)} />
+        {thumb}
         <div className="search-row-info">
-          <div className="search-row-title">{isAlbum ? result.albumTitle : result.trackTitle}</div>
-          <div className="search-row-sub">
-            {isAlbum
-              ? `${result.artistName}${result.year ? ` (${result.year})` : ""}`
-              : `${result.trackArtist ?? result.artistName} — ${result.albumTitle}`}
-          </div>
+          <div className="search-row-title">{title}</div>
+          <div className="search-row-sub">{sub}</div>
         </div>
-        {result.isFavourite && (
+        {fav && (
           <span className="search-fav-star">
             <IconStarFilled />
           </span>
         )}
-        <div className="search-menu-wrap">
-          <button
-            className="search-dots-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpenMenuId((prev) => (prev === result.id ? null : result.id));
-            }}
-          >
-            <IconMoreDots />
-          </button>
-          {isMenuOpen && (
-            <div className="search-dropdown">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handlePlayNext(result);
-                }}
-              >
-                Play Next
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAddToQueue(result);
-                }}
-              >
-                Add to Queue
-              </button>
-              {result.kind === "track" && result.trackSourceId ? (
-                <TrackDownloadMenuItem
-                  ratingKey={result.trackSourceId}
-                  onDone={() => setOpenMenuId(null)}
-                />
-              ) : (
-                <AlbumDownloadMenuItem
-                  albumRatingKey={result.albumSourceId}
-                  onDone={() => setOpenMenuId(null)}
-                />
-              )}
-            </div>
-          )}
-        </div>
+        {renderMenu(row)}
       </div>
     );
   };
+
+  // Rows render grouped by section, but keyboard selection runs over the
+  // flattened list — track the running index across sections.
+  let runningIndex = 0;
 
   return (
     <div className="search-backdrop" onClick={handleBackdropClick}>
@@ -342,22 +466,21 @@ export default function SearchOverlay({ onDismiss, initialQuery }: Props) {
 
         {hasResults && (
           <div className="search-results">
-            {albums.length > 0 && (
-              <>
-                <div className="search-section-header">Albums</div>
-                {albums.map((r, i) => renderRow(r, i))}
-              </>
-            )}
-            {tracks.length > 0 && (
-              <>
-                <div className="search-section-header">Tracks</div>
-                {tracks.map((r, i) => renderRow(r, albums.length + i))}
-              </>
-            )}
+            {sections.map((section) => {
+              const rows = flat.slice(runningIndex, runningIndex + section.items.length);
+              const start = runningIndex;
+              runningIndex += section.items.length;
+              return (
+                <div key={section.kind}>
+                  <div className="search-section-header">{SECTION_TITLES[section.kind]}</div>
+                  {rows.map((row, i) => renderRow(row, start + i))}
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {hasResults && albums.length > 0 && (
+        {hasResults && hasAlbums && (
           <div className="search-hint">Shift+Enter to browse in grid</div>
         )}
       </div>

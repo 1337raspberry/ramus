@@ -14,7 +14,7 @@ import type {
   LyricsFetchResult,
   PlexServer,
   BookmarkDownloadEstimate,
-  SearchResult,
+  SearchResponse,
   Settings,
   SpectrumState,
   Track,
@@ -255,8 +255,8 @@ export const getSpectrum = (ratingKey: string) =>
 
 // --- Search ---
 
-export const search = (query: string, limit?: number) =>
-  invoke<SearchResult[]>("search", { query, limit });
+export const search = (query: string, sectionLimit?: number) =>
+  invoke<SearchResponse>("search", { query, sectionLimit });
 
 export const searchAlbumsForGrid = (query: string) =>
   invoke<Album[]>("search_albums_for_grid", { query });

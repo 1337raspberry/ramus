@@ -115,19 +115,57 @@ export interface LibrarySection {
   sectionType: string;
 }
 
-export interface SearchResult {
-  id: string;
-  kind: "album" | "track";
-  albumSourceId: string;
-  albumTitle: string;
+export interface SearchArtistResult {
+  sourceId: string;
+  name: string;
+  artUrl: string | null;
+  albumCount: number;
+  score: number;
+}
+
+export interface SearchAlbumResult {
+  sourceId: string;
+  title: string;
   artistName: string;
   year: number | null;
-  albumArtPath: string | null;
-  trackSourceId: string | null;
-  trackTitle: string | null;
-  trackArtist: string | null;
+  artUrl: string | null;
+  /** Album rating 0–10 (5-star display divides by 2). */
+  rating: number | null;
+  /** Display badge like "FLAC" or "MP3 320". */
+  quality: string | null;
   isFavourite: boolean;
   score: number;
+}
+
+export interface SearchTrackResult {
+  sourceId: string;
+  title: string;
+  displayArtist: string;
+  albumSourceId: string;
+  albumTitle: string;
+  artUrl: string | null;
+  /** Track user rating 0–10. */
+  rating: number | null;
+  isFavourite: boolean;
+  score: number;
+}
+
+export interface SearchGenreResult {
+  name: string;
+  albumCount: number;
+  score: number;
+}
+
+/** Discriminated section union — mirrors Rust's tagged SearchSection enum. */
+export type SearchSection =
+  | { kind: "artists"; items: SearchArtistResult[] }
+  | { kind: "albums"; items: SearchAlbumResult[] }
+  | { kind: "tracks"; items: SearchTrackResult[] }
+  | { kind: "genres"; items: SearchGenreResult[] };
+
+/** Sections arrive pre-ordered (strongest first); empty sections omitted. */
+export interface SearchResponse {
+  sections: SearchSection[];
 }
 
 import type { AlbumFilterParamsIPC } from "./filters";

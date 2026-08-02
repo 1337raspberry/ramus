@@ -145,6 +145,47 @@ pub fn redact_urls(msg: &str) -> String {
         .join(" ")
 }
 
+/// Lowercase a string and strip diacritics from common Latin letters, so
+/// search comparisons are accent-insensitive ("Asphodele" matches
+/// "Asphodèle", "Motorhead" matches "Motörhead"). Hand-rolled fold table
+/// instead of full Unicode normalization: music-library metadata is
+/// overwhelmingly Latin-script, and this avoids another dependency.
+/// Characters outside the table pass through lowercased unchanged, so
+/// non-Latin scripts still compare exactly.
+pub fn fold_diacritics(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        for lc in c.to_lowercase() {
+            match lc {
+                'à'..='å' | 'ā' | 'ă' | 'ą' => out.push('a'),
+                'æ' => out.push_str("ae"),
+                'ç' | 'ć' | 'ĉ' | 'ċ' | 'č' => out.push('c'),
+                'ď' | 'đ' | 'ð' => out.push('d'),
+                'è'..='ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' => out.push('e'),
+                'ĝ' | 'ğ' | 'ġ' | 'ģ' => out.push('g'),
+                'ĥ' | 'ħ' => out.push('h'),
+                'ì'..='ï' | 'ĩ' | 'ī' | 'ĭ' | 'į' | 'ı' => out.push('i'),
+                'ĵ' => out.push('j'),
+                'ķ' => out.push('k'),
+                'ĺ' | 'ļ' | 'ľ' | 'ŀ' | 'ł' => out.push('l'),
+                'ñ' | 'ń' | 'ņ' | 'ň' | 'ŉ' => out.push('n'),
+                'ò'..='ö' | 'ø' | 'ō' | 'ŏ' | 'ő' => out.push('o'),
+                'œ' => out.push_str("oe"),
+                'ŕ' | 'ŗ' | 'ř' => out.push('r'),
+                'ś' | 'ŝ' | 'ş' | 'š' => out.push('s'),
+                'ß' => out.push_str("ss"),
+                'ţ' | 'ť' | 'ŧ' | 'þ' => out.push('t'),
+                'ù'..='ü' | 'ũ' | 'ū' | 'ŭ' | 'ů' | 'ű' | 'ų' => out.push('u'),
+                'ŵ' => out.push('w'),
+                'ý' | 'ÿ' | 'ŷ' => out.push('y'),
+                'ź' | 'ż' | 'ž' => out.push('z'),
+                other => out.push(other),
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,5 +319,26 @@ mod tests {
         // "::" or "key:value" without "://" must pass through.
         assert_eq!(redact_urls("foo::bar baz"), "foo::bar baz");
         assert_eq!(redact_urls("key:value pair"), "key:value pair");
+    }
+
+    #[test]
+    fn test_fold_diacritics_common_accents() {
+        assert_eq!(fold_diacritics("Asphodèle"), "asphodele");
+        assert_eq!(fold_diacritics("Jours Pâles"), "jours pales");
+        assert_eq!(fold_diacritics("Motörhead"), "motorhead");
+        assert_eq!(fold_diacritics("Beyoncé"), "beyonce");
+        assert_eq!(fold_diacritics("Sigur Rós"), "sigur ros");
+        assert_eq!(fold_diacritics("Dvořák"), "dvorak");
+        assert_eq!(fold_diacritics("Du Röde"), "du rode");
+    }
+
+    #[test]
+    fn test_fold_diacritics_expansions_and_passthrough() {
+        assert_eq!(fold_diacritics("Encyclopædia"), "encyclopaedia");
+        assert_eq!(fold_diacritics("Straße"), "strasse");
+        // Plain ASCII only lowercases.
+        assert_eq!(fold_diacritics("Radiohead"), "radiohead");
+        // Non-Latin scripts pass through lowercased-unchanged.
+        assert_eq!(fold_diacritics("和平"), "和平");
     }
 }

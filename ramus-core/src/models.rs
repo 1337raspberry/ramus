@@ -126,12 +126,6 @@ impl DownloadQuality {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SearchResultKind {
-    Album,
-    Track,
-}
 
 // --- UltraBlurColors ---
 
@@ -508,22 +502,75 @@ impl Default for PlaybackConfig {
     }
 }
 
-// --- SearchResult ---
+// --- Search results ---
+
+/// Sectioned search response. Sections arrive pre-ordered (strongest
+/// section first), each internally sorted best-first; empty sections are
+/// omitted entirely.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResponse {
+    pub sections: Vec<SearchSection>,
+}
+
+/// One result section. Serializes as `{ "kind": "artists", "items": [...] }`
+/// so the frontend gets a discriminated union.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "items", rename_all = "camelCase")]
+pub enum SearchSection {
+    Artists(Vec<SearchArtistResult>),
+    Albums(Vec<SearchAlbumResult>),
+    Tracks(Vec<SearchTrackResult>),
+    Genres(Vec<SearchGenreResult>),
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SearchResult {
-    pub id: String,
-    pub kind: SearchResultKind,
-    pub album_source_id: String,
-    pub album_title: String,
+pub struct SearchArtistResult {
+    pub source_id: String,
+    pub name: String,
+    pub art_url: Option<String>,
+    pub album_count: i64,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchAlbumResult {
+    pub source_id: String,
+    pub title: String,
     pub artist_name: String,
     pub year: Option<i32>,
-    pub album_art_path: Option<String>,
-    pub track_source_id: Option<String>,
-    pub track_title: Option<String>,
-    pub track_artist: Option<String>,
+    pub art_url: Option<String>,
+    /// Album rating 0–10 (5-star display divides by 2).
+    pub rating: Option<f64>,
+    /// Display badge like "FLAC" or "MP3 320"; derived from track codec.
+    pub quality: Option<String>,
     pub is_favourite: bool,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchTrackResult {
+    pub source_id: String,
+    pub title: String,
+    /// Track-level artist when present, else the album artist.
+    pub display_artist: String,
+    pub album_source_id: String,
+    pub album_title: String,
+    pub art_url: Option<String>,
+    /// Track user rating 0–10.
+    pub rating: Option<f64>,
+    pub is_favourite: bool,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchGenreResult {
+    pub name: String,
+    pub album_count: i64,
     pub score: f64,
 }
 

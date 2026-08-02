@@ -11,13 +11,25 @@ import {
   hideNativeSearchBar,
 } from "../lib/commands";
 import { useLibraryStore } from "../stores/libraryStore";
-import type { SearchResult } from "../lib/types";
+import type {
+  SearchAlbumResult,
+  SearchArtistResult,
+  SearchGenreResult,
+  SearchResponse,
+  SearchSection,
+  SearchTrackResult,
+} from "../lib/types";
+import { addRecent, loadRecents, removeRecent, type RecentSearch } from "../lib/searchRecents";
 import {
   IconChevronLeft,
+  IconChevronDown,
+  IconChevronRight,
   IconMusicNote,
   IconClose,
   IconSearch,
   IconStarFilled,
+  IconStarEmpty,
+  IconWave,
 } from "../components/Icons";
 
 interface Props {
@@ -26,7 +38,17 @@ interface Props {
 
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
 
-function SearchThumb({ path }: { path: string | null }) {
+/** Rows shown per section before "see all" expands it. */
+const COLLAPSED_ROWS = 3;
+
+const SECTION_TITLES: Record<SearchSection["kind"], string> = {
+  artists: "Artists",
+  albums: "Albums",
+  tracks: "Tracks",
+  genres: "Genres",
+};
+
+function SearchThumb({ path, round }: { path: string | null; round?: boolean }) {
   const [src, setSrc] = useState<string | null>(null);
   const [err, setErr] = useState(false);
 
@@ -47,19 +69,39 @@ function SearchThumb({ path }: { path: string | null }) {
     };
   }, [path]);
 
+  const cls = `mobile-search-thumb${round ? " mobile-search-thumb-round" : ""}`;
   if (src && !err) {
-    return <img className="mobile-search-thumb" src={src} alt="" onError={() => setErr(true)} />;
+    return <img className={cls} src={src} alt="" onError={() => setErr(true)} />;
   }
   return (
-    <div className="mobile-search-thumb mobile-search-thumb-ph">
+    <div className={`${cls} mobile-search-thumb-ph`}>
       <IconMusicNote size={18} />
     </div>
   );
 }
 
+/** 5-star rating strip; `rating` is 0–10. */
+function Stars({ rating }: { rating: number | null }) {
+  if (rating == null || rating <= 0) return null;
+  const filled = Math.round(rating / 2);
+  return (
+    <span className="mobile-search-stars">
+      {[0, 1, 2, 3, 4].map((i) =>
+        i < filled ? <IconStarFilled key={i} size={11} /> : <IconStarEmpty key={i} size={11} />,
+      )}
+    </span>
+  );
+}
+
+function albumCountLabel(n: number) {
+  return n === 1 ? "1 album" : `${n} albums`;
+}
+
 export default function MobileSearch({ onBack }: Props) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [response, setResponse] = useState<SearchResponse | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [recents, setRecents] = useState<RecentSearch[]>(loadRecents);
   const openAlbumDetail = useLibraryStore((s) => s.openAlbumDetail);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -94,18 +136,19 @@ export default function MobileSearch({ onBack }: Props) {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!query.trim()) {
-      setResults([]);
+      setResponse(null);
+      setExpanded(new Set());
       return;
     }
     debounceRef.current = setTimeout(() => {
-      searchCmd(query.trim(), 100)
-        .then(setResults)
-        .catch(() => setResults([]));
+      searchCmd(query.trim(), 30)
+        .then((res) => {
+          setResponse(res);
+          setExpanded(new Set());
+        })
+        .catch(() => setResponse(null));
     }, 150);
   }, [query]);
-
-  const albums = results.filter((r) => r.kind === "album");
-  const tracks = results.filter((r) => r.kind === "track");
 
   const openAlbumById = async (sourceId: string) => {
     const tracksList = await getTracksForAlbum(sourceId);
@@ -116,11 +159,201 @@ export default function MobileSearch({ onBack }: Props) {
     if (album) openAlbumDetail(album);
   };
 
-  const playTrackFromResult = async (r: SearchResult) => {
-    if (!r.trackSourceId) return;
-    const track = await getTrack(r.trackSourceId);
+  const playTrackById = async (sourceId: string) => {
+    const track = await getTrack(sourceId);
     if (track) await playTracks([track], 0);
   };
+
+  const openArtist = (name: string) => {
+    // Clears searchQuery itself, which flips MobileApp out of the search
+    // view and into the artist's album grid.
+    void useLibraryStore.getState().loadAlbumsForArtistName(name);
+  };
+
+  const openGenre = (name: string) => {
+    void useLibraryStore.getState().selectGenreByName(name);
+  };
+
+  const tapArtist = (r: SearchArtistResult) => {
+    setRecents(addRecent({ kind: "artist", id: r.sourceId, name: r.name, artUrl: r.artUrl }));
+    openArtist(r.name);
+  };
+
+  const tapAlbum = (r: SearchAlbumResult) => {
+    setRecents(
+      addRecent({
+        kind: "album",
+        id: r.sourceId,
+        title: r.title,
+        artistName: r.artistName,
+        artUrl: r.artUrl,
+      }),
+    );
+    void openAlbumById(r.sourceId);
+  };
+
+  const tapTrack = (r: SearchTrackResult) => {
+    setRecents(
+      addRecent({
+        kind: "track",
+        id: r.sourceId,
+        title: r.title,
+        artist: r.displayArtist,
+        artUrl: r.artUrl,
+      }),
+    );
+    void playTrackById(r.sourceId);
+  };
+
+  const tapGenre = (r: SearchGenreResult) => {
+    setRecents(addRecent({ kind: "genre", id: r.name, name: r.name }));
+    openGenre(r.name);
+  };
+
+  const renderArtistRow = (r: SearchArtistResult) => (
+    <button key={`ar-${r.sourceId}`} className="mobile-search-row" onClick={() => tapArtist(r)}>
+      <SearchThumb path={r.artUrl} round />
+      <div className="mobile-search-lines">
+        <div className="mobile-search-primary">{r.name}</div>
+        <div className="mobile-search-secondary">{albumCountLabel(r.albumCount)}</div>
+      </div>
+    </button>
+  );
+
+  const renderAlbumRow = (r: SearchAlbumResult) => (
+    <button key={`al-${r.sourceId}`} className="mobile-search-row" onClick={() => tapAlbum(r)}>
+      <SearchThumb path={r.artUrl} />
+      <div className="mobile-search-lines">
+        <div className="mobile-search-primary">{r.title}</div>
+        <div className="mobile-search-secondary mobile-search-subrow">
+          <span className="mobile-search-subtext">{r.artistName}</span>
+          <Stars rating={r.rating} />
+          {r.quality && <span className="mobile-search-quality">{r.quality}</span>}
+        </div>
+      </div>
+      {r.isFavourite && (
+        <span className="mobile-search-fav">
+          <IconStarFilled size={16} />
+        </span>
+      )}
+    </button>
+  );
+
+  const renderTrackRow = (r: SearchTrackResult) => (
+    <button key={`tr-${r.sourceId}`} className="mobile-search-row" onClick={() => tapTrack(r)}>
+      <SearchThumb path={r.artUrl} />
+      <div className="mobile-search-lines">
+        <div className="mobile-search-primary">{r.title}</div>
+        <div className="mobile-search-secondary mobile-search-subrow">
+          <span className="mobile-search-subtext">{r.displayArtist}</span>
+          <Stars rating={r.rating} />
+        </div>
+      </div>
+      {r.isFavourite && (
+        <span className="mobile-search-fav">
+          <IconStarFilled size={16} />
+        </span>
+      )}
+    </button>
+  );
+
+  const renderGenreRow = (r: SearchGenreResult) => (
+    <button key={`ge-${r.name}`} className="mobile-search-row" onClick={() => tapGenre(r)}>
+      <div className="mobile-search-thumb mobile-search-thumb-ph mobile-search-genre-icon">
+        <IconWave size={20} />
+      </div>
+      <div className="mobile-search-lines">
+        <div className="mobile-search-primary">{r.name}</div>
+        <div className="mobile-search-secondary">{albumCountLabel(r.albumCount)}</div>
+      </div>
+    </button>
+  );
+
+  const renderSection = (section: SearchSection) => {
+    const isExpanded = expanded.has(section.kind);
+    const hasMore = section.items.length > COLLAPSED_ROWS;
+    const visible = isExpanded ? section.items : section.items.slice(0, COLLAPSED_ROWS);
+
+    const toggle = () => {
+      if (!hasMore) return;
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(section.kind)) next.delete(section.kind);
+        else next.add(section.kind);
+        return next;
+      });
+    };
+
+    return (
+      <div key={section.kind}>
+        <button
+          className={`mobile-search-section${hasMore ? " has-more" : ""}`}
+          onClick={toggle}
+          disabled={!hasMore}
+        >
+          <span>{SECTION_TITLES[section.kind]}</span>
+          {hasMore && (isExpanded ? <IconChevronDown size={18} /> : <IconChevronRight size={18} />)}
+        </button>
+        {section.kind === "artists" && (visible as SearchArtistResult[]).map(renderArtistRow)}
+        {section.kind === "albums" && (visible as SearchAlbumResult[]).map(renderAlbumRow)}
+        {section.kind === "tracks" && (visible as SearchTrackResult[]).map(renderTrackRow)}
+        {section.kind === "genres" && (visible as SearchGenreResult[]).map(renderGenreRow)}
+      </div>
+    );
+  };
+
+  const tapRecent = (r: RecentSearch) => {
+    setRecents(addRecent(r));
+    switch (r.kind) {
+      case "artist":
+        openArtist(r.name);
+        break;
+      case "album":
+        void openAlbumById(r.id);
+        break;
+      case "track":
+        void playTrackById(r.id);
+        break;
+      case "genre":
+        openGenre(r.name);
+        break;
+    }
+  };
+
+  const renderRecentRow = (r: RecentSearch) => (
+    <div key={`rc-${r.kind}-${r.id}`} className="mobile-search-row mobile-search-recent-row">
+      <button className="mobile-search-recent-main" onClick={() => tapRecent(r)}>
+        {r.kind === "genre" ? (
+          <div className="mobile-search-thumb mobile-search-thumb-ph mobile-search-genre-icon">
+            <IconWave size={20} />
+          </div>
+        ) : (
+          <SearchThumb path={r.artUrl} round={r.kind === "artist"} />
+        )}
+        <div className="mobile-search-lines">
+          <div className="mobile-search-primary">
+            {r.kind === "album" || r.kind === "track" ? r.title : r.name}
+          </div>
+          <div className="mobile-search-secondary">
+            {r.kind === "album" && r.artistName}
+            {r.kind === "track" && r.artist}
+            {r.kind === "artist" && "Artist"}
+            {r.kind === "genre" && "Genre"}
+          </div>
+        </div>
+      </button>
+      <button
+        className="mobile-search-recent-x"
+        onClick={() => setRecents(removeRecent(r.kind, r.id))}
+        aria-label="Remove from recent searches"
+      >
+        <IconClose size={14} />
+      </button>
+    </div>
+  );
+
+  const trimmed = query.trim();
+  const sections = response?.sections ?? [];
 
   return (
     <div className="mobile-screen mobile-search">
@@ -138,7 +371,7 @@ export default function MobileSearch({ onBack }: Props) {
               className="mobile-search-input"
               type="text"
               value={query}
-              placeholder="/genre @artist %album !track #>year col:name"
+              placeholder="Search..."
               onChange={(e) => setQuery(e.target.value)}
             />
             {query && (
@@ -155,94 +388,20 @@ export default function MobileSearch({ onBack }: Props) {
       )}
 
       <div className="mobile-search-results">
-        {!query.trim() && (
-          <div className="mobile-search-hints">
-            <div className="mobile-search-hints-title">Search operators</div>
-            <div className="mobile-search-hints-list">
-              <div className="mobile-search-hint-row">
-                <code>/genre</code>
-                <span>genre</span>
-              </div>
-              <div className="mobile-search-hint-row">
-                <code>@artist</code>
-                <span>artist</span>
-              </div>
-              <div className="mobile-search-hint-row">
-                <code>%album</code>
-                <span>album title</span>
-              </div>
-              <div className="mobile-search-hint-row">
-                <code>!track</code>
-                <span>track title</span>
-              </div>
-              <div className="mobile-search-hint-row">
-                <code>#&gt;2000</code>
-                <span>year filter</span>
-              </div>
-              <div className="mobile-search-hint-row">
-                <code>col:name</code>
-                <span>collection</span>
-              </div>
-              <div className="mobile-search-hint-row">
-                <code>fav:</code>
-                <span>favourites only</span>
-              </div>
-            </div>
-            <div className="mobile-search-hints-foot">
-              Combine with <code>AND</code> — e.g. <code>/rock AND #&gt;1990</code>
-            </div>
-          </div>
-        )}
-
-        {albums.length > 0 && (
+        {!trimmed && recents.length > 0 && (
           <>
-            <div className="mobile-search-section">Albums</div>
-            {albums.map((r) => (
-              <button
-                key={r.id}
-                className="mobile-search-row"
-                onClick={() => openAlbumById(r.albumSourceId)}
-              >
-                <SearchThumb path={r.albumArtPath} />
-                <div className="mobile-search-lines">
-                  <div className="mobile-search-primary">{r.albumTitle}</div>
-                  <div className="mobile-search-secondary">{r.artistName}</div>
-                </div>
-                {r.isFavourite && (
-                  <span className="mobile-search-fav">
-                    <IconStarFilled size={16} />
-                  </span>
-                )}
-              </button>
-            ))}
+            <div className="mobile-search-section">
+              <span>Recent searches</span>
+            </div>
+            {recents.map(renderRecentRow)}
           </>
         )}
 
-        {tracks.length > 0 && (
-          <>
-            <div className="mobile-search-section">Tracks</div>
-            {tracks.map((r) => (
-              <button
-                key={r.id}
-                className="mobile-search-row"
-                onClick={() => playTrackFromResult(r)}
-              >
-                <SearchThumb path={r.albumArtPath} />
-                <div className="mobile-search-lines">
-                  <div className="mobile-search-primary">{r.trackTitle}</div>
-                  <div className="mobile-search-secondary">{r.trackArtist || r.artistName}</div>
-                </div>
-                {r.isFavourite && (
-                  <span className="mobile-search-fav">
-                    <IconStarFilled size={16} />
-                  </span>
-                )}
-              </button>
-            ))}
-          </>
-        )}
+        {trimmed && sections.map(renderSection)}
 
-        {query && results.length === 0 && <div className="mobile-empty">No results</div>}
+        {trimmed && response && sections.length === 0 && (
+          <div className="mobile-empty">No matches in your library</div>
+        )}
       </div>
     </div>
   );

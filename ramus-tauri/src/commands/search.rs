@@ -1,23 +1,26 @@
 use tauri::State;
 
-use ramus_core::models::{Album, SearchResult};
+use ramus_core::models::{Album, SearchResponse};
 use ramus_core::search::parser::QueryParser;
 
 use crate::state::AppState;
 
 use super::CmdResult;
 
+/// Sectioned search: artists / albums / tracks / genres, ordered by
+/// relevance. `section_limit` caps each section independently (the UI
+/// shows a few rows per section and expands on demand).
 #[tauri::command]
 pub async fn search(
     state: State<'_, AppState>,
     query: String,
-    limit: Option<usize>,
-) -> CmdResult<Vec<SearchResult>> {
+    section_limit: Option<usize>,
+) -> CmdResult<SearchResponse> {
     let engine = state.search_engine.read();
     let engine = engine.as_ref().ok_or("Search engine not initialized")?;
     let parsed = QueryParser::parse(&query);
     engine
-        .search(&parsed, limit.unwrap_or(20))
+        .search_sectioned(&parsed, section_limit.unwrap_or(20))
         .map_err(|e| e.to_string())
 }
 

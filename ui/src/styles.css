@@ -2622,6 +2622,29 @@ textarea {
   color: var(--text-muted);
 }
 
+.search-thumb-round .search-thumb {
+  border-radius: 50%;
+}
+
+.search-genre-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+}
+
+.search-quality {
+  margin-left: 8px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
 .search-thumb-play {
   position: absolute;
   inset: 0;
@@ -5330,10 +5353,26 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-search-section {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 16px 20px 8px;
   font-size: 20px;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.85);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: default;
+}
+
+.mobile-search-section.has-more {
+  cursor: pointer;
+}
+
+.mobile-search-section svg {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .mobile-search-row {
@@ -5395,65 +5434,80 @@ body.is-fullscreen .focus-body {
   display: inline-flex;
 }
 
-.mobile-search-hints {
-  padding: 20px;
-  color: rgba(255, 255, 255, 0.7);
+.mobile-search-thumb-round {
+  border-radius: 50%;
 }
 
-.mobile-search-hints-title {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.45);
-  margin-bottom: 12px;
+.mobile-search-genre-icon {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  width: 48px;
+  height: 48px;
 }
 
-.mobile-search-hints-list {
+/* Secondary line hosting artist + stars + quality badge inline. */
+.mobile-search-subrow {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
-.mobile-search-hint-row {
+.mobile-search-subtext {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+}
+
+.mobile-search-stars {
+  display: inline-flex;
+  gap: 1px;
+  color: rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
+}
+
+.mobile-search-quality {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* Recent-search rows: tappable main area + separate remove button. */
+.mobile-search-recent-row {
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+
+.mobile-search-recent-main {
+  flex: 1 1 auto;
+  min-width: 0;
   display: grid;
-  grid-template-columns: 90px 1fr;
+  grid-template-columns: 48px 1fr;
   align-items: center;
   gap: 12px;
-  font-size: 14px;
+  padding: 10px 0 10px 20px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.mobile-search-hint-row code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
-  text-align: center;
-  justify-self: start;
-}
-
-.mobile-search-hint-row span {
-  color: rgba(255, 255, 255, 0.75);
-}
-
-.mobile-search-hints-foot {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.55);
-  line-height: 1.5;
-}
-
-.mobile-search-hints-foot code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
+.mobile-search-recent-x {
+  flex-shrink: 0;
+  padding: 16px 20px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
 }
 
 /* --- Bookmarks: shared hint, actions, buttons (editor + save dialog) --- */

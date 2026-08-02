@@ -48,6 +48,7 @@ pub struct AlbumSearchRow {
     pub artist_name: String,
     pub year: Option<i32>,
     pub art_url: Option<String>,
+    pub rating: Option<f64>,
     pub is_favourite: bool,
 }
 
@@ -62,7 +63,27 @@ pub struct TrackSearchRow {
     pub album_source_id: String,
     pub art_url: Option<String>,
     pub track_artist: Option<String>,
+    pub user_rating: Option<f64>,
     pub is_favourite: bool,
+}
+
+/// Artist row returned as a search candidate, carrying the album count
+/// shown in artist result rows.
+#[derive(Debug, Clone)]
+pub struct ArtistSearchRow {
+    pub id: i64,
+    pub source_id: String,
+    pub name: String,
+    pub art_url: Option<String>,
+    pub album_count: i64,
+}
+
+/// Genre row returned as a search candidate. Only genres actually linked
+/// to at least one album are candidates.
+#[derive(Debug, Clone)]
+pub struct GenreSearchRow {
+    pub name: String,
+    pub album_count: i64,
 }
 
 pub struct CacheDatabase {

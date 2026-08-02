@@ -5,23 +5,28 @@ use rusqlite::params;
 use crate::models::{RangeOp, Track};
 use crate::util::{escape_fts5, escape_like};
 
-use super::db::{AlbumSearchRow, CacheDatabase, CacheError, TrackSearchRow};
+use super::db::{
+    AlbumSearchRow, ArtistSearchRow, CacheDatabase, CacheError, GenreSearchRow, TrackSearchRow,
+};
+
+/// (codec, bitrate) per album source id, for quality badges.
+pub type AlbumCodecInfo = std::collections::HashMap<String, (Option<String>, Option<i64>)>;
 
 fn map_album_search_row(row: &rusqlite::Row) -> rusqlite::Result<AlbumSearchRow> {
+    let rating: Option<f64> = row.get(5)?;
     Ok(AlbumSearchRow {
         album_source_id: row.get(0)?,
         album_title: row.get(1)?,
         artist_name: row.get(2)?,
         year: row.get(3)?,
         art_url: row.get(4)?,
-        is_favourite: row
-            .get::<_, Option<f64>>(5)?
-            .map(|r| r >= 10.0)
-            .unwrap_or(false),
+        rating,
+        is_favourite: rating.map(|r| r >= 10.0).unwrap_or(false),
     })
 }
 
 fn map_track_search_row(row: &rusqlite::Row) -> rusqlite::Result<TrackSearchRow> {
+    let user_rating: Option<f64> = row.get(8)?;
     Ok(TrackSearchRow {
         id: row.get(0)?,
         track_source_id: row.get(1)?,
@@ -31,10 +36,8 @@ fn map_track_search_row(row: &rusqlite::Row) -> rusqlite::Result<TrackSearchRow>
         album_source_id: row.get(5)?,
         art_url: row.get(6)?,
         track_artist: row.get(7)?,
-        is_favourite: row
-            .get::<_, Option<f64>>(8)?
-            .map(|r| r >= 10.0)
-            .unwrap_or(false),
+        user_rating,
+        is_favourite: user_rating.map(|r| r >= 10.0).unwrap_or(false),
     })
 }
 
@@ -593,5 +596,138 @@ impl CacheDatabase {
             set.insert(row?);
         }
         Ok(set)
+    }
+
+    /// All artists that own at least one album, with album counts.
+    /// Candidate set for in-memory artist matching — artist tables are
+    /// small enough (thousands) that scoring in Rust beats trying to make
+    /// SQL LIKE diacritic-insensitive.
+    pub fn artist_search_candidates(&self) -> Result<Vec<ArtistSearchRow>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT ar.id, ar.sourceId, ar.name, ar.artUrl, COUNT(a.id) AS albumCount
+             FROM artists ar
+             JOIN albums a ON a.artistId = ar.id
+             GROUP BY ar.id
+             ORDER BY ar.name COLLATE NOCASE",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(ArtistSearchRow {
+                    id: row.get(0)?,
+                    source_id: row.get(1)?,
+                    name: row.get(2)?,
+                    art_url: row.get(3)?,
+                    album_count: row.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// All genres linked to at least one album, with album counts.
+    /// Candidate set for in-memory genre matching.
+    pub fn genre_search_candidates(&self) -> Result<Vec<GenreSearchRow>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT g.name, COUNT(DISTINCT ag.albumId) AS albumCount
+             FROM genres g
+             JOIN album_genres ag ON ag.genreId = g.id
+             GROUP BY g.id
+             ORDER BY g.name COLLATE NOCASE",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(GenreSearchRow {
+                    name: row.get(0)?,
+                    album_count: row.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Albums owned by a single artist (internal id), best-rated first.
+    /// Used to seed album results from a matched artist — the artist may
+    /// have been fuzzy-matched, so a name LIKE would miss.
+    pub fn albums_for_artist_id(
+        &self,
+        artist_id: i64,
+        limit: usize,
+    ) -> Result<Vec<AlbumSearchRow>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl, a.rating
+             FROM albums a
+             JOIN artists ar ON ar.id = a.artistId
+             WHERE a.artistId = ?1
+             ORDER BY a.rating DESC NULLS LAST, a.year DESC NULLS LAST, a.title COLLATE NOCASE
+             LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![artist_id, limit as i64], map_album_search_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Tracks by a single artist (internal id), best-rated first. Used to
+    /// fill the track section when a strong artist match has no direct
+    /// track-title matches to show.
+    pub fn tracks_for_artist_id(
+        &self,
+        artist_id: i64,
+        limit: usize,
+    ) -> Result<Vec<TrackSearchRow>, CacheError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT t.id, t.sourceId, t.title, ar.name, al.title, al.sourceId, al.artUrl, t.trackArtist, t.userRating
+             FROM tracks t
+             JOIN albums al ON al.id = t.albumId
+             JOIN artists ar ON ar.id = t.artistId
+             WHERE t.artistId = ?1
+             ORDER BY t.userRating DESC NULLS LAST, t.ratingCount DESC NULLS LAST, t.id
+             LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![artist_id, limit as i64], map_track_search_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Representative (codec, bitrate) per album, for quality badges on
+    /// album search rows. One row per album from its first track; albums
+    /// mixing codecs get whichever track sorts first, which is fine for a
+    /// display hint.
+    pub fn album_codec_info(&self, album_source_ids: &[String]) -> Result<AlbumCodecInfo, CacheError> {
+        if album_source_ids.is_empty() {
+            return Ok(AlbumCodecInfo::new());
+        }
+        let conn = self.conn.lock();
+        let placeholders = (0..album_source_ids.len())
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT al.sourceId, t.codec, t.bitrate
+             FROM albums al
+             JOIN tracks t ON t.albumId = al.id
+             WHERE al.sourceId IN ({})
+             GROUP BY al.id",
+            placeholders
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = album_source_ids
+            .iter()
+            .map(|s| s as &dyn rusqlite::types::ToSql)
+            .collect();
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    (row.get::<_, Option<String>>(1)?, row.get::<_, Option<i64>>(2)?),
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows.into_iter().collect())
     }
 }
