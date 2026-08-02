@@ -6198,6 +6198,8 @@ body.is-fullscreen .focus-body {
 .mobile-sheet-main.lyrics-mode .lyrics-loading,
 .mobile-sheet-main.lyrics-mode .lyrics-empty {
   background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   font-size: 15px;
 }
 
