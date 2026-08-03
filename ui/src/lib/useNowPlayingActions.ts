@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
-import { formatCodec, formatCodecBadge, formatCodecParts } from "./format";
+import { formatCodec, formatCodecBadge } from "./format";
 
 interface Options {
   /**
@@ -30,7 +30,6 @@ export function useNowPlayingActions(options?: Options) {
   const year = nowPlayingAlbum?.year ?? null;
   const studio = nowPlayingAlbum?.studio ?? null;
   const codec = track ? formatCodec(track.codec, track.bitrate) : null;
-  const codecParts = track ? formatCodecParts(track.codec, track.bitrate) : null;
   const codecBadge = track ? formatCodecBadge(track.codec, track.bitrate) : null;
   const albumFav = nowPlayingAlbum?.isFavourite ?? false;
   const trackFav = track?.isFavourite ?? false;
@@ -78,7 +77,6 @@ export function useNowPlayingActions(options?: Options) {
     year,
     studio,
     codec,
-    codecParts,
     codecBadge,
     albumFav,
     trackFav,

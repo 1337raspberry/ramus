@@ -464,16 +464,20 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
 
   // Close the sheet on Escape (iOS keyboard / external keyboard). The
   // overflow menu is nested inside the sheet, so it consumes Escape first.
+  // The EQ and debug panels handle their own Escape, and this listener is
+  // on `window` so it would fire alongside theirs — yield while either is
+  // open, or one keypress closes the panel AND collapses the sheet.
   useEffect(() => {
     if (!expanded) return;
     const h = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (showEQ || showDebug) return;
       if (showMenu) setShowMenu(false);
       else onCollapse();
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [expanded, onCollapse, showMenu]);
+  }, [expanded, onCollapse, showMenu, showEQ, showDebug]);
 
   // Same for hardware back — without this the sheet collapses out from
   // under the menu, stranding it (it portals to <body>, so it does not

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyEqualizer, updateSettings, getEqConfig, type EqConfig } from "../lib/commands";
 import { useSettingsStore } from "../stores/settingsStore";
+import { pushBackHandler } from "../lib/backHandler";
 
 const DEFAULT_LABELS = ["31", "62", "125", "250", "500", "1K", "2K", "4K", "8K", "16K"];
 const DEFAULT_MAX_GAIN = 12;
@@ -177,6 +178,19 @@ export default function EqualizerPanel({ onDismiss }: Props) {
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [onDismiss]);
+
+  // Android hardware back closes the panel rather than falling through to
+  // whatever opened it. Without this the now-playing sheet collapses out
+  // from under the panel, which stays mounted and stranded on top of the
+  // library. No-op on desktop, which never dispatches a back event.
+  useEffect(
+    () =>
+      pushBackHandler(() => {
+        onDismiss();
+        return true;
+      }),
+    [onDismiss],
+  );
 
   const mouseDownOnBackdrop = useRef(false);
 

@@ -6060,10 +6060,10 @@ body.is-fullscreen .focus-body {
   text-align: center;
 }
 
-/* Exactly one viewport tall, so the codec/favourite row always lands on
-   the first screen. Overflow from a long genre list is absorbed by the
-   album art (the only flexible item) rather than pushing rows below the
-   fold. */
+/* Exactly one viewport tall, so the genre pills — the last row before the
+   dock — always land on the first screen. Overflow from a long genre list
+   is absorbed by the album art (the only flexible item) rather than
+   pushing rows below the fold. */
 .mobile-sheet-main {
   height: 100%;
   display: flex;

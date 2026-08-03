@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getDebugInfo, type DebugInfo, type DebugPhase } from "../lib/commands";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useConnectionStatus } from "../lib/useConnectionStatus";
+import { pushBackHandler } from "../lib/backHandler";
 
 function formatBytes(bytes: number | null | undefined): string {
   if (bytes == null) return "—";
@@ -82,6 +83,28 @@ export default function MobileDebugPanel({ onDismiss }: { onDismiss: () => void 
     const id = setInterval(refresh, 1000);
     return () => clearInterval(id);
   }, [refresh]);
+
+  // Dismiss wiring: Android hardware back and Escape both close the panel
+  // rather than falling through to whatever opened it. Without the back
+  // handler the now-playing sheet collapses underneath while this panel
+  // stays mounted, stranded over the library.
+  useEffect(() => {
+    const removeBack = pushBackHandler(() => {
+      onDismiss();
+      return true;
+    });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onDismiss();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      removeBack();
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onDismiss]);
 
   return (
     <div className="debug-panel-backdrop" onClick={onDismiss}>

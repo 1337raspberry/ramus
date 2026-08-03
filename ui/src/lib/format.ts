@@ -28,7 +28,8 @@ export function formatCodecParts(codec: string | null, bitrate: number | null): 
 /// Compact quality badge — "FLAC", "MP3 320", "OPUS". Matches the album
 /// badge the search results show. The CBR/VBR tag is deliberately dropped:
 /// at badge size it doubles the width for a detail nobody reads at a
-/// glance (`formatCodec` still carries it for the debug panel).
+/// glance. `formatCodec` still carries it for the roomier surfaces — the
+/// desktop now-playing panes and the album detail headers.
 export function formatCodecBadge(codec: string | null, bitrate: number | null): string | null {
   if (!codec) return null;
   const upper = codec.toUpperCase();
