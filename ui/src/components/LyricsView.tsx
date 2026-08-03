@@ -21,16 +21,26 @@ export default function LyricsView({ lyrics, onSeek, onDismiss }: Props) {
   // as "upcoming".
   const anySynced = lyrics.lines.some((l) => l.timestamp !== null);
 
-  // Auto-scroll only when the active line changes.
+  // Auto-scroll only when the active line changes. Scroll the lyrics
+  // container directly instead of scrollIntoView: scrollIntoView walks
+  // every scrollable ancestor, and once this container clamps at its end
+  // the leftover centering distance scrolls the ancestor instead
+  // (overflow: hidden only blocks user gestures, not programmatic
+  // scrolls). scrollTo self-clamps to [0, max], so the viewport stays
+  // put and the highlight simply walks down the final screen of lines.
   useEffect(() => {
     if (active < 0 || active === lastActiveRef.current) return;
     lastActiveRef.current = active;
     const container = scrollRef.current;
     if (!container) return;
-    const el = container.querySelector(`[data-line-index="${active}"]`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+    const el = container.querySelector<HTMLElement>(`[data-line-index="${active}"]`);
+    if (!el) return;
+    const lineTop =
+      el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
+    container.scrollTo({
+      top: lineTop - (container.clientHeight - el.offsetHeight) / 2,
+      behavior: "smooth",
+    });
   }, [active]);
 
   const handleLineTap = (lineIndex: number) => {
