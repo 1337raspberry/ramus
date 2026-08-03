@@ -88,6 +88,17 @@ const CEILING_CHROMA_REF = 0.5;
  */
 const LUMA_CAP = 120;
 /**
+ * Floor on perceptual brightness — the dark counterpart of LUMA_CAP.
+ * Near-black album art would otherwise render the whole UI as an OLED
+ * blackout (corner colours ~#000 make the background indistinguishable
+ * from the sheet base and the art card loses its edge). The lift is
+ * ADDITIVE, not a scale: pure black can't be multiplied up, and adding
+ * equally to all channels is hue-neutral, so this can only move black
+ * toward charcoal grey — it never invents colour. Chromatic-but-dark
+ * colours are mostly untouched (MIN_VIVID_LEVEL already lifts those).
+ */
+const LUMA_FLOOR = 40;
+/**
  * Context mix: blend the pooled colour toward the quadrant's PLAIN
  * (unweighted) average, gated on hue similarity. Every earlier stage is
  * chroma-seeking, so on art where a saturated colour borders neutral
@@ -270,6 +281,13 @@ function poolCorner(cells: Rgb[], xs: number[], ys: number[], mean: Rgb): Rgb {
       g: grey + (out.g - grey) * t,
       b: grey + (out.b - grey) * t,
     };
+  }
+
+  // Additive luma floor: near-black lifts to charcoal (see LUMA_FLOOR).
+  const outLuma = 0.299 * out.r + 0.587 * out.g + 0.114 * out.b;
+  if (outLuma < LUMA_FLOOR) {
+    const add = LUMA_FLOOR - outLuma;
+    out = { r: out.r + add, g: out.g + add, b: out.b + add };
   }
   return out;
 }
