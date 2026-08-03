@@ -6287,6 +6287,19 @@ body.is-fullscreen .focus-body {
   color: rgba(255, 255, 255, 0.35);
 }
 
+/* `position: relative` is load-bearing, not decoration. The art box above
+   is positioned, so its box-shadow paints in the positioned-descendant
+   step — which is ABOVE the inline text of static siblings, whatever the
+   DOM order. Left static, these lines render under the shadow's tail and
+   measurably dim (title sampled 224,224,224 against its declared #fff).
+   Lifting them out of that step restores full white. */
+.mobile-sheet-title,
+.mobile-sheet-artist,
+.mobile-sheet-album {
+  position: relative;
+  z-index: 1;
+}
+
 .mobile-sheet-title {
   font-size: 18px;
   font-weight: 700;
