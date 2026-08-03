@@ -4,7 +4,7 @@ use ramus_core::cache::db::CacheStats;
 use ramus_core::genre::node::GenreNode;
 use ramus_core::models::{Album, AlbumColorInfo, AlbumFilterParams, ArtistInfo, Track, VibrantPalette};
 use ramus_core::search::engine::GenreExpander;
-use ramus_core::util::plex_art_url;
+use ramus_core::util::{exclusion_window, plex_art_url};
 use rand::seq::SliceRandom;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -392,7 +392,10 @@ pub async fn get_album(state: State<'_, AppState>, source_id: String) -> CmdResu
 }
 
 #[tauri::command]
-pub async fn get_random_album(state: State<'_, AppState>) -> CmdResult<Option<Album>> {
+pub async fn get_random_album(
+    state: State<'_, AppState>,
+    exclude: Vec<String>,
+) -> CmdResult<Option<Album>> {
     if state.effective_offline() {
         let albums = filter_albums(
             with_cache(&state, |db| db.all_albums())?,
@@ -401,16 +404,23 @@ pub async fn get_random_album(state: State<'_, AppState>) -> CmdResult<Option<Al
         if albums.is_empty() {
             return Ok(None);
         }
+        // Trim against the DOWNLOADED pool, not the whole library — offline
+        // the candidate set can be a handful of albums.
+        let keep = exclusion_window(exclude.len(), albums.len());
+        let recent: HashSet<&str> = exclude[..keep].iter().map(String::as_str).collect();
+        let pool: Vec<&Album> =
+            albums.iter().filter(|a| !recent.contains(a.rating_key.as_str())).collect();
         let mut rng = rand::thread_rng();
-        return Ok(albums.choose(&mut rng).cloned());
+        return Ok(pool.choose(&mut rng).map(|a| (*a).clone()));
     }
-    with_cache(&state, |db| db.random_album())
+    with_cache(&state, |db| db.random_album_excluding(&exclude))
 }
 
 #[tauri::command]
 pub async fn get_filtered_random_album(
     state: State<'_, AppState>,
     filters: AlbumFilterParams,
+    exclude: Vec<String>,
 ) -> CmdResult<Option<Album>> {
     let mut filtered_ids = compute_filtered_album_ids(&state, &filters)?;
     if state.effective_offline() {
@@ -419,6 +429,14 @@ pub async fn get_filtered_random_album(
     }
     if filtered_ids.is_empty() {
         return Ok(None);
+    }
+    // Drop the recent history from the candidate set. The window is sized
+    // against the POST-filter pool, which is what a duration target shrinks
+    // — that pool, not the library, is why rerolls felt repetitive.
+    let keep = exclusion_window(exclude.len(), filtered_ids.len());
+    if keep > 0 {
+        let recent = with_cache(&state, |db| db.internal_ids_for_source_ids(&exclude[..keep]))?;
+        filtered_ids.retain(|id| !recent.contains(id));
     }
     let id_vec: Vec<i64> = filtered_ids.into_iter().collect();
     let mut rng = rand::thread_rng();

@@ -561,16 +561,40 @@ impl CacheDatabase {
 
     /// Random album.
     pub fn random_album(&self) -> Result<Option<Album>, CacheError> {
+        self.random_album_excluding(&[])
+    }
+
+    /// Random album, skipping the most recently suggested ones.
+    ///
+    /// `recent` is newest-first (the caller's ring buffer). Only as many
+    /// entries as `util::exclusion_window` allows are honoured, so this can
+    /// never exclude every row and report an empty library for a populated
+    /// table.
+    pub fn random_album_excluding(&self, recent: &[String]) -> Result<Option<Album>, CacheError> {
         let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM albums", [], |r| r.get(0))?;
+        let keep = crate::util::exclusion_window(recent.len(), total.max(0) as usize);
+        let excluded = &recent[..keep];
+
+        let where_clause = if excluded.is_empty() {
+            String::new()
+        } else {
+            let placeholders = (0..excluded.len()).map(|_| "?").collect::<Vec<_>>().join(",");
+            format!("WHERE a.sourceId NOT IN ({placeholders})")
+        };
+        let sql = format!(
             "SELECT a.sourceId, a.title, ar.name, a.year, a.artUrl,
                     a.rating, a.studio, a.addedAt, a.lastViewedAt,
                     a.viewCount, a.format, ar.country
              FROM albums a
              JOIN artists ar ON ar.id = a.artistId
-             ORDER BY RANDOM() LIMIT 1",
-        )?;
-        let mut albums = Self::map_album_rows(&mut stmt, params![], &conn)?;
+             {where_clause}
+             ORDER BY RANDOM() LIMIT 1"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            excluded.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+        let mut albums = Self::map_album_rows(&mut stmt, param_refs.as_slice(), &conn)?;
         drop(stmt);
         drop(conn);
         self.populate_album_genres(&mut albums)?;
@@ -580,6 +604,35 @@ impl CacheDatabase {
     }
 
     /// Albums by internal rowid, returning full Album objects.
+    /// Map external Plex rating keys to internal album row ids. Lets callers
+    /// that work in internal ids (the filter pipeline) apply an exclusion
+    /// list expressed in the rating keys the frontend actually holds.
+    /// Unknown keys are simply absent from the result.
+    pub fn internal_ids_for_source_ids(
+        &self,
+        source_ids: &[String],
+    ) -> Result<HashSet<i64>, CacheError> {
+        if source_ids.is_empty() {
+            return Ok(HashSet::new());
+        }
+        let conn = self.conn.lock();
+
+        const CHUNK_SIZE: usize = 500;
+        let mut out = HashSet::new();
+        for chunk in source_ids.chunks(CHUNK_SIZE) {
+            let placeholders = (0..chunk.len()).map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!("SELECT id FROM albums WHERE sourceId IN ({placeholders})");
+            let mut stmt = conn.prepare(&sql)?;
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                chunk.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            let ids = stmt
+                .query_map(param_refs.as_slice(), |row| row.get::<_, i64>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            out.extend(ids);
+        }
+        Ok(out)
+    }
+
     pub fn albums_by_internal_ids(&self, ids: &HashSet<i64>) -> Result<Vec<Album>, CacheError> {
         if ids.is_empty() {
             return Ok(Vec::new());
@@ -1560,6 +1613,53 @@ mod tests {
         let album = db.random_album().unwrap();
         assert!(album.is_some());
         assert_eq!(album.unwrap().title, "OK Computer");
+    }
+
+    #[test]
+    fn test_random_album_excluding_skips_recent_and_never_starves() {
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Radiohead");
+        for (sid, title) in [("al1", "Kid A"), ("al2", "Amnesiac"), ("al3", "In Rainbows")] {
+            seed_album(&db, sid, title, artist_id, Some(2000));
+        }
+
+        // A single exclusion fits the window (3 / 2 = 1) and is honoured.
+        for _ in 0..25 {
+            let picked = db.random_album_excluding(&["al1".to_string()]).unwrap().unwrap();
+            assert_ne!(picked.rating_key, "al1", "excluded album was still drawn");
+        }
+
+        // An oversized history is trimmed rather than excluding everything:
+        // the draw must still return an album, never None.
+        let all: Vec<String> = vec!["al1".into(), "al2".into(), "al3".into()];
+        for _ in 0..25 {
+            let picked = db.random_album_excluding(&all).unwrap();
+            assert!(picked.is_some(), "trimming failed — excluded the whole pool");
+            // Only the newest entry fits the window, so al1 stays out.
+            assert_ne!(picked.unwrap().rating_key, "al1");
+        }
+
+        // Unknown keys are harmless.
+        assert!(db.random_album_excluding(&["nope".to_string()]).unwrap().is_some());
+    }
+
+    #[test]
+    fn test_internal_ids_for_source_ids_maps_and_ignores_unknown() {
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Radiohead");
+        seed_album(&db, "al1", "Kid A", artist_id, Some(2000));
+        seed_album(&db, "al2", "Amnesiac", artist_id, Some(2001));
+
+        assert!(db.internal_ids_for_source_ids(&[]).unwrap().is_empty());
+        let ids = db
+            .internal_ids_for_source_ids(&["al1".to_string(), "ghost".to_string()])
+            .unwrap();
+        assert_eq!(ids.len(), 1, "unknown rating keys must be dropped silently");
+
+        let both = db
+            .internal_ids_for_source_ids(&["al1".to_string(), "al2".to_string()])
+            .unwrap();
+        assert_eq!(both.len(), 2);
     }
 
     fn seed_artist_with_country(

@@ -3,6 +3,21 @@ use std::collections::HashSet;
 /// Lossless audio codecs (case-insensitive matching via `is_lossless_codec`).
 pub const LOSSLESS_CODECS: &[&str] = &["flac", "alac", "wav", "aiff", "aif", "pcm"];
 
+/// How many of the most recently suggested albums a pool of `pool` candidates
+/// can afford to exclude.
+///
+/// The lucky-dip reroll draws uniformly at random, which is genuinely random
+/// but clusters far sooner than it feels like it should — with a 75-album pool
+/// (a ±3 minute duration target on a mid-size library) a repeat within six
+/// rolls is a ~22% event. Excluding the recent history fixes the perception,
+/// but honouring ALL of it would let a tight filter exclude every candidate
+/// and report "no match" for a pool that genuinely has albums in it. Capping
+/// the window at half the pool keeps at least half of it selectable no matter
+/// how long the history grows, and degrades to zero for a one-album pool.
+pub fn exclusion_window(history_len: usize, pool: usize) -> usize {
+    history_len.min(pool / 2)
+}
+
 /// Deduplicate strings case-insensitively (ASCII), preserving the first
 /// occurrence's casing. Uses ASCII folding to match SQLite's `COLLATE NOCASE`.
 pub fn dedup_case_insensitive(names: Vec<String>) -> Vec<String> {
@@ -340,5 +355,31 @@ mod tests {
         assert_eq!(fold_diacritics("Radiohead"), "radiohead");
         // Non-Latin scripts pass through lowercased-unchanged.
         assert_eq!(fold_diacritics("和平"), "和平");
+    }
+
+    #[test]
+    fn test_exclusion_window_never_empties_the_pool() {
+        // Always leaves at least half the pool selectable.
+        for pool in 1..200usize {
+            for history in [0, 1, 10, 50, 500] {
+                let keep = exclusion_window(history, pool);
+                assert!(keep <= history, "cannot exclude more than we remember");
+                assert!(pool - keep >= pool / 2, "pool {pool} history {history} left {}", pool - keep);
+                assert!(pool - keep >= 1, "pool {pool} history {history} excluded everything");
+            }
+        }
+    }
+
+    #[test]
+    fn test_exclusion_window_honours_full_history_on_a_large_pool() {
+        // The 50-deep frontend ring fits comfortably in a real library.
+        assert_eq!(exclusion_window(50, 2325), 50);
+        // A ±3 min duration target shrinks the pool but still clears the ring.
+        assert_eq!(exclusion_window(50, 418), 50);
+        // Tight pools trim instead of starving the draw.
+        assert_eq!(exclusion_window(50, 75), 37);
+        assert_eq!(exclusion_window(50, 2), 1);
+        assert_eq!(exclusion_window(50, 1), 0);
+        assert_eq!(exclusion_window(0, 2325), 0);
     }
 }

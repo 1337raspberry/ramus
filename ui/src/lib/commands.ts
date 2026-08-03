@@ -89,8 +89,14 @@ export const getAllArtists = () => invoke<ArtistInfo[]>("get_all_artists");
 export const getFilteredGenreTree = (filters: AlbumFilterParamsIPC) =>
   invoke<GenreTreeResponse>("get_filtered_genre_tree", { filters });
 
-export const getFilteredRandomAlbum = (filters: AlbumFilterParamsIPC) =>
-  invoke<Album | null>("get_filtered_random_album", { filters });
+/**
+ * Random album matching `filters`, skipping `exclude` (rating keys of the
+ * most recently suggested albums, newest first). The backend trims the
+ * exclusion list against the post-filter pool, so passing more than a small
+ * pool can hold is safe — it can never starve the draw.
+ */
+export const getFilteredRandomAlbum = (filters: AlbumFilterParamsIPC, exclude: string[] = []) =>
+  invoke<Album | null>("get_filtered_random_album", { filters, exclude });
 
 export const toggleAlbumFavourite = (sourceId: string, favourite: boolean) =>
   invoke<void>("toggle_album_favourite", { sourceId, favourite });
@@ -103,7 +109,9 @@ export const getAlbumGenres = (sourceId: string) =>
 
 export const getAlbum = (sourceId: string) => invoke<Album | null>("get_album", { sourceId });
 
-export const getRandomAlbum = () => invoke<Album | null>("get_random_album");
+/** Unfiltered counterpart of `getFilteredRandomAlbum`; same exclusion rules. */
+export const getRandomAlbum = (exclude: string[] = []) =>
+  invoke<Album | null>("get_random_album", { exclude });
 
 /**
  * Canonical album-art size tiers. Every surface that loads album art must

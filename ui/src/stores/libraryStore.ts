@@ -418,6 +418,18 @@ let genreFetchGen = 0;
 // `suggestion`/`suggestionMissed` (see `loadSuggestion`).
 let suggestGen = 0;
 
+// Rating keys of recently suggested albums, newest first. Uniform random
+// draws are memoryless, so on a small candidate pool — which is exactly what
+// a duration target produces — the same album resurfaces far sooner than it
+// feels like it should. Feeding this back to the backend excludes the recent
+// history from the draw; it trims the list against the actual pool size, so
+// this cap is an aim rather than a guarantee. Module-level (like the dedupe
+// set below) so it survives `set()` without triggering re-renders, and
+// session-scoped so leaving and re-entering the screen doesn't immediately
+// repeat.
+const SUGGEST_HISTORY_MAX = 50;
+let recentSuggestions: string[] = [];
+
 // Module-level so the dedupe survives `set()` calls without polluting state.
 // Cleared on success or failure of the IPC.
 const inFlightGenreExpansions = new Set<string>();
@@ -883,14 +895,25 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       // A target length alone (no other filters) still needs the filtered path.
       const useFiltered = hasActiveFilters(filters) || target != null;
       const album = useFiltered
-        ? await getFilteredRandomAlbum({
-            ...filtersToIPC(filters),
-            durationMinMs: target != null ? (target - SUGGEST_TOLERANCE_MIN) * 60_000 : null,
-            durationMaxMs: target != null ? (target + SUGGEST_TOLERANCE_MIN) * 60_000 : null,
-          })
-        : await getRandomAlbum();
+        ? await getFilteredRandomAlbum(
+            {
+              ...filtersToIPC(filters),
+              durationMinMs: target != null ? (target - SUGGEST_TOLERANCE_MIN) * 60_000 : null,
+              durationMaxMs: target != null ? (target + SUGGEST_TOLERANCE_MIN) * 60_000 : null,
+            },
+            recentSuggestions,
+          )
+        : await getRandomAlbum(recentSuggestions);
       if (gen !== suggestGen) return;
-      if (album) set({ suggestion: album, suggestionMissed: false });
+      if (album) {
+        // Re-filter rather than blindly unshift: a pool smaller than the
+        // window still repeats, and a duplicate entry would waste a slot.
+        recentSuggestions = [
+          album.ratingKey,
+          ...recentSuggestions.filter((key) => key !== album.ratingKey),
+        ].slice(0, SUGGEST_HISTORY_MAX);
+        set({ suggestion: album, suggestionMissed: false });
+      }
       // Keep the stale `suggestion` so desktop's view switch is unaffected; the
       // mobile view reads `suggestionMissed` to show its "no match" state.
       else set({ suggestionMissed: true });

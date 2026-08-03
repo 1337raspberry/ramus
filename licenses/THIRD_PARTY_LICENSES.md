@@ -1712,8 +1712,8 @@ Used by:
 - `phf_shared` 0.8.0 — https://github.com/sfackler/rust-phf
 - `r-efi` 5.3.0 — https://github.com/r-efi/r-efi
 - `r-efi` 6.0.0 — https://github.com/r-efi/r-efi
-- `ramus-core` 1.0.2 — https://github.com/1337raspberry/ramus
-- `ramus-tauri` 1.0.2 — https://github.com/1337raspberry/ramus
+- `ramus-core` 1.1.0 — https://github.com/1337raspberry/ramus
+- `ramus-tauri` 1.1.0 — https://github.com/1337raspberry/ramus
 - `realfft` 3.5.0 — https://github.com/HEnquist/realfft
 - `siphasher` 0.3.11 — https://github.com/jedisct1/rust-siphash
 - `siphasher` 1.0.2 — https://github.com/jedisct1/rust-siphash
@@ -5120,7 +5120,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### MIT License (MIT) (variant 124)
 
 Used by:
-- `plist` 1.8.0 — https://github.com/ebarnard/rust-plist/
+- `plist` 1.10.0 — https://github.com/ebarnard/rust-plist/
 
 ```
 Copyright (c) 2015 Edward Barnard
@@ -5431,7 +5431,7 @@ DEALINGS IN THE SOFTWARE.
 ### MIT License (MIT) (variant 134)
 
 Used by:
-- `quick-xml` 0.38.4 — https://github.com/tafia/quick-xml
+- `quick-xml` 0.41.0 — https://github.com/tafia/quick-xml
 
 ```
 The MIT License (MIT)
@@ -6171,7 +6171,7 @@ SOFTWARE.
 ### MIT License (MIT) (variant 158)
 
 Used by:
-- `spin` 0.9.8 — https://github.com/mvdnes/spin-rs.git
+- `spin` 0.9.9 — https://github.com/mvdnes/spin-rs.git
 
 ```
 The MIT License (MIT)
