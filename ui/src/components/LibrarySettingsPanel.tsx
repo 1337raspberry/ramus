@@ -442,16 +442,23 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
           {activeTab === "looks" && (
             <>
               <label className="settings-row">
-                <span>Keep default colours</span>
-                <input
-                  type="checkbox"
-                  checked={settings.keepDefaultColours}
-                  onChange={(e) => save({ keepDefaultColours: e.target.checked })}
-                />
+                <span>Colour styling</span>
+                <select
+                  className="sort-select"
+                  value={settings.backgroundStyle}
+                  onChange={(e) =>
+                    save({ backgroundStyle: e.target.value as Settings["backgroundStyle"] })
+                  }
+                >
+                  <option value="dynamic">Dynamic colouring</option>
+                  <option value="defaultColours">Default Pinky Sunset throughout</option>
+                  <option value="oledVoid">OLED Void</option>
+                </select>
               </label>
               <HelperText>
-                Just keep our lovely default pink colours instead of changing depending on what you
-                listen to. If you prefer consistency :)
+                Dynamic pulls the background from whatever you're listening to. Pinky Sunset keeps
+                our lovely default pinks everywhere, if you prefer consistency :). OLED Void keeps
+                the backdrop pitch black — the accent colour still follows your music.
               </HelperText>
 
               {!isMobile && (

@@ -14,7 +14,7 @@ import {
 import { formatDuration } from "../lib/format";
 import { extractPalette, accentFromPalette } from "../lib/vibrantColor";
 import { extractCornerColors } from "../lib/blurArt";
-import { applyAccent, DEFAULT_BLUR_COLORS } from "../lib/accent";
+import { applyAccent, DEFAULT_BLUR_COLORS, OLED_VOID_BLUR_COLORS } from "../lib/accent";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
 import WaveformSeekBar from "../components/WaveformSeekBar";
@@ -111,11 +111,12 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const status = usePlaybackStore((s) => s.status);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
   const albumBlurColors = usePlaybackStore((s) => s.ultraBlurColors);
-  const keepDefaultColours = useSettingsStore((s) => s.keepDefaultColours);
-  const sheetBlurColors = useMemo(
-    () => (keepDefaultColours ? DEFAULT_BLUR_COLORS : (albumBlurColors ?? DEFAULT_BLUR_COLORS)),
-    [albumBlurColors, keepDefaultColours],
-  );
+  const backgroundStyle = useSettingsStore((s) => s.backgroundStyle);
+  const sheetBlurColors = useMemo(() => {
+    if (backgroundStyle === "defaultColours") return DEFAULT_BLUR_COLORS;
+    if (backgroundStyle === "oledVoid") return OLED_VOID_BLUR_COLORS;
+    return albumBlurColors ?? DEFAULT_BLUR_COLORS;
+  }, [albumBlurColors, backgroundStyle]);
   const queue = usePlaybackStore((s) => s.queue);
   const queueIndex = usePlaybackStore((s) => s.queueIndex);
   const jumpToIndex = usePlaybackStore((s) => s.jumpToIndex);

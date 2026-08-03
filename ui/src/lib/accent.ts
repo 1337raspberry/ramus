@@ -12,7 +12,7 @@
 //
 // Also home for the brand-default palette constants used when album-art
 // extraction is either unavailable (loading, onboarding, between
-// tracks) or actively disabled by the `keepDefaultColours` setting.
+// tracks) or actively disabled by the `backgroundStyle` setting.
 
 import { setMediaAccent } from "./commands";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -31,6 +31,17 @@ export const DEFAULT_BLUR_COLORS = {
   bottomRight: "854256",
 };
 
+/** OLED Void: pure-black corners for the `oledVoid` background style.
+ *  The gradient renderer maps these to a pitch-black backdrop; the
+ *  accent deliberately stays art-derived (only `defaultColours` locks
+ *  the accent to the brand default). */
+export const OLED_VOID_BLUR_COLORS = {
+  topLeft: "000000",
+  topRight: "000000",
+  bottomLeft: "000000",
+  bottomRight: "000000",
+};
+
 let lastR = -1;
 let lastG = -1;
 let lastB = -1;
@@ -40,13 +51,15 @@ let lastB = -1;
  * media controls. Dedupes on exact RGB so rapid palette re-extractions
  * don't spam the Kotlin bridge with identical updates.
  *
- * If the `keepDefaultColours` setting is on, the requested colour is
+ * If the background style is `defaultColours`, the requested colour is
  * overridden with the brand default — so every accent call site (album
  * art extraction in the playback store, Now Playing views, etc.) is
  * neutralised at the funnel rather than needing per-caller gates.
+ * `oledVoid` deliberately does NOT gate here: the backdrop goes black
+ * but the accent keeps following the artwork.
  */
 export function applyAccent(r: number, g: number, b: number): void {
-  if (useSettingsStore.getState().keepDefaultColours) {
+  if (useSettingsStore.getState().backgroundStyle === "defaultColours") {
     [r, g, b] = DEFAULT_ACCENT;
   }
   if (r === lastR && g === lastG && b === lastB) return;

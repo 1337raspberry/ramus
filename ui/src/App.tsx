@@ -32,7 +32,12 @@ import { clearPin } from "./components/onboarding/OAuthSignIn";
 import UltraBlurBackground from "./components/UltraBlurBackground";
 import MobileApp from "./mobile/MobileApp";
 import Toast, { useToastStore } from "./components/Toast";
-import { applyAccent, DEFAULT_ACCENT, DEFAULT_BLUR_COLORS } from "./lib/accent";
+import {
+  applyAccent,
+  DEFAULT_ACCENT,
+  DEFAULT_BLUR_COLORS,
+  OLED_VOID_BLUR_COLORS,
+} from "./lib/accent";
 import { accentFromPalette } from "./lib/vibrantColor";
 import { handleAndroidBack, pushBackHandler } from "./lib/backHandler";
 
@@ -51,18 +56,20 @@ export default function App() {
   const albumColors = usePlaybackStore((s) => s.ultraBlurColors);
   const isFocusMode = usePlaybackStore((s) => s.isFocusMode);
   const toggleFocusMode = usePlaybackStore((s) => s.toggleFocusMode);
-  const keepDefaultColours = useSettingsStore((s) => s.keepDefaultColours);
-  const blurColors = useMemo(
-    () => (keepDefaultColours ? DEFAULT_BLUR_COLORS : (albumColors ?? DEFAULT_BLUR_COLORS)),
-    [albumColors, keepDefaultColours],
-  );
+  const backgroundStyle = useSettingsStore((s) => s.backgroundStyle);
+  const blurColors = useMemo(() => {
+    if (backgroundStyle === "defaultColours") return DEFAULT_BLUR_COLORS;
+    if (backgroundStyle === "oledVoid") return OLED_VOID_BLUR_COLORS;
+    return albumColors ?? DEFAULT_BLUR_COLORS;
+  }, [albumColors, backgroundStyle]);
 
-  // Snap accent both directions when the "keep default colours" toggle
-  // flips. ON → force brand default; OFF → restore the currently-playing
-  // album's accent from the cached vibrant palette so the user doesn't
-  // have to start a new track to see the change.
+  // Snap accent both directions when the background style flips.
+  // `defaultColours` → force brand default; anything else (dynamic OR
+  // oledVoid — the void only blacks out the backdrop) → restore the
+  // currently-playing album's accent from the cached vibrant palette so
+  // the user doesn't have to start a new track to see the change.
   useEffect(() => {
-    if (keepDefaultColours) {
+    if (backgroundStyle === "defaultColours") {
       applyAccent(...DEFAULT_ACCENT);
     } else {
       const palette = usePlaybackStore.getState().vibrantPalette;
@@ -71,7 +78,7 @@ export default function App() {
         applyAccent(r, g, b);
       }
     }
-  }, [keepDefaultColours]);
+  }, [backgroundStyle]);
 
   useEffect(() => {
     isAuthenticated()

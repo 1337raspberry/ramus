@@ -211,10 +211,12 @@ export interface Settings {
   /** Quality used for user-initiated downloads. Lossless tracks transcode
    *  to Ogg/Opus at the chosen bitrate; lossy tracks always direct-play. */
   downloadQuality: DownloadQuality;
-  /** When true, suppress album-art accent + blur extraction and keep the
-   *  brand default palette everywhere. */
-  keepDefaultColours: boolean;
+  /** Background colour styling: art-derived, brand default everywhere,
+   *  or pure-black backdrop (accent still follows the artwork). */
+  backgroundStyle: BackgroundStyle;
 }
+
+export type BackgroundStyle = "dynamic" | "defaultColours" | "oledVoid";
 
 export interface CacheStats {
   artistCount: number;
