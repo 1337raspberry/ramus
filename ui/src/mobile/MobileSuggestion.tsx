@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
-import { usePlaybackStore } from "../stores/playbackStore";
+import {
+  usePlaybackStore,
+  applyUltraBlurColors,
+  resetUltraBlurGate,
+  ultraBlurColorsGen,
+} from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import {
   ART_SIZE,
@@ -10,6 +15,7 @@ import {
   setAlbumPalette,
 } from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
+import { extractCornerColors } from "../lib/blurArt";
 import { applyAccent } from "../lib/accent";
 import { countryToFlag } from "../lib/countryFlag";
 import {
@@ -99,14 +105,22 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
     const isPlaying = !!usePlaybackStore.getState().currentTrack;
     if (!isPlaying) {
       usePlaybackStore.setState({ vibrantPalette: null, ultraBlurColors: null });
+      // New suggestion = new write-gate generation: a slower colour fetch
+      // for a previous suggestion (reroll mashing) can no longer land late.
+      resetUltraBlurGate();
+      const gen = ultraBlurColorsGen();
       getAlbumColors(album.ratingKey)
         .then((result) => {
           if (usePlaybackStore.getState().currentTrack) return;
           if (result.palette) {
-            usePlaybackStore.setState({
-              vibrantPalette: result.palette,
-              ultraBlurColors: blurColorsFromPalette(result.palette),
-            });
+            usePlaybackStore.setState({ vibrantPalette: result.palette });
+          }
+          // Server-provided UltraBlur corners beat the palette fallback;
+          // the gate keeps both below a landed art extraction.
+          if (result.colors) {
+            applyUltraBlurColors(result.colors, "server", gen);
+          } else if (result.palette) {
+            applyUltraBlurColors(blurColorsFromPalette(result.palette), "palette", gen);
           }
         })
         .catch(() => {});
@@ -116,6 +130,12 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
   const handleArtLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
       if (usePlaybackStore.getState().currentTrack) return;
+      // Art-derived corner colours override the server-provided instant
+      // paint the moment the art decodes (spatial extraction, see
+      // lib/blurArt.ts). Independent of the palette cache below, which
+      // only feeds the accent.
+      const corners = extractCornerColors(e.currentTarget);
+      if (corners) applyUltraBlurColors(corners, "extracted");
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);
@@ -126,8 +146,9 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
         if (!palette || usePlaybackStore.getState().currentTrack) return;
         const [r, g, b] = accentFromPalette(palette);
         applyAccent(r, g, b);
-        const blur = blurColorsFromPalette(palette);
-        usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blur });
+        // Palette feeds the accent + DB cache only; the UltraBlur corners
+        // come from the server-provided colours in the effect above.
+        usePlaybackStore.setState({ vibrantPalette: palette });
         if (album) setAlbumPalette(album.ratingKey, palette).catch(() => {});
       });
     },

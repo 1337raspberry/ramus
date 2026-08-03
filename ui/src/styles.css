@@ -152,8 +152,9 @@ textarea {
  * first-listed layer on top (front-to-back in declaration order).
  * Order: TL → TR → BR → BL. Top-left dominates wherever opaque;
  * the other three show through where TL has faded. The baked
- * brightness (0.9) and saturation (1.2) in
- * `UltraBlurBackground.tsx` were tuned against this ordering.
+ * BRIGHTNESS/SATURATION constants in `UltraBlurBackground.tsx`
+ * were tuned against this ordering (and against the extraction-side
+ * chroma cap in `lib/blurArt.ts` — see the comments at both sites).
  * Reordering or switching to a symmetric blend mode will change
  * every preset and requires a full re-tuning pass.
  */
@@ -185,11 +186,44 @@ textarea {
   z-index: 0;
   pointer-events: none;
   background-color: #050508;
+  /* Blobs fade out by ~80% of the farthest-corner distance. At 100%
+     each gradient spans the whole surface, and because the layers stack
+     in paint order (first = topmost), the top-left/top-right colours
+     wash over the bottom corners and smother them — corners must fade
+     out before reaching the opposite quadrant to get equal weight.
+     The fade is EASED via color-mix intermediate stops: a plain
+     `color → transparent N%` falloff is linear with a slope kink at N,
+     and the eye reads that kink as a hard arc across the screen
+     (obvious on near-monochrome backgrounds). */
   background-image:
-    radial-gradient(ellipse farthest-corner at 0% 0%, var(--ultrablur-tl), transparent 100%),
-    radial-gradient(ellipse farthest-corner at 100% 0%, var(--ultrablur-tr), transparent 100%),
-    radial-gradient(ellipse farthest-corner at 100% 100%, var(--ultrablur-br), transparent 100%),
-    radial-gradient(ellipse farthest-corner at 0% 100%, var(--ultrablur-bl), transparent 100%);
+    radial-gradient(
+      ellipse farthest-corner at 0% 0%,
+      var(--ultrablur-tl) 0%,
+      color-mix(in srgb, var(--ultrablur-tl) 55%, transparent) 40%,
+      color-mix(in srgb, var(--ultrablur-tl) 18%, transparent) 62%,
+      transparent 80%
+    ),
+    radial-gradient(
+      ellipse farthest-corner at 100% 0%,
+      var(--ultrablur-tr) 0%,
+      color-mix(in srgb, var(--ultrablur-tr) 55%, transparent) 40%,
+      color-mix(in srgb, var(--ultrablur-tr) 18%, transparent) 62%,
+      transparent 80%
+    ),
+    radial-gradient(
+      ellipse farthest-corner at 100% 100%,
+      var(--ultrablur-br) 0%,
+      color-mix(in srgb, var(--ultrablur-br) 55%, transparent) 40%,
+      color-mix(in srgb, var(--ultrablur-br) 18%, transparent) 62%,
+      transparent 80%
+    ),
+    radial-gradient(
+      ellipse farthest-corner at 0% 100%,
+      var(--ultrablur-bl) 0%,
+      color-mix(in srgb, var(--ultrablur-bl) 55%, transparent) 40%,
+      color-mix(in srgb, var(--ultrablur-bl) 18%, transparent) 62%,
+      transparent 80%
+    );
   /* Baked overall dim. Unlike CSS `filter:`, `opacity` does not go
    * through Chromium's filter graph, so it will not reintroduce
    * banding. */
@@ -6224,7 +6258,12 @@ body.is-fullscreen .focus-body {
   flex-shrink: 0;
   border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  /* Downward-only shadow (offset ≥ blur + spread): the sheet body is a
+     scroll container, so anything the shadow paints above the card gets
+     clipped at the body's top edge — which renders as a hard full-width
+     line under the drag indicator (the shadow's 48px blur tints the
+     whole body area, then stops dead at the clip boundary). */
+  box-shadow: 0 32px 64px -24px rgba(0, 0, 0, 0.55);
   background: rgba(255, 255, 255, 0.08);
   margin: 8px 0 12px;
 }

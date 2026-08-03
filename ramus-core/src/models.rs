@@ -622,6 +622,20 @@ pub enum PopularityDisplay {
     Chart,
 }
 
+/// Background colour styling for the UltraBlur backdrop.
+/// `Dynamic` derives corner colours from the playing album's artwork;
+/// `DefaultColours` keeps the brand gradient AND accent everywhere;
+/// `OledVoid` renders a pure-black backdrop while the accent still
+/// follows the artwork.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BackgroundStyle {
+    #[default]
+    Dynamic,
+    DefaultColours,
+    OledVoid,
+}
+
 /// Maximum number of bookmarks. Enforced in `update_settings`.
 pub const MAX_BOOKMARKS: usize = 50;
 
@@ -654,9 +668,10 @@ pub struct Settings {
     /// Quality used for user-initiated downloads. `Original` direct-plays
     /// the source; `Kbps*` transcodes lossless sources to Ogg/Opus.
     pub download_quality: DownloadQuality,
-    /// When true, accent + ultra-blur palette extraction from album art
-    /// is suppressed and the brand defaults are kept everywhere.
-    pub keep_default_colours: bool,
+    /// Background colour styling (dynamic art-derived / brand default /
+    /// OLED black). Replaces the old `keepDefaultColours` bool — absent
+    /// or legacy settings.json files default to `Dynamic`.
+    pub background_style: BackgroundStyle,
 }
 
 impl Default for Settings {
@@ -682,7 +697,7 @@ impl Default for Settings {
             include_plex_styles: true,
             show_artist_flags: true,
             download_quality: DownloadQuality::default(),
-            keep_default_colours: false,
+            background_style: BackgroundStyle::default(),
         }
     }
 }

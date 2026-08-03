@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
-import { usePlaybackStore } from "../stores/playbackStore";
+import {
+  usePlaybackStore,
+  applyUltraBlurColors,
+  resetUltraBlurGate,
+  ultraBlurColorsGen,
+} from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import {
   ART_SIZE,
@@ -11,6 +16,7 @@ import {
   setAlbumPalette,
 } from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
+import { extractCornerColors } from "../lib/blurArt";
 import { applyAccent } from "../lib/accent";
 import { formatCodec } from "../lib/format";
 import { countryToFlag } from "../lib/countryFlag";
@@ -93,23 +99,30 @@ export default function SuggestionView() {
     };
   }, [album]);
 
-  // Prime the store with a cached vibrant palette. Dynamic extraction
-  // in handleArtLoad is the source of truth; the legacy API-sourced
-  // ultraBlurColors path is intentionally skipped. Depends only on
-  // `album`: SuggestionView only renders while stopped, so a `status`
-  // guard would just cause palette flashes on status flicker.
+  // Prime the store with cached colours. Server-provided UltraBlur
+  // corners take precedence for the background (spatially derived from
+  // the artwork); the palette covers the accent and is the blur fallback.
+  // Depends only on `album`: SuggestionView only renders while stopped,
+  // so a `status` guard would just cause palette flashes on status
+  // flicker.
   useEffect(() => {
     if (!album) return;
     // Clear the previous suggestion's palette so handleArtLoad falls
     // through to extractPalette() for the new image.
     usePlaybackStore.setState({ vibrantPalette: null, ultraBlurColors: null });
+    // New suggestion = new write-gate generation: a slower colour fetch
+    // for a previous suggestion (reroll mashing) can no longer land late.
+    resetUltraBlurGate();
+    const gen = ultraBlurColorsGen();
     getAlbumColors(album.ratingKey)
       .then((result) => {
         if (result.palette) {
-          usePlaybackStore.setState({
-            vibrantPalette: result.palette,
-            ultraBlurColors: blurColorsFromPalette(result.palette),
-          });
+          usePlaybackStore.setState({ vibrantPalette: result.palette });
+        }
+        if (result.colors) {
+          applyUltraBlurColors(result.colors, "server", gen);
+        } else if (result.palette) {
+          applyUltraBlurColors(blurColorsFromPalette(result.palette), "palette", gen);
         }
       })
       .catch(() => {});
@@ -118,6 +131,12 @@ export default function SuggestionView() {
   const handleArtLoad = useCallback(
     (e: React.SyntheticEvent<HTMLImageElement>) => {
       if (status !== "stopped") return;
+      // Art-derived corner colours override the server-provided instant
+      // paint the moment the art decodes (spatial extraction, see
+      // lib/blurArt.ts). Independent of the palette cache below, which
+      // only feeds the accent.
+      const corners = extractCornerColors(e.currentTarget);
+      if (corners) applyUltraBlurColors(corners, "extracted");
       // Skip when a palette was already loaded from the DB cache.
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
@@ -129,8 +148,9 @@ export default function SuggestionView() {
         if (!palette) return;
         const [r, g, b] = accentFromPalette(palette);
         applyAccent(r, g, b);
-        const blurColors = blurColorsFromPalette(palette);
-        usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
+        // Palette feeds the accent + DB cache only; the UltraBlur corners
+        // come from the server-provided colours in the effect above.
+        usePlaybackStore.setState({ vibrantPalette: palette });
         if (album) {
           setAlbumPalette(album.ratingKey, palette).catch(() => {});
         }

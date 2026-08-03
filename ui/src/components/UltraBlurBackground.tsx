@@ -17,7 +17,10 @@ import { hexToRgb } from "../lib/vibrantColor";
  * multiply clamped to [0, 255]. Order: saturation then brightness.
  */
 const BRIGHTNESS = isHDR ? 0.9 : 1.0;
-const SATURATION = isHDR ? 1.2 : 1.5;
+/* Tuned together with the extraction-side CHROMA_CAP in blurArt.ts —
+ * the boost revives dull server-fallback colours, while the cap stops
+ * already-saturated extracted colours from being pushed to neon. */
+const SATURATION = isHDR ? 1.05 : 1.3;
 
 function adjustedCSS(hex: string): string {
   const [r, g, b] = hexToRgb(hex);
@@ -33,7 +36,9 @@ interface Props {
 
 /**
  * Full-window gradient background from 4 overlapping CSS
- * `radial-gradient()` layers, one per corner.
+ * `radial-gradient()` layers, one per corner. Corner colours come from
+ * art-derived extraction (`lib/blurArt.ts`) with the server-provided
+ * UltraBlur colours as instant first paint before the art decodes.
  *
  * Do NOT use `filter: blur/brightness/saturate` here. A prior
  * implementation used 4 solid-colour divs inside `filter: blur(220px)`
@@ -42,7 +47,9 @@ interface Props {
  * higher-precision Metal-backed intermediates plus window-server
  * dithering, which hid the issue — do not be fooled by Mac-only
  * testing. CSS radial gradients go through a different render path
- * with higher internal precision and built-in dithering.
+ * with higher internal precision and built-in dithering. (Rendering a
+ * low-res copy of the art itself was also tried: it reads as a
+ * pixelated stretched image at any usable resolution.)
  *
  * Corner colours are passed as CSS custom properties. The matching
  * `@property` declarations in `styles.css` with `syntax: '<color>'`

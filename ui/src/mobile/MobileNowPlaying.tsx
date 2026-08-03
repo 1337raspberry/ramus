@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePlaybackStore } from "../stores/playbackStore";
+import { usePlaybackStore, applyUltraBlurColors } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useGenreInfoStore } from "../stores/genreInfoStore";
 import {
@@ -12,8 +12,9 @@ import {
   getArtUrl,
 } from "../lib/commands";
 import { formatDuration } from "../lib/format";
-import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
-import { applyAccent, DEFAULT_BLUR_COLORS } from "../lib/accent";
+import { extractPalette, accentFromPalette } from "../lib/vibrantColor";
+import { extractCornerColors } from "../lib/blurArt";
+import { applyAccent, DEFAULT_BLUR_COLORS, OLED_VOID_BLUR_COLORS } from "../lib/accent";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
 import WaveformSeekBar from "../components/WaveformSeekBar";
@@ -110,11 +111,12 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const status = usePlaybackStore((s) => s.status);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
   const albumBlurColors = usePlaybackStore((s) => s.ultraBlurColors);
-  const keepDefaultColours = useSettingsStore((s) => s.keepDefaultColours);
-  const sheetBlurColors = useMemo(
-    () => (keepDefaultColours ? DEFAULT_BLUR_COLORS : (albumBlurColors ?? DEFAULT_BLUR_COLORS)),
-    [albumBlurColors, keepDefaultColours],
-  );
+  const backgroundStyle = useSettingsStore((s) => s.backgroundStyle);
+  const sheetBlurColors = useMemo(() => {
+    if (backgroundStyle === "defaultColours") return DEFAULT_BLUR_COLORS;
+    if (backgroundStyle === "oledVoid") return OLED_VOID_BLUR_COLORS;
+    return albumBlurColors ?? DEFAULT_BLUR_COLORS;
+  }, [albumBlurColors, backgroundStyle]);
   const queue = usePlaybackStore((s) => s.queue);
   const queueIndex = usePlaybackStore((s) => s.queueIndex);
   const jumpToIndex = usePlaybackStore((s) => s.jumpToIndex);
@@ -146,6 +148,12 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
       if (lastAccentThumb.current === thumb) return;
       lastAccentThumb.current = thumb;
       const capturedThumb = thumb;
+      // Art-derived corner colours override the server-provided instant
+      // paint the moment the art decodes (spatial extraction, see
+      // lib/blurArt.ts). Independent of the palette cache below, which
+      // only feeds the accent.
+      const corners = extractCornerColors(img);
+      if (corners) applyUltraBlurColors(corners, "extracted");
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);
@@ -156,8 +164,9 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
         if (!palette || lastAccentThumb.current !== capturedThumb) return;
         const [r, g, b] = accentFromPalette(palette);
         applyAccent(r, g, b);
-        const blurColors = blurColorsFromPalette(palette);
-        usePlaybackStore.setState({ vibrantPalette: palette, ultraBlurColors: blurColors });
+        // Palette feeds the accent + DB cache only; the UltraBlur corners
+        // come from the server-provided colours via getAlbumColors.
+        usePlaybackStore.setState({ vibrantPalette: palette });
         if (track?.albumKey) {
           setAlbumPalette(track.albumKey, palette).catch(() => {});
         }

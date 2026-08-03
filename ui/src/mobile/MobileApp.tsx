@@ -66,6 +66,16 @@ export default function MobileApp({ onOpenSettings }: Props) {
     }
   }, [sheetExpanded]);
 
+  // Expanding the player sheet dismisses an active search. The search
+  // bar is a NATIVE UISearchBar layered above the webview on iOS, so the
+  // sheet cannot cover it — it must be torn down. Clearing searchQuery
+  // unmounts MobileSearch, whose cleanup hides the native bar.
+  useEffect(() => {
+    if (sheetExpanded && useLibraryStore.getState().searchQuery !== null) {
+      useLibraryStore.setState({ searchQuery: null });
+    }
+  }, [sheetExpanded]);
+
   const miniPlayerVisible = hasTrack;
 
   // Hide toolbar when drilled into a grid or detail view; keep it on

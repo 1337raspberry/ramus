@@ -33,7 +33,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   includePlexStyles: true,
   showArtistFlags: true,
   downloadQuality: "original",
-  keepDefaultColours: false,
+  backgroundStyle: "dynamic",
 
   loadSettings: async () => {
     try {

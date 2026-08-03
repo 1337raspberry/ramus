@@ -223,9 +223,11 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
     b: "220",
   });
   const vibrantPalette = usePlaybackStore((s) => s.vibrantPalette);
-  const keepDefaultColours = useSettingsStore((s) => s.keepDefaultColours);
+  const backgroundStyle = useSettingsStore((s) => s.backgroundStyle);
   useEffect(() => {
-    if (keepDefaultColours) {
+    // Only `defaultColours` locks the visualizer to the brand accent;
+    // `oledVoid` blacks out the backdrop but keeps the art-derived accent.
+    if (backgroundStyle === "defaultColours") {
       const [r, g, b] = DEFAULT_ACCENT;
       accentRef.current = { r: String(r), g: String(g), b: String(b) };
       return;
@@ -238,7 +240,7 @@ function CanvasLayer({ frames }: { frames: SpectrumFrames }) {
     }
     const [r, g, b] = accentFromPalette(vibrantPalette);
     accentRef.current = { r: String(r), g: String(g), b: String(b) };
-  }, [vibrantPalette, keepDefaultColours]);
+  }, [vibrantPalette, backgroundStyle]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
