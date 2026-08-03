@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePlaybackStore, applyUltraBlurColors } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useGenreInfoStore } from "../stores/genreInfoStore";
+import { pushBackHandler } from "../lib/backHandler";
 import {
   ART_SIZE,
   setAlbumPalette,
@@ -33,7 +35,8 @@ import {
   IconMusicNote,
   IconChevronDown,
   IconClose,
-  IconEqualizer,
+  IconMoreDots,
+  IconLyrics,
 } from "../components/Icons";
 import EqualizerPanel from "../components/EqualizerPanel";
 import MobileDebugPanel from "./MobileDebugPanel";
@@ -52,14 +55,6 @@ function IconSkipForward({ size = 22 }: { size?: number }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
       <path d="M2 6l9 6-9 6V6z" />
       <path d="M12 6l9 6-9 6V6z" />
-    </svg>
-  );
-}
-
-function IconQuote() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M7 17h2l2-4V7H5v6h2l-1 4zm8 0h2l2-4V7h-6v6h2l-1 4z" />
     </svg>
   );
 }
@@ -127,7 +122,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     nowPlayingAlbum,
     hasTrackArtist,
     year,
-    codecParts,
+    codecBadge,
     albumFav,
     trackFav,
     handleAlbumFavToggle,
@@ -179,64 +174,7 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const showLyrics = usePlaybackStore((s) => s.showLyrics);
   const [showEQ, setShowEQ] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
-
-  // Long-press the EQ button to summon the debug panel. The timer is
-  // armed on touchstart and cancelled on touchend / touchmove past a
-  // small threshold; if the timer fires the click handler is suppressed
-  // via the ref flag so EQ doesn't also open.
-  const eqLongPressTimerRef = useRef<number | null>(null);
-  const eqLongPressFiredRef = useRef(false);
-  const eqLongPressStartRef = useRef<{ x: number; y: number } | null>(null);
-
-  const cancelEqLongPress = useCallback(() => {
-    if (eqLongPressTimerRef.current != null) {
-      window.clearTimeout(eqLongPressTimerRef.current);
-      eqLongPressTimerRef.current = null;
-    }
-    eqLongPressStartRef.current = null;
-  }, []);
-
-  const startEqLongPress = useCallback(
-    (x: number, y: number) => {
-      cancelEqLongPress();
-      eqLongPressFiredRef.current = false;
-      eqLongPressStartRef.current = { x, y };
-      eqLongPressTimerRef.current = window.setTimeout(() => {
-        eqLongPressFiredRef.current = true;
-        setShowDebug(true);
-      }, 600);
-    },
-    [cancelEqLongPress],
-  );
-
-  const handleEqTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      const t = e.touches[0];
-      if (!t) return;
-      startEqLongPress(t.clientX, t.clientY);
-    },
-    [startEqLongPress],
-  );
-
-  const handleEqTouchMove = useCallback(
-    (e: React.TouchEvent) => {
-      const start = eqLongPressStartRef.current;
-      const t = e.touches[0];
-      if (!start || !t) return;
-      const dx = t.clientX - start.x;
-      const dy = t.clientY - start.y;
-      if (dx * dx + dy * dy > 100) cancelEqLongPress();
-    },
-    [cancelEqLongPress],
-  );
-
-  const handleEqClick = useCallback(() => {
-    if (eqLongPressFiredRef.current) {
-      eqLongPressFiredRef.current = false;
-      return;
-    }
-    setShowEQ(true);
-  }, []);
+  const [showMenu, setShowMenu] = useState(false);
 
   // --- Swipe gestures ---
   // Mini-player: swipe up to expand. Sheet header: swipe down to collapse.
@@ -334,13 +272,6 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
   const sheetBodyRef = useRef<HTMLDivElement>(null);
   const sheetHeaderRef = useRef<HTMLElement>(null);
   const sheetDragYRef = useRef(0);
-  const [mainMinHeight, setMainMinHeight] = useState<number | undefined>(undefined);
-
-  useEffect(() => {
-    if (!expanded) return;
-    const el = sheetBodyRef.current;
-    if (el) setMainMinHeight(el.clientHeight);
-  }, [expanded, track?.ratingKey]);
 
   // Entering lyrics mode pins the body (overflow: hidden) — snap any
   // existing scroll offset back to the top so the fixed lyrics layout
@@ -513,20 +444,53 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
     }
   }, [expanded]);
 
-  // Close the sheet on Escape (iOS keyboard / external keyboard).
+  // Nudge the body down far enough to reveal the Up Next header, then
+  // spring back — a hint that there is more below rather than a jump.
+  const peekUpNext = useCallback(() => {
+    const el = sheetBodyRef.current;
+    if (!el) return;
+    el.scrollTo({ top: 90, behavior: "smooth" });
+    window.setTimeout(() => {
+      el.scrollTo({ top: 0, behavior: "smooth" });
+    }, 450);
+  }, []);
+
+  // Menu rows dismiss first so the action lands on a settled UI (the
+  // navigation rows also collapse the sheet out from under the menu).
+  const runMenuAction = useCallback((action: () => void) => {
+    setShowMenu(false);
+    action();
+  }, []);
+
+  // Close the sheet on Escape (iOS keyboard / external keyboard). The
+  // overflow menu is nested inside the sheet, so it consumes Escape first.
   useEffect(() => {
     if (!expanded) return;
     const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCollapse();
+      if (e.key !== "Escape") return;
+      if (showMenu) setShowMenu(false);
+      else onCollapse();
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [expanded, onCollapse]);
+  }, [expanded, onCollapse, showMenu]);
+
+  // Same for hardware back — without this the sheet collapses out from
+  // under the menu, stranding it (it portals to <body>, so it does not
+  // unmount with the sheet).
+  useEffect(() => {
+    if (!showMenu) return;
+    return pushBackHandler(() => {
+      setShowMenu(false);
+      return true;
+    });
+  }, [showMenu]);
 
   if (!track) return null;
 
   const isPlaying = status === "playing";
   const albumYear = year ? ` (${year})` : "";
+  const hasUpNext = queue.length > queueIndex + 1;
 
   return (
     <>
@@ -624,30 +588,13 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
         </div>
         <header ref={sheetHeaderRef} className="mobile-sheet-header">
           <div className="mobile-sheet-hint-bar" />
-          {!showLyrics && (
-            <button
-              className={`mobile-sheet-fav${albumFav ? " active" : ""}`}
-              onClick={handleAlbumFavToggle}
-              aria-label={albumFav ? "Remove album favourite" : "Favourite album"}
-              style={{ top: -6 }}
-            >
-              {albumFav ? <IconStarFilled /> : <IconStarEmpty />}
-            </button>
-          )}
         </header>
         <div
           className={`mobile-sheet-body${showLyrics ? " lyrics-active" : ""}`}
           ref={sheetBodyRef}
         >
-          <div
-            className={`mobile-sheet-main${showLyrics ? " lyrics-mode" : ""}`}
-            // Lyrics mode needs a DEFINITE height (CSS height: 100%) for
-            // the grid's 1fr lyrics row to constrain its content — with
-            // only a min-height the row sizes to content and pushes the
-            // transport below the fold.
-            style={mainMinHeight && !showLyrics ? { minHeight: mainMinHeight } : undefined}
-          >
-            <div ref={artRef} className="mobile-sheet-art" style={{ marginBottom: 12 }}>
+          <div className={`mobile-sheet-main${showLyrics ? " lyrics-mode" : ""}`}>
+            <div ref={artRef} className="mobile-sheet-art">
               {artSrc && !artErr ? (
                 <img
                   src={artSrc}
@@ -671,16 +618,8 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                 working across track changes while lyrics are open. */}
             <LyricsOverlay />
 
-            <div className="mobile-sheet-title" style={{ fontSize: 16 }}>
-              {track.title}
-            </div>
-            <div
-              className="mobile-sheet-artist"
-              role="button"
-              tabIndex={0}
-              onClick={handleArtistClick}
-              style={{ fontSize: 14 }}
-            >
+            <div className="mobile-sheet-title">{track.title}</div>
+            <div className="mobile-sheet-artist">
               {hasTrackArtist ? `${track.artistName} (${track.trackArtist})` : track.artistName}
             </div>
             {showLyrics && (
@@ -693,39 +632,11 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
               </button>
             )}
             {nowPlayingAlbum && (
-              <div
-                className="mobile-sheet-album"
-                role="button"
-                tabIndex={0}
-                onClick={handleAlbumClick}
-                style={{ fontSize: 12 }}
-              >
+              <div className="mobile-sheet-album">
                 {nowPlayingAlbum.title}
                 {albumYear}
               </div>
             )}
-
-            <div className="mobile-sheet-actions">
-              <button
-                className={`mobile-sheet-lyrics${showLyrics ? " active" : ""}`}
-                onClick={toggleLyrics}
-                aria-label={showLyrics ? "Hide lyrics" : "Show lyrics"}
-                aria-pressed={showLyrics}
-              >
-                <IconQuote />
-              </button>
-              <button
-                className="mobile-sheet-eq"
-                onClick={handleEqClick}
-                onTouchStart={handleEqTouchStart}
-                onTouchMove={handleEqTouchMove}
-                onTouchEnd={cancelEqLongPress}
-                onTouchCancel={cancelEqLongPress}
-                aria-label="Equalizer"
-              >
-                <IconEqualizer size={14} />
-              </button>
-            </div>
 
             <div
               className="mobile-sheet-wave"
@@ -741,6 +652,14 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
             </div>
 
             <div className="mobile-sheet-transport">
+              <button
+                className={`mobile-sheet-transport-btn secondary${showLyrics ? " active" : ""}`}
+                onClick={toggleLyrics}
+                aria-label={showLyrics ? "Hide lyrics" : "Show lyrics"}
+                aria-pressed={showLyrics}
+              >
+                <IconLyrics size={24} />
+              </button>
               <button
                 className="mobile-sheet-transport-btn"
                 onClick={() => previousTrack().catch(() => {})}
@@ -762,6 +681,14 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
               >
                 <IconNext size={34} />
               </button>
+              <button
+                className={`mobile-sheet-transport-btn secondary${trackFav ? " active" : ""}`}
+                onClick={handleTrackFavToggle}
+                aria-label={trackFav ? "Remove track favourite" : "Favourite track"}
+                aria-pressed={trackFav}
+              >
+                {trackFav ? <IconStarFilled size={22} /> : <IconStarEmpty size={22} />}
+              </button>
             </div>
 
             <div className="mobile-sheet-bottom">
@@ -773,38 +700,6 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
                     onGenreLongPress={openGenreInfo}
                   />
                 </div>
-              )}
-
-              <div className="mobile-sheet-foot">
-                <span>{codecParts?.label ?? ""}</span>
-                <span
-                  className={`mobile-sheet-track-fav${trackFav ? " active" : ""}`}
-                  onClick={handleTrackFavToggle}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={trackFav ? "Remove track favourite" : "Favourite track"}
-                >
-                  {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
-                </span>
-                <span>{codecParts?.detail ?? ""}</span>
-              </div>
-              {queue.length > queueIndex + 1 && (
-                <button
-                  type="button"
-                  className="mobile-sheet-scroll-hint"
-                  style={{ paddingTop: 24 }}
-                  onClick={() => {
-                    const el = sheetBodyRef.current;
-                    if (!el) return;
-                    el.scrollTo({ top: 90, behavior: "smooth" });
-                    window.setTimeout(() => {
-                      el.scrollTo({ top: 0, behavior: "smooth" });
-                    }, 450);
-                  }}
-                  aria-label="Show up next"
-                >
-                  <IconChevronDown size={20} />
-                </button>
               )}
             </div>
           </div>
@@ -856,7 +751,70 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
             );
           })()}
         </div>
+
+        {/* Pinned dock — a sibling of the scroll body, so its contents stay
+            on screen no matter how tall the track's genre list grows. */}
+        <div className="mobile-sheet-dock">
+          {hasUpNext && !showLyrics ? (
+            <button
+              type="button"
+              className="mobile-sheet-dock-btn hint"
+              onClick={peekUpNext}
+              aria-label="Show up next"
+            >
+              <IconChevronDown size={22} />
+            </button>
+          ) : (
+            /* Holds the chevron's slot so the menu button keeps its
+               position when there is nothing queued after this track. */
+            <span className="mobile-sheet-dock-spacer" aria-hidden="true" />
+          )}
+          {codecBadge && <span className="mobile-sheet-badge">{codecBadge}</span>}
+          <button
+            type="button"
+            className="mobile-sheet-dock-btn"
+            onClick={() => setShowMenu(true)}
+            aria-label="More actions"
+            aria-haspopup="menu"
+          >
+            <IconMoreDots size={22} />
+          </button>
+        </div>
       </div>
+      {showMenu &&
+        createPortal(
+          <div
+            className="mobile-action-sheet-backdrop over-sheet"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowMenu(false);
+            }}
+          >
+            <div className="mobile-action-sheet">
+              <div className="mobile-action-sheet-group">
+                <button onClick={() => runMenuAction(handleArtistClick)}>Go to Artist</button>
+                {nowPlayingAlbum && (
+                  <button onClick={() => runMenuAction(handleAlbumClick)}>Go to Album</button>
+                )}
+                {nowPlayingAlbum && (
+                  <button onClick={() => runMenuAction(handleAlbumFavToggle)}>
+                    <span className="mobile-action-sheet-icon">
+                      {albumFav ? <IconStarFilled size={20} /> : <IconStarEmpty size={20} />}
+                    </span>
+                    {albumFav ? "Remove Album Favourite" : "Favourite Album"}
+                  </button>
+                )}
+                <button onClick={() => runMenuAction(() => setShowEQ(true))}>Adjust EQ</button>
+                <button onClick={() => runMenuAction(() => setShowDebug(true))}>
+                  Network Stats for Nerds
+                </button>
+              </div>
+              <button className="mobile-action-sheet-cancel" onClick={() => setShowMenu(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
       {showEQ && <EqualizerPanel onDismiss={() => setShowEQ(false)} />}
       {showDebug && <MobileDebugPanel onDismiss={() => setShowDebug(false)} />}
     </>

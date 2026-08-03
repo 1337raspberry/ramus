@@ -82,6 +82,19 @@ export function IconEqualizer({ size = defaults.size, className }: IconProps) {
   );
 }
 
+/** Ragged lines of text — lyrics. Distinct from `IconEqualizer`'s three
+ * even bars, which is the whole reason for the uneven widths. */
+export function IconLyrics({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <rect x="3" y="4" width="18" height="2.6" rx="1.3" />
+      <rect x="3" y="9.2" width="13" height="2.6" rx="1.3" />
+      <rect x="3" y="14.4" width="18" height="2.6" rx="1.3" />
+      <rect x="3" y="19.6" width="10" height="2.6" rx="1.3" />
+    </svg>
+  );
+}
+
 export function IconChevronRight({ size = defaults.size, className }: IconProps) {
   return (
     <svg
