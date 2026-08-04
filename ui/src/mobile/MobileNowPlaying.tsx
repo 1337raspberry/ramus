@@ -11,7 +11,6 @@ import {
   nextTrack,
   previousTrack,
   getQueue,
-  getArtUrl,
 } from "../lib/commands";
 import { formatDuration } from "../lib/format";
 import { extractPalette, accentFromPalette } from "../lib/vibrantColor";
@@ -60,23 +59,7 @@ function IconSkipForward({ size = 22 }: { size?: number }) {
 }
 
 function UpNextThumb({ thumb }: { thumb: string | null }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [err, setErr] = useState(false);
-
-  useEffect(() => {
-    if (!thumb) return;
-    let cancelled = false;
-    getArtUrl(thumb, ART_SIZE.SMALL)
-      .then((url) => {
-        if (!cancelled) setSrc(url);
-      })
-      .catch(() => {
-        if (!cancelled) setErr(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [thumb]);
+  const { artSrc: src, artErr: err, setArtErr: setErr } = useArtUrl(thumb, ART_SIZE.SMALL);
 
   if (src && !err) {
     return <img className="mobile-upnext-thumb" src={src} alt="" onError={() => setErr(true)} />;

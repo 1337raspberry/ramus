@@ -6,9 +6,12 @@ import type {
   PlaybackPositionPayload,
   PlaybackBufferingPayload,
   SpectrumReadyPayload,
+  MetadataWarmedPayload,
 } from "./types";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { useConnectionStore } from "../stores/connectionStore";
 import { applyAccent } from "./accent";
+import { bumpArtRetry } from "./useArtUrl";
 
 /**
  * Subscribe to Tauri playback events (accent-color, playback-state,
@@ -72,6 +75,35 @@ export function usePlaybackEvents(): void {
       if (event.payload.buffering && usePlaybackStore.getState().status !== "playing") return;
       store.setBuffering(event.payload.buffering);
     });
+    // A background warm landed a metadata artefact — retry any surface still
+    // showing a placeholder. Art bumps the global retry epoch (only
+    // unresolved useArtUrl slots refetch, and they hit the freshly-warmed
+    // disk cache); a waveform re-pulls only when it's for the current track
+    // and the seek bar is still empty.
+    const u5 = listen<MetadataWarmedPayload>("metadata-warmed", (event) => {
+      if (event.payload.kind === "waveform") {
+        store.refreshWaveform(event.payload.ratingKey ?? undefined);
+      } else {
+        bumpArtRetry();
+      }
+    });
+
+    // Connection recovery: fetches that failed while the link was down (or
+    // black-holed mid-drive) are worth one retry now. The backend's
+    // reconnect handler also kicks a fresh prefetch cycle, whose warm tier
+    // re-fetches anything still missing and re-fires `metadata-warmed`.
+    let wasOnline = (() => {
+      const c = useConnectionStore.getState();
+      return c.online && !c.effectiveOffline;
+    })();
+    const unsubConnection = useConnectionStore.subscribe((c) => {
+      const nowOnline = c.online && !c.effectiveOffline;
+      if (!wasOnline && nowOnline) {
+        bumpArtRetry();
+        store.refreshWaveform();
+      }
+      wasOnline = nowOnline;
+    });
 
     // While playing, if position events stop arriving for BUFFERING_STALE_MS
     // the audio has stalled (initial buffer, a mid-track network hiccup, or
@@ -88,10 +120,12 @@ export function usePlaybackEvents(): void {
 
     return () => {
       window.clearInterval(watchdog);
+      unsubConnection();
       u1.then((fn) => fn());
       u2.then((fn) => fn());
       u3.then((fn) => fn());
       u4.then((fn) => fn());
+      u5.then((fn) => fn());
     };
   }, []);
 }

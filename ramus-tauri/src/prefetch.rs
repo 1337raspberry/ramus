@@ -35,7 +35,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::events::{
-    emit_download_progress, emit_downloads_changed, emit_spectrum_ready, DownloadProgressPayload,
+    emit_download_progress, emit_downloads_changed, emit_metadata_warmed, emit_spectrum_ready,
+    DownloadProgressPayload, MetadataWarmedPayload,
 };
 use crate::ios_backup;
 use crate::spectrum_analyzer;
@@ -1091,7 +1092,13 @@ async fn run_serial_downloads(
             // preempts before the next unit runs.
             match next_warm_unit(app, player, &warm_failed) {
                 Some(unit) => {
-                    if !run_warm_unit(app, &unit).await {
+                    if run_warm_unit(app, &unit).await {
+                        // Tell the UI the artefact landed — surfaces whose
+                        // original fetch failed (or ran before the warm)
+                        // re-request instead of showing a placeholder until
+                        // the next track change.
+                        emit_metadata_warmed(app, unit.warmed_payload());
+                    } else {
                         warm_failed.insert(unit.failed_key());
                     }
                     continue;
@@ -1172,6 +1179,22 @@ impl WarmUnit {
         match self {
             WarmUnit::Waveform { rating_key, .. } => format!("wave:{rating_key}"),
             WarmUnit::Art { thumb } => format!("art:{thumb}"),
+        }
+    }
+
+    /// Event payload announcing this unit's artefact is now on disk.
+    fn warmed_payload(&self) -> MetadataWarmedPayload {
+        match self {
+            WarmUnit::Waveform { rating_key, .. } => MetadataWarmedPayload {
+                kind: "waveform",
+                rating_key: Some(rating_key.clone()),
+                thumb: None,
+            },
+            WarmUnit::Art { thumb } => MetadataWarmedPayload {
+                kind: "art",
+                rating_key: None,
+                thumb: Some(thumb.clone()),
+            },
         }
     }
 }
@@ -1459,6 +1482,16 @@ async fn run_user_download(
             }
             crate::commands::downloads::warm_waveform_sidecar(&state.client, &rk, &file_path_warm)
                 .await;
+            if crate::commands::downloads::waveform_sidecar_path(&file_path_warm).is_file() {
+                emit_metadata_warmed(
+                    &app_warm,
+                    MetadataWarmedPayload {
+                        kind: "waveform",
+                        rating_key: Some(rk.clone()),
+                        thumb: None,
+                    },
+                );
+            }
             // Permanent downloads are for offline use, so secure lyrics now too.
             crate::commands::downloads::warm_lyrics_sidecar(
                 &state.client,
@@ -1480,6 +1513,14 @@ async fn run_user_download(
                 )
                 .await;
                 crate::commands::downloads::recompute_image_pins(&state);
+                emit_metadata_warmed(
+                    &app_warm,
+                    MetadataWarmedPayload {
+                        kind: "art",
+                        rating_key: None,
+                        thumb: Some(thumb),
+                    },
+                );
             }
         });
     }

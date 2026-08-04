@@ -2,7 +2,8 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, hasActiveFilters, type AlbumSortOrder } from "../stores/libraryStore";
 import type { Album } from "../lib/types";
-import { ART_SIZE, getArtUrl } from "../lib/commands";
+import { ART_SIZE } from "../lib/commands";
+import { useArtUrl } from "../lib/useArtUrl";
 import { useQueueAlbum } from "../lib/useQueueAlbum";
 import { IconPlay, IconStarFilled, IconStarEmpty, IconMusicNote, IconMoreDots } from "./Icons";
 import BreadcrumbBar from "./BreadcrumbBar";
@@ -27,27 +28,15 @@ const TEXT_HEIGHT = 40; // title + artist + margins
 const CARD_PAD = 8; // 4px top, 4px bottom
 
 const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
-  const [artSrc, setArtSrc] = useState<string | null>(null);
-  const [artError, setArtError] = useState(false);
+  const {
+    artSrc,
+    artErr: artError,
+    setArtErr: setArtError,
+  } = useArtUrl(album.thumb, ART_SIZE.MEDIUM);
   const [menuOpen, setMenuOpen] = useState(false);
   const openAlbumDetail = useLibraryStore((s) => s.openAlbumDetail);
   const playAlbum = useLibraryStore((s) => s.playAlbum);
   const toggleAlbumFav = useLibraryStore((s) => s.toggleAlbumFav);
-
-  useEffect(() => {
-    if (!album.thumb) return;
-    let cancelled = false;
-    getArtUrl(album.thumb, ART_SIZE.MEDIUM)
-      .then((url) => {
-        if (!cancelled) setArtSrc(url);
-      })
-      .catch(() => {
-        if (!cancelled) setArtError(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [album.thumb]);
 
   useEffect(() => {
     if (!menuOpen) return;

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ART_SIZE,
   search as searchCmd,
-  getArtUrl,
   insertNext,
   appendToQueue,
   getTracksForAlbum,
@@ -10,6 +9,7 @@ import {
   playTracks,
   getQueue,
 } from "../lib/commands";
+import { useArtUrl } from "../lib/useArtUrl";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import type {
@@ -83,23 +83,7 @@ function SearchThumb({
   round?: boolean;
   onPlay?: () => void;
 }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [err, setErr] = useState(false);
-
-  useEffect(() => {
-    if (!artPath) return;
-    let cancelled = false;
-    getArtUrl(artPath, ART_SIZE.SMALL)
-      .then((url) => {
-        if (!cancelled) setSrc(url);
-      })
-      .catch(() => {
-        if (!cancelled) setErr(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [artPath]);
+  const { artSrc: src, artErr: err, setArtErr: setErr } = useArtUrl(artPath, ART_SIZE.SMALL);
 
   return (
     <div className={`search-thumb-wrap${round ? " search-thumb-round" : ""}`}>

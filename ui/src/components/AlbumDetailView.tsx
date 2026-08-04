@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
-import {
-  ART_SIZE,
-  getArtUrl,
-  getQueue,
-  insertNext,
-  appendToQueue,
-  getAlbumGenres,
-} from "../lib/commands";
+import { ART_SIZE, getQueue, insertNext, appendToQueue, getAlbumGenres } from "../lib/commands";
+import { useArtUrl } from "../lib/useArtUrl";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useDownloadsStore } from "../stores/downloadsStore";
@@ -47,30 +41,9 @@ export default function AlbumDetailView() {
     [closeAlbumDetail, selectGenreByName],
   );
 
-  const [artSrc, setArtSrc] = useState<string | null>(null);
-  const [artErr, setArtErr] = useState(false);
+  const { artSrc, artErr } = useArtUrl(album?.thumb, ART_SIZE.MEDIUM);
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
   const [genres, setGenres] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!album?.thumb) {
-      setArtSrc(null);
-      return;
-    }
-    setArtErr(false);
-    setArtSrc(null);
-    let cancelled = false;
-    getArtUrl(album.thumb, ART_SIZE.MEDIUM)
-      .then((url) => {
-        if (!cancelled) setArtSrc(url);
-      })
-      .catch(() => {
-        if (!cancelled) setArtErr(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [album?.thumb]);
 
   useEffect(() => {
     if (!album) {

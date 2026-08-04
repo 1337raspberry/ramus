@@ -9,12 +9,12 @@ import {
 import { useSettingsStore } from "../stores/settingsStore";
 import {
   ART_SIZE,
-  getArtUrl,
   getAlbumColors,
   getAlbumGenres,
   getTracksForAlbum,
   setAlbumPalette,
 } from "../lib/commands";
+import { useArtUrl } from "../lib/useArtUrl";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import { extractCornerColors } from "../lib/blurArt";
 import { applyAccent } from "../lib/accent";
@@ -33,30 +33,9 @@ export default function SuggestionView() {
   const status = usePlaybackStore((s) => s.status);
   const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
 
-  const [artSrc, setArtSrc] = useState<string | null>(null);
-  const [artErr, setArtErr] = useState(false);
+  const { artSrc, artErr, setArtErr } = useArtUrl(album?.thumb, ART_SIZE.LARGE);
   const [genres, setGenres] = useState<string[]>([]);
   const [codec, setCodec] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!album?.thumb) {
-      setArtSrc(null);
-      return;
-    }
-    setArtErr(false);
-    setArtSrc(null);
-    let cancelled = false;
-    getArtUrl(album.thumb, ART_SIZE.LARGE)
-      .then((url) => {
-        if (!cancelled) setArtSrc(url);
-      })
-      .catch(() => {
-        if (!cancelled) setArtErr(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [album?.thumb]);
 
   useEffect(() => {
     if (!album) {

@@ -78,6 +78,24 @@ pub fn emit_spectrum_ready(app: &AppHandle, rating_key: impl Into<String>) {
     let _ = app.emit("spectrum-ready", payload);
 }
 
+/// Notifies the frontend that a background warm just landed a metadata
+/// artefact on disk — a waveform sidecar (`kind: "waveform"`, carries
+/// `ratingKey`) or cached album art (`kind: "art"`, carries `thumb`).
+/// The UI uses it to fill in surfaces whose original fetch failed or
+/// pre-dated the warm: the current track's seek-bar waveform, and any
+/// art slot still showing a placeholder.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataWarmedPayload {
+    pub kind: &'static str,
+    pub rating_key: Option<String>,
+    pub thumb: Option<String>,
+}
+
+pub fn emit_metadata_warmed(app: &AppHandle, payload: MetadataWarmedPayload) {
+    let _ = app.emit("metadata-warmed", payload);
+}
+
 /// Per-track progress for the Downloads panel. `done` and `failed` are
 /// terminal; the frontend uses them to remove the row from the "in progress"
 /// list. `bytesWritten` / `totalBytes` update on chunk boundaries.

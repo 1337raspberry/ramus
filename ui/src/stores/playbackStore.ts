@@ -100,6 +100,12 @@ interface PlaybackState {
   /// hydrate from the cache. Safe to call unconditionally; it only invokes
   /// `getSpectrum` when there is a current track.
   refreshSpectrum: (forRatingKey?: string) => void;
+  /// Re-fetch the current track's waveform when it's still missing — called
+  /// on `metadata-warmed` (a background warm just landed the sidecar) and on
+  /// connection recovery. No-op when levels are already loaded, when
+  /// `forRatingKey` doesn't match the current track, or when nothing is
+  /// playing.
+  refreshWaveform: (forRatingKey?: string) => void;
 
   // --- Actions ---
   seek: (seconds: number) => void;
@@ -263,7 +269,13 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       get().refreshSpectrum(track.ratingKey);
 
       getWaveform(track.ratingKey)
-        .then((levels) => set({ waveformLevels: levels }))
+        .then((levels) => {
+          // Guard against a slow fetch landing after another track change —
+          // without it the previous track's waveform paints onto the new one.
+          if (get().currentTrack?.ratingKey === track.ratingKey) {
+            set({ waveformLevels: levels });
+          }
+        })
         .catch((e) => console.warn("[waveform] fetch failed:", e));
 
       if (track.albumKey) {
@@ -373,6 +385,24 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         console.warn("[spectrum] getSpectrum failed:", err);
         set({ spectrumState: { unavailable: { reason: "Failed to load spectrum data" } } });
       });
+  },
+
+  refreshWaveform: (forRatingKey) => {
+    const current = get().currentTrack;
+    if (!current) return;
+    if (forRatingKey && forRatingKey !== current.ratingKey) return;
+    if (get().waveformLevels) return;
+
+    const ratingKey = current.ratingKey;
+    getWaveform(ratingKey)
+      .then((levels) => {
+        // Only land on the track this fetch was for — a slow response must
+        // not paint the previous track's waveform onto the next one.
+        if (levels && get().currentTrack?.ratingKey === ratingKey) {
+          set({ waveformLevels: levels });
+        }
+      })
+      .catch(() => {});
   },
 
   seek: (seconds) => {

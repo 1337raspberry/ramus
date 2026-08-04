@@ -1,27 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
-import { ART_SIZE, getArtUrl } from "../lib/commands";
+import { ART_SIZE } from "../lib/commands";
+import { useArtUrl } from "../lib/useArtUrl";
 import { formatDuration } from "../lib/format";
 import { IconMusicNote, IconClose } from "./Icons";
 
 function QueueTrackThumb({ thumb }: { thumb: string | null }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [err, setErr] = useState(false);
-
-  useEffect(() => {
-    if (!thumb) return;
-    let cancelled = false;
-    getArtUrl(thumb, ART_SIZE.SMALL)
-      .then((url) => {
-        if (!cancelled) setSrc(url);
-      })
-      .catch(() => {
-        if (!cancelled) setErr(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [thumb]);
+  const { artSrc: src, artErr: err, setArtErr: setErr } = useArtUrl(thumb, ART_SIZE.SMALL);
 
   if (src && !err) {
     return <img className="queue-thumb" src={src} alt="" onError={() => setErr(true)} />;

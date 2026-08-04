@@ -316,6 +316,15 @@ export interface SpectrumReadyPayload {
   ratingKey: string;
 }
 
+/// A background warm landed a metadata artefact on disk — waveform sidecar
+/// (`kind: "waveform"`, has ratingKey) or cached album art (`kind: "art"`,
+/// has thumb). Drives retry of surfaces still showing placeholders.
+export interface MetadataWarmedPayload {
+  kind: "waveform" | "art";
+  ratingKey: string | null;
+  thumb: string | null;
+}
+
 export interface UltraBlurColors {
   topLeft: string;
   topRight: string;

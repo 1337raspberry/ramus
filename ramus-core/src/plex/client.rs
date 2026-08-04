@@ -76,8 +76,18 @@ impl PlexClient {
         // X-Plex-Token) across origin on 3xx, which would exfiltrate the
         // token to a hostile or MITM'd target. Plex's API does not issue
         // redirects in normal operation; any 3xx surfaces as ConnectionFailed.
+        //
+        // Stall timeouts, not a total timeout: cellular handoffs black-hole
+        // TCP connections without erroring, and a timeout-less request
+        // (waveform levels, stream metadata) then hangs indefinitely —
+        // wedging both the track-change waveform fetch and the prefetch
+        // worker's warming tier. `read_timeout` resets on every received
+        // byte, so a large-but-flowing library sync response is never cut
+        // off; only a genuinely dead connection trips it.
         let http = Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .read_timeout(std::time::Duration::from_secs(30))
             .build()
             .expect("reqwest client init");
         Self {

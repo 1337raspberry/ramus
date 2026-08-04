@@ -663,7 +663,21 @@ pub fn run() {
 
             let client = Arc::new(PlexClient::new(client_identifier));
             let connection_monitor = Arc::new(ConnectionMonitor::new(client.clone()));
-            let http_client = reqwest::Client::new();
+            // App-wide metadata client (album art, LRCLIB lyrics, media-control
+            // artwork). Everything through it is small, so aggressive timeouts
+            // are safe — and load-bearing: cellular handoffs black-hole TCP
+            // connections without erroring, and a timeout-less request then
+            // hangs indefinitely. Six such hung art fetches starve the
+            // frontend's fixed-slot art limiter and blank album art for the
+            // whole session. `read_timeout` (time between bytes) rather than a
+            // tight total timeout so a slow-but-flowing response still
+            // completes; LRCLIB's tighter per-request timeout overrides these.
+            let http_client = reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .read_timeout(std::time::Duration::from_secs(30))
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new());
 
             // Dedicated prefetch HTTP client with a 300s per-request timeout so
             // large FLAC files on slower LAN segments don't time out mid-download.

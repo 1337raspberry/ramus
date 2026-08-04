@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   ART_SIZE,
   search as searchCmd,
-  getArtUrl,
   getTracksForAlbum,
   getTrack,
   playTracks,
@@ -10,6 +9,7 @@ import {
   showNativeSearchBar,
   hideNativeSearchBar,
 } from "../lib/commands";
+import { useArtUrl } from "../lib/useArtUrl";
 import { useLibraryStore } from "../stores/libraryStore";
 import type {
   SearchAlbumResult,
@@ -49,25 +49,7 @@ const SECTION_TITLES: Record<SearchSection["kind"], string> = {
 };
 
 function SearchThumb({ path, round }: { path: string | null; round?: boolean }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [err, setErr] = useState(false);
-
-  useEffect(() => {
-    setSrc(null);
-    setErr(false);
-    if (!path) return;
-    let cancelled = false;
-    getArtUrl(path, ART_SIZE.SMALL)
-      .then((url) => {
-        if (!cancelled) setSrc(url);
-      })
-      .catch(() => {
-        if (!cancelled) setErr(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [path]);
+  const { artSrc: src, artErr: err, setArtErr: setErr } = useArtUrl(path, ART_SIZE.SMALL);
 
   const cls = `mobile-search-thumb${round ? " mobile-search-thumb-round" : ""}`;
   if (src && !err) {

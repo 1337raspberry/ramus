@@ -7,13 +7,8 @@ import {
   ultraBlurColorsGen,
 } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import {
-  ART_SIZE,
-  getArtUrl,
-  getAlbumColors,
-  getAlbumGenres,
-  setAlbumPalette,
-} from "../lib/commands";
+import { ART_SIZE, getAlbumColors, getAlbumGenres, setAlbumPalette } from "../lib/commands";
+import { useArtUrl } from "../lib/useArtUrl";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
 import { extractCornerColors } from "../lib/blurArt";
 import { applyAccent } from "../lib/accent";
@@ -60,8 +55,7 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
 
   const openGenreInfo = useGenreInfoStore((s) => s.open);
 
-  const [artSrc, setArtSrc] = useState<string | null>(null);
-  const [artErr, setArtErr] = useState(false);
+  const { artSrc, artErr, setArtErr } = useArtUrl(album?.thumb, ART_SIZE.LARGE);
   const [genres, setGenres] = useState<string[]>([]);
 
   // The miss message describes the query-time state; re-run the query when
@@ -70,26 +64,6 @@ export default function MobileSuggestion({ onClose, onPlay }: Props) {
   useEffect(() => {
     if (useLibraryStore.getState().suggestionMissed) loadSuggestion();
   }, [albumFilters, loadSuggestion]);
-
-  useEffect(() => {
-    if (!album?.thumb) {
-      setArtSrc(null);
-      return;
-    }
-    setArtErr(false);
-    setArtSrc(null);
-    let cancelled = false;
-    getArtUrl(album.thumb, ART_SIZE.LARGE)
-      .then((url) => {
-        if (!cancelled) setArtSrc(url);
-      })
-      .catch(() => {
-        if (!cancelled) setArtErr(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [album?.thumb]);
 
   useEffect(() => {
     if (!album) return;
