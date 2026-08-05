@@ -501,7 +501,7 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
     fun mpvGetDemuxerCacheTime(invoke: Invoke) {
         runOnMain {
             // Negative sentinel matches the iOS bridge — Rust's
-            // `prefetch::wait_for_live_drain` treats values < 0 as
+            // `prefetch::wait_for_source_drain` treats values < 0 as
             // "not yet available" and falls through to the ceiling.
             val value = player?.demuxerCacheTimeSeconds() ?: -1.0
             invoke.resolve(JSObject().put("value", value))
@@ -708,7 +708,15 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
                     trigger("mpvFileEnded", JSObject().put("reason", "eof"))
                 }
                 Player.STATE_IDLE -> {
-                    trigger("mpvIdleActive", JSObject())
+                    // Media3 forces STATE_IDLE whenever a playerError is
+                    // set, so an errored load lands here too. That failure
+                    // already reached the Rust side via onPlayerError →
+                    // mpvFileEnded(error); emitting mpvIdleActive as well
+                    // would run the end-of-queue teardown (Stopped,
+                    // current track cleared) on top of the recovery hold.
+                    if (player?.playerError == null) {
+                        trigger("mpvIdleActive", JSObject())
+                    }
                 }
             }
         }

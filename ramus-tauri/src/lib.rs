@@ -971,6 +971,47 @@ pub fn run() {
                                     },
                                 ));
 
+                                // Same-URI recovery: the active connection verifies
+                                // healthy again after a Lost verdict. A remote/cloud
+                                // server's URI is identical before and after an outage,
+                                // so on_connection_changed can never announce this —
+                                // without the edge, reachability stays latched false
+                                // and held playback waits for a manual tap. Mirrors the
+                                // changed handler minus the URL/playlist swap (nothing
+                                // went stale; playback just needs a kick).
+                                let rec_player = state.player.clone();
+                                let rec_reachable = state.server_reachable.clone();
+                                let rec_app = app_handle.clone();
+                                let rec_settings = state.settings.clone();
+                                let rec_prefetch = state.prefetch_handle.clone();
+                                connection_monitor.set_on_connection_recovered(
+                                    std::sync::Arc::new(move || {
+                                        // Resume whatever the outage interrupted. No-op
+                                        // when nothing is held/stalled or the user paused
+                                        // during the outage. The reload stamps the resume
+                                        // point; the now-playing keeper re-anchors the OS
+                                        // scrubber once position ticks flow again.
+                                        if rec_player.recover_interrupted_playback() {
+                                            emit_playback_buffering(&rec_app, true);
+                                        }
+                                        // Fresh prefetch cycle: re-checks targets and
+                                        // clears the per-cycle failure set.
+                                        rec_prefetch.notify_skip();
+                                        rec_reachable
+                                            .store(true, std::sync::atomic::Ordering::Release);
+                                        let offline_manual = rec_settings.read().offline_mode;
+                                        crate::events::emit_connection_status(
+                                            &rec_app,
+                                            crate::events::ConnectionStatusPayload {
+                                                online: true,
+                                                offline_mode_manual: offline_manual,
+                                                effective_offline: offline_manual,
+                                            },
+                                        );
+                                        log::info!("monitor: connection recovered");
+                                    }),
+                                );
+
                                 connection_monitor.start(
                                     plex_server.clone(),
                                     url_str.clone(),

@@ -3,6 +3,7 @@ package com.ramus.iosbridge
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -40,6 +41,39 @@ class LibmpvSimplePlayer(
     private var fileLoaded: Boolean = false
     private var lastError: PlaybackException? = null
     private var released: Boolean = false
+
+    // ---- END_FILE error classification -------------------------------
+    // The JNI layer's `event(eventId)` carries only the event id — mpv's
+    // `end_file.reason` / `error` fields never cross into Kotlin, so a
+    // failed load and a natural EOF arrive as the same END_FILE. Without
+    // classification no `PlaybackException` is ever produced, Media3
+    // never fires `onPlayerError`, and the Rust recovery ladder
+    // (`handle_file_ended(Error)` — retry, resume-at-position, hold) is
+    // unreachable on Android: dead tracks are silently walked past.
+    //
+    // Classification inputs live on the mpv event thread: MPVLib delivers
+    // log messages and events from one native loop, so "did this load log
+    // an error before it ended" is exact, with no cross-thread ordering
+    // ambiguity. `@Volatile` is insurance for the (documented
+    // single-threaded) delivery, and for `lastInterruptAtMs`, which the
+    // main thread writes.
+    @Volatile private var evtSawErrorLog: Boolean = false
+    @Volatile private var evtLastErrorLogAtMs: Long = 0L
+    @Volatile private var evtFileLoaded: Boolean = false
+    @Volatile private var evtStartFileAtMs: Long = 0L
+    @Volatile private var evtPositionMs: Long = 0L
+    @Volatile private var evtDurationMs: Long = -1L
+    // Stamped by the command surface (stop / seek / new queue / removes)
+    // right before issuing an mpv command that aborts an in-flight load —
+    // those aborts surface as END_FILE too, and must never be classified
+    // as failures (a spurious error burns the Rust side's one-retry
+    // budget for that track and forces a redundant reload). The check is
+    // a sequence comparison against the load's START_FILE, not a time
+    // window: a command only explains the end of a load that was already
+    // running when the command arrived. A load that *begins* after the
+    // command (e.g. the fresh entry of a recovery reload) classifies on
+    // its own merits, so fast connection-refused failures aren't masked.
+    @Volatile private var lastInterruptAtMs: Long = 0L
 
     init {
         // Audio-only configuration. Mirrors `default_mpv_options()` in
@@ -102,6 +136,9 @@ class LibmpvSimplePlayer(
                 .build()
         }
         val playbackState = when {
+            // Media3 requires a non-null playerError to imply STATE_IDLE
+            // (the State builder rejects any other combination).
+            lastError != null -> Player.STATE_IDLE
             released || queue.isEmpty() || idleActive -> Player.STATE_IDLE
             bufferingForCache || !fileLoaded -> Player.STATE_BUFFERING
             durationMs > 0 && positionMs >= durationMs -> Player.STATE_ENDED
@@ -138,17 +175,22 @@ class LibmpvSimplePlayer(
 
     override fun handlePrepare(): ListenableFuture<*> {
         // mpv begins demuxing as soon as `loadfile` runs in
-        // handleSetMediaItems; nothing to do here.
+        // handleSetMediaItems; nothing to load here. prepare() is Media3's
+        // canonical error-recovery entry point, so it clears a previous
+        // playback error.
+        lastError = null
         return Futures.immediateVoidFuture()
     }
 
     override fun handleStop(): ListenableFuture<*> {
+        lastInterruptAtMs = SystemClock.elapsedRealtime()
         mpv.command(arrayOf("stop"))
         return Futures.immediateVoidFuture()
     }
 
     override fun handleRelease(): ListenableFuture<*> {
         if (released) return Futures.immediateVoidFuture()
+        lastInterruptAtMs = SystemClock.elapsedRealtime()
         released = true
         mpv.removeObserver(this)
         mpv.removeLogObserver(this)
@@ -161,6 +203,15 @@ class LibmpvSimplePlayer(
         positionMs: Long,
         seekCommand: Int,
     ): ListenableFuture<*> {
+        // A cross-index seek aborts any in-flight load of the outgoing
+        // entry (END_FILE with a stop reason we can't see) — stamp so the
+        // classifier doesn't read the abort as a failure. Same-index seeks
+        // don't stamp: they never abort the file (a seek past EOF advances,
+        // but as a clean near-end EOF), and a stamp landing after the
+        // in-flight load's START_FILE would mask that load's real failure.
+        if (mediaItemIndex != currentIndex) {
+            lastInterruptAtMs = SystemClock.elapsedRealtime()
+        }
         if (mediaItemIndex != currentIndex && mediaItemIndex in queue.indices) {
             mpv.command(arrayOf("playlist-play-index", mediaItemIndex.toString()))
         }
@@ -174,6 +225,8 @@ class LibmpvSimplePlayer(
         startIndex: Int,
         startPositionMs: Long,
     ): ListenableFuture<*> {
+        lastInterruptAtMs = SystemClock.elapsedRealtime()
+        lastError = null
         queue = mediaItems.toMutableList()
         currentIndex = startIndex.coerceIn(0, mediaItems.size.coerceAtLeast(1) - 1)
         fileLoaded = false
@@ -227,6 +280,14 @@ class LibmpvSimplePlayer(
         fromIndex: Int,
         toIndex: Int,
     ): ListenableFuture<*> {
+        // Removing the playing entry makes mpv end it (stop reason) and
+        // advance — a self-inflicted END_FILE the classifier must ignore.
+        // Only stamp in that case: the recovery-reload dance removes a
+        // *non*-playing stale entry right after starting the fresh load,
+        // and stamping there would mask the fresh load's real failure.
+        if (currentIndex in fromIndex until toIndex) {
+            lastInterruptAtMs = SystemClock.elapsedRealtime()
+        }
         // mpv expects single-item removes; iterate from the back so the
         // indices don't shift under us.
         for (i in (toIndex - 1) downTo fromIndex) {
@@ -291,7 +352,7 @@ class LibmpvSimplePlayer(
 
     fun getMpvVolume(): Double = mpv.getPropertyDouble("volume") ?: 100.0
 
-    /** mpv's demuxer-cache-time, used by `prefetch::wait_for_live_drain`. */
+    /** mpv's demuxer-cache-time, used by `prefetch::wait_for_source_drain`. */
     fun demuxerCacheTimeSeconds(): Double? =
         mpv.getPropertyDouble("demuxer-cache-time")?.takeIf { it >= 0.0 }
 
@@ -336,6 +397,13 @@ class LibmpvSimplePlayer(
     }
 
     override fun eventProperty(property: String, value: Double) {
+        // Shadow position/duration on the event thread for the END_FILE
+        // classifier — the main-thread copies lag behind the marshal and
+        // the classifier needs values ordered against the event stream.
+        when (property) {
+            "time-pos" -> evtPositionMs = (value * 1000.0).toLong()
+            "duration" -> evtDurationMs = (value * 1000.0).toLong()
+        }
         runOnMain {
             when (property) {
                 "time-pos" -> {
@@ -376,23 +444,89 @@ class LibmpvSimplePlayer(
 
     override fun event(eventId: Int) {
         when (eventId) {
+            MPVLib.MpvEvent.MPV_EVENT_START_FILE -> {
+                // A new load attempt is underway: reset the per-load
+                // classifier state (event thread — ordered exactly against
+                // the log stream) and clear any previous error so the
+                // player leaves the error-IDLE state.
+                evtFileLoaded = false
+                evtSawErrorLog = false
+                evtStartFileAtMs = SystemClock.elapsedRealtime()
+                evtPositionMs = 0L
+                evtDurationMs = -1L
+                runOnMain {
+                    fileLoaded = false
+                    lastError = null
+                    invalidateState()
+                }
+            }
             MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> {
+                evtFileLoaded = true
                 runOnMain {
                     fileLoaded = true
                     idleActive = false
+                    lastError = null
                     invalidateState()
                 }
             }
             MPVLib.MpvEvent.MPV_EVENT_END_FILE -> {
+                val failed = endFileLooksLikeError()
                 runOnMain {
                     fileLoaded = false
+                    if (failed && !released) {
+                        // Generic message only: mpv's log lines can embed
+                        // the failed URL, and Plex URLs carry the token.
+                        lastError = PlaybackException(
+                            "libmpv reported a playback failure",
+                            null,
+                            PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+                        )
+                    }
                     invalidateState()
                 }
             }
         }
     }
 
+    /**
+     * Decide whether an `MPV_EVENT_END_FILE` represents a failure. The
+     * JNI layer drops mpv's end-file reason, so this reconstructs it from
+     * signals that ARE visible, erring toward "not an error" — a missed
+     * error costs one silent skip (the next entry's failure classifies),
+     * while a false positive triggers the Rust recovery ladder against a
+     * healthy stream.
+     *
+     * Runs on the mpv event thread, where log messages and events arrive
+     * in order from the same native loop.
+     */
+    private fun endFileLooksLikeError(): Boolean {
+        // Our own command aborted this load (abort END_FILEs carry a stop
+        // reason we can't see). Only commands issued after the load began
+        // can have aborted it.
+        if (lastInterruptAtMs >= evtStartFileAtMs) return false
+        // mpv logs every load failure at error level before ending the
+        // file; an END_FILE with a clean log is EOF/stop-shaped.
+        if (!evtSawErrorLog) return false
+        // Never opened + an error logged: a failed load.
+        if (!evtFileLoaded) return true
+        // The file was playing. A natural EOF ends with position at (or
+        // within gapless-handoff slack of) the duration; a mid-stream
+        // death ends visibly short of it. Require the error log to be
+        // fresh so a transient survived error minutes ago can't
+        // reclassify a real EOF.
+        val now = SystemClock.elapsedRealtime()
+        val nearEnd = evtDurationMs > 0 && evtPositionMs >= evtDurationMs - NATURAL_EOF_SLACK_MS
+        return !nearEnd && now - evtLastErrorLogAtMs <= MIDSTREAM_ERROR_RECENCY_MS
+    }
+
     override fun logMessage(prefix: String, level: Int, text: String) {
+        if (level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_ERROR) {
+            // Feed the END_FILE classifier: delivered on the same native
+            // event loop as `event()`, so "an error was logged during this
+            // load" is exact.
+            evtSawErrorLog = true
+            evtLastErrorLogAtMs = SystemClock.elapsedRealtime()
+        }
         when {
             level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_ERROR -> Log.e("mpv/$prefix", text.trimEnd())
             level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_WARN -> Log.w("mpv/$prefix", text.trimEnd())
@@ -407,6 +541,15 @@ class LibmpvSimplePlayer(
     }
 
     companion object {
+        /** How close to the duration an END_FILE still counts as a natural
+         * EOF. Gapless handoff and VBR duration estimates leave the final
+         * reported position a little short of the metadata duration. */
+        private const val NATURAL_EOF_SLACK_MS = 5_000L
+
+        /** Maximum age of the newest error log line for a loaded file's
+         * END_FILE to be classified as a mid-stream failure. */
+        private const val MIDSTREAM_ERROR_RECENCY_MS = 3_000L
+
         private val AUDIO_COMMANDS: Player.Commands = Player.Commands.Builder()
             .addAll(
                 Player.COMMAND_PLAY_PAUSE,

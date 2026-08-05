@@ -274,6 +274,20 @@ struct PlayerInner {
     /// plain unpause (mpv is idle after a failed stream, so unpausing is
     /// silent). Cleared on real playback progress or a successful re-attempt.
     held_for_recovery: bool,
+    /// Explicit user intent: the last play/pause-shaped user command was a
+    /// pause. Owned by `pause`/`resume`/`toggle_play_pause`/`load_queue`, and
+    /// recorded even when the status gate swallows the actual mpv command
+    /// (e.g. a lock-screen pause while held for recovery, where status is
+    /// already Paused) — automatic connection recovery consults it so it
+    /// never starts audio a user asked to stop. App-internal status flips
+    /// (holds, reload exits) deliberately do not touch it.
+    user_paused: bool,
+    /// Wall-clock of the last [`AudioPlayer::recover_interrupted_playback`]
+    /// reload. Kept separate from `last_auto_reload_at`: entering a hold
+    /// stamps that one, and a network that returns seconds later must not
+    /// have its single recovery reload declined by the very failure it is
+    /// recovering from.
+    last_recovery_reload_at: Option<Instant>,
     /// Queue index of an in-flight current-track reload. The reload re-enters
     /// its own index via `playlist_play_index`, firing one or more
     /// `playlist-pos-change` events that are NOT real track advances (some
@@ -374,6 +388,8 @@ impl AudioPlayer {
                 position_base: 0.0,
                 last_auto_reload_at: None,
                 held_for_recovery: false,
+                user_paused: false,
+                last_recovery_reload_at: None,
                 reloading_pos: None,
                 reload_started_at: None,
             }),
@@ -494,6 +510,9 @@ impl AudioPlayer {
             inner.state.queue_index = start_at;
             inner.state.current_track = Some(inner.state.queue[start_at].clone());
             inner.state.status = PlaybackStatus::Playing;
+            // Explicit fresh play: any earlier pause intent is superseded
+            // (the trailing set_pause(false) makes it real at the mpv level).
+            inner.user_paused = false;
             inner.play_session_id = uuid::Uuid::new_v4().to_string();
             inner.position = 0.0;
             inner.position_base = 0.0;
@@ -776,11 +795,13 @@ impl AudioPlayer {
         let mut inner = self.inner.lock();
         match inner.state.status {
             PlaybackStatus::Playing => {
+                inner.user_paused = true;
                 inner.state.status = PlaybackStatus::Paused;
                 drop(inner);
                 self.mpv.set_pause(true);
             }
             PlaybackStatus::Paused => {
+                inner.user_paused = false;
                 inner.state.status = PlaybackStatus::Playing;
                 inner.last_position_update = Some(Instant::now());
                 drop(inner);
@@ -793,6 +814,10 @@ impl AudioPlayer {
     /// Unconditionally pause playback. Safe to call when already paused.
     pub fn pause(&self) {
         let mut inner = self.inner.lock();
+        // Record the intent even when the status gate below declines the
+        // mpv command (e.g. a hold already shows Paused): automatic
+        // connection recovery must know the user asked for silence.
+        inner.user_paused = true;
         if inner.state.status == PlaybackStatus::Playing {
             inner.state.status = PlaybackStatus::Paused;
             drop(inner);
@@ -803,6 +828,7 @@ impl AudioPlayer {
     /// Unconditionally resume playback. Safe to call when already playing.
     pub fn resume(&self) {
         let mut inner = self.inner.lock();
+        inner.user_paused = false;
         if inner.held_for_recovery {
             // The stream died and we're holding at position; mpv is idle so a
             // plain unpause is silent. Re-attempt a resume-at-position load.
@@ -877,7 +903,9 @@ impl AudioPlayer {
         inner.last_position_update = None;
         inner.last_load_error = None;
         inner.held_for_recovery = false;
+        inner.user_paused = false;
         inner.last_auto_reload_at = None;
+        inner.last_recovery_reload_at = None;
         inner.reloading_pos = None;
         inner.reload_started_at = None;
         drop(inner);
@@ -1053,6 +1081,72 @@ impl AudioPlayer {
             inner.load_started_at,
             Instant::now(),
         ) == Phase::Stalled
+    }
+
+    /// Whether playback sits in an app-inflicted silent state that a healthy
+    /// connection could fix: held for recovery, or Playing with no progress
+    /// (a dead socket after a silent network flip never errors — mpv just
+    /// stops making progress). False when the user explicitly paused; their
+    /// intent outranks recovery. Drives the stall watchdog's trigger.
+    pub fn needs_connection_recovery(&self) -> bool {
+        let inner = self.inner.lock();
+        if inner.user_paused {
+            return false;
+        }
+        inner.held_for_recovery
+            || derive_phase(
+                inner.state.status,
+                inner.last_position_update,
+                inner.load_started_at,
+                Instant::now(),
+            ) == Phase::Stalled
+    }
+
+    /// Re-attempt playback after the connection layer reports the server
+    /// healthy again. An `Unchanged` evaluation fires no callback — for a
+    /// remote/cloud server that is the *only* shape recovery ever takes, so
+    /// the recovered-edge handler and the stall watchdog both funnel that
+    /// verdict here. Reloads the current track at position when playback is
+    /// held for recovery or stalled; declines when the user explicitly
+    /// paused (recovery must never start audio the user asked to stop).
+    /// Returns `true` if a reload was issued.
+    pub fn recover_interrupted_playback(&self) -> bool {
+        let (resume, idx) = {
+            let mut inner = self.inner.lock();
+            if inner.user_paused {
+                return false;
+            }
+            let stalled = derive_phase(
+                inner.state.status,
+                inner.last_position_update,
+                inner.load_started_at,
+                Instant::now(),
+            ) == Phase::Stalled;
+            if !inner.held_for_recovery && !stalled {
+                return false;
+            }
+            // One recovery reload per episode: racing triggers (path-event
+            // recovery edge + watchdog verdict) coalesce here. Deliberately
+            // NOT `within_reload_cooldown()` — entering the hold stamped
+            // `last_auto_reload_at`, and a network that returns seconds
+            // later must not have its recovery declined by the very failure
+            // it is recovering from.
+            if inner
+                .last_recovery_reload_at
+                .is_some_and(|t| t.elapsed() < RELOAD_COOLDOWN)
+            {
+                return false;
+            }
+            inner.last_recovery_reload_at = Some(Instant::now());
+            inner.last_auto_reload_at = Some(Instant::now());
+            // The connection just changed state; a retry verdict from
+            // before the recovery is no longer informative. Granting a
+            // fresh attempt also re-arms the organic failure ladder for
+            // the reloaded stream.
+            inner.last_retried_track = None;
+            (inner.position, inner.state.queue_index)
+        };
+        self.reload_current_track(Some(resume), Some(idx))
     }
 
     /// Handle mpv position change (called by event loop, ~30fps).
@@ -1476,6 +1570,7 @@ impl AudioPlayer {
         inner.last_position_update = None;
         inner.held_for_recovery = false;
         inner.last_auto_reload_at = None;
+        inner.last_recovery_reload_at = None;
         inner.reloading_pos = None;
         inner.reload_started_at = None;
     }
@@ -3004,6 +3099,128 @@ mod tests {
             !player.force_reload_current_track(),
             "second reload within cooldown must be suppressed"
         );
+    }
+
+    /// Drive a player into the held-for-recovery state: two consecutive
+    /// load errors on the same track exhaust the retry and hold at position.
+    fn hold_player_at(player: &AudioPlayer, pos: f64) {
+        player.handle_position_change(pos);
+        player.handle_file_ended(FileEndReason::Error("test".into()));
+        let out = player.handle_file_ended(FileEndReason::Error("test".into()));
+        assert!(matches!(out, RecoverOutcome::Held(_)), "got {out:?}");
+        assert_eq!(player.state().status, PlaybackStatus::Paused);
+    }
+
+    #[test]
+    fn test_recover_interrupted_playback_resumes_held() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        hold_player_at(&player, 30.0);
+        let calls_before = mpv.call_count();
+
+        // The network came back (recovered edge / healthy watchdog verdict):
+        // the hold must exit into a resume-at-position reload even though the
+        // hold itself stamped the auto-reload cooldown moments ago.
+        assert!(player.recover_interrupted_playback());
+        assert_eq!(player.state().status, PlaybackStatus::Playing);
+        assert!(!player.needs_connection_recovery());
+
+        // The reload is the insert/play/remove dance on the held index.
+        let calls = mpv.calls()[calls_before..].to_vec();
+        assert!(
+            calls
+                .iter()
+                .any(|c| matches!(c, MockCall::LoadFileAt { index: 0, .. })),
+            "expected a reload of the held entry, got {calls:?}"
+        );
+    }
+
+    #[test]
+    fn test_recover_interrupted_playback_respects_user_pause() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        hold_player_at(&player, 30.0);
+
+        // A pause while held is swallowed by the status gate (status is
+        // already Paused), but the *intent* must be recorded — recovery
+        // must never blast audio at a user who asked for silence.
+        player.pause();
+        assert!(!player.needs_connection_recovery());
+
+        let calls_before = mpv.call_count();
+        assert!(!player.recover_interrupted_playback());
+        assert_eq!(mpv.call_count(), calls_before, "no mpv command expected");
+        assert_eq!(player.state().status, PlaybackStatus::Paused);
+
+        // An explicit resume is the user's own retry: it re-attempts the
+        // held load and clears the pause intent.
+        player.resume();
+        assert_eq!(player.state().status, PlaybackStatus::Playing);
+    }
+
+    #[test]
+    fn test_recover_interrupted_playback_reloads_stalled_stream() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+        player.handle_position_change(42.0);
+
+        // Healthy stream: nothing to recover.
+        assert!(!player.needs_connection_recovery());
+        assert!(!player.recover_interrupted_playback());
+
+        // A dead socket after a silent network flip: status stays Playing
+        // but position ticks stop (mpv never errors). Recovery must kick
+        // the stream with a resume-at-position reload.
+        player.inner.lock().last_position_update =
+            Some(Instant::now() - Duration::from_secs(STALL_THRESHOLD_SECS + 1));
+        assert!(player.needs_connection_recovery());
+        let calls_before = mpv.call_count();
+        assert!(player.recover_interrupted_playback());
+        let calls = mpv.calls()[calls_before..].to_vec();
+        assert!(
+            calls
+                .iter()
+                .any(|c| matches!(c, MockCall::LoadFileAt { index: 0, .. })),
+            "expected a reload of the stalled entry, got {calls:?}"
+        );
+    }
+
+    #[test]
+    fn test_recover_interrupted_playback_coalesces_within_cooldown() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+        player.handle_position_change(42.0);
+        player.inner.lock().last_position_update =
+            Some(Instant::now() - Duration::from_secs(STALL_THRESHOLD_SECS + 1));
+
+        assert!(player.recover_interrupted_playback());
+        // Still stalled (no position tick arrived) — a second racing trigger
+        // (path event + watchdog) must coalesce, not stack reloads.
+        player.inner.lock().last_position_update =
+            Some(Instant::now() - Duration::from_secs(STALL_THRESHOLD_SECS + 1));
+        assert!(!player.recover_interrupted_playback());
+    }
+
+    #[test]
+    fn test_user_pause_intent_survives_status_gate_and_clears_on_play() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+        player.handle_position_change(10.0);
+
+        player.pause();
+        assert!(player.inner.lock().user_paused);
+        player.resume();
+        assert!(!player.inner.lock().user_paused);
+
+        player.toggle_play_pause(); // Playing -> Paused
+        assert!(player.inner.lock().user_paused);
+        player.toggle_play_pause(); // Paused -> Playing
+        assert!(!player.inner.lock().user_paused);
+
+        // A fresh queue load supersedes any lingering pause intent.
+        player.pause();
+        player.load_queue(vec![make_test_track("2")], 0);
+        assert!(!player.inner.lock().user_paused);
     }
 
     #[test]

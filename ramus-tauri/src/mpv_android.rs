@@ -119,7 +119,7 @@ impl<R: Runtime> MpvPlayer for AndroidMpvPlayer<R> {
 
     fn demuxer_cache_time(&self) -> Option<f64> {
         // Real value via libmpv's `demuxer-cache-time` property. Polled at
-        // 500ms by `prefetch::wait_for_live_drain` while the live transcode
+        // 500ms by `prefetch::wait_for_source_drain` while the live transcode
         // session is draining — so worst case ~2/sec, negligible. With
         // ExoPlayer this fell through to None and the ceiling absorbed the
         // wait; libmpv unlocks the real drain detection.

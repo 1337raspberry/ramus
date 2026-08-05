@@ -32,6 +32,31 @@ pub type ConnectionChangedCallback = Arc<dyn Fn(Url, String, bool, bool) + Send 
 /// Fired when all connections fail.
 pub type ConnectionLostCallback = Arc<dyn Fn() + Send + Sync>;
 
+/// Fired when the *same* active URI verifies healthy again after a
+/// [`ConnectionLostCallback`] verdict. For a remote/cloud server the URI
+/// never changes across an outage, so recovery re-validates the existing
+/// connection and the changed callback can't fire — without this edge,
+/// nothing ever reports "back online" (reachability stays latched false,
+/// held playback never auto-resumes).
+pub type ConnectionRecoveredCallback = Arc<dyn Fn() + Send + Sync>;
+
+/// Public outcome of [`ConnectionMonitor::evaluate_connection`], so callers
+/// like the stall watchdog can react to a healthy verdict directly — a
+/// healthy re-validation of an unchanged URI fires no callback, yet it's
+/// precisely the case where a stalled player needs an app-side kick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvalOutcome {
+    /// The active URI verified healthy (recovered callback may have fired).
+    Healthy,
+    /// Switched to a different connection; the changed callback fired.
+    Failover,
+    /// All tiers exhausted; the lost callback fired.
+    Lost,
+    /// Nothing evaluated: another evaluation is in flight, or the monitor
+    /// has no server configured. Callers must not treat this as healthy.
+    Skipped,
+}
+
 struct MonitorInner {
     cached_server: Option<PlexServer>,
     active_uri: Option<String>,
@@ -39,9 +64,14 @@ struct MonitorInner {
     last_interfaces: HashSet<String>,
     allow_http: bool,
     is_evaluating: bool,
+    /// Latched by a `Lost` verdict; cleared by the next successful
+    /// evaluation. While set, an `Unchanged` result is a recovery edge and
+    /// fires `on_connection_recovered`.
+    connection_was_lost: bool,
     debounce_handle: Option<tokio::task::AbortHandle>,
     on_connection_changed: Option<ConnectionChangedCallback>,
     on_connection_lost: Option<ConnectionLostCallback>,
+    on_connection_recovered: Option<ConnectionRecoveredCallback>,
 }
 
 /// Monitors network changes and manages Plex server connection failover.
@@ -64,9 +94,11 @@ impl ConnectionMonitor {
                 last_interfaces: HashSet::new(),
                 allow_http: true,
                 is_evaluating: false,
+                connection_was_lost: false,
                 debounce_handle: None,
                 on_connection_changed: None,
                 on_connection_lost: None,
+                on_connection_recovered: None,
             }),
         }
     }
@@ -79,6 +111,10 @@ impl ConnectionMonitor {
         self.inner.lock().on_connection_lost = Some(handler);
     }
 
+    pub fn set_on_connection_recovered(&self, handler: ConnectionRecoveredCallback) {
+        self.inner.lock().on_connection_recovered = Some(handler);
+    }
+
     pub fn set_allow_http(&self, value: bool) {
         self.inner.lock().allow_http = value;
     }
@@ -89,6 +125,7 @@ impl ConnectionMonitor {
         inner.cached_server = Some(server);
         inner.active_uri = Some(active_uri);
         inner.auth_token = Some(auth_token);
+        inner.connection_was_lost = false;
     }
 
     /// Stop monitoring and cancel any pending debounce.
@@ -101,6 +138,7 @@ impl ConnectionMonitor {
         inner.active_uri = None;
         inner.auth_token = None;
         inner.last_interfaces.clear();
+        inner.connection_was_lost = false;
     }
 
     /// Current active connection URI, if any.
@@ -152,11 +190,15 @@ impl ConnectionMonitor {
     /// 1. Fast path: test current URI (3 s timeout).
     /// 2. Cached: test sorted connections (5 s timeout each).
     /// 3. Re-discover from plex.tv.
-    pub async fn evaluate_connection(&self) {
+    ///
+    /// Returns the verdict so pollers (stall watchdog) can distinguish
+    /// "connection is fine, the player itself needs a kick" from a failover
+    /// or a skipped evaluation. Existing fire-and-forget call sites ignore it.
+    pub async fn evaluate_connection(&self) -> EvalOutcome {
         {
             let mut inner = self.inner.lock();
             if inner.is_evaluating {
-                return;
+                return EvalOutcome::Skipped;
             }
             inner.is_evaluating = true;
         }
@@ -178,18 +220,48 @@ impl ConnectionMonitor {
         drop(guard);
 
         match result {
-            EvalResult::Unchanged => {}
+            EvalResult::NotConfigured => EvalOutcome::Skipped,
+            EvalResult::Unchanged => {
+                // Recovery edge: the same URI verifies healthy again after a
+                // Lost verdict. This is the only "back online" signal a
+                // remote/cloud server ever produces — its URI is identical
+                // before and after an outage, so Changed can't fire.
+                let cb = {
+                    let mut inner = self.inner.lock();
+                    if inner.connection_was_lost {
+                        inner.connection_was_lost = false;
+                        inner.on_connection_recovered.clone()
+                    } else {
+                        None
+                    }
+                };
+                if let Some(cb) = cb {
+                    log::info!("monitor: active connection recovered");
+                    cb();
+                }
+                EvalOutcome::Healthy
+            }
             EvalResult::Changed { url, token, is_local, is_http } => {
-                let cb = self.inner.lock().on_connection_changed.clone();
+                let cb = {
+                    let mut inner = self.inner.lock();
+                    inner.connection_was_lost = false;
+                    inner.on_connection_changed.clone()
+                };
                 if let Some(cb) = cb {
                     cb(url, token, is_local, is_http);
                 }
+                EvalOutcome::Failover
             }
             EvalResult::Lost => {
-                let cb = self.inner.lock().on_connection_lost.clone();
+                let cb = {
+                    let mut inner = self.inner.lock();
+                    inner.connection_was_lost = true;
+                    inner.on_connection_lost.clone()
+                };
                 if let Some(cb) = cb {
                     cb();
                 }
+                EvalOutcome::Lost
             }
         }
     }
@@ -201,7 +273,7 @@ impl ConnectionMonitor {
                 (Some(s), Some(u), Some(t)) => {
                     (s.clone(), u.clone(), t.clone(), inner.allow_http)
                 }
-                _ => return EvalResult::Unchanged,
+                _ => return EvalResult::NotConfigured,
             }
         };
 
@@ -312,6 +384,8 @@ impl ConnectionMonitor {
 }
 
 enum EvalResult {
+    /// Monitor has no server/URI/token configured — nothing was tested.
+    NotConfigured,
     Unchanged,
     Changed {
         url: Url,
@@ -579,9 +653,152 @@ mod tests {
         }));
 
         monitor.start(server, mock_dead.uri(), "token".into());
-        monitor.evaluate_connection().await;
+        let outcome = monitor.evaluate_connection().await;
 
         assert!(lost.load(Ordering::SeqCst));
+        assert_eq!(outcome, EvalOutcome::Lost);
+        // A Lost verdict latches the flag that arms the recovery edge.
+        assert!(monitor.inner.lock().connection_was_lost);
+    }
+
+    #[tokio::test]
+    async fn test_recovered_fires_when_healthy_after_lost() {
+        let mock = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("identity"))
+            .respond_with(wiremock::ResponseTemplate::new(200))
+            .mount(&mock)
+            .await;
+
+        let client = Arc::new(PlexClient::new("test".into()));
+        let monitor = ConnectionMonitor::new(client);
+
+        let recovered = Arc::new(AtomicBool::new(false));
+        let recovered_flag = recovered.clone();
+        monitor.set_on_connection_recovered(Arc::new(move || {
+            recovered_flag.store(true, Ordering::SeqCst);
+        }));
+
+        let server = make_test_server_with_uri("s1", &mock.uri());
+        monitor.start(server, mock.uri(), "token".into());
+        // Simulate a prior outage: a Lost verdict latched the flag while the
+        // URI stayed the same (the remote/cloud shape — recovery re-validates
+        // the identical connection, so Changed can never announce it).
+        monitor.inner.lock().connection_was_lost = true;
+
+        let outcome = monitor.evaluate_connection().await;
+
+        assert_eq!(outcome, EvalOutcome::Healthy);
+        assert!(recovered.load(Ordering::SeqCst), "recovery edge must fire");
+        assert!(!monitor.inner.lock().connection_was_lost, "latch must clear");
+
+        // A second healthy pass is steady-state, not another recovery.
+        recovered.store(false, Ordering::SeqCst);
+        monitor.evaluate_connection().await;
+        assert!(!recovered.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_recovered_not_fired_without_prior_lost() {
+        let mock = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("identity"))
+            .respond_with(wiremock::ResponseTemplate::new(200))
+            .mount(&mock)
+            .await;
+
+        let client = Arc::new(PlexClient::new("test".into()));
+        let monitor = ConnectionMonitor::new(client);
+
+        let recovered = Arc::new(AtomicBool::new(false));
+        let recovered_flag = recovered.clone();
+        monitor.set_on_connection_recovered(Arc::new(move || {
+            recovered_flag.store(true, Ordering::SeqCst);
+        }));
+
+        let server = make_test_server_with_uri("s1", &mock.uri());
+        monitor.start(server, mock.uri(), "token".into());
+
+        let outcome = monitor.evaluate_connection().await;
+        assert_eq!(outcome, EvalOutcome::Healthy);
+        assert!(!recovered.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_failover_clears_lost_latch_and_skips_recovered() {
+        let mock_dead = wiremock::MockServer::start().await;
+        let mock_backup = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("identity"))
+            .respond_with(wiremock::ResponseTemplate::new(200))
+            .mount(&mock_backup)
+            .await;
+
+        let client = Arc::new(PlexClient::new("test".into()));
+        let monitor = ConnectionMonitor::new(client);
+
+        let recovered = Arc::new(AtomicBool::new(false));
+        let recovered_flag = recovered.clone();
+        monitor.set_on_connection_recovered(Arc::new(move || {
+            recovered_flag.store(true, Ordering::SeqCst);
+        }));
+        let changed = Arc::new(AtomicBool::new(false));
+        let changed_flag = changed.clone();
+        monitor.set_on_connection_changed(Arc::new(move |_, _, _, _| {
+            changed_flag.store(true, Ordering::SeqCst);
+        }));
+
+        let server = PlexServer {
+            machine_identifier: "s1".into(),
+            name: "Test".into(),
+            access_token: "token".into(),
+            owned: true,
+            connections: vec![
+                PlexServerConnection {
+                    uri: mock_dead.uri(),
+                    local: true,
+                    relay: false,
+                    protocol: "https".into(),
+                },
+                PlexServerConnection {
+                    uri: mock_backup.uri(),
+                    local: false,
+                    relay: false,
+                    protocol: "https".into(),
+                },
+            ],
+        };
+        monitor.start(server, mock_dead.uri(), "token".into());
+        monitor.inner.lock().connection_was_lost = true;
+
+        // Failover to the backup: the changed callback owns the full
+        // recovery side-effects, so the recovered edge must stay quiet and
+        // the latch must clear (the follow-up healthy pass is steady-state).
+        let outcome = monitor.evaluate_connection().await;
+        assert_eq!(outcome, EvalOutcome::Failover);
+        assert!(changed.load(Ordering::SeqCst));
+        assert!(!recovered.load(Ordering::SeqCst));
+        assert!(!monitor.inner.lock().connection_was_lost);
+
+        let outcome = monitor.evaluate_connection().await;
+        assert_eq!(outcome, EvalOutcome::Healthy);
+        assert!(!recovered.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_returns_skipped_when_unconfigured_or_busy() {
+        let client = Arc::new(PlexClient::new("test".into()));
+        let monitor = ConnectionMonitor::new(client);
+
+        // No server configured.
+        assert_eq!(monitor.evaluate_connection().await, EvalOutcome::Skipped);
+
+        // Another evaluation in flight.
+        let server = make_test_server("s1");
+        monitor.start(server, "https://test.local:32400".into(), "token".into());
+        monitor.inner.lock().is_evaluating = true;
+        assert_eq!(monitor.evaluate_connection().await, EvalOutcome::Skipped);
+        monitor.inner.lock().is_evaluating = false;
     }
 
     #[tokio::test]
