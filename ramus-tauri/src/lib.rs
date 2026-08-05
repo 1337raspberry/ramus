@@ -69,6 +69,7 @@ use tauri::AppHandle;
 
 use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
 use ramus_core::playback::mpv::MpvCallbacks;
+use ramus_core::models::PlaybackStatus;
 use ramus_core::playback::player::RecoverOutcome;
 
 use crate::events::{
@@ -174,7 +175,11 @@ pub fn create_mpv_player(
                 // resume's remapped timeline is respected.
                 if mc_reanchor.swap(false, std::sync::atomic::Ordering::AcqRel) {
                     if let Some(ref mc) = *mc5.lock() {
-                        mc.update_playback_state(true, p.position());
+                        // Real status, not a hardcoded rate=1: a user pause
+                        // can land between the reload and this first tick,
+                        // and the re-anchor must not overrule it.
+                        let playing = p.state().status == PlaybackStatus::Playing;
+                        mc.update_playback_state(playing, p.position());
                     }
                 }
             }
@@ -199,10 +204,17 @@ pub fn create_mpv_player(
                 );
 
                 // Push full metadata to OS media controls once the real duration
-                // is known (fires shortly after track change).
+                // is known (fires shortly after track change). Carry the REAL
+                // playback status: a hardcoded `is_playing=true` here poisons
+                // the OS transport state during a paused failover/reload — the
+                // lock screen then believes rate=1 and its toggle button sends
+                // pause (a no-op against an already-paused player) forever.
                 if let Some(ref mc) = *mc1.lock() {
-                    if let Some(ref track) = p.state().current_track {
-                        let meta = MediaMetadata::from_track(track, pos, effective_dur, true);
+                    let state = p.state();
+                    if let Some(ref track) = state.current_track {
+                        let playing = state.status == PlaybackStatus::Playing;
+                        let meta =
+                            MediaMetadata::from_track(track, pos, effective_dur, playing);
                         mc.update_metadata(&meta);
                     }
                 }
@@ -234,11 +246,15 @@ pub fn create_mpv_player(
                 // Push metadata to lock screen immediately. With gapless
                 // prefetch, on_duration_change may have already fired (for
                 // the old current_track), and won't re-fire if the duration
-                // is unchanged — so this is the only chance to update.
+                // is unchanged — so this is the only chance to update. Real
+                // status, not a hardcoded `true`: an advance while paused
+                // (skip from the lock screen, sticky mpv pause) must not
+                // tell the OS the player is running.
                 if let Some(ref mc) = *mc4.lock() {
                     if let Some(ref track) = state.current_track {
                         let dur = p.duration();
-                        let meta = MediaMetadata::from_track(track, 0.0, dur, true);
+                        let playing = state.status == PlaybackStatus::Playing;
+                        let meta = MediaMetadata::from_track(track, 0.0, dur, playing);
                         mc.update_metadata(&meta);
                     }
                 }

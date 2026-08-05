@@ -695,22 +695,20 @@ impl AudioPlayer {
             return;
         }
 
-        // See `next`: release a recovery hold before commanding mpv, and
-        // lift its pause pin — unless the user explicitly paused during
-        // the outage, in which case the jump lands paused and the status
-        // stays truthful.
-        let was_held = inner.held_for_recovery;
-        let unpause_after = was_held && !inner.user_paused;
+        // Explicit track selection is unconditional play intent: it
+        // releases any recovery hold (before commanding mpv, so the
+        // confirmation pos-change isn't suppressed as the walk),
+        // supersedes any pause intent, and makes the start real at the
+        // mpv level — mpv's sticky pause (a user pause, or the hold's
+        // pin) would otherwise leave the selected track silent under the
+        // Playing status set below.
         inner.held_for_recovery = false;
+        inner.user_paused = false;
         inner.state.queue_index = index;
         inner.state.current_track = Some(inner.state.queue[index].clone());
         inner.position = 0.0;
         inner.duration = inner.state.queue[index].duration;
-        inner.state.status = if was_held && !unpause_after {
-            PlaybackStatus::Paused
-        } else {
-            PlaybackStatus::Playing
-        };
+        inner.state.status = PlaybackStatus::Playing;
         inner.load_started_at = Some(Instant::now());
         inner.last_position_update = None;
         inner.last_load_error = None;
@@ -721,9 +719,7 @@ impl AudioPlayer {
         inner.reload_started_at = None;
         inner.position_base = 0.0;
         drop(inner);
-        if unpause_after {
-            self.mpv.set_pause(false);
-        }
+        self.mpv.set_pause(false);
         self.mpv.playlist_play_index(index as i64);
     }
 
@@ -3485,6 +3481,44 @@ mod tests {
         player.load_queue(vec![make_test_track("3")], 0);
         assert!(!player.inner.lock().held_for_recovery);
         assert!(player.handle_playlist_pos_change(0));
+    }
+
+    #[test]
+    fn test_jump_to_index_is_play_intent() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        player.handle_position_change(10.0);
+        player.pause();
+
+        // Tapping a track is an explicit "play this": it supersedes the
+        // pause intent and lifts mpv's sticky pause — without the explicit
+        // unpause, the selected track sits silent under a Playing status.
+        player.jump_to_index(1);
+        let state = player.state();
+        assert_eq!(state.queue_index, 1);
+        assert_eq!(state.status, PlaybackStatus::Playing);
+        assert!(!player.inner.lock().user_paused);
+        assert_eq!(pause_calls(&mpv).last(), Some(&false));
+    }
+
+    #[test]
+    fn test_jump_out_of_hold_plays_even_when_user_paused() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        hold_player_at(&player, 30.0);
+        player.pause();
+
+        // Unlike next/previous (which preserve the pause), an explicit
+        // track selection during an outage means "play this one now".
+        player.jump_to_index(1);
+        let state = player.state();
+        assert_eq!(state.queue_index, 1);
+        assert_eq!(state.status, PlaybackStatus::Playing);
+        assert!(!player.inner.lock().held_for_recovery);
+        assert_eq!(pause_calls(&mpv).last(), Some(&false));
+
+        // The confirmation pos-change is processed normally.
+        assert!(player.handle_playlist_pos_change(1));
     }
 
     #[test]

@@ -404,7 +404,13 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             if (idx < 0 || idx >= p.mediaItemCount) return@runOnMain invoke.resolve()
             p.seekTo(idx, 0L)
             if (p.playbackState == Player.STATE_IDLE) p.prepare()
-            p.play()
+            // No p.play(): an index change must preserve the pause state,
+            // matching mpv's own `playlist-play-index` semantics on desktop
+            // and iOS (sticky pause carries across entries). Forcing play
+            // here made a paused skip start audio on Android only, and
+            // momentarily unpaused a user-paused recovery reload mid-dance.
+            // Callers with genuine play intent (track selection, queue
+            // start, hold exits) issue an explicit mpvSetPause(false).
             invoke.resolve()
         }
     }
