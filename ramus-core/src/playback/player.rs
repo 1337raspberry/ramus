@@ -511,8 +511,18 @@ impl AudioPlayer {
             inner.state.current_track = Some(inner.state.queue[start_at].clone());
             inner.state.status = PlaybackStatus::Playing;
             // Explicit fresh play: any earlier pause intent is superseded
-            // (the trailing set_pause(false) makes it real at the mpv level).
+            // (the trailing set_pause(false) makes it real at the mpv level),
+            // and a lingering recovery hold is moot — it must be released
+            // here or the new queue's pos-change events would be suppressed
+            // as the hold's auto-advance walk.
             inner.user_paused = false;
+            inner.held_for_recovery = false;
+            // A fresh queue also moots any in-flight current-track reload —
+            // close the settle window (like next/previous/jump do) so an
+            // armed window can't swallow the new queue's first pos-change
+            // as the old reload's landing event.
+            inner.reloading_pos = None;
+            inner.reload_started_at = None;
             inner.play_session_id = uuid::Uuid::new_v4().to_string();
             inner.position = 0.0;
             inner.position_base = 0.0;
@@ -685,11 +695,22 @@ impl AudioPlayer {
             return;
         }
 
+        // See `next`: release a recovery hold before commanding mpv, and
+        // lift its pause pin — unless the user explicitly paused during
+        // the outage, in which case the jump lands paused and the status
+        // stays truthful.
+        let was_held = inner.held_for_recovery;
+        let unpause_after = was_held && !inner.user_paused;
+        inner.held_for_recovery = false;
         inner.state.queue_index = index;
         inner.state.current_track = Some(inner.state.queue[index].clone());
         inner.position = 0.0;
         inner.duration = inner.state.queue[index].duration;
-        inner.state.status = PlaybackStatus::Playing;
+        inner.state.status = if was_held && !unpause_after {
+            PlaybackStatus::Paused
+        } else {
+            PlaybackStatus::Playing
+        };
         inner.load_started_at = Some(Instant::now());
         inner.last_position_update = None;
         inner.last_load_error = None;
@@ -700,6 +721,9 @@ impl AudioPlayer {
         inner.reload_started_at = None;
         inner.position_base = 0.0;
         drop(inner);
+        if unpause_after {
+            self.mpv.set_pause(false);
+        }
         self.mpv.playlist_play_index(index as i64);
     }
 
@@ -712,11 +736,23 @@ impl AudioPlayer {
             inner.position = 0.0;
             inner.load_started_at = None;
             inner.last_position_update = None;
+            inner.held_for_recovery = false;
             drop(inner);
             self.mpv.stop();
             return;
         }
 
+        // Deliberate navigation releases a recovery hold BEFORE commanding
+        // mpv, so the confirmation pos-change isn't suppressed as the
+        // auto-advance walk. The hold parked mpv paused; a skip with play
+        // intent must lift that pin or the next track loads silent, while
+        // an explicitly paused user keeps their pause (sticky across the
+        // index change).
+        let unpause_after = inner.held_for_recovery && !inner.user_paused;
+        inner.held_for_recovery = false;
+        if unpause_after {
+            inner.state.status = PlaybackStatus::Playing;
+        }
         inner.state.queue_index += 1;
         inner.state.current_track = Some(inner.state.queue[inner.state.queue_index].clone());
         inner.position = 0.0;
@@ -732,6 +768,9 @@ impl AudioPlayer {
         inner.position_base = 0.0;
         let idx = inner.state.queue_index;
         drop(inner);
+        if unpause_after {
+            self.mpv.set_pause(false);
+        }
         self.mpv.playlist_play_index(idx as i64);
     }
 
@@ -740,9 +779,12 @@ impl AudioPlayer {
         let mut inner = self.inner.lock();
 
         if inner.position > PREVIOUS_RESTART_THRESHOLD {
+            // A held track has no live mpv stream — a plain seek(0) would
+            // be a silent no-op. Reload from the top instead (the hold
+            // exit inside restores the pause flag to the user's intent).
             // A transcode `offset=` stream can't rewind before its resume
-            // point; reload the track fresh from the top instead.
-            if inner.position_base > 0.0 {
+            // point either; same fresh reload.
+            if inner.held_for_recovery || inner.position_base > 0.0 {
                 let idx = inner.state.queue_index;
                 drop(inner);
                 self.reload_current_track(None, Some(idx));
@@ -756,8 +798,8 @@ impl AudioPlayer {
 
         if inner.state.queue_index == 0 {
             // Same restart-current outcome as above, reached via the other
-            // threshold — an offset stream can't rewind here either.
-            if inner.position_base > 0.0 {
+            // threshold — held and offset streams can't seek here either.
+            if inner.held_for_recovery || inner.position_base > 0.0 {
                 drop(inner);
                 self.reload_current_track(None, Some(0));
                 return;
@@ -768,6 +810,13 @@ impl AudioPlayer {
             return;
         }
 
+        // See `next`: release a recovery hold before commanding mpv, and
+        // lift its pause pin when the user wants playback.
+        let unpause_after = inner.held_for_recovery && !inner.user_paused;
+        inner.held_for_recovery = false;
+        if unpause_after {
+            inner.state.status = PlaybackStatus::Playing;
+        }
         inner.state.queue_index -= 1;
         inner.state.current_track = Some(inner.state.queue[inner.state.queue_index].clone());
         inner.position = 0.0;
@@ -781,6 +830,9 @@ impl AudioPlayer {
         inner.position_base = 0.0;
         let idx = inner.state.queue_index;
         drop(inner);
+        if unpause_after {
+            self.mpv.set_pause(false);
+        }
         self.mpv.playlist_play_index(idx as i64);
     }
 
@@ -1217,6 +1269,19 @@ impl AudioPlayer {
             return false;
         }
 
+        // While held for recovery, every mpv-originated pos-change is the
+        // auto-advance walk (keep-open=no moves past the failed entry and
+        // through the playlist), not a real advance — the hold owns the
+        // queue position. Processing the walk used to clear the hold and
+        // cascade the queue pointer through the outage. Deliberate
+        // navigation is unaffected: next/previous/jump and load_queue clear
+        // the hold under their own lock BEFORE commanding mpv, so their
+        // confirmation events arrive with the hold already released.
+        if inner.held_for_recovery {
+            log::debug!("playlist_pos_change({pos}) suppressed: held for recovery");
+            return false;
+        }
+
         // A current-track reload (failover/recovery resume, or a seek that
         // re-opens a transcode offset stream) re-enters its own index via an
         // insert/play/remove dance. That dance can fire *several*
@@ -1272,9 +1337,6 @@ impl AudioPlayer {
         inner.last_position_update = None;
         inner.last_load_error = None;
         inner.last_retried_track = None;
-        // A different track is now current — it can't be the one we were
-        // holding after exhausted recovery.
-        inner.held_for_recovery = false;
         true
     }
 
@@ -1380,6 +1442,17 @@ impl AudioPlayer {
                             inner.state.status = PlaybackStatus::Paused;
                             inner.held_for_recovery = true;
                         }
+                        // Pin mpv: with keep-open=no it advances past the
+                        // failed entry on its own and walks the rest of the
+                        // playlist. The sticky pause keeps that walk silent —
+                        // without it, the first entry that *does* load (a
+                        // cached file, say) starts playing audibly under a
+                        // Paused status. The walk's pos-changes and any
+                        // eventual idle are suppressed separately (see
+                        // `handle_playlist_pos_change` / `handle_idle_active`);
+                        // every hold exit restores the pause flag to the
+                        // user's actual intent.
+                        self.mpv.set_pause(true);
                         log::warn!("handle_file_ended: recovery exhausted, holding at {pos:.1}s: {redacted}");
                         RecoverOutcome::Held(pos)
                     }
@@ -1457,7 +1530,7 @@ impl AudioPlayer {
     /// from the top — the graceful fallback so a refused resume never
     /// skips the track.
     fn reload_current_track(&self, resume: Option<f64>, expected_idx: Option<usize>) -> bool {
-        let (idx, url, opts) = {
+        let (idx, url, opts, was_held, stay_paused) = {
             let persistent = self.persistent_cache.read();
             let mut inner = self.inner.lock();
             if inner.state.status == PlaybackStatus::Stopped {
@@ -1504,17 +1577,25 @@ impl AudioPlayer {
             } else if let Some(r) = resume.filter(|p| *p > 0.0) {
                 inner.position = r;
             }
-            // A track held after exhausted recovery has mpv idle: its logical
-            // status is Paused but mpv's own pause flag was never set. The
-            // load below genuinely starts audio, so restore the logical state
-            // to match — every reload path (resume tap, seek, connection
-            // failover) exits the hold consistently. An ordinary user pause
-            // is unaffected: mpv's sticky pause=true carries across loadfile,
-            // and held_for_recovery is false so this branch never fires.
-            if inner.held_for_recovery {
+            // Exiting a hold: entering it parked mpv paused (see the Held
+            // arm of `handle_file_ended`), so the pause flag must be
+            // restored to the user's actual intent after the load below —
+            // `set_pause(false)` when they want playback (the load then
+            // genuinely starts audio, so flip the logical status to match),
+            // or kept paused when they explicitly paused during the outage
+            // (the track reloads at position, silent, ready for their play
+            // tap — status stays Paused and truthful). An ordinary
+            // non-held reload is unaffected: mpv's sticky pause carries
+            // across loadfile, and `was_held` is false so neither the
+            // status flip nor the pause command fires.
+            let was_held = inner.held_for_recovery;
+            let stay_paused = inner.user_paused;
+            if was_held {
                 inner.held_for_recovery = false;
-                inner.state.status = PlaybackStatus::Playing;
-                inner.last_position_update = Some(Instant::now());
+                if !stay_paused {
+                    inner.state.status = PlaybackStatus::Playing;
+                    inner.last_position_update = Some(Instant::now());
+                }
             }
             // The play-index below re-enters this index and fires one or more
             // playlist-pos-change events; arm the settle window so
@@ -1523,7 +1604,7 @@ impl AudioPlayer {
             // them), including any transient insert-shift index.
             inner.reloading_pos = Some(idx);
             inner.reload_started_at = Some(Instant::now());
-            (idx, url, opts)
+            (idx, url, opts, was_held, stay_paused)
         };
 
         log::info!("reloading current track (resume={resume:?})");
@@ -1533,6 +1614,11 @@ impl AudioPlayer {
         self.mpv.load_file_at(&url, idx as i64, opts.as_deref());
         self.mpv.playlist_play_index(idx as i64);
         self.mpv.playlist_remove((idx + 1) as i64);
+        if was_held {
+            // Restore the pause flag from the hold's pin to the user's
+            // intent (see the hold-exit note above).
+            self.mpv.set_pause(stay_paused);
+        }
         true
     }
 
@@ -1559,9 +1645,22 @@ impl AudioPlayer {
         self.reload_current_track(Some(resume), Some(idx))
     }
 
-    /// Handle mpv idle-active (queue completed).
-    pub fn handle_idle_active(&self) {
+    /// Handle mpv idle-active. Returns `true` when the queue genuinely
+    /// completed and the stopped-state teardown ran — the platform layer
+    /// gates its own teardown (lock-screen clear, stopped report, prefetch
+    /// cancel) on this. Returns `false` while held for recovery: a held
+    /// player's mpv going idle is *expected* (the failed stream ended and
+    /// the auto-advance walk ran out of playlist), and tearing the hold
+    /// down here would turn a recoverable outage into a dead Stopped
+    /// session — `reload_current_track` declines on Stopped, so not even a
+    /// later network recovery could revive it.
+    #[must_use]
+    pub fn handle_idle_active(&self) -> bool {
         let mut inner = self.inner.lock();
+        if inner.held_for_recovery {
+            log::debug!("idle_active ignored: held for recovery");
+            return false;
+        }
         inner.state.status = PlaybackStatus::Stopped;
         inner.state.current_track = None;
         inner.position = 0.0;
@@ -1573,6 +1672,7 @@ impl AudioPlayer {
         inner.last_recovery_reload_at = None;
         inner.reloading_pos = None;
         inner.reload_started_at = None;
+        true
     }
 
     /// Access the download cache under the player lock.
@@ -2914,7 +3014,7 @@ mod tests {
         let (player, _) = make_player();
         player.load_queue(vec![make_test_track("1")], 0);
 
-        player.handle_idle_active();
+        assert!(player.handle_idle_active());
 
         let state = player.state();
         assert_eq!(state.status, PlaybackStatus::Stopped);
@@ -3221,6 +3321,170 @@ mod tests {
         player.pause();
         player.load_queue(vec![make_test_track("2")], 0);
         assert!(!player.inner.lock().user_paused);
+    }
+
+    /// The `SetPause` values sent to mpv, in order.
+    fn pause_calls(mpv: &MockMpv) -> Vec<bool> {
+        mpv.calls()
+            .iter()
+            .filter_map(|c| match c {
+                MockCall::SetPause(v) => Some(*v),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_hold_entry_pins_mpv_paused() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        hold_player_at(&player, 30.0);
+
+        // Entering the hold must park mpv paused — with keep-open=no it
+        // auto-advances past the failed entry, and an unpinned walk plays
+        // whatever entry loads next, audibly, under a Paused status.
+        assert_eq!(pause_calls(&mpv).last(), Some(&true));
+    }
+
+    #[test]
+    fn test_pos_change_suppressed_while_held() {
+        let (player, _) = make_player();
+        player.load_queue(
+            vec![make_test_track("1"), make_test_track("2"), make_test_track("3")],
+            0,
+        );
+        hold_player_at(&player, 30.0);
+
+        // mpv's auto-advance walk fires pos-changes for the entries it
+        // moves through. None are real advances: the hold owns the queue
+        // position, and processing them used to clear the hold and cascade
+        // the pointer through the whole queue.
+        assert!(!player.handle_playlist_pos_change(1));
+        assert!(!player.handle_playlist_pos_change(2));
+        let state = player.state();
+        assert_eq!(state.queue_index, 0);
+        assert_eq!(
+            state.current_track.as_ref().map(|t| t.rating_key.as_str()),
+            Some("1")
+        );
+        assert!(player.inner.lock().held_for_recovery);
+    }
+
+    #[test]
+    fn test_idle_active_preserved_while_held() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        hold_player_at(&player, 30.0);
+
+        // The walk exhausting the playlist idles mpv. For a held player
+        // that is expected — tearing down to Stopped would make the hold
+        // unrecoverable (reloads decline on Stopped).
+        assert!(!player.handle_idle_active());
+        let state = player.state();
+        assert_eq!(state.status, PlaybackStatus::Paused);
+        assert!(state.current_track.is_some());
+        assert!(player.inner.lock().held_for_recovery);
+
+        // The preserved hold is still recoverable.
+        assert!(player.recover_interrupted_playback());
+        assert_eq!(player.state().status, PlaybackStatus::Playing);
+    }
+
+    #[test]
+    fn test_resume_exits_hold_with_unpause() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        hold_player_at(&player, 30.0);
+
+        player.resume();
+        // The exit must lift the hold's pause pin, or the reloaded track
+        // sits silent under a Playing status.
+        assert_eq!(pause_calls(&mpv).last(), Some(&false));
+        assert_eq!(player.state().status, PlaybackStatus::Playing);
+    }
+
+    #[test]
+    fn test_seek_while_held_and_user_paused_stays_paused() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        hold_player_at(&player, 30.0);
+        player.pause();
+
+        // A paused user dragging the scrubber reloads the held track at
+        // the target, but silent — their pause intent survives the exit.
+        player.seek(50.0);
+        assert!(!player.inner.lock().held_for_recovery);
+        assert_eq!(player.state().status, PlaybackStatus::Paused);
+        assert_eq!(pause_calls(&mpv).last(), Some(&true));
+    }
+
+    #[test]
+    fn test_next_out_of_hold_plays() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        hold_player_at(&player, 30.0);
+
+        player.next();
+        let state = player.state();
+        assert_eq!(state.queue_index, 1);
+        assert_eq!(state.status, PlaybackStatus::Playing);
+        assert!(!player.inner.lock().held_for_recovery);
+        // Skip = play intent: the hold's pause pin must lift.
+        assert_eq!(pause_calls(&mpv).last(), Some(&false));
+
+        // The skip's own confirmation pos-change is processed normally
+        // (the hold was released before the command).
+        assert!(player.handle_playlist_pos_change(1));
+    }
+
+    #[test]
+    fn test_next_out_of_hold_respects_user_pause() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        hold_player_at(&player, 30.0);
+        player.pause();
+
+        player.next();
+        let state = player.state();
+        assert_eq!(state.queue_index, 1);
+        assert_eq!(state.status, PlaybackStatus::Paused);
+        // No unpause: the user asked for silence; the next track loads
+        // paused under mpv's sticky pause.
+        assert_eq!(pause_calls(&mpv).last(), Some(&true));
+    }
+
+    #[test]
+    fn test_previous_while_held_reloads_instead_of_dead_seek() {
+        let (player, mpv) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+        hold_player_at(&player, 30.0);
+        let calls_before = mpv.call_count();
+
+        // A held track has no live mpv stream: previous()'s restart-current
+        // branch must reload from the top, not issue a silent no-op seek.
+        player.previous();
+        let calls = mpv.calls()[calls_before..].to_vec();
+        assert!(
+            calls
+                .iter()
+                .any(|c| matches!(c, MockCall::LoadFileAt { index: 0, .. })),
+            "expected a restart reload, got {calls:?}"
+        );
+        assert!(!calls.iter().any(|c| matches!(c, MockCall::Seek(_))));
+        assert_eq!(player.state().status, PlaybackStatus::Playing);
+    }
+
+    #[test]
+    fn test_load_queue_clears_hold() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        hold_player_at(&player, 30.0);
+
+        // A fresh queue moots the hold; without the release, the new
+        // queue's pos-change events would be suppressed as the walk.
+        player.load_queue(vec![make_test_track("3")], 0);
+        assert!(!player.inner.lock().held_for_recovery);
+        assert!(player.handle_playlist_pos_change(0));
     }
 
     #[test]

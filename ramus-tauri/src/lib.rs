@@ -333,14 +333,20 @@ pub fn create_mpv_player(
         })),
         on_idle_active: Some(Box::new(move || {
             if let Some(ref p) = *pr5.lock() {
-                // Scrobble the last playing track before transitioning to stopped.
-                if let Some(ref reporter) = *sr3.lock() {
-                    if let Some(ref track) = p.state().current_track {
-                        reporter.track_ended(track);
-                    }
+                // Capture before the teardown clears it — the reporter needs
+                // the track that just finished.
+                let ended_track = p.state().current_track.clone();
+
+                // A held player's mpv going idle is expected (the failed
+                // stream ended and the auto-advance walk ran out of
+                // playlist), not a queue completion: skip the entire
+                // stopped teardown. The track didn't finish (no scrobble),
+                // the lock-screen card must survive (it's the paused
+                // hold), and prefetch stays armed for the recovery.
+                if !p.handle_idle_active() {
+                    return;
                 }
 
-                p.handle_idle_active();
                 emit_playback_state(
                     &app5,
                     PlaybackStatePayload {
@@ -351,6 +357,10 @@ pub fn create_mpv_player(
                 );
 
                 if let Some(ref reporter) = *sr3.lock() {
+                    // Scrobble the last playing track, then close the session.
+                    if let Some(ref track) = ended_track {
+                        reporter.track_ended(track);
+                    }
                     reporter.playback_stopped();
                 }
 
