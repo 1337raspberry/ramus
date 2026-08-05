@@ -103,6 +103,11 @@ const HARD_LIVE_DRAIN_CEILING: Duration = Duration::from_secs(600);
 /// fire promptly.
 const LIVE_DRAIN_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
+/// How long to hold a speculative download back while the live stream is
+/// starving. Short enough to make use of the good windows between stalls on
+/// a flaky link, long enough that the re-check costs nothing.
+const STARVED_BACKOFF: Duration = Duration::from_secs(5);
+
 /// Emit progress events at most this often per in-flight download. Bytes
 /// ticks at chunk rate (>50Hz on LAN); throttling keeps the event bus quiet.
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(250);
@@ -1113,6 +1118,24 @@ async fn run_serial_downloads(
         if prefetch_failed.contains(&track_id) {
             log::debug!("prefetch: {track_id} already failed this cycle, ending");
             return;
+        }
+
+        // The drain gate above only holds the line until it gives up (a slow
+        // link's ordinary stalls satisfy its "source stopped advancing" exit
+        // once the soft ceiling passes), after which nothing re-checks live
+        // health for the rest of the cycle. Speculative downloads would then
+        // spend the remainder of the track competing for bandwidth the live
+        // stream is already short of.
+        //
+        // Deliberately a back-off, never a stop: getting the queue onto disk
+        // is what actually fixes a slow link, so the worker keeps trying and
+        // uses the good windows between stalls. Looping back to the top rather
+        // than sleeping in place keeps a user download, a skip, or a fresh
+        // target able to preempt, and re-resolves the URL under current policy.
+        if player.is_starving() {
+            log::debug!("prefetch: live stream starving, holding {track_id} back");
+            tokio::time::sleep(STARVED_BACKOFF).await;
+            continue;
         }
 
         match run_prefetch_download(player, http, app, prefetch_dir, &track_id, &url).await {

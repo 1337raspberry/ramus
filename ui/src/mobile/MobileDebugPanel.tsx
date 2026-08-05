@@ -141,6 +141,11 @@ export default function MobileDebugPanel({ onDismiss }: { onDismiss: () => void 
             {info?.phase === "opening" || info?.phase === "buffering" ? (
               <Row label="Loading for" value={formatAge(info.secondsSinceLoad)} />
             ) : null}
+            {/* Only meaningful while it holds — a link fast enough for the
+                stream never sets it, so a permanent "no" row would be noise. */}
+            {info?.starving ? (
+              <Row label="Link" value="too slow for this stream" tag="orange" />
+            ) : null}
             {info?.lastLoadError ? (
               // Defense-in-depth: the Rust side already calls
               // redact_urls before populating last_load_error, but a

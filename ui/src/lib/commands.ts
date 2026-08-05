@@ -336,6 +336,12 @@ export interface DebugInfo {
   bitrate: number | null;
   fileSizeBytes: number | null;
   phase: DebugPhase;
+  /**
+   * The link is up and delivering, but too slowly to sustain this stream
+   * (repeated rebuffering). Distinct from `phase: "stalled"`, which a dead
+   * socket also produces.
+   */
+  starving: boolean;
   /** Seconds since the last `time-pos` update, or `null` if none yet. */
   secondsSincePositionUpdate: number | null;
   /** Seconds since the current track was loaded. */

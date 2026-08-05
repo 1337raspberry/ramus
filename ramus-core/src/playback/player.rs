@@ -29,6 +29,27 @@ pub const STALL_THRESHOLD_SECS: u64 = 12;
 /// (which is what triggers the watchdog's connection re-evaluation).
 pub const BUFFERING_HINT_SECS: u64 = 3;
 
+/// Sliding window over which starvation is judged. Long enough that a
+/// single unlucky patch of a good connection can't fill it, short enough
+/// that the verdict tracks the link as conditions move.
+pub const STARVATION_WINDOW: Duration = Duration::from_secs(60);
+
+/// Fraction of the observation window that must be spent silent before the
+/// link counts as unable to sustain the stream. A quarter of wall-clock lost
+/// to rebuffering is well past "occasional hiccup" and firmly into unlistenable.
+const STARVATION_SILENT_FRACTION: f64 = 0.25;
+
+/// Minimum number of *completed* rebuffer episodes in the window. Requiring
+/// more than one is what separates starvation from a dead socket: a stream
+/// that stopped and never resumed produces a single open-ended gap, whereas a
+/// link that is merely too slow keeps delivering in bursts.
+const STARVATION_MIN_EPISODES: usize = 2;
+
+/// How long the current load must have been observed before any starvation
+/// verdict. Opening a stream legitimately costs a few seconds of silence;
+/// judging before this would call every cold start a starving link.
+const STARVATION_MIN_OBSERVATION: Duration = Duration::from_secs(30);
+
 /// Minimum gap between two *automatic* current-track reloads (connection
 /// failover or file-ended recovery). Three uncoordinated triggers — the iOS
 /// network-path monitor, the stall watchdog, and prefetch's failure counter —
@@ -116,6 +137,10 @@ pub struct DebugInfo {
     /// Derived phase — preferred over `status` when reasoning about whether
     /// audio is actually flowing.
     pub phase: Phase,
+    /// The link is up and delivering, but too slowly to sustain this stream
+    /// (repeated rebuffering). Distinct from `phase: Stalled`, which a dead
+    /// socket also produces.
+    pub starving: bool,
     /// Seconds since the last `time-pos` event, or `None` if the current
     /// load hasn't produced one yet.
     pub seconds_since_position_update: Option<u64>,
@@ -206,6 +231,74 @@ pub fn derive_phase(
             (None, None) => Phase::Opening,
         },
     }
+}
+
+/// Rolling record of completed rebuffer episodes on the current load.
+///
+/// A "rebuffer episode" is a gap between consecutive `time-pos` events long
+/// enough to mean mpv ran its demuxer cache dry ([`BUFFERING_HINT_SECS`]).
+/// Episodes are recorded when they *end* — the arriving tick is the proof
+/// that bytes are still being delivered — and pruned to [`STARVATION_WINDOW`].
+///
+/// This is the whole measurement: starvation is "the cache keeps running
+/// dry", which is directly observable, rather than a throughput figure that
+/// would then have to be compared against an estimated stream bitrate.
+#[derive(Debug, Default)]
+pub struct StarvationTracker {
+    /// `(when the episode ended, how long it lasted)`, oldest first.
+    episodes: Vec<(Instant, Duration)>,
+}
+
+impl StarvationTracker {
+    fn record(&mut self, now: Instant, gap: Duration) {
+        self.episodes
+            .retain(|(t, _)| now.saturating_duration_since(*t) <= STARVATION_WINDOW);
+        self.episodes.push((now, gap));
+    }
+
+    fn clear(&mut self) {
+        self.episodes.clear();
+    }
+
+    fn episodes(&self) -> &[(Instant, Duration)] {
+        &self.episodes
+    }
+}
+
+/// Whether the link is failing to sustain the current stream.
+///
+/// Free function beside [`derive_phase`] for the same reason: the verdict is
+/// pure, so it can be unit-tested without an mpv handle or a player lock.
+///
+/// `in_progress_gap` is the currently-open silence (`now` minus the last
+/// tick), counted alongside the completed episodes so a verdict isn't delayed
+/// until the stream happens to resume. `observed_for` is how long the current
+/// load has been running, which both gates the cold start and caps the
+/// denominator — 15 s of silence means something different in the first
+/// 40 s of a track than across a full minute.
+pub fn is_starving(
+    episodes: &[(Instant, Duration)],
+    in_progress_gap: Duration,
+    observed_for: Duration,
+    now: Instant,
+) -> bool {
+    if observed_for < STARVATION_MIN_OBSERVATION {
+        return false;
+    }
+    let recent: Vec<Duration> = episodes
+        .iter()
+        .filter(|(t, _)| now.saturating_duration_since(*t) <= STARVATION_WINDOW)
+        .map(|(_, d)| *d)
+        .collect();
+    if recent.len() < STARVATION_MIN_EPISODES {
+        return false;
+    }
+    let mut silent: Duration = recent.iter().sum();
+    if in_progress_gap >= Duration::from_secs(BUFFERING_HINT_SECS) {
+        silent += in_progress_gap;
+    }
+    let window = STARVATION_WINDOW.min(observed_for);
+    silent.as_secs_f64() >= window.as_secs_f64() * STARVATION_SILENT_FRACTION
 }
 
 /// Sanitize a string for use as a filename. Only `[a-zA-Z0-9_-]` are kept.
@@ -335,6 +428,11 @@ struct PlayerInner {
     /// already reads as the *next* track at position 0, so closing out the
     /// previous track from live state reports every finish at 0:00.
     pending_transition: Option<(Track, f64, f64)>,
+    /// Rebuffer episodes on the current stream, feeding [`is_starving`].
+    /// Cleared by [`PlayerInner::begin_load`] and by every other event that
+    /// produces silence we mustn't blame on the network (seek, resume,
+    /// current-track reload).
+    starvation: StarvationTracker,
 }
 
 impl PlayerInner {
@@ -344,6 +442,42 @@ impl PlayerInner {
     fn within_reload_cooldown(&self) -> bool {
         self.last_auto_reload_at
             .is_some_and(|t| t.elapsed() < RELOAD_COOLDOWN)
+    }
+
+    /// Stamp the start of a fresh track load: reset the timing anchors
+    /// `derive_phase` reads, drop the previous load's error, and clear the
+    /// starvation history.
+    ///
+    /// Every site that begins playing a *different* stream must go through
+    /// here. Carrying rebuffer episodes across a track boundary would let a
+    /// track that starved condemn the one after it, which may well be playing
+    /// from cache.
+    fn begin_load(&mut self) {
+        self.load_started_at = Some(Instant::now());
+        self.last_position_update = None;
+        self.last_load_error = None;
+        self.starvation.clear();
+    }
+
+    /// Whether the current stream is starving — the link is delivering, but
+    /// too slowly to keep the demuxer cache fed. See [`is_starving`].
+    fn starvation_verdict(&self, now: Instant) -> bool {
+        if self.state.status != PlaybackStatus::Playing {
+            return false;
+        }
+        let Some(load) = self.load_started_at else {
+            return false;
+        };
+        let in_progress_gap = self
+            .last_position_update
+            .map(|t| now.saturating_duration_since(t))
+            .unwrap_or_default();
+        is_starving(
+            self.starvation.episodes(),
+            in_progress_gap,
+            now.saturating_duration_since(load),
+            now,
+        )
     }
 
     /// Record the currently-playing track as the outgoing side of a track
@@ -435,6 +569,7 @@ impl AudioPlayer {
                 reloading_pos: None,
                 reload_started_at: None,
                 pending_transition: None,
+                starvation: StarvationTracker::default(),
             }),
             persistent_cache: RwLock::new(HashMap::new()),
         }
@@ -590,9 +725,7 @@ impl AudioPlayer {
             // user already trusts it everywhere else in the UI.
             inner.duration = inner.state.queue[start_at].duration;
             inner.is_loading = false;
-            inner.load_started_at = Some(Instant::now());
-            inner.last_position_update = None;
-            inner.last_load_error = None;
+            inner.begin_load();
             // Suppress the transient pos=0 event mpv fires from the first
             // loadfile Replace before our playlist_play_index(start_at) call.
             inner.pending_initial_pos = if start_at > 0 { Some(start_at) } else { None };
@@ -768,9 +901,7 @@ impl AudioPlayer {
         inner.position = 0.0;
         inner.duration = inner.state.queue[index].duration;
         inner.state.status = PlaybackStatus::Playing;
-        inner.load_started_at = Some(Instant::now());
-        inner.last_position_update = None;
-        inner.last_load_error = None;
+        inner.begin_load();
         // A deliberate track switch moots any in-flight current-track
         // reload: close the settle window and drop the offset base so a
         // suppressed pos-change can't leave them applied to the new track.
@@ -817,9 +948,7 @@ impl AudioPlayer {
         inner.state.current_track = Some(inner.state.queue[inner.state.queue_index].clone());
         inner.position = 0.0;
         inner.duration = inner.state.queue[inner.state.queue_index].duration;
-        inner.load_started_at = Some(Instant::now());
-        inner.last_position_update = None;
-        inner.last_load_error = None;
+        inner.begin_load();
         // A deliberate track switch moots any in-flight current-track
         // reload: close the settle window and drop the offset base so a
         // suppressed pos-change can't leave them applied to the new track.
@@ -882,9 +1011,7 @@ impl AudioPlayer {
         inner.state.current_track = Some(inner.state.queue[inner.state.queue_index].clone());
         inner.position = 0.0;
         inner.duration = inner.state.queue[inner.state.queue_index].duration;
-        inner.load_started_at = Some(Instant::now());
-        inner.last_position_update = None;
-        inner.last_load_error = None;
+        inner.begin_load();
         // See `next`: a deliberate switch closes the reload settle window.
         inner.reloading_pos = None;
         inner.reload_started_at = None;
@@ -989,6 +1116,9 @@ impl AudioPlayer {
             return;
         }
         inner.position = clamped;
+        // A seek makes mpv refill from a new point; the silence that follows
+        // is the user's doing, not the link's.
+        inner.starvation.clear();
         drop(inner);
         // For a transcode offset stream mpv's 0 maps to `base` on the
         // track timeline, so translate before issuing the seek.
@@ -1165,6 +1295,7 @@ impl AudioPlayer {
             bitrate: track.and_then(|t| t.bitrate),
             file_size_bytes: track.and_then(|t| t.file_size_bytes),
             phase,
+            starving: inner.starvation_verdict(now),
             seconds_since_position_update: inner
                 .last_position_update
                 .map(|t| now.saturating_duration_since(t).as_secs()),
@@ -1217,6 +1348,18 @@ impl AudioPlayer {
             inner.load_started_at,
             Instant::now(),
         ) == Phase::Stalled
+    }
+
+    /// Whether the link is delivering but too slowly to sustain the current
+    /// stream — repeated rebuffering rather than a clean stop. See
+    /// [`is_starving`].
+    ///
+    /// A reload cannot fix this (it re-resolves to the same stream and throws
+    /// away whatever was buffered), so recovery paths consult this before
+    /// acting, and the prefetch worker consults it before taking bandwidth
+    /// the live stream is already short of.
+    pub fn is_starving(&self) -> bool {
+        self.inner.lock().starvation_verdict(Instant::now())
     }
 
     /// Whether playback sits in an app-inflicted silent state that a healthy
@@ -1292,7 +1435,18 @@ impl AudioPlayer {
         // stream plays (mpv reports 0-based; the real position is shifted
         // by the resume point).
         inner.position = pos + inner.position_base;
-        inner.last_position_update = Some(Instant::now());
+        let now = Instant::now();
+        // This tick closes whatever silence preceded it. A gap long enough to
+        // mean the demuxer cache ran dry is a rebuffer episode — and the fact
+        // that a tick arrived at all proves the source is still delivering,
+        // which is what separates a slow link from a dead one.
+        if let Some(prev) = inner.last_position_update {
+            let gap = now.saturating_duration_since(prev);
+            if gap >= Duration::from_secs(BUFFERING_HINT_SECS) {
+                inner.starvation.record(now, gap);
+            }
+        }
+        inner.last_position_update = Some(now);
         // Audio is actually flowing — clear the retry guard so a *later*
         // failure on this same track (e.g. a network blip mid-song) can
         // get a fresh retry. Was previously cleared in `handle_file_loaded`
@@ -1436,9 +1590,7 @@ impl AudioPlayer {
         // load_queue's note. Stable across UI ticks regardless of mpv's
         // streamed-source duration estimation.
         inner.duration = inner.state.queue[pos].duration;
-        inner.load_started_at = Some(Instant::now());
-        inner.last_position_update = None;
-        inner.last_load_error = None;
+        inner.begin_load();
         inner.last_retried_track = None;
         true
     }
@@ -1455,6 +1607,10 @@ impl AudioPlayer {
             // first real `time-pos` from mpv will overwrite this within
             // ~50ms.
             inner.last_position_update = Some(Instant::now());
+            // Episodes from before the pause are stale evidence by the time
+            // playback resumes, and mpv refills its cache on the way back —
+            // judge the resumed stream on its own behaviour.
+            inner.starvation.clear();
         }
     }
 
@@ -1767,6 +1923,10 @@ impl AudioPlayer {
             // them), including any transient insert-shift index.
             inner.reloading_pos = Some(idx);
             inner.reload_started_at = Some(Instant::now());
+            // A reload replaces the stream, and the swap itself costs a gap.
+            // Judge the fresh stream on its own evidence rather than letting
+            // the reload's own silence read as further starvation.
+            inner.starvation.clear();
             (idx, url, opts, was_held, stay_paused)
         };
 
@@ -3249,6 +3409,167 @@ mod tests {
             derive_phase(PlaybackStatus::Stopped, None, None, now),
             Phase::Stopped,
         );
+    }
+
+    /// `n` rebuffer episodes of `each`, all landing inside the window.
+    fn starvation_episodes(now: Instant, n: usize, each: Duration) -> Vec<(Instant, Duration)> {
+        (0..n)
+            .map(|i| (now - Duration::from_secs(5 * (i as u64 + 1)), each))
+            .collect()
+    }
+
+    #[test]
+    fn test_is_starving_needs_a_settled_observation_window() {
+        let now = Instant::now();
+        // Plenty of silence, but the track only just started: opening a
+        // stream costs seconds of quiet and must not read as a slow link.
+        let episodes = starvation_episodes(now, 3, Duration::from_secs(8));
+        assert!(!is_starving(
+            &episodes,
+            Duration::ZERO,
+            STARVATION_MIN_OBSERVATION - Duration::from_secs(1),
+            now,
+        ));
+        assert!(is_starving(
+            &episodes,
+            Duration::ZERO,
+            STARVATION_MIN_OBSERVATION,
+            now,
+        ));
+    }
+
+    #[test]
+    fn test_is_starving_ignores_a_single_open_ended_gap() {
+        let now = Instant::now();
+        // One episode plus a long in-progress silence is the *dead socket*
+        // shape — the stream stopped and never came back. Starvation needs
+        // repeated recoveries, which prove bytes are still arriving.
+        let one = starvation_episodes(now, 1, Duration::from_secs(6));
+        assert!(!is_starving(
+            &one,
+            Duration::from_secs(40),
+            Duration::from_secs(60),
+            now,
+        ));
+        // Same silence, but delivered as two completed episodes → starving.
+        let two = starvation_episodes(now, 2, Duration::from_secs(10));
+        assert!(is_starving(&two, Duration::ZERO, Duration::from_secs(60), now));
+    }
+
+    #[test]
+    fn test_is_starving_requires_a_quarter_of_the_window() {
+        let now = Instant::now();
+        // Two brief hiccups in a full minute: annoying, not unlistenable.
+        let light = starvation_episodes(now, 2, Duration::from_secs(4));
+        assert!(!is_starving(
+            &light,
+            Duration::ZERO,
+            Duration::from_secs(60),
+            now,
+        ));
+        // The same two episodes over a shorter observed window cross the
+        // ratio — 8s lost out of 30 is a link that can't keep up.
+        assert!(is_starving(
+            &light,
+            Duration::ZERO,
+            Duration::from_secs(30),
+            now,
+        ));
+    }
+
+    #[test]
+    fn test_is_starving_counts_the_in_progress_gap() {
+        let now = Instant::now();
+        let episodes = starvation_episodes(now, 2, Duration::from_secs(4));
+        // Verdict must not wait for the stream to happen to resume: the
+        // currently-open silence counts toward the total.
+        assert!(!is_starving(
+            &episodes,
+            Duration::ZERO,
+            Duration::from_secs(60),
+            now,
+        ));
+        assert!(is_starving(
+            &episodes,
+            Duration::from_secs(8),
+            Duration::from_secs(60),
+            now,
+        ));
+        // Sub-threshold jitter between ticks isn't a rebuffer and must not
+        // tip the balance.
+        assert!(!is_starving(
+            &episodes,
+            Duration::from_secs(BUFFERING_HINT_SECS - 1),
+            Duration::from_secs(60),
+            now,
+        ));
+    }
+
+    #[test]
+    fn test_is_starving_drops_episodes_outside_the_window() {
+        let now = Instant::now();
+        let stale = vec![
+            (now - STARVATION_WINDOW - Duration::from_secs(5), Duration::from_secs(20)),
+            (now - STARVATION_WINDOW - Duration::from_secs(1), Duration::from_secs(20)),
+        ];
+        assert!(!is_starving(
+            &stale,
+            Duration::ZERO,
+            Duration::from_secs(120),
+            now,
+        ));
+    }
+
+    #[test]
+    fn test_position_ticks_record_rebuffer_episodes() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+
+        // A tick after a long silence closes a rebuffer episode; a tick
+        // right after another doesn't.
+        player.handle_position_change(1.0);
+        player.inner.lock().last_position_update =
+            Some(Instant::now() - Duration::from_secs(BUFFERING_HINT_SECS + 2));
+        player.handle_position_change(2.0);
+        assert_eq!(player.inner.lock().starvation.episodes().len(), 1);
+        player.handle_position_change(3.0);
+        assert_eq!(player.inner.lock().starvation.episodes().len(), 1);
+    }
+
+    #[test]
+    fn test_starvation_history_does_not_cross_a_track_boundary() {
+        // A track that starved must not condemn the next one, which may
+        // well be playing from cache.
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        player.handle_position_change(1.0);
+        player.inner.lock().last_position_update =
+            Some(Instant::now() - Duration::from_secs(BUFFERING_HINT_SECS + 2));
+        player.handle_position_change(2.0);
+        assert_eq!(player.inner.lock().starvation.episodes().len(), 1);
+
+        assert!(player.handle_playlist_pos_change(1));
+        assert!(player.inner.lock().starvation.episodes().is_empty());
+    }
+
+    #[test]
+    fn test_starvation_verdict_needs_playing_status() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+        {
+            let mut inner = player.inner.lock();
+            let now = Instant::now();
+            inner.load_started_at = Some(now - Duration::from_secs(60));
+            inner.last_position_update = Some(now);
+            for (t, d) in starvation_episodes(now, 3, Duration::from_secs(10)) {
+                inner.starvation.record(t, d);
+            }
+        }
+        assert!(player.is_starving());
+
+        // A paused player isn't starving, however bad the link was.
+        player.inner.lock().state.status = PlaybackStatus::Paused;
+        assert!(!player.is_starving());
     }
 
     #[test]

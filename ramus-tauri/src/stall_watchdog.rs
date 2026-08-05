@@ -23,12 +23,25 @@
 //!   server, whose URI is identical before and after an outage.
 //! - `Skipped` — another evaluation is in flight; its callbacks will
 //!   handle things. Never treated as healthy.
+//!
+//! A healthy verdict is not on its own a reason to reload. A link that is
+//! merely *too slow* for the current stream answers a `/identity` probe
+//! happily while mpv rebuffers, and reloading there is actively harmful: the
+//! URL re-resolves to the same stream, the demuxer cache is discarded, and the
+//! re-open has to re-earn those bytes over the link that was already short of
+//! bandwidth. Worse, the reload does not reset the position-tick clock, so if
+//! the fresh open takes longer than `EVAL_COOLDOWN` to produce its first tick,
+//! the next cycle tears it down and starts again — a stream that can never
+//! establish. So before reloading, the watchdog asks whether the source is
+//! still arriving; if it is, the diagnosis is starvation, and the right move
+//! is to leave mpv alone to buffer through it.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
 
+use ramus_core::playback::player::AudioPlayer;
 use ramus_core::plex::connection::EvalOutcome;
 
 use crate::state::AppState;
@@ -42,6 +55,37 @@ const POLL_INTERVAL: Duration = Duration::from_secs(5);
 /// short-circuit on every poll until the in-flight evaluation finishes —
 /// this also paces the recovery retry cadence while a hold persists.
 const EVAL_COOLDOWN: Duration = Duration::from_secs(20);
+
+/// Gap between the two `demuxer-cache-time` samples that decide whether the
+/// source is still arriving. Long enough that even a trickle registers,
+/// short enough not to delay a genuine recovery reload noticeably.
+const SOURCE_PROBE_INTERVAL: Duration = Duration::from_millis(1200);
+
+/// Cache-time growth counted as "still arriving". Matches the prefetch
+/// drain gate's tolerance — mpv's reported value wobbles fractionally even
+/// when nothing new is being pulled.
+const SOURCE_PROBE_EPSILON: f64 = 0.05;
+
+/// Whether mpv's demuxer cache is still growing, i.e. bytes are landing
+/// however slowly.
+///
+/// This is what separates a starving stream from a dead socket, which look
+/// identical from the outside once the position ticks stop. `demuxer-cache-time`
+/// is bridged on all three platforms (it is what the prefetch drain gate
+/// uses), so this needs no new mpv plumbing.
+///
+/// Returns `false` when the property is unavailable — the safe default is
+/// the pre-existing behaviour, a reload.
+async fn source_still_arriving(player: &AudioPlayer) -> bool {
+    let Some(before) = player.demuxer_cache_time() else {
+        return false;
+    };
+    tokio::time::sleep(SOURCE_PROBE_INTERVAL).await;
+    let Some(after) = player.demuxer_cache_time() else {
+        return false;
+    };
+    after - before > SOURCE_PROBE_EPSILON
+}
 
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -69,6 +113,21 @@ pub fn spawn(app: AppHandle) {
 
             log::info!("stall watchdog: playback interrupted, evaluating connection");
             let outcome = monitor.evaluate_connection().await;
+
+            // A slow link probes healthy while mpv rebuffers. Confirm the
+            // source has actually stopped arriving before reloading — the
+            // starvation verdict is the cheap pattern check (no IPC), the
+            // cache-time probe is the authority on whether bytes are landing
+            // right now, which also covers a slow link that has since died.
+            if outcome == EvalOutcome::Healthy
+                && player.is_starving()
+                && source_still_arriving(&player).await
+            {
+                log::info!(
+                    "stall watchdog: connection healthy and source still arriving — stream is starving, not stuck; leaving mpv to rebuffer"
+                );
+                continue;
+            }
 
             // A healthy verdict fires no monitor callback, so the kick is
             // ours. Re-checks interruption + user pause internally, and its
