@@ -76,6 +76,12 @@ pub fn spawn(app: AppHandle) {
             if outcome == EvalOutcome::Healthy && player.recover_interrupted_playback() {
                 log::info!("stall watchdog: connection healthy, reloaded interrupted track");
                 crate::events::emit_playback_buffering(&app, true);
+                // Keep the process awake through the silent reload window
+                // (iOS background-task assertion; no-op elsewhere). The
+                // first position tick releases it.
+                if let Some(state) = app.try_state::<AppState>() {
+                    crate::set_recovery_grace(&app, &state.recovery_grace, true);
+                }
             }
         }
     });

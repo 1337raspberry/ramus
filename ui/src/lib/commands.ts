@@ -346,6 +346,15 @@ export interface DebugInfo {
 
 export const getDebugInfo = () => invoke<DebugInfo>("get_debug_info");
 
+/**
+ * Ask the backend to re-emit the authoritative playback + connection
+ * snapshot (and re-evaluate the connection if the app woke up offline or
+ * with playback interrupted). Fired on foreground transitions — a
+ * suspended webview may have dropped every event that fired while the OS
+ * had the app asleep, and the stores are pure event replay.
+ */
+export const foregroundResync = () => invoke<void>("foreground_resync");
+
 // --- Acknowledgements / licenses ---
 
 export const getAcknowledgementsText = () =>

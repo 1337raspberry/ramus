@@ -41,6 +41,10 @@ pub struct AppState {
     /// callbacks. Read together with `Settings.offline_mode` to determine
     /// whether library queries should filter to downloaded-only content.
     pub server_reachable: Arc<AtomicBool>,
+    /// Whether the platform recovery-grace window is currently held (see
+    /// `lib.rs::set_recovery_grace`). Tracked Rust-side so only real
+    /// transitions cross the mobile bridge.
+    pub recovery_grace: Arc<AtomicBool>,
 }
 
 impl AppState {

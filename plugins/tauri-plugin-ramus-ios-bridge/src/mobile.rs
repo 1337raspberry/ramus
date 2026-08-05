@@ -95,6 +95,16 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
 
+    /// Toggle the platform's recovery-grace window around a playback
+    /// reconnect: iOS holds a background-task assertion so the silent app
+    /// isn't suspended mid-recovery; Android no-ops (the Media3
+    /// foreground service already carries its own grace period).
+    pub fn set_recovery_grace(&self, active: bool) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin::<Empty>("setRecoveryGrace", RecoveryGraceArgs { active })?;
+        Ok(())
+    }
+
     pub fn mpv_set_volume(&self, volume: f64) -> crate::Result<()> {
         self.0
             .run_mobile_plugin::<Empty>("mpvSetVolume", VolumeArgs { volume })?;

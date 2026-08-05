@@ -72,6 +72,11 @@ internal class SeekArgs {
 }
 
 @InvokeArg
+internal class RecoveryGraceArgs {
+    var active: Boolean = false
+}
+
+@InvokeArg
 internal class PauseArgs {
     var paused: Boolean = false
 }
@@ -446,6 +451,18 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
             p.seekTo((args.position * 1000.0).toLong())
             invoke.resolve()
         }
+    }
+
+    // No-op on Android: process lifetime during a recovery window is
+    // Media3's job — the foreground service keeps its grace period after
+    // playback pauses, stops, or fails, and the media notification
+    // survives error states. The command exists so the shared Rust
+    // bridge surface stays identical across platforms (iOS uses it for
+    // its background-task assertion).
+    @Command
+    fun setRecoveryGrace(invoke: Invoke) {
+        invoke.parseArgs(RecoveryGraceArgs::class.java)
+        invoke.resolve()
     }
 
     @Command

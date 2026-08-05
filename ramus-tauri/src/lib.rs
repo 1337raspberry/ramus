@@ -99,10 +99,50 @@ pub type PrefetchHandleRef = Arc<parking_lot::Mutex<Option<PrefetchHandle>>>;
 /// the shared mpv handle. iOS builds construct an `IosMpvPlayer` that
 /// delegates to the Swift plugin (MPVKit). The callback wiring is
 /// identical on both platforms, so only the final construction diverges.
+/// Flip the platform recovery-grace window around a playback reconnect.
+///
+/// On iOS the `audio` background mode keeps a backgrounded app alive only
+/// while audio is actually rendering — the moment a reconnect goes silent,
+/// the OS suspends the process and freezes every timer and monitor the
+/// recovery relies on. The grace window holds a background-task assertion
+/// (~30 s of runway) across the reload/hold so short outages can recover
+/// unattended. Android needs nothing: the Media3 foreground service keeps
+/// its own grace period after playback pauses, stops, or fails. Desktop
+/// processes aren't suspended at all.
+///
+/// The flag tracks the held state so only real transitions cross the
+/// bridge — callers may invoke this redundantly (every position tick
+/// checks it).
+fn set_recovery_grace(
+    app: &AppHandle,
+    flag: &std::sync::atomic::AtomicBool,
+    active: bool,
+) {
+    if flag.swap(active, std::sync::atomic::Ordering::AcqRel) == active {
+        return;
+    }
+    #[cfg(target_os = "ios")]
+    {
+        use tauri_plugin_ramus_ios_bridge::RamusIosBridgeExt;
+        // Safe from mpv event callbacks on iOS: they run on the main
+        // thread and the Swift side hops to main itself (same pattern as
+        // the now-playing pushes). The Android no-bridge-from-callbacks
+        // rule doesn't apply — this arm never compiles there.
+        if let Err(e) = app.ramus_ios_bridge().set_recovery_grace(active) {
+            log::warn!("setRecoveryGrace({active}) failed: {e}");
+        }
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = app;
+    }
+}
+
 pub fn create_mpv_player(
     app_handle: AppHandle,
     prefetch_handle_ref: PrefetchHandleRef,
     mc_reanchor: Arc<std::sync::atomic::AtomicBool>,
+    recovery_grace: Arc<std::sync::atomic::AtomicBool>,
 ) -> (
     Arc<ramus_core::playback::player::AudioPlayer>,
     ReporterRef,
@@ -118,6 +158,14 @@ pub fn create_mpv_player(
     // `mc_reanchor` is moved into `on_position_change`; clone it for the
     // file-ended recovery path, which arms the same re-anchor.
     let reanchor_fe = mc_reanchor.clone();
+
+    // Recovery-grace flag: opened by the reconnect entry points
+    // (file-ended reload/hold here, connection failover in the monitor
+    // handler), closed by the first position tick (audio flowing again)
+    // or the stopped teardown.
+    let grace_pos = recovery_grace.clone();
+    let grace_idle = recovery_grace.clone();
+    let grace_fe = recovery_grace;
 
     // The player is needed inside callbacks but owns the MpvController. A
     // shared Arc populated after construction breaks the cycle.
@@ -182,6 +230,10 @@ pub fn create_mpv_player(
                         mc.update_playback_state(playing, p.position());
                     }
                 }
+                // Audio is flowing — release the recovery-grace window if
+                // one is open. Transition-guarded internally, so the
+                // per-tick call is one atomic load in the common case.
+                set_recovery_grace(&app1, &grace_pos, false);
             }
         })),
         on_duration_change: Some(Box::new(move |dur| {
@@ -409,6 +461,10 @@ pub fn create_mpv_player(
                 if let Some(ref handle) = *ph2.lock() {
                     handle.notify_cancel();
                 }
+
+                // A real stop ends any recovery window — there is nothing
+                // left to recover, so stop holding the process awake.
+                set_recovery_grace(&app5, &grace_idle, false);
             }
         })),
         on_file_loaded: Some(Box::new(move || {
@@ -435,6 +491,9 @@ pub fn create_mpv_player(
                         // it — this drives the scanner immediately. Cleared on
                         // the first position tick once audio flows again.
                         emit_playback_buffering(&app6, true);
+                        // Reconnect in flight while the app may be silent —
+                        // hold the process awake for the retry window.
+                        set_recovery_grace(&app6, &grace_fe, true);
                     }
                     RecoverOutcome::Held(pos) => {
                         // Recovery exhausted; the track is paused holding its
@@ -460,6 +519,12 @@ pub fn create_mpv_player(
                                 queue_index: state.queue_index,
                             },
                         );
+                        // The hold is silent by design; keep the process
+                        // awake so the watchdog can retry the recovery.
+                        // Best-effort — the OS reclaims the assertion after
+                        // its grant (~30 s) and the hold then waits for a
+                        // user wake, same as before.
+                        set_recovery_grace(&app6, &grace_fe, true);
                     }
                     RecoverOutcome::Skipped | RecoverOutcome::None => {}
                 }
@@ -748,10 +813,14 @@ pub fn run() {
             // Signals `on_position_change` to re-anchor the OS now-playing
             // scrubber after a connection-failover reload froze it.
             let mc_reanchor = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            // Whether the platform recovery-grace window is held open (iOS
+            // background-task assertion while a reconnect is in flight).
+            let recovery_grace = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let (player, reporter_ref, media_controls_ref) = create_mpv_player(
                 app_handle.clone(),
                 prefetch_handle_ref.clone(),
                 mc_reanchor.clone(),
+                recovery_grace.clone(),
             );
 
             // Capture mpv's source bytes to a sibling directory of the
@@ -830,6 +899,7 @@ pub fn run() {
                 // if no server answers, or by on_connection_lost callbacks
                 // from the connection monitor.
                 server_reachable: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                recovery_grace: recovery_grace.clone(),
             };
 
             // Restore previous session. State is set synchronously (no blocking
@@ -947,6 +1017,7 @@ pub fn run() {
                                 let monitor_prefetch = state.prefetch_handle.clone();
                                 let monitor_mc = state.media_controls.clone();
                                 let monitor_reanchor = mc_reanchor.clone();
+                                let monitor_grace = state.recovery_grace.clone();
                                 connection_monitor.set_on_connection_changed(
                                     std::sync::Arc::new(move |url, token, is_local, _is_http| {
                                         let is_remote = !is_local;
@@ -990,6 +1061,9 @@ pub fn run() {
                                             // Reconnecting — drive the scanning indicator until audio
                                             // flows again (a position tick clears it frontend-side).
                                             emit_playback_buffering(&monitor_app, true);
+                                            // Hold the process awake through the reload gap (iOS
+                                            // background-task assertion; no-op elsewhere).
+                                            set_recovery_grace(&monitor_app, &monitor_grace, true);
                                         }
                                         monitor_prefetch.notify_skip();
                                         // The server is reachable again on a fresh
@@ -1050,6 +1124,7 @@ pub fn run() {
                                 let rec_app = app_handle.clone();
                                 let rec_settings = state.settings.clone();
                                 let rec_prefetch = state.prefetch_handle.clone();
+                                let rec_grace = state.recovery_grace.clone();
                                 connection_monitor.set_on_connection_recovered(
                                     std::sync::Arc::new(move || {
                                         // Resume whatever the outage interrupted. No-op
@@ -1059,6 +1134,9 @@ pub fn run() {
                                         // scrubber once position ticks flow again.
                                         if rec_player.recover_interrupted_playback() {
                                             emit_playback_buffering(&rec_app, true);
+                                            // Keep the process awake until audio flows
+                                            // (first position tick releases it).
+                                            set_recovery_grace(&rec_app, &rec_grace, true);
                                         }
                                         // Fresh prefetch cycle: re-checks targets and
                                         // clears the per-cycle failure set.
@@ -1508,6 +1586,7 @@ pub fn run() {
             commands::playback::get_waveform,
             commands::playback::set_media_accent,
             commands::playback::get_debug_info,
+            commands::playback::foreground_resync,
             // spectrum (focus-mode visualiser)
             commands::spectrum::get_spectrum,
             // search

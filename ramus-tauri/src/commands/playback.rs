@@ -381,3 +381,75 @@ pub async fn get_debug_info(
 ) -> CmdResult<ramus_core::playback::player::DebugInfo> {
     Ok(state.player.debug_snapshot())
 }
+
+/// Re-sync the frontend after the OS resumes the app (unlock, foreground
+/// switch, laptop wake). Stores are otherwise pure event replay, and a
+/// suspended webview may have dropped every emit that fired during an
+/// outage — the UI would keep showing the pre-sleep state indefinitely.
+///
+/// Two halves:
+/// 1. Re-emit the authoritative playback + connection snapshot through the
+///    normal event channels, so the existing store listeners converge
+///    without any new frontend wiring.
+/// 2. If the app woke up stuck offline or with playback interrupted, kick
+///    a connection evaluation. This is the wake-time counterpart of the
+///    stall watchdog: a suspended process runs no evals, and a
+///    tunnel-shaped outage produces no path event to trigger one — so the
+///    foreground transition itself is the recovery signal. Healthy-but-
+///    interrupted mirrors the watchdog's kick (an unchanged-URI verdict
+///    fires no monitor callback). Gated so a routine foreground while
+///    everything is fine costs zero network traffic.
+#[tauri::command]
+pub async fn foreground_resync(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    let ps = state.player.state();
+    emit_playback_state(
+        &app,
+        PlaybackStatePayload {
+            status: format!("{:?}", ps.status).to_lowercase(),
+            current_track: ps.current_track.clone(),
+            queue_index: ps.queue_index,
+        },
+    );
+    crate::events::emit_playback_position(
+        &app,
+        crate::events::PlaybackPositionPayload {
+            position: state.player.position(),
+            duration: state.player.duration(),
+        },
+    );
+    let online = state
+        .server_reachable
+        .load(std::sync::atomic::Ordering::Acquire);
+    crate::events::emit_connection_status(
+        &app,
+        crate::events::ConnectionStatusPayload {
+            online,
+            offline_mode_manual: state.settings.read().offline_mode,
+            effective_offline: state.effective_offline(),
+        },
+    );
+
+    if !online || state.player.needs_connection_recovery() {
+        let monitor = std::sync::Arc::clone(&state.connection_monitor);
+        let player = state.player.clone();
+        let grace = state.recovery_grace.clone();
+        let app2 = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let outcome = monitor.evaluate_connection().await;
+            // Changed/Recovered verdicts run their own callbacks (reload,
+            // online flip). Healthy fires none — the kick is ours, same as
+            // the watchdog; `recover_interrupted_playback` re-checks the
+            // interruption and declines for a user-paused player.
+            if outcome == ramus_core::plex::connection::EvalOutcome::Healthy
+                && player.recover_interrupted_playback()
+            {
+                log::info!("foreground resync: connection healthy, reloaded interrupted track");
+                crate::events::emit_playback_buffering(&app2, true);
+                // The user may re-lock immediately — keep the process
+                // awake until audio flows again.
+                crate::set_recovery_grace(&app2, &grace, true);
+            }
+        });
+    }
+    Ok(())
+}

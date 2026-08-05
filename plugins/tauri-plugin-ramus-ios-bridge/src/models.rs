@@ -68,6 +68,12 @@ pub struct PauseArgs {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RecoveryGraceArgs {
+    pub active: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VolumeArgs {
     pub volume: f64,
 }

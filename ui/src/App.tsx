@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { isAuthenticated } from "./lib/commands";
+import { foregroundResync, isAuthenticated } from "./lib/commands";
 import { clearGenreMetadataCache } from "./lib/genreMetadataCache";
 import type { SyncProgress } from "./lib/types";
 import { usePlaybackEvents } from "./lib/usePlaybackEvents";
@@ -112,6 +112,28 @@ export default function App() {
 
   usePlaybackEvents();
   useWindowTitle();
+
+  // Foreground resync: when the OS resumes the app (phone unlock, app
+  // switch back, laptop wake) the webview may have slept through every
+  // playback/connection event that fired during an outage — and the
+  // stores are pure event replay, so nothing else would ever correct
+  // them. Ask the backend to re-emit the authoritative snapshot and, if
+  // the app woke up offline or with playback interrupted, re-evaluate the
+  // connection. Debounced: rapid hide/show flips (notification shade,
+  // app-switcher peek) shouldn't hammer the IPC.
+  useEffect(() => {
+    if (authed !== true) return;
+    let lastResync = 0;
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastResync < 3000) return;
+      lastResync = now;
+      foregroundResync().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [authed]);
 
   // App-lifetime sync listener: invalidates cached genre metadata on any
   // completion (in-library flags are baked into the responses — the settings

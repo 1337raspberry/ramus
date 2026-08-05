@@ -40,7 +40,17 @@ dependencies {
     // the lock-screen / Bluetooth / Android Auto controls. ExoPlayer is no
     // longer a dependency — audio runs on libmpv via the `dev.jdtech.mpv`
     // AAR, exposed through `LibmpvSimplePlayer`.
-    val media3 = "1.5.1"
+    //
+    // Keep ≥ 1.6.0: from there the media notification survives error /
+    // stopped states (only removed when the playlist is cleared or the
+    // player released) and the foreground service keeps a ~10 min grace
+    // period after playback pauses, stops, or FAILS — both load-bearing
+    // for outage recovery while the phone is locked (without them an
+    // error-idle player is demoted to cache priority and the lock-screen
+    // tap surface disappears mid-outage). Do NOT jump to 1.10.x without
+    // porting `ColorizedMediaNotificationProvider`: 1.10.0 changed the
+    // `MediaNotification.Provider` contract (new required method).
+    val media3 = "1.9.4"
     implementation("androidx.media3:media3-common:$media3")
     implementation("androidx.media3:media3-session:$media3")
 

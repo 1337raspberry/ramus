@@ -36,6 +36,13 @@ class MpvBridgePlugin: Plugin {
     /// accesses must go through `lastPathSnapshotLock` to avoid UB.
     private var lastPathSnapshot: JSObject = [:]
     private let lastPathSnapshotLock = NSLock()
+    /// Background-task assertion held while playback recovery is in
+    /// flight. The `audio` background mode keeps the process alive only
+    /// while audio is actually rendering — during a reconnect the app is
+    /// silent, so without this assertion iOS suspends it seconds into the
+    /// outage and every timer/monitor the recovery relies on freezes.
+    /// Accessed on the main queue only.
+    private var recoveryGraceTask: UIBackgroundTaskIdentifier = .invalid
 
     override func load(webview: WKWebView) {
         self.webView = webview
@@ -326,6 +333,39 @@ class MpvBridgePlugin: Plugin {
         invoke.resolve([:])
     }
 
+    // MARK: - Recovery grace
+
+    /// Toggle the background-task assertion around a playback recovery
+    /// window. Begin is idempotent (one assertion at a time); the system
+    /// expiration handler releases it if recovery outlives the grant
+    /// (~30 s), after which the normal suspension rules apply again.
+    @objc public func setRecoveryGrace(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(RecoveryGraceArgs.self)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if args.active {
+                self.beginRecoveryGraceTask()
+            } else {
+                self.endRecoveryGraceTask()
+            }
+        }
+        invoke.resolve([:])
+    }
+
+    private func beginRecoveryGraceTask() {
+        guard recoveryGraceTask == .invalid else { return }
+        recoveryGraceTask = UIApplication.shared.beginBackgroundTask(withName: "ramus-recovery") {
+            [weak self] in
+            DispatchQueue.main.async { self?.endRecoveryGraceTask() }
+        }
+    }
+
+    private func endRecoveryGraceTask() {
+        guard recoveryGraceTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(recoveryGraceTask)
+        recoveryGraceTask = .invalid
+    }
+
     // MARK: - Keyboard
 
     @objc public func dismissKeyboard(_ invoke: Invoke) throws {
@@ -461,6 +501,10 @@ class SeekArgs: Decodable {
 
 class PauseArgs: Decodable {
     let paused: Bool
+}
+
+class RecoveryGraceArgs: Decodable {
+    let active: Bool
 }
 
 class VolumeArgs: Decodable {
