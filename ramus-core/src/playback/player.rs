@@ -303,6 +303,17 @@ struct PlayerInner {
     /// coalesced the churn to a net-zero index change) can't suppress a later
     /// genuine advance indefinitely.
     reload_started_at: Option<Instant>,
+    /// The track that was playing before the most recent track switch, with
+    /// the position/duration it held at the moment of the switch. Recorded at
+    /// mutation time by every switch path — natural advances (in
+    /// `handle_playlist_pos_change`) and manual skips (`next`/`previous`/
+    /// `jump_to_index`, which update `current_track` synchronously long
+    /// before mpv's confirmation event arrives). Consumed by the platform
+    /// layer via [`AudioPlayer::take_pending_transition`] for session
+    /// reporting: by the time the pos-change callback runs, the live player
+    /// already reads as the *next* track at position 0, so closing out the
+    /// previous track from live state reports every finish at 0:00.
+    pending_transition: Option<(Track, f64, f64)>,
 }
 
 impl PlayerInner {
@@ -312,6 +323,16 @@ impl PlayerInner {
     fn within_reload_cooldown(&self) -> bool {
         self.last_auto_reload_at
             .is_some_and(|t| t.elapsed() < RELOAD_COOLDOWN)
+    }
+
+    /// Record the currently-playing track as the outgoing side of a track
+    /// switch, at its final observed position/duration. Called under the lock
+    /// by every switch path *before* `current_track`/`position` are
+    /// overwritten. No-op when nothing is playing.
+    fn record_transition(&mut self) {
+        if let Some(prev) = self.state.current_track.clone() {
+            self.pending_transition = Some((prev, self.position, self.duration));
+        }
     }
 }
 
@@ -392,6 +413,7 @@ impl AudioPlayer {
                 last_recovery_reload_at: None,
                 reloading_pos: None,
                 reload_started_at: None,
+                pending_transition: None,
             }),
             persistent_cache: RwLock::new(HashMap::new()),
         }
@@ -523,6 +545,11 @@ impl AudioPlayer {
             // as the old reload's landing event.
             inner.reloading_pos = None;
             inner.reload_started_at = None;
+            // The caller reports the old queue's close-out itself (with the
+            // player still in its pre-load state); a leftover snapshot must
+            // not fire on the new queue's first pos-change and re-report a
+            // track from the previous session.
+            inner.pending_transition = None;
             inner.play_session_id = uuid::Uuid::new_v4().to_string();
             inner.position = 0.0;
             inner.position_base = 0.0;
@@ -702,6 +729,7 @@ impl AudioPlayer {
         // mpv level — mpv's sticky pause (a user pause, or the hold's
         // pin) would otherwise leave the selected track silent under the
         // Playing status set below.
+        inner.record_transition();
         inner.held_for_recovery = false;
         inner.user_paused = false;
         inner.state.queue_index = index;
@@ -727,6 +755,10 @@ impl AudioPlayer {
     pub fn next(&self) {
         let mut inner = self.inner.lock();
         if inner.state.queue_index + 1 >= inner.state.queue.len() {
+            // Skipping off the end still ends the current track at a real
+            // position — the idle callback consumes the snapshot (there is
+            // no pos-change event on this path, mpv just goes idle).
+            inner.record_transition();
             inner.state.status = PlaybackStatus::Stopped;
             inner.state.current_track = None;
             inner.position = 0.0;
@@ -744,6 +776,7 @@ impl AudioPlayer {
         // intent must lift that pin or the next track loads silent, while
         // an explicitly paused user keeps their pause (sticky across the
         // index change).
+        inner.record_transition();
         let unpause_after = inner.held_for_recovery && !inner.user_paused;
         inner.held_for_recovery = false;
         if unpause_after {
@@ -808,6 +841,7 @@ impl AudioPlayer {
 
         // See `next`: release a recovery hold before commanding mpv, and
         // lift its pause pin when the user wants playback.
+        inner.record_transition();
         let unpause_after = inner.held_for_recovery && !inner.user_paused;
         inner.held_for_recovery = false;
         if unpause_after {
@@ -956,6 +990,7 @@ impl AudioPlayer {
         inner.last_recovery_reload_at = None;
         inner.reloading_pos = None;
         inner.reload_started_at = None;
+        inner.pending_transition = None;
         drop(inner);
         self.mpv.stop();
     }
@@ -998,6 +1033,17 @@ impl AudioPlayer {
 
     pub fn play_session_id(&self) -> String {
         self.inner.lock().play_session_id.clone()
+    }
+
+    /// Consume the pending track-switch snapshot: the track that was playing
+    /// before the most recent switch, with its final `(position, duration)`.
+    /// The platform layer calls this from the pos-change and idle callbacks
+    /// to close out the previous track's Plex session at its true position —
+    /// by the time those callbacks run, the live player already reads as the
+    /// next track at 0:00. `None` when the last pos-change was a queue
+    /// reload (the caller reported that itself) or nothing was playing.
+    pub fn take_pending_transition(&self) -> Option<(Track, f64, f64)> {
+        self.inner.lock().pending_transition.take()
     }
 
     pub fn debug_snapshot(&self) -> DebugInfo {
@@ -1319,6 +1365,20 @@ impl AudioPlayer {
                 return false;
             }
             inner.pending_initial_pos = None;
+        }
+
+        // A genuine track change records the outgoing track at its final
+        // position for session reporting. Same rating key means this event
+        // only *confirms* a manual skip that already mutated state (and
+        // already recorded the transition with the true pre-skip position —
+        // recording again here would clobber it with the zeroed one).
+        let is_new_track = inner
+            .state
+            .current_track
+            .as_ref()
+            .is_none_or(|cur| cur.rating_key != inner.state.queue[pos].rating_key);
+        if is_new_track {
+            inner.record_transition();
         }
 
         inner.state.queue_index = pos;
@@ -3519,6 +3579,117 @@ mod tests {
 
         // The confirmation pos-change is processed normally.
         assert!(player.handle_playlist_pos_change(1));
+    }
+
+    #[test]
+    fn test_natural_advance_records_transition_at_final_position() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        player.handle_position_change(175.0);
+
+        // The advance mutates state to track 2 at 0:00 — the snapshot must
+        // preserve track 1 at the position it actually ended.
+        assert!(player.handle_playlist_pos_change(1));
+        let (prev, pos, dur) = player.take_pending_transition().unwrap();
+        assert_eq!(prev.rating_key, "1");
+        assert_eq!(pos, 175.0);
+        assert_eq!(dur, 180.0);
+
+        // Consumed — a second take yields nothing.
+        assert!(player.take_pending_transition().is_none());
+    }
+
+    #[test]
+    fn test_skip_confirmation_keeps_preskip_position() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        player.handle_position_change(42.0);
+
+        // The skip records the transition synchronously; mpv's confirmation
+        // pos-change (same rating key, position already zeroed) must not
+        // clobber the snapshot with 0:00.
+        player.next();
+        assert!(player.handle_playlist_pos_change(1));
+        let (prev, pos, _) = player.take_pending_transition().unwrap();
+        assert_eq!(prev.rating_key, "1");
+        assert_eq!(pos, 42.0);
+    }
+
+    #[test]
+    fn test_previous_records_transition() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        assert!(player.handle_playlist_pos_change(1));
+        let _ = player.take_pending_transition();
+        player.handle_position_change(2.0);
+
+        // Under the 3s restart threshold, previous() goes back a track.
+        player.previous();
+        let (prev, pos, _) = player.take_pending_transition().unwrap();
+        assert_eq!(prev.rating_key, "2");
+        assert_eq!(pos, 2.0);
+    }
+
+    #[test]
+    fn test_jump_records_transition() {
+        let (player, _) = make_player();
+        player.load_queue(
+            vec![make_test_track("1"), make_test_track("2"), make_test_track("3")],
+            0,
+        );
+        player.handle_position_change(60.0);
+
+        player.jump_to_index(2);
+        let (prev, pos, _) = player.take_pending_transition().unwrap();
+        assert_eq!(prev.rating_key, "1");
+        assert_eq!(pos, 60.0);
+    }
+
+    #[test]
+    fn test_skip_off_queue_end_records_transition() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1")], 0);
+        player.handle_position_change(171.0);
+
+        // No pos-change fires on this path (mpv just goes idle) — the idle
+        // callback consumes the snapshot to close the track at 95%, where
+        // it deserves its scrobble.
+        player.next();
+        assert_eq!(player.state().status, PlaybackStatus::Stopped);
+        let (prev, pos, _) = player.take_pending_transition().unwrap();
+        assert_eq!(prev.rating_key, "1");
+        assert_eq!(pos, 171.0);
+    }
+
+    #[test]
+    fn test_load_queue_and_stop_clear_pending_transition() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+        player.handle_position_change(42.0);
+        player.next();
+
+        // A fresh queue's close-out is reported by the caller with the
+        // player still in its pre-load state — a leftover snapshot must not
+        // fire on the new queue's first pos-change.
+        player.load_queue(vec![make_test_track("3")], 0);
+        assert!(player.take_pending_transition().is_none());
+
+        // stop() likewise discards any unconsumed snapshot outright.
+        player.handle_position_change(42.0);
+        player.next();
+        player.stop();
+        assert!(player.take_pending_transition().is_none());
+    }
+
+    #[test]
+    fn test_queue_reload_pos_change_records_nothing() {
+        let (player, _) = make_player();
+        player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+
+        // The Replace load's pos-change re-confirms the track load_queue
+        // already installed; play_tracks reported that start itself.
+        assert!(player.handle_playlist_pos_change(0));
+        assert!(player.take_pending_transition().is_none());
     }
 
     #[test]

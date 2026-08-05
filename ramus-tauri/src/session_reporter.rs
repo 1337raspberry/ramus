@@ -29,6 +29,11 @@ pub struct SessionReporter {
     /// Last rating_key reported via track_started; deduplicates the
     /// overlapping calls from play_tracks and on_playlist_pos_change.
     last_started_key: Mutex<Option<String>>,
+    /// Scrobbles whose sends failed every in-task retry. Re-attempted at the
+    /// next natural connectivity moment (track start, resume) — a scrobble is
+    /// a permanent play-count mutation, so it shouldn't be lost to the very
+    /// outage that interrupted the track it belongs to.
+    failed_scrobbles: Arc<Mutex<Vec<String>>>,
 }
 
 impl SessionReporter {
@@ -41,6 +46,7 @@ impl SessionReporter {
             periodic_active: Arc::new(Mutex::new(false)),
             loop_spawned: Mutex::new(false),
             last_started_key: Mutex::new(None),
+            failed_scrobbles: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -57,24 +63,53 @@ impl SessionReporter {
         let timeline = self.tracker.lock().track_started(track, session_id);
         self.send_timeline(&timeline);
         self.start_periodic();
+        // A track starting is a natural connectivity moment — retry any
+        // scrobbles a past outage stranded.
+        self.flush_failed_scrobbles();
     }
 
-    /// Scrobble a track if it passed the 90% threshold. Called on natural
-    /// auto-advance and skip transitions.
-    pub fn track_ended(&self, track: &Track) {
-        self.update_tracker_position();
-        let mut tracker = self.tracker.lock();
-        if !tracker.should_scrobble_track(&track.rating_key) {
-            return;
-        }
-        tracker.mark_scrobbled(track.rating_key.clone());
-        drop(tracker);
+    /// Close out one track and open the next in a single ordered step, using
+    /// a position snapshot taken *before* the player state moved on. Covers
+    /// natural advances, manual skips, and end-of-queue (`next` = None). The
+    /// live player already reads as the next track at 0:00 by the time the
+    /// advance event reaches the platform layer, so reading `position()`
+    /// here would report every finish as `stopped` at time=0 and make the
+    /// boundary scrobble check unreachable.
+    pub fn track_transition(
+        &self,
+        prev: &Track,
+        prev_pos: f64,
+        prev_dur: f64,
+        next: Option<&Track>,
+        session_id: &str,
+    ) {
+        self.stop_periodic();
+        *self.last_started_key.lock() = None;
 
-        let rk = track.rating_key.clone();
-        let client = self.client.clone();
-        tauri::async_runtime::spawn(async move {
-            client.scrobble(&rk).await;
-        });
+        let (stopped, scrobble) = {
+            let mut tracker = self.tracker.lock();
+            // Guard against a desynced tracker (e.g. reporting was never
+            // started for this track): closing out would scrobble whatever
+            // stale key the tracker still holds at the wrong position.
+            if tracker.active_track_key() == Some(prev.rating_key.as_str()) {
+                let scrobble = tracker
+                    .update_position(prev_pos, prev_dur)
+                    .and_then(|(_, key)| key);
+                (tracker.playback_stopped(), scrobble)
+            } else {
+                (None, None)
+            }
+        };
+
+        if let Some(ref tl) = stopped {
+            self.send_timeline(tl);
+        }
+        if let Some(rk) = scrobble {
+            self.send_scrobble(rk);
+        }
+        if let Some(next) = next {
+            self.track_started(next, session_id);
+        }
     }
 
     /// Report playback paused.
@@ -93,6 +128,8 @@ impl SessionReporter {
             self.send_timeline(&timeline);
         }
         self.start_periodic();
+        // Resuming often follows a reconnect — retry stranded scrobbles.
+        self.flush_failed_scrobbles();
     }
 
     /// Report playback stopped (end of queue, new queue load, or user stop).
@@ -141,6 +178,43 @@ impl SessionReporter {
         let pos = self.player.position();
         let dur = self.player.duration();
         let _ = self.tracker.lock().update_position(pos, dur);
+    }
+
+    /// Send a scrobble with in-task retries. Transient failures back off and
+    /// re-send; a fully failed send parks the key in `failed_scrobbles` for
+    /// the next flush rather than silently dropping the play count. The
+    /// tracker's `scrobbled_key` was already marked by the caller — that
+    /// stays deliberate: unmarking on failure would let the periodic loop
+    /// re-yield the key while an earlier attempt may still land server-side,
+    /// double-counting the play.
+    pub fn send_scrobble(&self, rating_key: String) {
+        let client = self.client.clone();
+        let failed = self.failed_scrobbles.clone();
+        tauri::async_runtime::spawn(async move {
+            for delay_secs in [0u64, 2, 8] {
+                if delay_secs > 0 {
+                    tokio::time::sleep(Duration::from_secs(delay_secs)).await;
+                }
+                if client.scrobble(&rating_key).await {
+                    return;
+                }
+            }
+            log::warn!("scrobble failed after retries; queued for later flush");
+            let mut queue = failed.lock();
+            if !queue.contains(&rating_key) {
+                queue.push(rating_key);
+            }
+        });
+    }
+
+    /// Re-attempt every scrobble stranded by past send failures. Keys that
+    /// fail again re-queue themselves via `send_scrobble`, so nothing is
+    /// lost — the queue just waits for the next flush moment.
+    pub fn flush_failed_scrobbles(&self) {
+        let pending: Vec<String> = std::mem::take(&mut *self.failed_scrobbles.lock());
+        for rk in pending {
+            self.send_scrobble(rk);
+        }
     }
 
     fn send_timeline(&self, tl: &TimelineState) {
@@ -209,10 +283,7 @@ async fn periodic_loop(
         if let Some((timeline, scrobble_key)) = result {
             reporter.send_timeline(&timeline);
             if let Some(rk) = scrobble_key {
-                let client = reporter.client.clone();
-                tauri::async_runtime::spawn(async move {
-                    client.scrobble(&rk).await;
-                });
+                reporter.send_scrobble(rk);
             }
         }
     }

@@ -19,8 +19,21 @@ pub async fn play_tracks(
     tracks: Vec<Track>,
     start_at: usize,
 ) -> CmdResult<()> {
-    // Report previous session stopped before loading a new queue.
-    state.session_reporter.playback_stopped();
+    // Close the outgoing session before loading the new queue, while the
+    // player still holds the old track at its true position — scrobbling it
+    // if it crossed the threshold. `next` stays None: the new queue's
+    // track_started below must carry the session id load_queue rotates.
+    let prev = state.player.state().current_track.clone();
+    if let Some(ref prev) = prev {
+        let pos = state.player.position();
+        let dur = state.player.duration();
+        let sid = state.player.play_session_id();
+        state
+            .session_reporter
+            .track_transition(prev, pos, dur, None, &sid);
+    } else {
+        state.session_reporter.playback_stopped();
+    }
 
     // Abort in-flight prefetch from the previous album — the new queue has a
     // different lookahead window. The worker starts a fresh cycle on the next

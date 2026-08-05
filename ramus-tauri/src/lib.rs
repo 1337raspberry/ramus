@@ -222,7 +222,13 @@ pub fn create_mpv_player(
         })),
         on_playlist_pos_change: Some(Box::new(move |pos| {
             if let Some(ref p) = *pr3.lock() {
-                // Capture previous track before state update for scrobble reporting.
+                // Capture the outgoing track before the state update — used
+                // by the stream-record re-ingest below to tell a natural
+                // advance from a same-track event. (Session reporting no
+                // longer compares before/after: skips mutate state long
+                // before this event, so it uses the player's transition
+                // snapshot instead.) Desktop-only, like its consumer.
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
                 let prev_track = p.state().current_track.clone();
 
                 // A `false` return is not a real advance (invalid index, the
@@ -267,22 +273,23 @@ pub fn create_mpv_player(
                     handle.notify_natural_advance();
                 }
 
-                // Session reporting for natural track advance only. Matching
-                // rating_key means a queue reload, which play_tracks already
-                // reported via track_started.
+                // Session reporting: close out the outgoing track and open
+                // the new one. The player records the transition snapshot
+                // (outgoing track + its final position) at mutation time —
+                // both for natural advances and for manual skips, which
+                // update `current_track` synchronously long before this
+                // event arrives and are therefore invisible to any
+                // before/after comparison made here. No snapshot means a
+                // queue reload, which play_tracks already reported.
                 if let Some(ref reporter) = *sr1.lock() {
-                    if let Some(ref prev) = prev_track {
-                        let same_track = state
-                            .current_track
-                            .as_ref()
-                            .is_some_and(|cur| cur.rating_key == prev.rating_key);
-                        if !same_track {
-                            reporter.playback_stopped();
-                            reporter.track_ended(prev);
-                            if let Some(ref track) = state.current_track {
-                                reporter.track_started(track, &p.play_session_id());
-                            }
-                        }
+                    if let Some((prev, prev_pos, prev_dur)) = p.take_pending_transition() {
+                        reporter.track_transition(
+                            &prev,
+                            prev_pos,
+                            prev_dur,
+                            state.current_track.as_ref(),
+                            &p.play_session_id(),
+                        );
                     }
                 }
 
@@ -349,9 +356,11 @@ pub fn create_mpv_player(
         })),
         on_idle_active: Some(Box::new(move || {
             if let Some(ref p) = *pr5.lock() {
-                // Capture before the teardown clears it — the reporter needs
-                // the track that just finished.
+                // Capture before the teardown zeroes them — the reporter
+                // needs the track that just finished at its final position.
                 let ended_track = p.state().current_track.clone();
+                let ended_pos = p.position();
+                let ended_dur = p.duration();
 
                 // A held player's mpv going idle is expected (the failed
                 // stream ended and the auto-advance walk ran out of
@@ -363,6 +372,10 @@ pub fn create_mpv_player(
                     return;
                 }
 
+                // Taken only after the verdict: a declined idle must leave
+                // the snapshot for the pos-change event that consumes it.
+                let pending = p.take_pending_transition();
+
                 emit_playback_state(
                     &app5,
                     PlaybackStatePayload {
@@ -373,11 +386,19 @@ pub fn create_mpv_player(
                 );
 
                 if let Some(ref reporter) = *sr3.lock() {
-                    // Scrobble the last playing track, then close the session.
-                    if let Some(ref track) = ended_track {
-                        reporter.track_ended(track);
+                    // Close the last track's session at its true final
+                    // position (scrobbling if it crossed the threshold). A
+                    // skip off the queue end clears `current_track` before
+                    // mpv goes idle, so the live capture above is empty —
+                    // the player's transition snapshot covers that path.
+                    let sid = p.play_session_id();
+                    if let Some((prev, pos, dur)) = pending {
+                        reporter.track_transition(&prev, pos, dur, None, &sid);
+                    } else if let Some(ref track) = ended_track {
+                        reporter.track_transition(track, ended_pos, ended_dur, None, &sid);
+                    } else {
+                        reporter.playback_stopped();
                     }
-                    reporter.playback_stopped();
                 }
 
                 if let Some(ref mc) = *mc3.lock() {
@@ -912,6 +933,8 @@ pub fn run() {
 
                                 // Update player when monitor switches connections.
                                 let monitor_player = state.player.clone();
+                                let monitor_client = state.client.clone();
+                                let monitor_reporter = state.session_reporter.clone();
                                 let monitor_reachable = state.server_reachable.clone();
                                 let monitor_app = app_handle.clone();
                                 let monitor_settings_for_changed = state.settings.clone();
@@ -921,6 +944,12 @@ pub fn run() {
                                 connection_monitor.set_on_connection_changed(
                                     std::sync::Arc::new(move |url, token, is_local, _is_http| {
                                         let is_remote = !is_local;
+                                        // Repoint the shared API client too — timeline
+                                        // reports, scrobbles, art and sync all ride it,
+                                        // and it otherwise keeps addressing the dead
+                                        // connection until the next full startup probe.
+                                        monitor_client.set_server_url(Some(url.clone()));
+                                        monitor_client.set_token(Some(token.clone()));
                                         monitor_player.update_server_connection(url, token, is_remote);
                                         monitor_player.rewrite_stale_playlist_urls();
                                         // rewrite_stale_playlist_urls skips the current entry to avoid
@@ -957,6 +986,10 @@ pub fn run() {
                                             emit_playback_buffering(&monitor_app, true);
                                         }
                                         monitor_prefetch.notify_skip();
+                                        // The server is reachable again on a fresh
+                                        // address — retry any scrobbles the outage
+                                        // stranded.
+                                        monitor_reporter.flush_failed_scrobbles();
                                         monitor_reachable
                                             .store(true, std::sync::atomic::Ordering::Release);
                                         let offline_manual =
@@ -1006,6 +1039,7 @@ pub fn run() {
                                 // changed handler minus the URL/playlist swap (nothing
                                 // went stale; playback just needs a kick).
                                 let rec_player = state.player.clone();
+                                let rec_reporter = state.session_reporter.clone();
                                 let rec_reachable = state.server_reachable.clone();
                                 let rec_app = app_handle.clone();
                                 let rec_settings = state.settings.clone();
@@ -1023,6 +1057,9 @@ pub fn run() {
                                         // Fresh prefetch cycle: re-checks targets and
                                         // clears the per-cycle failure set.
                                         rec_prefetch.notify_skip();
+                                        // Back online — retry any scrobbles the outage
+                                        // stranded.
+                                        rec_reporter.flush_failed_scrobbles();
                                         rec_reachable
                                             .store(true, std::sync::atomic::Ordering::Release);
                                         let offline_manual = rec_settings.read().offline_mode;

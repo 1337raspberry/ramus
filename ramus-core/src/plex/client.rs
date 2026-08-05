@@ -757,19 +757,22 @@ impl PlexClient {
             .await;
     }
 
-    /// Mark an item as played on the server. Fire-and-forget.
-    pub async fn scrobble(&self, rating_key: &str) {
+    /// Mark an item as played on the server. Returns whether the server
+    /// acknowledged the request, so callers can retry transient failures —
+    /// a scrobble is a permanent play-count mutation, not a disposable
+    /// status ping like the timeline reports.
+    pub async fn scrobble(&self, rating_key: &str) -> bool {
         let (base, token) = match self.read_state() {
             Ok(s) => s,
-            Err(_) => return,
+            Err(_) => return false,
         };
 
         let url = match join_path(&base, "/:/scrobble") {
             Ok(u) => u,
-            Err(_) => return,
+            Err(_) => return false,
         };
 
-        let _ = self
+        let result = self
             .http
             .get(url)
             .query(&[
@@ -784,6 +787,13 @@ impl PlexClient {
             .header("X-Plex-Device", Self::device())
             .send()
             .await;
+
+        // Never format the error itself: reqwest's Display includes the
+        // request URL, which carries the token in the query string.
+        match result {
+            Ok(resp) => resp.status().is_success(),
+            Err(_) => false,
+        }
     }
 
     /// Set user rating on an item. `10.0` favourites; `0.0` unfavourites.
