@@ -57,19 +57,55 @@ impl PlaybackStatus {
 }
 
 /// Whether/when lossless audio should be sent through Plex's universal
-/// transcoder before reaching the player. The two `*Cellular` variants
-/// only make sense on iOS/Android where the player has a real cellular
-/// signal — on desktop they're equivalent to `Never` / `Remote` because
-/// `is_cellular` is always false there. The UI hides them on desktop.
+/// transcoder before reaching the player.
+///
+/// The ladder is **monotonic**: each variant is a superset of the one
+/// above it, and the names say so rather than leaving it to prose. Every
+/// mode except `Never` permits the adaptive response to a link that can't
+/// sustain the stream; `WhenSlowOrCellular` additionally transcodes on
+/// cellular data pre-emptively, without waiting to stall first.
+///
+/// `WhenSlowOrCellular` only means anything on iOS/Android, where the
+/// player has a real cellular signal — on desktop `is_cellular` is always
+/// false, making it equivalent to `WhenSlow`. The UI hides it there.
+///
+/// The old `Remote` / `RemoteOrCellular` variants are gone: connection
+/// locality was only ever a proxy for "the link probably can't keep up",
+/// and that condition is now measured directly. `is_remote` survives as a
+/// diagnostic but feeds no policy. The three retired wire names are kept as
+/// deserialize aliases — `settings::load` falls back to `Settings::default()`
+/// for the *whole* struct on any parse error, so an unmapped variant would
+/// silently reset every unrelated setting the user has (EQ, bookmarks, cache
+/// limits, genre source). Serialization writes the canonical name, so the
+/// file self-heals on the next save.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum PlaybackMode {
     #[default]
     Never,
-    Cellular,
-    Remote,
-    RemoteOrCellular,
+    /// Transcode when the connection can't sustain the stream, starting at
+    /// the configured bitrate and stepping down from there if needed.
+    #[serde(alias = "remote")]
+    WhenSlow,
+    /// The above, plus always on cellular data.
+    #[serde(alias = "cellular", alias = "remoteOrCellular")]
+    WhenSlowOrCellular,
     Always,
+}
+
+impl PlaybackMode {
+    /// Whether this mode permits transcoding a stream that is currently
+    /// direct-playing, once the link is measured unable to sustain it.
+    ///
+    /// `Never` is the only mode that refuses: its promise is absolute, and
+    /// a user who wants the adaptive behaviour has `WhenSlow` to pick. Note
+    /// this governs *starting* to transcode — stepping an already-transcoded
+    /// stream down to a smaller bitrate is permitted in any mode that put it
+    /// there, since that mode already consented to re-encoding as a
+    /// bandwidth measure.
+    pub fn adapts_to_slow_connection(self) -> bool {
+        !matches!(self, Self::Never)
+    }
 }
 
 /// Bitrate (kbps) the universal transcoder will target when transcoding
@@ -762,6 +798,36 @@ pub struct LibrarySection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_legacy_playback_mode_does_not_wipe_the_settings_file() {
+        // `settings::load` does `from_slice(..).unwrap_or_default()` on the
+        // whole struct, so a rejected `playbackMode` would silently reset
+        // every unrelated setting. The retired wire names must keep parsing.
+        let legacy = serde_json::json!({
+            "playbackMode": "remoteOrCellular",
+            "transcodeBitrate": "kbps320",
+            "lookaheadDepth": 9,
+            "eqEnabled": true,
+            "eqBands": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+            "offlineMode": true,
+            "backgroundStyle": "oledVoid",
+        });
+        let parsed: Settings = serde_json::from_value(legacy).expect("legacy file must parse");
+
+        assert_eq!(parsed.playback_mode, PlaybackMode::WhenSlowOrCellular);
+        // The point of the test: everything else survived intact.
+        assert_eq!(parsed.transcode_bitrate, TranscodeBitrate::Kbps320);
+        assert_eq!(parsed.lookahead_depth, 9);
+        assert!(parsed.eq_enabled);
+        assert_eq!(parsed.eq_bands.len(), 10);
+        assert!(parsed.offline_mode);
+        assert_eq!(parsed.background_style, BackgroundStyle::OledVoid);
+
+        // Round-tripping writes the canonical name, so the file self-heals.
+        let round_tripped = serde_json::to_value(&parsed).unwrap();
+        assert_eq!(round_tripped["playbackMode"], "whenSlowOrCellular");
+    }
 
     // -- helpers --
 

@@ -34,19 +34,16 @@ interface Props {
 type TabId = "playback" | "looks" | "library" | "storage" | "network" | "about";
 
 // Per-mode prose shown under the dropdown so users can tell at a glance
-// what each option actually does. The "Cellular" / "RemoteOrCellular"
-// variants are hidden on desktop via `useIsMobile`, but the prose is here
-// for completeness in case a desktop user has somehow ended up with them
-// selected (e.g. settings copied from mobile).
+// what each option actually does. The cellular variant is hidden on desktop
+// via `useIsMobile`, but the prose is here for completeness in case a desktop
+// user has somehow ended up with it selected (e.g. settings copied from mobile).
 const MODE_PROSE: Record<PlaybackMode, string> = {
   never:
-    "Always stream lossless files in their original quality. Best if you're almost always on a fast or local connection.",
-  cellular:
-    "Transcode lossless files only when you're on cellular data. Saves your data plan without sacrificing quality at home, or helps with bad cellular coverage/speeds.",
-  remote:
-    "Transcode lossless files when you're not on the same local network as your server. Helps when streaming over the internet if your server has a poor upload speed.",
-  remoteOrCellular:
-    "Transcode lossless files if you're not on the same local network as your server, or if you're using cellular data. Ideal if the priority is stability over lossless streaming quality.",
+    "Always stream lossless files in their original quality. If a connection can't keep up, playback pauses to buffer rather than dropping quality.",
+  whenSlow:
+    "Stream lossless until a connection can't keep up, then switch to the chosen bitrate for the rest of the session — dropping lower if that still isn't enough. Reverts on your next network change.",
+  whenSlowOrCellular:
+    "Always transcode on cellular data to save your data plan, and switch to transcoded audio anywhere else that a connection can't keep up.",
   always: "Always transcode lossless files to the chosen bitrate.",
 };
 
@@ -373,10 +370,13 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
                     onChange={(e) => save({ playbackMode: e.target.value as PlaybackMode })}
                   >
                     <option value="never">Never</option>
-                    {isMobile && <option value="cellular">When on cellular</option>}
-                    <option value="remote">When remote</option>
+                    <option value="whenSlow">When the connection can&rsquo;t keep up</option>
+                    {/* Cellular is a mobile-only signal, so off mobile this
+                        option would behave identically to the one above. */}
                     {isMobile && (
-                      <option value="remoteOrCellular">When remote or on cellular</option>
+                      <option value="whenSlowOrCellular">
+                        When the connection can&rsquo;t keep up, or on cellular
+                      </option>
                     )}
                     <option value="always">Always</option>
                   </select>

@@ -9,25 +9,24 @@ use crate::util::{is_lossless_codec, percent_decode, percent_encode};
 /// direct-played; the mode only controls whether *lossless* sources get
 /// re-encoded.
 ///
-/// `is_remote` reflects whether the active Plex connection is non-local
-/// (relayed through plex.tv or a public IP). `is_cellular` reflects
-/// whether the device's primary network interface is cellular — a
-/// mobile-only signal that's permanently `false` on desktop.
-pub fn should_transcode(
-    codec: Option<&str>,
-    mode: PlaybackMode,
-    is_remote: bool,
-    is_cellular: bool,
-) -> bool {
+/// `is_cellular` reflects whether the device's primary network interface
+/// is cellular — a mobile-only signal that's permanently `false` on
+/// desktop.
+///
+/// This is the *baseline* policy only. It stays a pure function of stable
+/// inputs so its test grid can serve as the policy contract; the adaptive
+/// response to a link that can't keep up is layered on top of it by the
+/// player rather than folded in here.
+pub fn should_transcode(codec: Option<&str>, mode: PlaybackMode, is_cellular: bool) -> bool {
     let Some(codec) = codec else { return false };
     if !is_lossless_codec(codec) {
         return false;
     }
     match mode {
-        PlaybackMode::Never => false,
-        PlaybackMode::Cellular => is_cellular,
-        PlaybackMode::Remote => is_remote,
-        PlaybackMode::RemoteOrCellular => is_remote || is_cellular,
+        // Both react to a starving link rather than pre-empting it, so
+        // neither transcodes on its own.
+        PlaybackMode::Never | PlaybackMode::WhenSlow => false,
+        PlaybackMode::WhenSlowOrCellular => is_cellular,
         PlaybackMode::Always => true,
     }
 }
@@ -183,23 +182,38 @@ pub fn is_transcode_download_url(url: &str) -> bool {
 mod tests {
     use super::*;
 
-    // Convenience: full grid of (is_remote, is_cellular) combos.
-    const FLAGS: [(bool, bool); 4] =
-        [(false, false), (false, true), (true, false), (true, true)];
+    const ALL_MODES: [PlaybackMode; 4] = [
+        PlaybackMode::Never,
+        PlaybackMode::WhenSlow,
+        PlaybackMode::WhenSlowOrCellular,
+        PlaybackMode::Always,
+    ];
 
     #[test]
     fn test_never_never_transcodes() {
-        for (is_remote, is_cellular) in FLAGS {
+        for is_cellular in [false, true] {
             assert!(!should_transcode(
                 Some("flac"),
                 PlaybackMode::Never,
-                is_remote,
                 is_cellular
             ));
             assert!(!should_transcode(
                 Some("mp3"),
                 PlaybackMode::Never,
-                is_remote,
+                is_cellular
+            ));
+        }
+    }
+
+    #[test]
+    fn test_when_slow_does_not_transcode_on_its_own() {
+        // The baseline policy is direct-play; the adaptive layer is what
+        // turns this mode on, and only once the link has been measured
+        // unable to sustain the stream.
+        for is_cellular in [false, true] {
+            assert!(!should_transcode(
+                Some("flac"),
+                PlaybackMode::WhenSlow,
                 is_cellular
             ));
         }
@@ -207,154 +221,93 @@ mod tests {
 
     #[test]
     fn test_always_transcodes_lossless_under_any_flag() {
-        for (is_remote, is_cellular) in FLAGS {
-            assert!(should_transcode(
-                Some("flac"),
-                PlaybackMode::Always,
-                is_remote,
-                is_cellular
-            ));
-            assert!(should_transcode(
-                Some("alac"),
-                PlaybackMode::Always,
-                is_remote,
-                is_cellular
-            ));
-            assert!(should_transcode(
-                Some("wav"),
-                PlaybackMode::Always,
-                is_remote,
-                is_cellular
-            ));
-            assert!(should_transcode(
-                Some("aiff"),
-                PlaybackMode::Always,
-                is_remote,
-                is_cellular
-            ));
-            assert!(should_transcode(
-                Some("aif"),
-                PlaybackMode::Always,
-                is_remote,
-                is_cellular
-            ));
-            assert!(should_transcode(
-                Some("pcm"),
-                PlaybackMode::Always,
-                is_remote,
-                is_cellular
-            ));
+        for is_cellular in [false, true] {
+            for codec in ["flac", "alac", "wav", "aiff", "aif", "pcm"] {
+                assert!(
+                    should_transcode(Some(codec), PlaybackMode::Always, is_cellular),
+                    "{codec} must transcode under Always (is_cellular={is_cellular})"
+                );
+            }
         }
     }
 
     #[test]
     fn test_always_does_not_transcode_lossy() {
-        for (is_remote, is_cellular) in FLAGS {
-            assert!(!should_transcode(
-                Some("mp3"),
-                PlaybackMode::Always,
-                is_remote,
-                is_cellular
-            ));
-            assert!(!should_transcode(
-                Some("aac"),
-                PlaybackMode::Always,
-                is_remote,
-                is_cellular
-            ));
-            assert!(!should_transcode(
-                Some("opus"),
-                PlaybackMode::Always,
-                is_remote,
-                is_cellular
-            ));
-            assert!(!should_transcode(
-                Some("ogg"),
-                PlaybackMode::Always,
-                is_remote,
-                is_cellular
-            ));
+        for is_cellular in [false, true] {
+            for codec in ["mp3", "aac", "opus", "ogg"] {
+                assert!(
+                    !should_transcode(Some(codec), PlaybackMode::Always, is_cellular),
+                    "{codec} is lossy and must never transcode"
+                );
+            }
         }
     }
 
     #[test]
-    fn test_remote_only_when_remote() {
-        // True iff is_remote, regardless of is_cellular.
-        assert!(should_transcode(Some("flac"), PlaybackMode::Remote, true, false));
-        assert!(should_transcode(Some("flac"), PlaybackMode::Remote, true, true));
-        assert!(!should_transcode(Some("flac"), PlaybackMode::Remote, false, false));
-        assert!(!should_transcode(Some("flac"), PlaybackMode::Remote, false, true));
-    }
-
-    #[test]
-    fn test_cellular_only_when_cellular() {
-        // True iff is_cellular, regardless of is_remote.
-        assert!(should_transcode(Some("flac"), PlaybackMode::Cellular, false, true));
-        assert!(should_transcode(Some("flac"), PlaybackMode::Cellular, true, true));
-        assert!(!should_transcode(Some("flac"), PlaybackMode::Cellular, false, false));
-        assert!(!should_transcode(Some("flac"), PlaybackMode::Cellular, true, false));
-    }
-
-    #[test]
-    fn test_remote_or_cellular_disjunction() {
-        // True if either flag is set; false only when both are false.
+    fn test_when_slow_or_cellular_transcodes_on_cellular() {
         assert!(should_transcode(
             Some("flac"),
-            PlaybackMode::RemoteOrCellular,
-            true,
-            false
-        ));
-        assert!(should_transcode(
-            Some("flac"),
-            PlaybackMode::RemoteOrCellular,
-            false,
+            PlaybackMode::WhenSlowOrCellular,
             true
         ));
-        assert!(should_transcode(
-            Some("flac"),
-            PlaybackMode::RemoteOrCellular,
-            true,
-            true
-        ));
+        // Off cellular it falls back to the baseline direct-play; the
+        // adaptive layer still covers a slow link, hence the mode name.
         assert!(!should_transcode(
             Some("flac"),
-            PlaybackMode::RemoteOrCellular,
-            false,
+            PlaybackMode::WhenSlowOrCellular,
             false
         ));
+    }
+
+    #[test]
+    fn test_mode_ladder_is_monotonic() {
+        // Each mode must transcode at least everywhere the one above it
+        // does — the ordering is what the UI's wording promises.
+        for is_cellular in [false, true] {
+            let results: Vec<bool> = ALL_MODES
+                .iter()
+                .map(|m| should_transcode(Some("flac"), *m, is_cellular))
+                .collect();
+            for pair in results.windows(2) {
+                assert!(
+                    pair[1] || !pair[0],
+                    "ladder regressed at is_cellular={is_cellular}: {results:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_only_never_refuses_to_adapt() {
+        assert!(!PlaybackMode::Never.adapts_to_slow_connection());
+        for mode in [
+            PlaybackMode::WhenSlow,
+            PlaybackMode::WhenSlowOrCellular,
+            PlaybackMode::Always,
+        ] {
+            assert!(mode.adapts_to_slow_connection());
+        }
     }
 
     #[test]
     fn test_lossy_never_transcodes_under_any_mode() {
-        for mode in [
-            PlaybackMode::Never,
-            PlaybackMode::Cellular,
-            PlaybackMode::Remote,
-            PlaybackMode::RemoteOrCellular,
-            PlaybackMode::Always,
-        ] {
-            assert!(!should_transcode(Some("mp3"), mode, true, true));
-            assert!(!should_transcode(Some("aac"), mode, true, true));
+        for mode in ALL_MODES {
+            assert!(!should_transcode(Some("mp3"), mode, true));
+            assert!(!should_transcode(Some("aac"), mode, true));
         }
     }
 
     #[test]
     fn test_none_codec_returns_false() {
-        for mode in [
-            PlaybackMode::Never,
-            PlaybackMode::Cellular,
-            PlaybackMode::Remote,
-            PlaybackMode::RemoteOrCellular,
-            PlaybackMode::Always,
-        ] {
-            assert!(!should_transcode(None, mode, true, true));
+        for mode in ALL_MODES {
+            assert!(!should_transcode(None, mode, true));
         }
     }
 
     #[test]
     fn test_transcode_case_insensitive() {
-        assert!(should_transcode(Some("FLAC"), PlaybackMode::Always, false, false));
-        assert!(should_transcode(Some("Alac"), PlaybackMode::Always, false, false));
+        assert!(should_transcode(Some("FLAC"), PlaybackMode::Always, false));
+        assert!(should_transcode(Some("Alac"), PlaybackMode::Always, false));
     }
 
     #[test]
@@ -365,21 +318,28 @@ mod tests {
             "\"never\""
         );
         assert_eq!(
-            serde_json::to_string(&PlaybackMode::Cellular).unwrap(),
-            "\"cellular\""
+            serde_json::to_string(&PlaybackMode::WhenSlow).unwrap(),
+            "\"whenSlow\""
         );
         assert_eq!(
-            serde_json::to_string(&PlaybackMode::Remote).unwrap(),
-            "\"remote\""
-        );
-        assert_eq!(
-            serde_json::to_string(&PlaybackMode::RemoteOrCellular).unwrap(),
-            "\"remoteOrCellular\""
+            serde_json::to_string(&PlaybackMode::WhenSlowOrCellular).unwrap(),
+            "\"whenSlowOrCellular\""
         );
         assert_eq!(
             serde_json::to_string(&PlaybackMode::Always).unwrap(),
             "\"always\""
         );
+    }
+
+    #[test]
+    fn test_retired_wire_names_still_deserialize() {
+        // Locality was only ever a proxy for "can't keep up", which is now
+        // measured; the standalone cellular mode gained slow-link
+        // adaptation. Nothing any of these users had is lost.
+        let parse = |s: &str| serde_json::from_str::<PlaybackMode>(s).unwrap();
+        assert_eq!(parse("\"remote\""), PlaybackMode::WhenSlow);
+        assert_eq!(parse("\"remoteOrCellular\""), PlaybackMode::WhenSlowOrCellular);
+        assert_eq!(parse("\"cellular\""), PlaybackMode::WhenSlowOrCellular);
     }
 
     #[test]

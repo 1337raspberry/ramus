@@ -179,7 +179,15 @@ export interface Bookmark {
 /// User-requested cap; backend enforces the same value via `Bookmark::validate_batch`.
 export const MAX_BOOKMARKS = 50;
 
-export type PlaybackMode = "never" | "cellular" | "remote" | "remoteOrCellular" | "always";
+/**
+ * Monotonic ladder — each mode transcodes at least everywhere the one before
+ * it does. Every mode except `never` adapts to a connection that can't sustain
+ * the stream; `whenSlowOrCellular` additionally transcodes on cellular without
+ * waiting to stall first, so it's mobile-only (`isCellular` is always false on
+ * desktop). The retired `remote` / `remoteOrCellular` / `cellular` values are
+ * migrated on load by the Rust side.
+ */
+export type PlaybackMode = "never" | "whenSlow" | "whenSlowOrCellular" | "always";
 
 export type TranscodeBitrate = "kbps320" | "kbps256" | "kbps192" | "kbps128";
 

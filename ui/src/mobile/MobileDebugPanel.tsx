@@ -29,9 +29,8 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const MODE_LABELS: Record<string, string> = {
   never: "Never",
-  cellular: "When on cellular",
-  remote: "When remote",
-  remoteOrCellular: "When remote or on cellular",
+  whenSlow: "When too slow",
+  whenSlowOrCellular: "When too slow, or on cellular",
   always: "Always",
 };
 

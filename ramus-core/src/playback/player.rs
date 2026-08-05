@@ -112,10 +112,10 @@ pub struct DebugInfo {
     pub source: String,
     pub resolved_url: Option<String>,
     pub server_url: Option<String>,
+    /// Active connection is non-local. Diagnostic only — feeds no policy.
     pub is_remote: bool,
     /// Whether the platform network monitor currently reports a cellular
-    /// path. Always `false` on desktop. Feeds `should_transcode` alongside
-    /// (not folded into) `is_remote`.
+    /// path. Always `false` on desktop.
     pub is_cellular: bool,
     pub playback_mode: PlaybackMode,
     pub queue_len: usize,
@@ -335,6 +335,15 @@ struct PlayerInner {
     server_url: Option<Url>,
     token: Option<String>,
     client_identifier: String,
+    /// Whether the active Plex connection is non-local.
+    ///
+    /// **Diagnostic only — feeds no policy.** It was the trigger for the
+    /// retired `Remote` / `RemoteOrCellular` playback modes, where it stood
+    /// in for "the link probably can't sustain lossless". That condition is
+    /// now measured directly (see `is_starving`), which is both more accurate
+    /// and covers the cases locality misses — a slow LAN, or a fast remote
+    /// server. Kept for the debug panel and logs; don't wire it back into
+    /// `should_transcode`.
     is_remote: bool,
     /// Whether the device's primary network interface is cellular. Set by
     /// the platform NetworkMonitor (NWPathMonitor on iOS, ConnectivityManager
@@ -631,8 +640,8 @@ impl AudioPlayer {
         self.inner.lock().is_remote = is_remote;
     }
 
-    /// Whether the current connection is remote. Feeds into
-    /// `should_transcode()` under `Remote` / `RemoteOrCellular`.
+    /// Whether the current connection is non-local (relayed through plex.tv
+    /// or a public IP). **Diagnostic only** — see the field's note.
     pub fn is_remote(&self) -> bool {
         self.inner.lock().is_remote
     }
@@ -1222,7 +1231,6 @@ impl AudioPlayer {
                 } else if transcode::should_transcode(
                     t.codec.as_deref(),
                     inner.config.playback_mode,
-                    inner.is_remote,
                     inner.is_cellular,
                 ) {
                     ("transcode".into(), inner.server_url.as_ref().map(|u| {
@@ -2046,7 +2054,6 @@ impl AudioPlayer {
             let needs_transcode = transcode::should_transcode(
                 track.codec.as_deref(),
                 inner.config.playback_mode,
-                inner.is_remote,
                 inner.is_cellular,
             );
 
@@ -2283,7 +2290,6 @@ impl AudioPlayer {
         let needs_transcode = transcode::should_transcode(
             track.codec.as_deref(),
             inner.config.playback_mode,
-            inner.is_remote,
             inner.is_cellular,
         );
         if needs_transcode {
@@ -2352,7 +2358,6 @@ fn resolve_url_with_resume(
     if transcode::should_transcode(
         track.codec.as_deref(),
         inner.config.playback_mode,
-        inner.is_remote,
         inner.is_cellular,
     ) {
         // Single-file Opus instead of HLS. Plex enforces a per-client
@@ -2414,7 +2419,6 @@ fn stream_record_option_for(track: &Track, url: &str, inner: &PlayerInner) -> Op
     let is_transcode = transcode::should_transcode(
         track.codec.as_deref(),
         inner.config.playback_mode,
-        inner.is_remote,
         inner.is_cellular,
     );
 
