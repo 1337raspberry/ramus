@@ -729,8 +729,14 @@ pub fn run() {
             // Dedicated prefetch HTTP client with a 300s per-request timeout so
             // large FLAC files on slower LAN segments don't time out mid-download.
             // Separate from the app-wide client so prefetch's retry profile
-            // doesn't leak into metadata fetches.
+            // doesn't leak into metadata fetches. `read_timeout` (time between
+            // bytes) so a mid-body dead connection errors out promptly instead
+            // of wedging the serial worker for the full 300s — the downloader's
+            // own resume-with-Range retry loop takes over from there. A
+            // slow-but-flowing body never trips it (the clock resets per byte).
             let prefetch_http_client = reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .read_timeout(std::time::Duration::from_secs(30))
                 .timeout(std::time::Duration::from_secs(300))
                 .tcp_nodelay(true)
                 .build()
@@ -1375,6 +1381,7 @@ pub fn run() {
             let mc_result = crate::media_controls::create_media_controls(
                 #[cfg(target_os = "windows")]
                 &app.get_webview_window("main").expect("main window must exist"),
+                app_handle.clone(),
                 player.clone(),
                 image_cache_arc,
                 client.clone(),

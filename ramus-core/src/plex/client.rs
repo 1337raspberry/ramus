@@ -67,6 +67,14 @@ const MAX_RESPONSE_BYTES: usize = 50 * 1024 * 1024;
 pub struct PlexClient {
     pub client_identifier: String,
     http: Client,
+    /// Pool-free client used only by connection probes. The main client's
+    /// connection pool can hold a warm socket to a host (kept alive by
+    /// timeline/metadata traffic) that answers a probe instantly even while
+    /// *new* connections to that host fail — or the reverse — making
+    /// failover verdicts depend on unrelated request history. Probes must
+    /// answer "can I open a fresh connection right now", so this client
+    /// keeps no idle sockets at all.
+    probe: Client,
     state: RwLock<ConnectionState>,
 }
 
@@ -90,9 +98,19 @@ impl PlexClient {
             .read_timeout(std::time::Duration::from_secs(30))
             .build()
             .expect("reqwest client init");
+        // See the `probe` field: connection tests must exercise a fresh
+        // TCP/TLS handshake every time, never a pooled socket.
+        let probe = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .pool_max_idle_per_host(0)
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .read_timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("reqwest probe client init");
         Self {
             client_identifier,
             http,
+            probe,
             state: RwLock::new(ConnectionState {
                 server_url: None,
                 token: None,
@@ -358,7 +376,7 @@ impl PlexClient {
         };
 
         let builder = self
-            .http
+            .probe
             .get(url)
             .timeout(timeout);
         let builder = self.apply_standard_headers(builder, Some(token));
@@ -417,7 +435,8 @@ impl PlexClient {
                 None
             };
             let client_id = self.client_identifier.clone();
-            let http = self.http.clone();
+            // Probes ride the pool-free client — see the `probe` field.
+            let http = self.probe.clone();
 
             join_set.spawn(async move {
                 let url = match Url::parse(&uri) {

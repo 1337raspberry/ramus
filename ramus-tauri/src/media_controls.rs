@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use souvlaki::{MediaControlEvent, MediaControls, MediaPlayback, MediaPosition, PlatformConfig};
+use tauri::Manager;
 
 use ramus_core::cache::image_cache::ImageCache;
 use ramus_core::playback::media_keys::{MediaKeyHandler, MediaMetadata};
@@ -231,6 +232,7 @@ fn spawn_art_download(
 /// without OS media controls.
 pub fn create_media_controls(
     #[cfg(target_os = "windows")] window: &tauri::WebviewWindow,
+    app: tauri::AppHandle,
     player: Arc<AudioPlayer>,
     image_cache: Arc<parking_lot::Mutex<ImageCache>>,
     client: Arc<PlexClient>,
@@ -258,7 +260,12 @@ pub fn create_media_controls(
     let mut controls =
         MediaControls::new(config).map_err(|e| format!("failed to create media controls: {e}"))?;
 
-    // Route OS media key events to the player.
+    // Route OS media key events to the player, with the SAME side-effects
+    // as the equivalent UI commands (commands/playback.rs) — a lock-screen
+    // skip must cancel the in-flight prefetch like an in-app skip does
+    // (else its competing transcode download keeps running against the new
+    // live stream), and a remote seek must reach the session reporter.
+    // `try_state` guards the brief setup window before AppState is managed.
     let p = player.clone();
     controls
         .attach(move |event: MediaControlEvent| {
@@ -266,11 +273,28 @@ pub fn create_media_controls(
                 MediaControlEvent::Play => p.resume(),
                 MediaControlEvent::Pause => p.pause(),
                 MediaControlEvent::Toggle => p.toggle_play_pause(),
-                MediaControlEvent::Next => p.next(),
-                MediaControlEvent::Previous => p.previous(),
+                MediaControlEvent::Next => {
+                    if let Some(state) = app.try_state::<crate::state::AppState>() {
+                        state.prefetch_handle.notify_skip();
+                    }
+                    p.next();
+                }
+                MediaControlEvent::Previous => {
+                    if let Some(state) = app.try_state::<crate::state::AppState>() {
+                        state.prefetch_handle.notify_skip();
+                    }
+                    p.previous();
+                }
                 MediaControlEvent::Stop => p.stop(),
                 MediaControlEvent::SetPosition(MediaPosition(dur)) => {
-                    p.seek(dur.as_secs_f64());
+                    let pos = dur.as_secs_f64();
+                    p.seek(pos);
+                    // No OS position push here (unlike the seek command):
+                    // the OS initiated this seek and already shows the
+                    // target position.
+                    if let Some(state) = app.try_state::<crate::state::AppState>() {
+                        state.session_reporter.playback_seeked(pos);
+                    }
                 }
                 MediaControlEvent::SetVolume(vol) => {
                     // souvlaki volume is 0.0–1.0; player expects 0–100.

@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use tauri::{ipc::Channel, AppHandle};
+use tauri::{ipc::Channel, AppHandle, Manager};
 use tauri_plugin_ramus_ios_bridge::{NowPlayingMetadata, RamusIosBridgeExt};
 
 use ramus_core::cache::image_cache::ImageCache;
@@ -127,14 +127,31 @@ pub fn create_media_controls(
             "remoteNext",
             Box::new({
                 let p = player.clone();
-                move || p.next()
+                let app = app.clone();
+                // Same side-effect as the next_track command: a lock-screen
+                // skip must cancel the in-flight prefetch like an in-app
+                // skip does, else its competing transcode download keeps
+                // running against the new live stream. `try_state` guards
+                // the brief setup window before AppState is managed.
+                move || {
+                    if let Some(state) = app.try_state::<crate::state::AppState>() {
+                        state.prefetch_handle.notify_skip();
+                    }
+                    p.next()
+                }
             }),
         ),
         (
             "remotePrevious",
             Box::new({
                 let p = player.clone();
-                move || p.previous()
+                let app = app.clone();
+                move || {
+                    if let Some(state) = app.try_state::<crate::state::AppState>() {
+                        state.prefetch_handle.notify_skip();
+                    }
+                    p.previous()
+                }
             }),
         ),
     ] {
@@ -150,10 +167,17 @@ pub fn create_media_controls(
     // seek carries a `position: f64` in its payload.
     {
         let p = player.clone();
+        let app_for_seek = app.clone();
         let channel = Channel::new(move |body| {
             if let Ok(payload) = body.deserialize::<serde_json::Value>() {
                 if let Some(pos) = payload.get("position").and_then(|v| v.as_f64()) {
                     p.seek(pos);
+                    // Report like the seek command does. No OS position
+                    // push: the OS initiated this seek and already shows
+                    // the target position.
+                    if let Some(state) = app_for_seek.try_state::<crate::state::AppState>() {
+                        state.session_reporter.playback_seeked(pos);
+                    }
                 }
             }
             Ok(())

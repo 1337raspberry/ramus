@@ -1152,8 +1152,15 @@ async fn run_serial_downloads(
 fn is_network_error(err: &str) -> bool {
     err.contains("request error")
         || err.contains("timed out")
+        || err.contains("timeout")
         || err.contains("connection refused")
         || err.contains("connection reset")
+        // The downloader's time-budget exhaustion ("gave up after N retries")
+        // is the shape a dead or black-holed connection takes when every
+        // resume attempt inside the budget fails — it must count toward the
+        // consecutive-failure trigger, not reset it, or a fully dead network
+        // never reaches the connection re-evaluation this gate exists for.
+        || err.contains("gave up after")
 }
 
 // --- Lowest-priority cache warming (waveform sidecars + hero art) ---
@@ -1284,7 +1291,19 @@ async fn run_prefetch_download(
     let filename = format!("{}_{}.{}", sanitize_filename(track_id), track_id.len(), ext);
     let file_path = cache_dir.join(&filename);
 
-    let size = download_http_to_file(client, url, &file_path, |_bytes, _total| {}).await?;
+    // Download into a `.part` name and rename only on completion. The
+    // startup rehydration scans this directory and can't tell a half-written
+    // file from a complete one — an app kill mid-prefetch used to rehydrate
+    // the stump as a complete cached track, which then played truncated (and
+    // poisoned recovery, which treats a cached track's failure as a local
+    // decode problem). The `.part` suffix fails rehydration's filename
+    // parse, and an interrupted partial still resumes across restarts:
+    // `download_http_to_file` Range-resumes whatever is on disk at the path.
+    let part_path = cache_dir.join(format!("{filename}.part"));
+    let size = download_http_to_file(client, url, &part_path, |_bytes, _total| {}).await?;
+    tokio::fs::rename(&part_path, &file_path)
+        .await
+        .map_err(|e| format!("finalize rename: {e}"))?;
 
     let current_id = player.current_track_id();
     let evicted = player.with_cache(|cache| {

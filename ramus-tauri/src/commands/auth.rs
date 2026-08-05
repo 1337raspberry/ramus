@@ -274,10 +274,16 @@ pub async fn finalize_onboarding(
 
     // url::Url::parse adds a trailing slash that Plex connection URIs don't have.
     let server_url_norm = server_url.trim_end_matches('/');
+    // Manual-URL onboarding has no plex.tv connection list to consult (the
+    // minimal server above has empty connections), so derive locality from
+    // the address itself — the old hard "not local" default permanently
+    // transcode-gated LAN servers under the Remote playback modes.
     let is_local = server
         .connections
         .iter()
-        .any(|c| c.uri.trim_end_matches('/') == server_url_norm && c.local);
+        .any(|c| c.uri.trim_end_matches('/') == server_url_norm && c.local)
+        || (server.connections.is_empty()
+            && ramus_core::util::is_private_or_local_url(&url));
     state.player.configure(
         url.clone(),
         server_token.clone(),

@@ -322,6 +322,8 @@ export interface DebugInfo {
   resolvedUrl: string | null;
   serverUrl: string | null;
   isRemote: boolean;
+  /** Platform network monitor reports a cellular path; always false on desktop. */
+  isCellular: boolean;
   playbackMode: string;
   queueLen: number;
   queueIndex: number;

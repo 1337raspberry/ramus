@@ -46,9 +46,20 @@ pub async fn update_settings(
 
     let prev_genre_source = state.settings.read().genre_source;
     let prev_offline_mode = state.settings.read().offline_mode;
+    let prev_config = state.settings.read().to_playback_config();
 
     let config = settings.to_playback_config();
+    // Queue entries resolved their URLs (direct-play vs transcode, bitrate)
+    // under the old policy — a mid-session PlaybackMode/bitrate change
+    // otherwise affects nothing already queued. Re-resolve the non-cached,
+    // non-current entries so the new policy takes effect on the very next
+    // track, not the next queue load.
+    let policy_changed = config.playback_mode != prev_config.playback_mode
+        || config.transcode_bitrate != prev_config.transcode_bitrate;
     state.player.update_config(config);
+    if policy_changed {
+        state.player.rewrite_stale_playlist_urls();
+    }
 
     state
         .player

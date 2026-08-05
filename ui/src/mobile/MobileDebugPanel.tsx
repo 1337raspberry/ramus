@@ -183,6 +183,11 @@ export default function MobileDebugPanel({ onDismiss }: { onDismiss: () => void 
               tag={info?.isRemote ? "orange" : "green"}
             />
             <Row
+              label="Cellular"
+              value={info?.isCellular ? "yes" : "no"}
+              tag={info?.isCellular ? "orange" : "green"}
+            />
+            <Row
               label="Online"
               value={connection.online ? "yes" : "no"}
               tag={connection.online ? "green" : "red"}

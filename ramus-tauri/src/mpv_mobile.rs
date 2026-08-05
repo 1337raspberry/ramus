@@ -197,14 +197,36 @@ pub fn register_network_listener<R: Runtime>(
         // just takes the parking_lot mutex, no async runtime needed. Drives
         // the `Cellular` / `RemoteOrCellular` PlaybackMode arms of
         // `should_transcode` so the next track-resolve picks up the change.
-        state.player.set_cellular(is_cellular);
+        //
+        // A dead path (type "none" / no interfaces) says nothing about what
+        // the next network will be — freeze the flag through the outage
+        // window instead of dropping to "not cellular", or every track
+        // resolved mid-outage silently loses the cellular policy (direct-play
+        // FLAC on what is almost certainly still a cell link). The flag
+        // updates the moment a real path returns.
+        let path_dead = payload.r#type.as_deref() == Some("none") || interfaces.is_empty();
+        let cellular_changed = if path_dead {
+            false
+        } else {
+            state.player.set_cellular(is_cellular)
+        };
 
         // The Tauri IPC thread that delivers Channel callbacks has no Tokio
         // runtime in scope, so calling `handle_path_update` directly panics
         // ("there is no reactor running") on its internal `tokio::spawn`.
         // Hop into Tauri's async runtime first.
         let monitor = state.connection_monitor.clone();
+        let player = state.player.clone();
         tauri::async_runtime::spawn(async move {
+            if cellular_changed {
+                // Queue entries resolved their URLs (direct-play vs
+                // transcode) under the old policy; re-resolve the
+                // non-cached, non-current ones now rather than serving a
+                // stale decision when playback reaches them. The serial
+                // prefetch crawl would eventually catch up, but rapid skips
+                // always beat it.
+                player.rewrite_stale_playlist_urls();
+            }
             monitor.handle_path_update(interfaces);
         });
         Ok(())
@@ -228,7 +250,8 @@ pub fn register_network_listener<R: Runtime>(
                 // Seed the cellular flag too, so the very first track-resolve
                 // after launch sees the right value (NWPathMonitor's first
                 // event happens just before the listener above is wired).
-                state.player.set_cellular(is_cellular);
+                // Nothing is queued yet, so the changed flag is moot here.
+                let _ = state.player.set_cellular(is_cellular);
                 // Same Tokio-runtime caveat as the channel callback above:
                 // setup runs synchronously and may not have a runtime in
                 // scope. Hop into Tauri's async runtime before the inner

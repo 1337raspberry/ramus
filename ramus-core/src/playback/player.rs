@@ -22,6 +22,13 @@ use crate::util::redact_urls;
 /// the watchdog uses it to trigger a connection re-evaluation.
 pub const STALL_THRESHOLD_SECS: u64 = 12;
 
+/// Mid-track: seconds without a `time-pos` update before `derive_phase`
+/// reports `Buffering` instead of `Playing`. Position events flow several
+/// times a second while audio runs, so a few silent seconds means mpv is
+/// genuinely rebuffering — but not yet long enough to call it a `Stalled`
+/// (which is what triggers the watchdog's connection re-evaluation).
+pub const BUFFERING_HINT_SECS: u64 = 3;
+
 /// Minimum gap between two *automatic* current-track reloads (connection
 /// failover or file-ended recovery). Three uncoordinated triggers — the iOS
 /// network-path monitor, the stall watchdog, and prefetch's failure counter —
@@ -85,6 +92,10 @@ pub struct DebugInfo {
     pub resolved_url: Option<String>,
     pub server_url: Option<String>,
     pub is_remote: bool,
+    /// Whether the platform network monitor currently reports a cellular
+    /// path. Always `false` on desktop. Feeds `should_transcode` alongside
+    /// (not folded into) `is_remote`.
+    pub is_cellular: bool,
     pub playback_mode: PlaybackMode,
     pub queue_len: usize,
     pub queue_index: usize,
@@ -169,8 +180,16 @@ pub fn derive_phase(
         PlaybackStatus::Paused => Phase::Paused,
         PlaybackStatus::Playing => match (last_position_update, load_started_at) {
             (Some(t), _) => {
-                if now.saturating_duration_since(t).as_secs() >= STALL_THRESHOLD_SECS {
+                let secs = now.saturating_duration_since(t).as_secs();
+                if secs >= STALL_THRESHOLD_SECS {
                     Phase::Stalled
+                } else if secs >= BUFFERING_HINT_SECS {
+                    // Mid-track position ticks have dried up but not long
+                    // enough to call it a stall: mpv is rebuffering (cache
+                    // ran dry on a slow link). Without this rung the phase
+                    // claims Playing for the full pre-stall window while no
+                    // audio flows.
+                    Phase::Buffering
                 } else {
                     Phase::Playing
                 }
@@ -182,6 +201,8 @@ pub fn derive_phase(
                     Phase::Buffering
                 }
             }
+            // Unreachable in practice: every path that sets status=Playing
+            // also stamps `load_started_at`. Kept as a total-match fallback.
             (None, None) => Phase::Opening,
         },
     }
@@ -484,8 +505,14 @@ impl AudioPlayer {
     /// Update only the cellular flag. Driven by the platform NetworkMonitor
     /// (NWPathMonitor on iOS, ConnectivityManager on Android). Desktop
     /// never calls this, so `is_cellular` stays `false` on those platforms.
-    pub fn set_cellular(&self, is_cellular: bool) {
-        self.inner.lock().is_cellular = is_cellular;
+    /// Returns whether the flag actually changed, so the caller can re-sweep
+    /// already-resolved queue entries under the new policy only on a real
+    /// transition.
+    pub fn set_cellular(&self, is_cellular: bool) -> bool {
+        let mut inner = self.inner.lock();
+        let changed = inner.is_cellular != is_cellular;
+        inner.is_cellular = is_cellular;
+        changed
     }
 
     /// Configure the directory mpv writes its `stream-record` output to.
@@ -531,6 +558,10 @@ impl AudioPlayer {
             inner.state.queue = tracks;
             inner.state.queue_index = start_at;
             inner.state.current_track = Some(inner.state.queue[start_at].clone());
+            // See `handle_playlist_pos_change`: playing from the cache is a
+            // use, keep the LRU order honest.
+            let rk = inner.state.queue[start_at].rating_key.clone();
+            inner.cache.touch(&rk);
             inner.state.status = PlaybackStatus::Playing;
             // Explicit fresh play: any earlier pause intent is superseded
             // (the trailing set_pause(false) makes it real at the mpv level),
@@ -1121,6 +1152,7 @@ impl AudioPlayer {
             resolved_url,
             server_url: inner.server_url.as_ref().map(|u| u.to_string()),
             is_remote: inner.is_remote,
+            is_cellular: inner.is_cellular,
             playback_mode: inner.config.playback_mode,
             queue_len: inner.state.queue.len(),
             queue_index: inner.state.queue_index,
@@ -1145,17 +1177,27 @@ impl AudioPlayer {
 
     /// Snapshot the current playback progress for the lock-screen now-playing
     /// keeper. `stall_threshold` is how long without a `time-pos` tick (while
-    /// Playing, after at least one tick has arrived) counts as a mid-track
-    /// stall. Distinct from [`is_stalled`], which uses the longer
-    /// connection-recovery threshold and also treats pre-first-tick buffering
-    /// as a stall.
+    /// Playing) counts as a mid-track stall; before the first tick of a load
+    /// the threshold is anchored on the load start instead, so a failed open
+    /// still freezes the OS scrubber. Distinct from [`is_stalled`], which
+    /// uses the longer connection-recovery threshold.
     pub fn media_position_snapshot(&self, stall_threshold: Duration) -> MediaPositionSnapshot {
         let inner = self.inner.lock();
         let is_playing = inner.state.status == PlaybackStatus::Playing;
         let progress_stalled = is_playing
-            && inner
-                .last_position_update
-                .is_some_and(|t| t.elapsed() >= stall_threshold);
+            && match inner.last_position_update {
+                Some(t) => t.elapsed() >= stall_threshold,
+                // No tick has yet arrived for this load — anchor the freeze
+                // on the load start instead. A failed open (or a cascade of
+                // them) never produces a first tick, and without this rung
+                // the OS scrubber sails forward "playing @ 0:00" through the
+                // whole failure because the keeper had nothing to compare
+                // against. Genuine quick opens tick well inside the
+                // threshold, so normal startup never trips it.
+                None => inner
+                    .load_started_at
+                    .is_some_and(|t| t.elapsed() >= stall_threshold),
+            };
         MediaPositionSnapshot {
             is_playing,
             progress_stalled,
@@ -1383,6 +1425,11 @@ impl AudioPlayer {
 
         inner.state.queue_index = pos;
         inner.state.current_track = Some(inner.state.queue[pos].clone());
+        // Playing a cached track is a use — bump it to most-recently-used
+        // so the LRU eviction order reflects listening, not just download
+        // order (a replayed album shouldn't be first out the door).
+        let rk = inner.state.queue[pos].rating_key.clone();
+        inner.cache.touch(&rk);
         inner.position = 0.0;
         inner.position_base = 0.0;
         // Reseed duration from metadata on every gapless advance — see
@@ -1453,6 +1500,24 @@ impl AudioPlayer {
             "rewriting {} stale playlist entries after connection change",
             rewrites.len()
         );
+
+        // Rewriting an entry below the playing index momentarily shifts
+        // mpv's playlist-pos (remove decrements it, the re-insert restores
+        // it) — some platforms report that churn as pos-change events. Arm
+        // the reload settle window so `handle_playlist_pos_change` doesn't
+        // process them as phantom track advances; landing back on the
+        // current index (or the window expiring) closes it. Usually the
+        // accompanying `force_reload_current_track` arms this anyway, but
+        // it can decline (cooldown, fully-drained source) while the rewrite
+        // still runs.
+        {
+            let mut inner = self.inner.lock();
+            let current_idx = inner.state.queue_index;
+            if rewrites.iter().any(|(idx, _, _)| *idx < current_idx) {
+                inner.reloading_pos = Some(current_idx);
+                inner.reload_started_at = Some(Instant::now());
+            }
+        }
 
         for (idx, new_url, opts) in rewrites.iter().rev() {
             self.mpv.playlist_remove(*idx as i64);
@@ -1535,7 +1600,7 @@ impl AudioPlayer {
         // Capture, guard, and stamp in ONE lock window so idx/track/resume
         // stay consistent; `expected_idx` then lets reload_current_track
         // decline if a user skip lands before it re-acquires the lock.
-        let (resume, idx) = {
+        let (resume, idx, serve_cached) = {
             let persistent = self.persistent_cache.read();
             let mut inner = self.inner.lock();
             let idx = inner.state.queue_index;
@@ -1543,13 +1608,38 @@ impl AudioPlayer {
                 return RecoverOutcome::Skipped;
             };
             let rating_key = track.rating_key.clone();
-            // Local files: a file-ended error is a genuine decode/file problem,
-            // not a transient stream drop — let the caller skip.
-            if persistent.contains_key(&rating_key) || inner.cache.get(&rating_key).is_some() {
+            // Persistent downloads: a file-ended error is a genuine
+            // decode/file problem, not a transient stream drop — let the
+            // caller skip.
+            if persistent.contains_key(&rating_key) {
                 return RecoverOutcome::Skipped;
             }
-            // Network stream. Hold (don't thrash/reset) if we already retried
-            // this track, or if the last automatic reload was too recent.
+            // An LRU cache hit is ambiguous: the track may have been playing
+            // from the cached file (decode failure → skip), or the prefetch
+            // may have landed a copy mid-play while mpv was streaming from
+            // the network — in which case this is a *network* failure with a
+            // complete local copy sitting right there, and the recovery
+            // should serve it instead of skipping a playable track. The two
+            // are told apart by whether the cache entry postdates the
+            // current load.
+            let mut serve_cached = false;
+            if inner.cache.get(&rating_key).is_some() {
+                let landed_mid_play = match (
+                    inner.cache.inserted_at(&rating_key),
+                    inner.load_started_at,
+                ) {
+                    (Some(ins), Some(load)) => ins > load,
+                    _ => false,
+                };
+                if !landed_mid_play {
+                    return RecoverOutcome::Skipped;
+                }
+                serve_cached = true;
+            }
+            // Hold (don't thrash/reset) if we already retried this track, or
+            // if the last automatic reload was too recent. Applies to the
+            // serve-cached path too: a cached copy that itself fails to load
+            // (e.g. a truncated file) must not reload-loop.
             if inner.last_retried_track.as_deref() == Some(rating_key.as_str())
                 || inner.within_reload_cooldown()
             {
@@ -1557,11 +1647,11 @@ impl AudioPlayer {
             }
             inner.last_retried_track = Some(rating_key);
             inner.last_auto_reload_at = Some(Instant::now());
-            (inner.position, idx)
+            (inner.position, idx, serve_cached)
         };
         // Resume at the captured position (transcode `offset=` / direct-play
         // `start=` per `reload_current_track`), never a restart from 0:00.
-        if self.reload_current_track(Some(resume), Some(idx)) {
+        if self.reload_current_track_impl(Some(resume), Some(idx), serve_cached) {
             RecoverOutcome::Reloading(resume)
         } else {
             // Reload declined (became file:// or stopped meanwhile) — hold
@@ -1586,6 +1676,21 @@ impl AudioPlayer {
     /// from the top — the graceful fallback so a refused resume never
     /// skips the track.
     fn reload_current_track(&self, resume: Option<f64>, expected_idx: Option<usize>) -> bool {
+        self.reload_current_track_impl(resume, expected_idx, false)
+    }
+
+    /// `serve_cached: true` lifts the local-URL declines — used by the
+    /// recovery path when a prefetch landed a cached copy *mid-play* and the
+    /// failed network stream should be replaced by the local file (which
+    /// `resolve_url_with_resume` then serves with an mpv `start=` seek).
+    /// Every other caller keeps `false`: for a track already playing locally
+    /// a reload is pointless (a server change can't affect a `file://` URL).
+    fn reload_current_track_impl(
+        &self,
+        resume: Option<f64>,
+        expected_idx: Option<usize>,
+        serve_cached: bool,
+    ) -> bool {
         let (idx, url, opts, was_held, stay_paused) = {
             let persistent = self.persistent_cache.read();
             let mut inner = self.inner.lock();
@@ -1603,18 +1708,20 @@ impl AudioPlayer {
             let Some(track) = inner.state.queue.get(idx).cloned() else {
                 return false;
             };
-            if persistent.contains_key(&track.rating_key) {
-                return false;
-            }
-            if inner.cache.get(&track.rating_key).is_some() {
-                return false;
+            if !serve_cached {
+                if persistent.contains_key(&track.rating_key) {
+                    return false;
+                }
+                if inner.cache.get(&track.rating_key).is_some() {
+                    return false;
+                }
             }
             let Some((url, plan)) =
                 resolve_url_with_resume(&track, &inner, &persistent, resume)
             else {
                 return false;
             };
-            if url.starts_with("file://") {
+            if !serve_cached && url.starts_with("file://") {
                 return false;
             }
             let (opts, base) = match plan {
@@ -1687,6 +1794,14 @@ impl AudioPlayer {
     /// alternative is a 15s hang the next time mpv reaches the now-dead
     /// upstream. See [`reload_current_track`] for the resume mechanics.
     pub fn force_reload_current_track(&self) -> bool {
+        // A fully-drained source already holds every byte it will ever need
+        // in mpv's demuxer cache — the dead upstream can't hurt it, and
+        // reloading would cut clean audio for nothing (the reload itself
+        // then has to fetch those bytes again over the new connection).
+        if self.current_source_fully_drained() {
+            log::debug!("force_reload_current_track: source fully drained, no reload needed");
+            return false;
+        }
         let (resume, idx) = {
             let mut inner = self.inner.lock();
             // Coalesce a burst of failover triggers: if an automatic reload
@@ -1740,10 +1855,11 @@ impl AudioPlayer {
         f(&mut inner.cache)
     }
 
-    /// Returns `(rating_key, direct_play_url)` for the first uncached,
-    /// non-transcode track within `lookahead_depth` of the current queue
-    /// position. Walks forward past already-cached entries. Returns
-    /// `None` when every slot in the window is cached, transcoded, or
+    /// Returns `(rating_key, url)` for the first uncached track within
+    /// `lookahead_depth` of the current queue position — a direct-play URL
+    /// or a single-file transcode-download URL depending on the current
+    /// `should_transcode` policy. Walks forward past already-cached
+    /// entries. Returns `None` when every slot in the window is cached or
     /// out of bounds.
     ///
     /// Called fresh on every iteration of the prefetch worker's serial

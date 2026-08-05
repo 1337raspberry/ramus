@@ -146,6 +146,31 @@ pub fn is_loopback_uri(uri: &str) -> bool {
     false
 }
 
+/// Whether a URL points at a private/LAN address: loopback, RFC1918 IPv4,
+/// link-local, IPv6 unique-local (`fc00::/7`) or link-local (`fe80::/10`),
+/// or a LAN-flavoured hostname (`localhost`, `.local` mDNS, `.lan`,
+/// `.home.arpa`). Used when no Plex connection metadata exists to say
+/// whether an address is local — e.g. a manually-entered server URL, which
+/// carries no `local` flag from plex.tv.
+pub fn is_private_or_local_url(url: &url::Url) -> bool {
+    match url.host() {
+        Some(url::Host::Ipv4(ip)) => ip.is_private() || ip.is_loopback() || ip.is_link_local(),
+        Some(url::Host::Ipv6(ip)) => {
+            ip.is_loopback()
+                || (ip.segments()[0] & 0xfe00) == 0xfc00
+                || (ip.segments()[0] & 0xffc0) == 0xfe80
+        }
+        Some(url::Host::Domain(d)) => {
+            let d = d.trim_end_matches('.').to_ascii_lowercase();
+            d == "localhost"
+                || d.ends_with(".local")
+                || d.ends_with(".lan")
+                || d.ends_with(".home.arpa")
+        }
+        None => false,
+    }
+}
+
 /// Replace any whitespace-delimited token containing `://` with `<url>`.
 /// Used to scrub URLs out of free-form error messages before logging,
 /// since mpv (and reqwest) embed the offending URL — including any
@@ -231,6 +256,33 @@ mod tests {
     fn test_is_loopback_uri_malformed() {
         assert!(!is_loopback_uri("not a url"));
         assert!(!is_loopback_uri(""));
+    }
+
+    #[test]
+    fn test_is_private_or_local_url() {
+        let parse = |s: &str| url::Url::parse(s).unwrap();
+        // RFC1918 + loopback + link-local IPv4.
+        assert!(is_private_or_local_url(&parse("http://192.168.1.100:32400")));
+        assert!(is_private_or_local_url(&parse("http://10.0.0.5:32400")));
+        assert!(is_private_or_local_url(&parse("http://172.16.0.1/")));
+        assert!(is_private_or_local_url(&parse("http://127.0.0.1/")));
+        assert!(is_private_or_local_url(&parse("http://169.254.1.1/")));
+        // IPv6 loopback / ULA / link-local.
+        assert!(is_private_or_local_url(&parse("http://[::1]:32400")));
+        assert!(is_private_or_local_url(&parse("http://[fd00::1]:32400")));
+        assert!(is_private_or_local_url(&parse("http://[fe80::1]:32400")));
+        // LAN-flavoured hostnames.
+        assert!(is_private_or_local_url(&parse("http://localhost:32400")));
+        assert!(is_private_or_local_url(&parse("https://myserver.local:32400")));
+        assert!(is_private_or_local_url(&parse("http://nas.lan:32400")));
+        assert!(is_private_or_local_url(&parse("http://nas.home.arpa:32400")));
+        // Public addresses stay remote.
+        assert!(!is_private_or_local_url(&parse("https://203.0.113.9:32400")));
+        assert!(!is_private_or_local_url(&parse("http://[2001:db8::1]:32400")));
+        assert!(!is_private_or_local_url(&parse(
+            "https://192-168-0-1.abc.plex.direct:32400"
+        )));
+        assert!(!is_private_or_local_url(&parse("https://example.com/")));
     }
 
     #[test]

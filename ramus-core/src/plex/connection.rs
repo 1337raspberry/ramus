@@ -64,6 +64,11 @@ struct MonitorInner {
     last_interfaces: HashSet<String>,
     allow_http: bool,
     is_evaluating: bool,
+    /// Set when an evaluation request arrived while another was in flight
+    /// (the busy check returns `Skipped`). The in-flight evaluation re-runs
+    /// once before finishing, so a network change that lands mid-evaluation
+    /// is assessed against the state it produced instead of being dropped.
+    pending_reeval: bool,
     /// Latched by a `Lost` verdict; cleared by the next successful
     /// evaluation. While set, an `Unchanged` result is a recovery edge and
     /// fires `on_connection_recovered`.
@@ -94,6 +99,7 @@ impl ConnectionMonitor {
                 last_interfaces: HashSet::new(),
                 allow_http: true,
                 is_evaluating: false,
+                pending_reeval: false,
                 connection_was_lost: false,
                 debounce_handle: None,
                 on_connection_changed: None,
@@ -198,6 +204,10 @@ impl ConnectionMonitor {
         {
             let mut inner = self.inner.lock();
             if inner.is_evaluating {
+                // Don't drop the request: the in-flight evaluation re-runs
+                // once before releasing the guard, so whatever network
+                // change prompted this call still gets assessed.
+                inner.pending_reeval = true;
                 return EvalOutcome::Skipped;
             }
             inner.is_evaluating = true;
@@ -216,54 +226,71 @@ impl ConnectionMonitor {
         }
         let guard = EvalGuard(&self.inner);
 
-        let result = self.do_evaluate().await;
-        drop(guard);
+        // The guard is held through callback dispatch, not just do_evaluate:
+        // the changed/lost handlers do real work (playlist rewrite, current-
+        // track reload) and a second evaluation interleaving its own playlist
+        // surgery mid-handler would race it.
+        let outcome = loop {
+            let result = self.do_evaluate().await;
 
-        match result {
-            EvalResult::NotConfigured => EvalOutcome::Skipped,
-            EvalResult::Unchanged => {
-                // Recovery edge: the same URI verifies healthy again after a
-                // Lost verdict. This is the only "back online" signal a
-                // remote/cloud server ever produces — its URI is identical
-                // before and after an outage, so Changed can't fire.
-                let cb = {
-                    let mut inner = self.inner.lock();
-                    if inner.connection_was_lost {
-                        inner.connection_was_lost = false;
-                        inner.on_connection_recovered.clone()
-                    } else {
-                        None
+            let outcome = match result {
+                EvalResult::NotConfigured => EvalOutcome::Skipped,
+                EvalResult::Unchanged => {
+                    // Recovery edge: the same URI verifies healthy again after a
+                    // Lost verdict. This is the only "back online" signal a
+                    // remote/cloud server ever produces — its URI is identical
+                    // before and after an outage, so Changed can't fire.
+                    let cb = {
+                        let mut inner = self.inner.lock();
+                        if inner.connection_was_lost {
+                            inner.connection_was_lost = false;
+                            inner.on_connection_recovered.clone()
+                        } else {
+                            None
+                        }
+                    };
+                    if let Some(cb) = cb {
+                        log::info!("monitor: active connection recovered");
+                        cb();
                     }
-                };
-                if let Some(cb) = cb {
-                    log::info!("monitor: active connection recovered");
-                    cb();
+                    EvalOutcome::Healthy
                 }
-                EvalOutcome::Healthy
-            }
-            EvalResult::Changed { url, token, is_local, is_http } => {
-                let cb = {
-                    let mut inner = self.inner.lock();
-                    inner.connection_was_lost = false;
-                    inner.on_connection_changed.clone()
-                };
-                if let Some(cb) = cb {
-                    cb(url, token, is_local, is_http);
+                EvalResult::Changed { url, token, is_local, is_http } => {
+                    let cb = {
+                        let mut inner = self.inner.lock();
+                        inner.connection_was_lost = false;
+                        inner.on_connection_changed.clone()
+                    };
+                    if let Some(cb) = cb {
+                        cb(url, token, is_local, is_http);
+                    }
+                    EvalOutcome::Failover
                 }
-                EvalOutcome::Failover
-            }
-            EvalResult::Lost => {
-                let cb = {
-                    let mut inner = self.inner.lock();
-                    inner.connection_was_lost = true;
-                    inner.on_connection_lost.clone()
-                };
-                if let Some(cb) = cb {
-                    cb();
+                EvalResult::Lost => {
+                    let cb = {
+                        let mut inner = self.inner.lock();
+                        inner.connection_was_lost = true;
+                        inner.on_connection_lost.clone()
+                    };
+                    if let Some(cb) = cb {
+                        cb();
+                    }
+                    EvalOutcome::Lost
                 }
-                EvalOutcome::Lost
+            };
+
+            // A request arrived while this evaluation ran (its caller got
+            // Skipped) — re-run against the network state it saw. Each
+            // iteration consumes the flag, so this converges as soon as the
+            // requests stop.
+            let rerun = std::mem::take(&mut self.inner.lock().pending_reeval);
+            if !rerun {
+                break outcome;
             }
-        }
+            log::debug!("monitor: re-evaluating (request arrived mid-evaluation)");
+        };
+        drop(guard);
+        outcome
     }
 
     async fn do_evaluate(&self) -> EvalResult {
@@ -277,21 +304,43 @@ impl ConnectionMonitor {
             }
         };
 
-        // Fast path: test current connection.
-        log::debug!("monitor: testing active URI: {}", active_uri);
-        if matches_http_policy(&active_uri, allow_http)
-            && self
-                .client
-                .test_connection(&active_uri, &server.access_token, Some(FAST_PATH_TIMEOUT))
-                .await
-        {
-            return EvalResult::Unchanged;
-        }
-        log::debug!("monitor: active URI failed, trying {} cached connection(s)", server.connections.len());
+        // A relay adopted during an earlier outage must not be sticky: its
+        // fast-path success would otherwise pin the session to plex.tv's
+        // bandwidth-limited proxy forever, even after the direct route
+        // returns. Defer the relay's own test until the better tiers have
+        // had their shot below.
+        let active_is_relay = server
+            .connections
+            .iter()
+            .any(|c| c.uri == active_uri && c.relay);
 
-        // Cached connections in priority order.
+        // Fast path: test current connection.
+        if active_is_relay {
+            log::debug!("monitor: active URI is a relay, probing direct tiers first");
+        } else {
+            log::debug!("monitor: testing active URI: {}", active_uri);
+            if matches_http_policy(&active_uri, allow_http)
+                && self
+                    .client
+                    .test_connection(&active_uri, &server.access_token, Some(FAST_PATH_TIMEOUT))
+                    .await
+            {
+                return EvalResult::Unchanged;
+            }
+            log::debug!("monitor: active URI failed, trying {} cached connection(s)", server.connections.len());
+        }
+
+        // Cached connections in priority order (local sorts before remote
+        // before relay, so when the active connection is a relay this loop
+        // doubles as the de-stick probe — any direct hit fails over off it).
         for conn in server.sorted_connections() {
             if conn.uri == active_uri {
+                continue;
+            }
+            if active_is_relay && conn.relay {
+                // Don't hop relay→relay before checking our own (below) —
+                // a connection switch carries real side effects (playlist
+                // rewrite, current-track reload) for no gain.
                 continue;
             }
             if !allow_http && conn.protocol != "https" {
@@ -325,6 +374,19 @@ impl ConnectionMonitor {
             } else {
                 log::debug!("monitor: cached connection failed: {}", conn.uri);
             }
+        }
+
+        // Deferred relay fast path: no direct tier answered, so a healthy
+        // relay keeps its job (staying is cheaper than any switch).
+        if active_is_relay
+            && matches_http_policy(&active_uri, allow_http)
+            && self
+                .client
+                .test_connection(&active_uri, &server.access_token, Some(FAST_PATH_TIMEOUT))
+                .await
+        {
+            log::debug!("monitor: no direct route yet, keeping healthy relay");
+            return EvalResult::Unchanged;
         }
 
         // Re-discover from plex.tv.
@@ -793,12 +855,143 @@ mod tests {
         // No server configured.
         assert_eq!(monitor.evaluate_connection().await, EvalOutcome::Skipped);
 
-        // Another evaluation in flight.
+        // Another evaluation in flight — the request is not dropped, it
+        // queues a re-run for the in-flight evaluation to pick up.
         let server = make_test_server("s1");
         monitor.start(server, "https://test.local:32400".into(), "token".into());
         monitor.inner.lock().is_evaluating = true;
         assert_eq!(monitor.evaluate_connection().await, EvalOutcome::Skipped);
+        assert!(monitor.inner.lock().pending_reeval);
         monitor.inner.lock().is_evaluating = false;
+    }
+
+    #[tokio::test]
+    async fn test_pending_reeval_consumed_by_evaluation() {
+        let mock = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("identity"))
+            .respond_with(wiremock::ResponseTemplate::new(200))
+            .mount(&mock)
+            .await;
+
+        let client = Arc::new(PlexClient::new("test".into()));
+        let monitor = ConnectionMonitor::new(client);
+        let server = make_test_server_with_uri("s1", &mock.uri());
+        monitor.start(server, mock.uri(), "token".into());
+
+        // Simulate a request that arrived mid-evaluation: the loop must run
+        // a second pass and consume the flag.
+        monitor.inner.lock().pending_reeval = true;
+        let outcome = monitor.evaluate_connection().await;
+
+        assert_eq!(outcome, EvalOutcome::Healthy);
+        assert!(!monitor.inner.lock().pending_reeval);
+        // Two passes ⇒ two identity probes.
+        assert_eq!(mock.received_requests().await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_relay_destick_prefers_direct() {
+        let mock_direct = wiremock::MockServer::start().await;
+        let mock_relay = wiremock::MockServer::start().await;
+        // BOTH healthy: the old fast path would have kept the relay forever.
+        for mock in [&mock_direct, &mock_relay] {
+            wiremock::Mock::given(wiremock::matchers::method("GET"))
+                .and(wiremock::matchers::path("identity"))
+                .respond_with(wiremock::ResponseTemplate::new(200))
+                .mount(mock)
+                .await;
+        }
+
+        let client = Arc::new(PlexClient::new("test".into()));
+        let monitor = ConnectionMonitor::new(client);
+
+        let server = PlexServer {
+            machine_identifier: "s1".into(),
+            name: "Test".into(),
+            access_token: "token".into(),
+            owned: true,
+            connections: vec![
+                PlexServerConnection {
+                    uri: mock_direct.uri(),
+                    local: false,
+                    relay: false,
+                    protocol: "https".into(),
+                },
+                PlexServerConnection {
+                    uri: mock_relay.uri(),
+                    local: false,
+                    relay: true,
+                    protocol: "https".into(),
+                },
+            ],
+        };
+
+        let changed_uri = Arc::new(Mutex::new(String::new()));
+        let changed_flag = changed_uri.clone();
+        monitor.set_on_connection_changed(Arc::new(move |url, _, _, _| {
+            *changed_flag.lock() = url.to_string();
+        }));
+
+        // Active connection is the (healthy) relay.
+        monitor.start(server, mock_relay.uri(), "token".into());
+        let outcome = monitor.evaluate_connection().await;
+
+        assert_eq!(outcome, EvalOutcome::Failover);
+        let new_uri = changed_uri.lock().clone();
+        assert!(
+            new_uri.contains(&mock_direct.address().port().to_string()),
+            "Expected de-stick onto the direct connection, got: {new_uri}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_relay_kept_when_no_direct_route() {
+        let mock_direct = wiremock::MockServer::start().await;
+        let mock_relay = wiremock::MockServer::start().await;
+        // Only the relay answers; the direct connection 404s.
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("identity"))
+            .respond_with(wiremock::ResponseTemplate::new(200))
+            .mount(&mock_relay)
+            .await;
+
+        let client = Arc::new(PlexClient::new("test".into()));
+        let monitor = ConnectionMonitor::new(client);
+
+        let server = PlexServer {
+            machine_identifier: "s1".into(),
+            name: "Test".into(),
+            access_token: "token".into(),
+            owned: true,
+            connections: vec![
+                PlexServerConnection {
+                    uri: mock_direct.uri(),
+                    local: false,
+                    relay: false,
+                    protocol: "https".into(),
+                },
+                PlexServerConnection {
+                    uri: mock_relay.uri(),
+                    local: false,
+                    relay: true,
+                    protocol: "https".into(),
+                },
+            ],
+        };
+
+        let changed = Arc::new(AtomicBool::new(false));
+        let changed_flag = changed.clone();
+        monitor.set_on_connection_changed(Arc::new(move |_, _, _, _| {
+            changed_flag.store(true, Ordering::SeqCst);
+        }));
+
+        monitor.start(server, mock_relay.uri(), "token".into());
+        let outcome = monitor.evaluate_connection().await;
+
+        // No direct route yet — the healthy relay keeps its job.
+        assert_eq!(outcome, EvalOutcome::Healthy);
+        assert!(!changed.load(Ordering::SeqCst));
     }
 
     #[tokio::test]

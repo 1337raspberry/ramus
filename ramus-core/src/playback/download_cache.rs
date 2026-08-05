@@ -3,10 +3,17 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 pub struct DownloadCache {
     entries: HashMap<String, PathBuf>,
     sizes: HashMap<String, u64>,
+    /// When each entry was inserted this session. Lets the recovery path
+    /// tell "this track was playing from the cache" apart from "the
+    /// prefetch landed a copy mid-play while the live stream was playing
+    /// from the network" — the two demand opposite responses to a
+    /// file-ended error.
+    inserted: HashMap<String, Instant>,
     /// Oldest first.
     access_order: Vec<String>,
     pub(crate) limit_bytes: u64,
@@ -17,6 +24,7 @@ impl DownloadCache {
         Self {
             entries: HashMap::new(),
             sizes: HashMap::new(),
+            inserted: HashMap::new(),
             access_order: Vec::new(),
             limit_bytes,
         }
@@ -25,6 +33,12 @@ impl DownloadCache {
     /// Get the cached file path for a track, if present.
     pub fn get(&self, track_id: &str) -> Option<&Path> {
         self.entries.get(track_id).map(|p| p.as_path())
+    }
+
+    /// When the entry was inserted this session, if present. Rehydrated
+    /// entries carry the rehydration time, which predates any load.
+    pub fn inserted_at(&self, track_id: &str) -> Option<Instant> {
+        self.inserted.get(track_id).copied()
     }
 
     /// Get the recorded size of a cached entry (the size at insert
@@ -43,6 +57,7 @@ impl DownloadCache {
         self.access_order.retain(|k| k != &track_id);
         self.entries.insert(track_id.clone(), path);
         self.sizes.insert(track_id.clone(), size);
+        self.inserted.insert(track_id.clone(), Instant::now());
         self.access_order.push(track_id);
     }
 
@@ -71,6 +86,7 @@ impl DownloadCache {
                     evicted.push(path);
                 }
                 self.sizes.remove(&key);
+                self.inserted.remove(&key);
             } else {
                 break;
             }
@@ -87,6 +103,7 @@ impl DownloadCache {
     pub fn remove(&mut self, track_id: &str) -> Option<PathBuf> {
         self.access_order.retain(|k| k != track_id);
         self.sizes.remove(track_id);
+        self.inserted.remove(track_id);
         self.entries.remove(track_id)
     }
 
@@ -94,6 +111,7 @@ impl DownloadCache {
     pub fn clear(&mut self) -> Vec<PathBuf> {
         let paths: Vec<PathBuf> = self.entries.drain().map(|(_, p)| p).collect();
         self.sizes.clear();
+        self.inserted.clear();
         self.access_order.clear();
         paths
     }
