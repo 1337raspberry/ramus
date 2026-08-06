@@ -156,6 +156,10 @@ pub struct DebugInfo {
     /// evidence accumulating toward (or ageing out of) the `starving`
     /// verdict, visible before it flips.
     pub starvation_episodes: usize,
+    /// mpv holds the whole track. A frozen `demuxer_cache_time` means
+    /// something very different here (the source finished, the healthy end
+    /// state) than it does mid-stream (the source stopped delivering).
+    pub source_drained: bool,
     /// Seconds since the last `time-pos` event, or `None` if the current
     /// load hasn't produced one yet.
     pub seconds_since_position_update: Option<u64>,
@@ -377,6 +381,37 @@ fn effective_stream_policy(track: &Track, inner: &PlayerInner) -> (bool, Transco
     } else {
         (base, inner.config.transcode_bitrate)
     }
+}
+
+/// Slack on the fully-buffered comparison, covering float jitter and mpv's
+/// approximate final timestamp.
+const DRAIN_SLACK: f64 = 0.25;
+
+/// Whether mpv has pulled the whole track into its demuxer cache.
+///
+/// `demuxer-cache-time` is the **timestamp of the last buffered packet** — an
+/// absolute point on the track's timeline, not an amount buffered ahead of the
+/// play head. So the comparison is against the full track duration and must
+/// not subtract the current position: doing that declares a source drained as
+/// soon as the cache end passes `duration - position`, which mid-track is far
+/// short of the real end (at the half-way point it fires with only a quarter
+/// of the track buffered).
+///
+/// `duration` must be the Plex-DB `Track.duration`, not mpv's reported value —
+/// mpv's estimate for a chunked Ogg transcode grows in lockstep with
+/// `demuxer-cache-time`, so comparing the two always returns true.
+///
+/// Free function so [`AudioPlayer::current_source_fully_drained`] and the
+/// debug snapshot share one definition; the snapshot can't call the method,
+/// because it already holds the (non-reentrant) player lock.
+fn source_fully_buffered(cache_time: Option<f64>, duration: f64) -> bool {
+    let Some(cache_time) = cache_time else {
+        return false;
+    };
+    if duration <= 0.0 {
+        return false;
+    }
+    cache_time >= duration - DRAIN_SLACK
 }
 
 /// Sanitize a string for use as a filename. Only `[a-zA-Z0-9_-]` are kept.
@@ -1379,6 +1414,7 @@ impl AudioPlayer {
         }
 
         let now = Instant::now();
+        let cache_time = self.mpv.demuxer_cache_time();
         let phase = derive_phase(
             inner.state.status,
             inner.last_position_update,
@@ -1409,8 +1445,15 @@ impl AudioPlayer {
             // Read under the lock, as `current_source_fully_drained` does.
             // Only reached from `get_debug_info`, polled at 1 Hz while the
             // panel is open, so the extra property read costs nothing.
-            demuxer_cache_time: self.mpv.demuxer_cache_time(),
+            demuxer_cache_time: cache_time,
             starvation_episodes: inner.starvation.recent_count(now),
+            // Can't call `current_source_fully_drained()` here — it takes the
+            // player lock this snapshot already holds, and `parking_lot`'s
+            // Mutex is not reentrant. Shared free function instead.
+            source_drained: source_fully_buffered(
+                cache_time,
+                track.map(|t| t.duration).unwrap_or(0.0),
+            ),
             seconds_since_position_update: inner
                 .last_position_update
                 .map(|t| now.saturating_duration_since(t).as_secs()),
@@ -2463,16 +2506,7 @@ impl AudioPlayer {
         let Some(track) = inner.state.queue.get(inner.state.queue_index) else {
             return false;
         };
-        let Some(cache_time) = self.mpv.demuxer_cache_time() else {
-            return false;
-        };
-        let position = inner.position;
-        let duration = track.duration;
-        if duration <= 0.0 {
-            return false;
-        }
-        let needed = (duration - position - 0.25).max(0.0);
-        cache_time >= needed
+        source_fully_buffered(self.mpv.demuxer_cache_time(), track.duration)
     }
 
     /// Raw `demuxer-cache-time` from the underlying mpv bridge, exposed
@@ -3627,6 +3661,23 @@ mod tests {
         (0..n)
             .map(|i| (now - Duration::from_secs(5 * (i as u64 + 1)), each))
             .collect()
+    }
+
+    #[test]
+    fn test_source_fully_buffered_reads_cache_time_as_an_absolute_timestamp() {
+        // `demuxer-cache-time` is the timestamp of the last buffered packet,
+        // so a 240s track is only drained once it reads ~240 — regardless of
+        // where the play head is. Subtracting the position (as this once did)
+        // fires at the half-way point with a quarter of the track buffered.
+        assert!(source_fully_buffered(Some(240.0), 240.0));
+        assert!(source_fully_buffered(Some(239.9), 240.0));
+        assert!(!source_fully_buffered(Some(120.0), 240.0));
+        assert!(!source_fully_buffered(Some(180.0), 240.0));
+        // Unknowns are never "drained" — callers treat that as "keep waiting",
+        // which is the safe default for both the reload skip and the
+        // prefetch gate.
+        assert!(!source_fully_buffered(None, 240.0));
+        assert!(!source_fully_buffered(Some(240.0), 0.0));
     }
 
     #[test]

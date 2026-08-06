@@ -163,14 +163,26 @@ export default function MobileDebugPanel({ onDismiss }: { onDismiss: () => void 
                 "Last update" — ticks dried up while the buffer keeps
                 climbing is a slow link; dried up while it sits frozen is a
                 dead socket. */}
+            {/* Three states, not two: a frozen cache means the source
+                finished — the healthy end state, once mpv holds the whole
+                track — or that it stopped delivering mid-stream. Only the
+                latter is worth flagging. */}
             <Row
               label="Buffer"
               value={
                 info?.demuxerCacheTime != null
-                  ? `${info.demuxerCacheTime.toFixed(1)}s${cacheTrend ? ` (${cacheTrend})` : ""}`
+                  ? `${info.demuxerCacheTime.toFixed(1)}s${
+                      info.sourceDrained ? " (complete)" : cacheTrend ? ` (${cacheTrend})` : ""
+                    }`
                   : "unavailable"
               }
-              tag={cacheTrend === "arriving" ? "green" : cacheTrend === "frozen" ? "yellow" : "dim"}
+              tag={
+                info?.sourceDrained || cacheTrend === "arriving"
+                  ? "green"
+                  : cacheTrend === "frozen"
+                    ? "yellow"
+                    : "dim"
+              }
             />
             <Row
               label="Rebuffers"

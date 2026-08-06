@@ -351,6 +351,11 @@ export interface DebugInfo {
   demuxerCacheTime: number | null;
   /** Completed rebuffer episodes inside the starvation window. */
   starvationEpisodes: number;
+  /**
+   * mpv holds the whole track. A frozen `demuxerCacheTime` means the healthy
+   * end state here, and a stopped source mid-stream when this is false.
+   */
+  sourceDrained: boolean;
   /** Seconds since the last `time-pos` update, or `null` if none yet. */
   secondsSincePositionUpdate: number | null;
   /** Seconds since the current track was loaded. */
