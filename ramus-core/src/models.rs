@@ -130,6 +130,19 @@ impl TranscodeBitrate {
             Self::Kbps128 => 128,
         }
     }
+
+    /// The next rung down for a link that still can't keep up, or `None` at
+    /// the floor. 128 kbps Opus is where the ladder stops: below it the
+    /// bandwidth saved stops being worth the quality, and a link that can't
+    /// sustain 128 kbps has a problem no re-encode is going to solve.
+    pub fn step_down(self) -> Option<Self> {
+        match self {
+            Self::Kbps320 => Some(Self::Kbps256),
+            Self::Kbps256 => Some(Self::Kbps192),
+            Self::Kbps192 => Some(Self::Kbps128),
+            Self::Kbps128 => None,
+        }
+    }
 }
 
 /// Quality preference for user-initiated downloads. `Original` direct-plays

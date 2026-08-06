@@ -424,3 +424,17 @@ export interface ConnectionStatusPayload {
   offlineModeManual: boolean;
   effectiveOffline: boolean;
 }
+
+/**
+ * Playback quality against the current link. Deliberately separate from
+ * `ConnectionStatusPayload`, which stays binary — a slow link is still
+ * online, and it must not trip the offline chip or downloads-only filtering.
+ */
+export interface PlaybackQualityPayload {
+  /** The link is delivering, but can't keep up with the current stream. */
+  starving: boolean;
+  /** Bitrate forced by the adaptive layer, or null under the user's policy. */
+  degradedToKbps: number | null;
+  /** Mode is `never`, so a slow link can be reported but not acted on. */
+  adaptationBlocked: boolean;
+}

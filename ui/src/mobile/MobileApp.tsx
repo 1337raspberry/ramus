@@ -215,6 +215,12 @@ export default function MobileApp({ onOpenSettings }: Props) {
           expanded={sheetExpanded}
           onExpand={() => setSheetExpanded(true)}
           onCollapse={() => setSheetExpanded(false)}
+          onOpenSettings={() => {
+            // The settings panel can't be reached from behind the expanded
+            // sheet, so collapse on the way through.
+            setSheetExpanded(false);
+            onOpenSettings();
+          }}
         />
       )}
       <GenreInfoSheet onNavigate={() => setSheetExpanded(false)} />

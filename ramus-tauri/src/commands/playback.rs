@@ -429,6 +429,23 @@ pub async fn foreground_resync(app: AppHandle, state: State<'_, AppState>) -> Cm
         },
     );
 
+    // Emitted on change only, so a webview that slept through a quality step
+    // would otherwise show a stale notice — or none — for the rest of the
+    // session. Recomputed from live state rather than replayed, so it can't
+    // resurrect a step that has since been cleared.
+    crate::events::emit_playback_quality(
+        &app,
+        crate::events::PlaybackQualityPayload {
+            starving: state.player.is_starving(),
+            degraded_to_kbps: state.player.bandwidth_degrade().map(|b| b.as_kbps()),
+            adaptation_blocked: !state
+                .settings
+                .read()
+                .playback_mode
+                .adapts_to_slow_connection(),
+        },
+    );
+
     if !online || state.player.needs_connection_recovery() {
         let monitor = std::sync::Arc::clone(&state.connection_monitor);
         let player = state.player.clone();
@@ -436,6 +453,18 @@ pub async fn foreground_resync(app: AppHandle, state: State<'_, AppState>) -> Cm
         let app2 = app.clone();
         tauri::async_runtime::spawn(async move {
             let outcome = monitor.evaluate_connection().await;
+            // Same guard as the watchdog's: a link that is merely too slow
+            // probes healthy while mpv rebuffers, and reloading there
+            // discards the buffer to re-fetch it over the same short link.
+            // Without this, waking the app on a starving connection fires
+            // exactly the reload the watchdog now declines.
+            if outcome == ramus_core::plex::connection::EvalOutcome::Healthy
+                && player.is_starving()
+                && crate::stall_watchdog::source_still_arriving(&player).await
+            {
+                log::info!("foreground resync: stream starving, not stuck; leaving mpv to buffer");
+                return;
+            }
             // Changed/Recovered verdicts run their own callbacks (reload,
             // online flip). Healthy fires none — the kick is ours, same as
             // the watchdog; `recover_interrupted_playback` re-checks the

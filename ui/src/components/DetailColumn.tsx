@@ -5,9 +5,10 @@ import NowPlayingView from "./NowPlayingView";
 
 interface DetailColumnProps {
   onOpenEQ?: () => void;
+  onOpenSettings?: () => void;
 }
 
-export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
+export default function DetailColumn({ onOpenEQ, onOpenSettings }: DetailColumnProps) {
   const currentTrack = usePlaybackStore((s) => s.currentTrack);
   const [panelHeight, setPanelHeight] = useState(0);
   const queue = useQueuePanel();
@@ -53,6 +54,7 @@ export default function DetailColumn({ onOpenEQ }: DetailColumnProps) {
     >
       <NowPlayingView
         onOpenEQ={onOpenEQ}
+        onOpenSettings={onOpenSettings}
         panelHeight={panelHeight}
         showQueue={queue.open}
         onToggleQueue={queue.toggle}

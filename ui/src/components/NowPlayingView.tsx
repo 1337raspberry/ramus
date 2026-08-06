@@ -10,6 +10,7 @@ import WaveformSeekBar from "./WaveformSeekBar";
 import VolumeSlider from "./VolumeSlider";
 import FlowLayout from "./FlowLayout";
 import LyricsOverlay from "./LyricsOverlay";
+import PlaybackQualityNotice from "./PlaybackQualityNotice";
 import QueueView from "./QueueView";
 import MarqueeText from "./MarqueeText";
 import { togglePlayPause, nextTrack, previousTrack } from "../lib/commands";
@@ -28,6 +29,9 @@ import {
 
 interface NowPlayingProps {
   onOpenEQ?: () => void;
+  /** Threaded to the quality notice, whose only action opens the transcode
+      settings when the current mode forbids adapting to a slow link. */
+  onOpenSettings?: () => void;
   panelHeight?: number;
   showQueue: boolean;
   onToggleQueue: () => void;
@@ -35,6 +39,7 @@ interface NowPlayingProps {
 
 export default function NowPlayingView({
   onOpenEQ,
+  onOpenSettings,
   panelHeight,
   showQueue,
   onToggleQueue,
@@ -116,6 +121,8 @@ export default function NowPlayingView({
     <div className="now-playing">
       <div className="np-visible" style={panelHeight ? { height: panelHeight } : undefined}>
         <div className="np-top">
+          {/* Renders nothing unless the link is struggling. */}
+          <PlaybackQualityNotice onOpenSettings={onOpenSettings} />
           <div className="np-header">
             <MarqueeText className="np-artist np-clickable" onClick={handleArtistClick}>
               {hasTrackArtist ? `${artistName} (${track.trackArtist})` : artistName}

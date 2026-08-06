@@ -12,6 +12,7 @@ import { usePlaybackStore } from "./stores/playbackStore";
 import { useLibraryStore } from "./stores/libraryStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useDownloadsStore } from "./stores/downloadsStore";
+import { usePlaybackQualityStore } from "./stores/playbackQualityStore";
 import { useConnectionStatus } from "./lib/useConnectionStatus";
 import TrafficLights from "./components/TrafficLights";
 import ThreeColumnLayout from "./components/ThreeColumnLayout";
@@ -108,6 +109,7 @@ export default function App() {
     useSettingsStore.getState().loadSettings();
     useDownloadsStore.getState().ensureListeners();
     useDownloadsStore.getState().refresh();
+    usePlaybackQualityStore.getState().ensureListener();
   }, [authed]);
 
   usePlaybackEvents();
@@ -291,7 +293,12 @@ export default function App() {
         content={
           detailAlbum ? <AlbumDetailView /> : suggestion ? <SuggestionView /> : <AlbumGridView />
         }
-        detail={<DetailColumn onOpenEQ={() => setShowEQ(true)} />}
+        detail={
+          <DetailColumn
+            onOpenEQ={() => setShowEQ(true)}
+            onOpenSettings={() => setShowSettings(true)}
+          />
+        }
       />
       {isFocusMode && <FocusNowPlayingView onOpenEQ={() => setShowEQ(true)} />}
       {showSearch && (

@@ -144,3 +144,28 @@ pub struct ConnectionStatusPayload {
 pub fn emit_connection_status(app: &AppHandle, payload: ConnectionStatusPayload) {
     let _ = app.emit("connection-status", payload);
 }
+
+/// Playback quality against the current link: whether the connection can
+/// sustain the stream, and what the adaptive layer has done about it.
+///
+/// Deliberately separate from `connection-status`, which stays binary — a
+/// slow link is still *online*, and folding a third state in there would
+/// reach into the offline chip, downloads-only library filtering and the
+/// art/waveform retry hooks for no benefit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackQualityPayload {
+    /// The link is delivering but can't keep up with the current stream.
+    pub starving: bool,
+    /// Bitrate the adaptive layer has forced this session, in kbps, or
+    /// `None` when playing under the user's configured policy.
+    pub degraded_to_kbps: Option<u16>,
+    /// The user's mode forbids adapting (`Never`), so a starving link is
+    /// something we can report but not act on. Drives the wording: with no
+    /// action available the UI points at the setting that would allow one.
+    pub adaptation_blocked: bool,
+}
+
+pub fn emit_playback_quality(app: &AppHandle, payload: PlaybackQualityPayload) {
+    let _ = app.emit("playback-quality", payload);
+}

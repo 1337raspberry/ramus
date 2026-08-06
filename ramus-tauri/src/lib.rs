@@ -1028,6 +1028,12 @@ pub fn run() {
                                         monitor_client.set_server_url(Some(url.clone()));
                                         monitor_client.set_token(Some(token.clone()));
                                         monitor_player.update_server_connection(url, token, is_remote);
+                                        // A different connection is a different set of
+                                        // bandwidth conditions — drop the adaptive step
+                                        // before the resweep so entries rebuild under the
+                                        // user's configured policy and the new link gets
+                                        // measured on its own merits.
+                                        monitor_player.clear_bandwidth_degrade();
                                         monitor_player.rewrite_stale_playlist_urls();
                                         // rewrite_stale_playlist_urls skips the current entry to avoid
                                         // disrupting playback, but an in-flight transcode session
@@ -1138,6 +1144,10 @@ pub fn run() {
                                             // (first position tick releases it).
                                             set_recovery_grace(&rec_app, &rec_grace, true);
                                         }
+                                        // The outage invalidates whatever the adaptive
+                                        // layer measured beforehand; let the restored
+                                        // link earn its own verdict.
+                                        rec_player.clear_bandwidth_degrade();
                                         // Fresh prefetch cycle: re-checks targets and
                                         // clears the per-cycle failure set.
                                         rec_prefetch.notify_skip();

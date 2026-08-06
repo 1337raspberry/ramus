@@ -195,8 +195,8 @@ pub fn register_network_listener<R: Runtime>(
         };
         // Push the cellular flag into the player synchronously — `set_cellular`
         // just takes the parking_lot mutex, no async runtime needed. Drives
-        // the `Cellular` / `RemoteOrCellular` PlaybackMode arms of
-        // `should_transcode` so the next track-resolve picks up the change.
+        // the `WhenSlowOrCellular` PlaybackMode arm of `should_transcode` so
+        // the next track-resolve picks up the change.
         //
         // A dead path (type "none" / no interfaces) says nothing about what
         // the next network will be — freeze the flag through the outage
@@ -219,6 +219,10 @@ pub fn register_network_listener<R: Runtime>(
         let player = state.player.clone();
         tauri::async_runtime::spawn(async move {
             if cellular_changed {
+                // Whatever the adaptive layer measured belongs to the link
+                // we just left. Clear before the resweep so the entries are
+                // rebuilt under the user's configured policy.
+                player.clear_bandwidth_degrade();
                 // Queue entries resolved their URLs (direct-play vs
                 // transcode) under the old policy; re-resolve the
                 // non-cached, non-current ones now rather than serving a

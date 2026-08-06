@@ -342,6 +342,8 @@ export interface DebugInfo {
    * socket also produces.
    */
   starving: boolean;
+  /** Bitrate forced by the adaptive layer, or null under the user's policy. */
+  degradedToKbps: number | null;
   /** Seconds since the last `time-pos` update, or `null` if none yet. */
   secondsSincePositionUpdate: number | null;
   /** Seconds since the current track was loaded. */

@@ -177,6 +177,11 @@ export default function MobileDebugPanel({ onDismiss }: { onDismiss: () => void 
               label="Mode"
               value={info ? (MODE_LABELS[info.playbackMode] ?? info.playbackMode) : "…"}
             />
+            {/* Only while the adaptive layer has forced a step — under the
+                configured policy there's nothing to distinguish. */}
+            {info?.degradedToKbps != null ? (
+              <Row label="Adapted to" value={`${info.degradedToKbps} kbps`} tag="orange" />
+            ) : null}
           </Section>
 
           <Section title="Connection">

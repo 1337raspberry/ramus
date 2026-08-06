@@ -1,6 +1,10 @@
 //! Background task that watches the player for interrupted playback —
 //! stalled streams and recovery holds — and drives connection-verified
-//! recovery.
+//! recovery. It also owns the adaptive quality check, being the task that
+//! already polls the player on a steady cadence; that check runs on every
+//! poll rather than behind the recovery gate below, because a link that is
+//! merely too slow produces many short rebuffers instead of one long silence
+//! and often never counts as "interrupted" at all.
 //!
 //! Live playback runs entirely inside mpv — the Rust prefetch worker only
 //! fires `evaluate_connection` after two consecutive download failures, so
@@ -41,9 +45,11 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
 
+use ramus_core::models::PlaybackMode;
 use ramus_core::playback::player::AudioPlayer;
 use ramus_core::plex::connection::EvalOutcome;
 
+use crate::events::PlaybackQualityPayload;
 use crate::state::AppState;
 
 /// How often to check the player. Cheap — just two atomic loads + a
@@ -76,7 +82,7 @@ const SOURCE_PROBE_EPSILON: f64 = 0.05;
 ///
 /// Returns `false` when the property is unavailable — the safe default is
 /// the pre-existing behaviour, a reload.
-async fn source_still_arriving(player: &AudioPlayer) -> bool {
+pub(crate) async fn source_still_arriving(player: &AudioPlayer) -> bool {
     let Some(before) = player.demuxer_cache_time() else {
         return false;
     };
@@ -87,21 +93,80 @@ async fn source_still_arriving(player: &AudioPlayer) -> bool {
     after - before > SOURCE_PROBE_EPSILON
 }
 
+/// Take an adaptive quality step if the link warrants one, and report the
+/// resulting state to the frontend when it changes.
+///
+/// The player owns the decision (cooldown, mode eligibility, ladder floor and
+/// whether to apply mid-track); this only drives it and reports. Emitting on
+/// change rather than every poll keeps a steady starving link from spamming
+/// the event bus at 0.2 Hz for the length of a track.
+fn adapt_quality(
+    app: &AppHandle,
+    player: &AudioPlayer,
+    mode: PlaybackMode,
+    last: &mut Option<PlaybackQualityPayload>,
+) {
+    if player.is_starving() {
+        if let Some(step) = player.consider_bandwidth_degrade() {
+            log::info!(
+                "quality: stepped to {} kbps (applied to current track: {})",
+                step.bitrate.as_kbps(),
+                step.applied_to_current,
+            );
+            if step.applied_to_current {
+                // The step swaps the stream, so the same gap-covering the
+                // recovery reload gets: tell the UI it's buffering, and hold
+                // the process awake through the silent window on iOS.
+                crate::events::emit_playback_buffering(app, true);
+                if let Some(state) = app.try_state::<AppState>() {
+                    crate::set_recovery_grace(app, &state.recovery_grace, true);
+                }
+            }
+        }
+    }
+
+    // Read back *after* any step: a successful one clears the evidence it
+    // acted on, so the report becomes "playing at N kbps" rather than
+    // "starving", which is what the user should see.
+    let payload = PlaybackQualityPayload {
+        starving: player.is_starving(),
+        degraded_to_kbps: player.bandwidth_degrade().map(|b| b.as_kbps()),
+        adaptation_blocked: !mode.adapts_to_slow_connection(),
+    };
+    if last.as_ref() != Some(&payload) {
+        crate::events::emit_playback_quality(app, payload.clone());
+        *last = Some(payload);
+    }
+}
+
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut last_eval: Option<std::time::Instant> = None;
+        let mut last_quality: Option<PlaybackQualityPayload> = None;
         loop {
             tokio::time::sleep(POLL_INTERVAL).await;
 
-            let (player, monitor) = {
+            let (player, monitor, mode) = {
                 let Some(state) = app.try_state::<AppState>() else {
                     continue;
                 };
-                if !state.player.needs_connection_recovery() {
-                    continue;
-                }
-                (state.player.clone(), Arc::clone(&state.connection_monitor))
+                let mode = state.settings.read().playback_mode;
+                (
+                    state.player.clone(),
+                    Arc::clone(&state.connection_monitor),
+                    mode,
+                )
             };
+
+            // Adaptive quality runs on every poll, independent of the
+            // recovery ladder below. A starving link produces many short
+            // rebuffers rather than one long silence, so it frequently never
+            // trips `needs_connection_recovery` at all.
+            adapt_quality(&app, &player, mode, &mut last_quality);
+
+            if !player.needs_connection_recovery() {
+                continue;
+            }
 
             let now = std::time::Instant::now();
             if let Some(prev) = last_eval {

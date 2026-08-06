@@ -15,7 +15,8 @@ use crate::models::{PlaybackConfig, PlaybackMode, PlaybackStatus, PlayerState, T
 use crate::playback::download_cache::DownloadCache;
 use crate::playback::mpv::{FileEndReason, LoadMode, MpvPlayer};
 use crate::playback::transcode;
-use crate::util::redact_urls;
+use crate::models::TranscodeBitrate;
+use crate::util::{is_lossless_codec, redact_urls};
 
 /// Time after a load with no `time-pos` updates before `derive_phase` flips
 /// from `Buffering` to `Stalled`. The frontend uses this to colour the row,
@@ -141,6 +142,9 @@ pub struct DebugInfo {
     /// (repeated rebuffering). Distinct from `phase: Stalled`, which a dead
     /// socket also produces.
     pub starving: bool,
+    /// Bitrate the adaptive layer has forced this session, in kbps, or
+    /// `None` when playing under the user's configured policy.
+    pub degraded_to_kbps: Option<u16>,
     /// Seconds since the last `time-pos` event, or `None` if the current
     /// load hasn't produced one yet.
     pub seconds_since_position_update: Option<u64>,
@@ -301,6 +305,60 @@ pub fn is_starving(
     silent.as_secs_f64() >= window.as_secs_f64() * STARVATION_SILENT_FRACTION
 }
 
+/// Minimum gap between two adaptive quality steps. A step costs a stream
+/// swap, and the fresh stream needs a full evidence window of its own before
+/// we can say whether it helped — stepping faster than that would walk
+/// straight to the floor off one bad patch.
+const DEGRADE_COOLDOWN: Duration = Duration::from_secs(60);
+
+/// How much of the current track must remain for an adaptive step to be
+/// applied mid-track rather than at the next boundary. Applying it costs an
+/// audible gap, which is worth paying for a stream that will stutter for
+/// minutes yet, but not seconds before the track changes anyway.
+const DEGRADE_MIN_REMAINING: f64 = 45.0;
+
+/// What an adaptive quality step did, for the platform layer to report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BandwidthDegrade {
+    /// The bitrate the stream will use from now on.
+    pub bitrate: TranscodeBitrate,
+    /// Whether the current track was reloaded to apply it immediately, as
+    /// opposed to leaving it to take effect at the next track.
+    pub applied_to_current: bool,
+}
+
+/// The stream policy actually in force for `track`: whether to transcode,
+/// and at what bitrate.
+///
+/// [`transcode::should_transcode`] is the baseline — a pure function of the
+/// user's mode and the connection type. This applies the adaptive override on
+/// top, and is what every resolve site must call so the live stream, the
+/// prefetch worker, the byte-size estimate, the stream-record extension and
+/// the debug readout can never disagree about what is being fetched.
+///
+/// The override only ever re-encodes something the baseline would have been
+/// willing to: a lossy source has nowhere better to go, and `Never` opted out
+/// of re-encoding altogether. Those cases fall through to the baseline even if
+/// a degrade is somehow set.
+fn effective_stream_policy(track: &Track, inner: &PlayerInner) -> (bool, TranscodeBitrate) {
+    let base = transcode::should_transcode(
+        track.codec.as_deref(),
+        inner.config.playback_mode,
+        inner.is_cellular,
+    );
+    let Some(degraded) = inner.bandwidth_degrade else {
+        return (base, inner.config.transcode_bitrate);
+    };
+    let eligible = base
+        || (inner.config.playback_mode.adapts_to_slow_connection()
+            && track.codec.as_deref().is_some_and(is_lossless_codec));
+    if eligible {
+        (true, degraded)
+    } else {
+        (base, inner.config.transcode_bitrate)
+    }
+}
+
 /// Sanitize a string for use as a filename. Only `[a-zA-Z0-9_-]` are kept.
 pub fn sanitize_filename(s: &str) -> String {
     s.chars()
@@ -442,6 +500,21 @@ struct PlayerInner {
     /// produces silence we mustn't blame on the network (seek, resume,
     /// current-track reload).
     starvation: StarvationTracker,
+    /// Bitrate the adaptive layer has forced this session, if any. Layered
+    /// on top of `should_transcode` rather than folded into it, so the
+    /// baseline policy stays a pure function of stable inputs and this stays
+    /// one inspectable value with one place to clear.
+    ///
+    /// **Never auto-restored.** If the degrade succeeds, the starvation it
+    /// was diagnosed from stops — restoring on that basis would starve,
+    /// degrade, restore, and flap, at the cost of an audible reload each way.
+    /// It clears only on a positive external event: a real network path flip,
+    /// a connection change or recovery, a settings change, or app restart
+    /// (it is deliberately never persisted).
+    bandwidth_degrade: Option<TranscodeBitrate>,
+    /// Wall-clock of the last adaptive step, pacing them at
+    /// [`DEGRADE_COOLDOWN`].
+    last_degrade_at: Option<Instant>,
 }
 
 impl PlayerInner {
@@ -579,6 +652,8 @@ impl AudioPlayer {
                 reload_started_at: None,
                 pending_transition: None,
                 starvation: StarvationTracker::default(),
+                bandwidth_degrade: None,
+                last_degrade_at: None,
             }),
             persistent_cache: RwLock::new(HashMap::new()),
         }
@@ -680,6 +755,16 @@ impl AudioPlayer {
     pub fn update_config(&self, config: PlaybackConfig) {
         let mut inner = self.inner.lock();
         inner.cache.limit_bytes = config.audio_cache_limit_bytes as u64;
+        // The user has just restated the policy directly, which supersedes
+        // anything the adaptive layer inferred — start measuring afresh
+        // against what they asked for.
+        if config.playback_mode != inner.config.playback_mode
+            || config.transcode_bitrate != inner.config.transcode_bitrate
+        {
+            inner.bandwidth_degrade = None;
+            inner.last_degrade_at = None;
+            inner.starvation.clear();
+        }
         inner.config = config;
     }
 
@@ -1228,11 +1313,7 @@ impl AudioPlayer {
                         .map(|p| format!("file://{}", p.display())))
                 } else if let Some(path) = inner.cache.get(&t.rating_key) {
                     ("cached".into(), Some(format!("file://{}", path.display())))
-                } else if transcode::should_transcode(
-                    t.codec.as_deref(),
-                    inner.config.playback_mode,
-                    inner.is_cellular,
-                ) {
+                } else if effective_stream_policy(t, &inner).0 {
                     ("transcode".into(), inner.server_url.as_ref().map(|u| {
                         format!("{}/audio/:/transcode/…", u.as_str().trim_end_matches('/'))
                     }))
@@ -1304,6 +1385,7 @@ impl AudioPlayer {
             file_size_bytes: track.and_then(|t| t.file_size_bytes),
             phase,
             starving: inner.starvation_verdict(now),
+            degraded_to_kbps: inner.bandwidth_degrade.map(|b| b.as_kbps()),
             seconds_since_position_update: inner
                 .last_position_update
                 .map(|t| now.saturating_duration_since(t).as_secs()),
@@ -1368,6 +1450,109 @@ impl AudioPlayer {
     /// the live stream is already short of.
     pub fn is_starving(&self) -> bool {
         self.inner.lock().starvation_verdict(Instant::now())
+    }
+
+    /// The adaptive bitrate currently forced by a starving link, if any.
+    pub fn bandwidth_degrade(&self) -> Option<TranscodeBitrate> {
+        self.inner.lock().bandwidth_degrade
+    }
+
+    /// Drop the adaptive step and go back to the user's configured policy.
+    ///
+    /// Called on the events that make the old measurement meaningless: a real
+    /// network path flip, a connection change or recovery, a settings change.
+    /// Deliberately *not* called when starvation merely stops — see the
+    /// `bandwidth_degrade` field note on why auto-restoring flaps.
+    pub fn clear_bandwidth_degrade(&self) {
+        let mut inner = self.inner.lock();
+        if inner.bandwidth_degrade.take().is_some() {
+            log::info!("bandwidth degrade cleared, back to configured policy");
+        }
+        inner.last_degrade_at = None;
+        inner.starvation.clear();
+    }
+
+    /// Take one step down the quality ladder if the link is starving and the
+    /// user's mode allows it. Returns what changed, or `None` if nothing did.
+    ///
+    /// Two different moves share this one path, because they are the same
+    /// decision at different starting points:
+    ///
+    /// - **Starting** to transcode a direct-playing stream, at the user's
+    ///   configured bitrate. Permitted by every mode except `Never`, whose
+    ///   promise is absolute — a user who wants this behaviour picks
+    ///   `WhenSlow`.
+    /// - **Stepping down** an already-transcoded stream. Permitted whenever
+    ///   the stream is already transcoded, since the mode that put it there
+    ///   already consented to re-encoding as a bandwidth measure; this is
+    ///   only choosing a smaller one.
+    ///
+    /// The caller owns reporting it. Applying it costs a stream swap, so it
+    /// happens mid-track only when [`DEGRADE_MIN_REMAINING`] is left;
+    /// otherwise the queue resweep carries it into the next track.
+    pub fn consider_bandwidth_degrade(&self) -> Option<BandwidthDegrade> {
+        let (next, reload) = {
+            let mut inner = self.inner.lock();
+            let now = Instant::now();
+            if !inner.starvation_verdict(now) {
+                return None;
+            }
+            if inner
+                .last_degrade_at
+                .is_some_and(|t| now.duration_since(t) < DEGRADE_COOLDOWN)
+            {
+                return None;
+            }
+            let track = inner.state.queue.get(inner.state.queue_index)?.clone();
+            // A local file that stutters has a problem no re-encode fixes.
+            if self.persistent_cache.read().contains_key(&track.rating_key)
+                || inner.cache.get(&track.rating_key).is_some()
+            {
+                return None;
+            }
+            let (transcoding, bitrate) = effective_stream_policy(&track, &inner);
+            let next = if transcoding {
+                bitrate.step_down()?
+            } else {
+                // Nothing to start: the mode opted out, or the source is
+                // already lossy and has nowhere better to go.
+                if !inner.config.playback_mode.adapts_to_slow_connection()
+                    || !track.codec.as_deref().is_some_and(is_lossless_codec)
+                {
+                    return None;
+                }
+                inner.config.transcode_bitrate
+            };
+
+            inner.bandwidth_degrade = Some(next);
+            inner.last_degrade_at = Some(now);
+            // The evidence has been acted on; the next step must be earned by
+            // the new stream rather than inherited from the old one.
+            inner.starvation.clear();
+
+            let remaining = inner.duration - inner.position;
+            (next, remaining >= DEGRADE_MIN_REMAINING)
+        };
+
+        log::info!(
+            "connection can't sustain the stream: stepping to {} kbps",
+            next.as_kbps()
+        );
+        // Queued entries resolved under the old policy — resweep so the step
+        // lands on the next track even when the current one isn't reloaded.
+        self.rewrite_stale_playlist_urls();
+
+        let applied_to_current = reload && {
+            let (resume, idx) = {
+                let inner = self.inner.lock();
+                (inner.position, inner.state.queue_index)
+            };
+            self.reload_current_track(Some(resume), Some(idx))
+        };
+        Some(BandwidthDegrade {
+            bitrate: next,
+            applied_to_current,
+        })
     }
 
     /// Whether playback sits in an app-inflicted silent state that a healthy
@@ -2051,11 +2236,11 @@ impl AudioPlayer {
                 continue;
             }
 
-            let needs_transcode = transcode::should_transcode(
-                track.codec.as_deref(),
-                inner.config.playback_mode,
-                inner.is_cellular,
-            );
+            // Prefetch inherits any adaptive step: a link that can't sustain
+            // lossless live can't sustain it as a download either, and the
+            // smaller file is what lets the lookahead actually get ahead —
+            // which is the real fix, since a cached track plays perfectly.
+            let (needs_transcode, bitrate) = effective_stream_policy(track, &inner);
 
             if needs_transcode {
                 // Session shape is `<client-id>-<unique-id>` — Plex
@@ -2074,7 +2259,7 @@ impl AudioPlayer {
                     &track.rating_key,
                     &inner.client_identifier,
                     &session,
-                    inner.config.transcode_bitrate,
+                    bitrate,
                     None,
                 ) else {
                     continue;
@@ -2287,13 +2472,9 @@ impl AudioPlayer {
         if track.duration <= 0.0 {
             return None;
         }
-        let needs_transcode = transcode::should_transcode(
-            track.codec.as_deref(),
-            inner.config.playback_mode,
-            inner.is_cellular,
-        );
+        let (needs_transcode, bitrate) = effective_stream_policy(track, &inner);
         if needs_transcode {
-            let kbps = inner.config.transcode_bitrate.as_kbps() as f64;
+            let kbps = bitrate.as_kbps() as f64;
             Some((track.duration * kbps * 1000.0 / 8.0) as u64)
         } else if let Some(sz) = track.file_size_bytes.filter(|s| *s > 0) {
             Some(sz as u64)
@@ -2355,11 +2536,8 @@ fn resolve_url_with_resume(
     let server_url = inner.server_url.as_ref()?;
     let token = inner.token.as_ref()?;
 
-    if transcode::should_transcode(
-        track.codec.as_deref(),
-        inner.config.playback_mode,
-        inner.is_cellular,
-    ) {
+    let (needs_transcode, bitrate) = effective_stream_policy(track, inner);
+    if needs_transcode {
         // Single-file Opus instead of HLS. Plex enforces a per-client
         // concurrent-transcode cap of ~1, and a long-lived HLS session
         // (which lasts the full real-time duration of the song) gets
@@ -2384,7 +2562,7 @@ fn resolve_url_with_resume(
             &track.rating_key,
             &inner.client_identifier,
             &session,
-            inner.config.transcode_bitrate,
+            bitrate,
             offset,
         )?;
         let plan = match offset {
@@ -2416,11 +2594,7 @@ fn stream_record_option_for(track: &Track, url: &str, inner: &PlayerInner) -> Op
     if url.starts_with("file://") {
         return None;
     }
-    let is_transcode = transcode::should_transcode(
-        track.codec.as_deref(),
-        inner.config.playback_mode,
-        inner.is_cellular,
-    );
+    let is_transcode = effective_stream_policy(track, inner).0;
 
     // Transcoded sources always come back as Ogg/Opus from Plex's
     // `/audio/:/transcode/universal/start` endpoint. For direct-play,
@@ -3574,6 +3748,227 @@ mod tests {
         // A paused player isn't starving, however bad the link was.
         player.inner.lock().state.status = PlaybackStatus::Paused;
         assert!(!player.is_starving());
+    }
+
+    /// Put the player in a state the starvation verdict fires on, with the
+    /// degrade cooldown already elapsed.
+    fn make_starving(player: &AudioPlayer) {
+        let mut inner = player.inner.lock();
+        let now = Instant::now();
+        inner.load_started_at = Some(now - Duration::from_secs(60));
+        inner.last_position_update = Some(now);
+        inner.last_degrade_at = None;
+        for (t, d) in starvation_episodes(now, 3, Duration::from_secs(10)) {
+            inner.starvation.record(t, d);
+        }
+    }
+
+    fn flac_track(rk: &str) -> Track {
+        Track {
+            codec: Some("flac".into()),
+            part_key: Some(format!("/library/parts/{rk}/file.flac")),
+            duration: 300.0,
+            ..make_test_track(rk)
+        }
+    }
+
+    fn configure_for_streaming(player: &AudioPlayer, mode: PlaybackMode) {
+        player.configure(
+            Url::parse("http://192.168.1.100:32400").unwrap(),
+            "token".into(),
+            "client-id".into(),
+        );
+        player.update_config(PlaybackConfig {
+            playback_mode: mode,
+            transcode_bitrate: TranscodeBitrate::Kbps320,
+            ..PlaybackConfig::default()
+        });
+    }
+
+    #[test]
+    fn test_never_refuses_to_degrade_however_bad_the_link() {
+        // The whole promise of the mode: a user who picked it gets buffering,
+        // not a quality drop they never asked for.
+        let (player, _) = make_player();
+        configure_for_streaming(&player, PlaybackMode::Never);
+        player.load_queue(vec![flac_track("1")], 0);
+        make_starving(&player);
+
+        assert!(player.is_starving());
+        assert_eq!(player.consider_bandwidth_degrade(), None);
+        assert_eq!(player.bandwidth_degrade(), None);
+    }
+
+    #[test]
+    fn test_when_slow_starts_transcoding_at_the_configured_bitrate() {
+        let (player, _) = make_player();
+        configure_for_streaming(&player, PlaybackMode::WhenSlow);
+        player.load_queue(vec![flac_track("1")], 0);
+        // Baseline is direct-play until the link is measured.
+        assert!(!player.debug_snapshot().resolved_url.unwrap().contains("transcode"));
+
+        make_starving(&player);
+        let step = player.consider_bandwidth_degrade().expect("must step");
+        assert_eq!(step.bitrate, TranscodeBitrate::Kbps320);
+        // Plenty of track left, so it takes effect immediately.
+        assert!(step.applied_to_current);
+        assert!(player.debug_snapshot().resolved_url.unwrap().contains("transcode"));
+    }
+
+    #[test]
+    fn test_further_steps_walk_the_ladder_down_to_the_floor() {
+        let (player, _) = make_player();
+        configure_for_streaming(&player, PlaybackMode::WhenSlow);
+        player.load_queue(vec![flac_track("1")], 0);
+
+        let mut seen = Vec::new();
+        for _ in 0..5 {
+            make_starving(&player);
+            match player.consider_bandwidth_degrade() {
+                Some(step) => seen.push(step.bitrate),
+                None => break,
+            }
+        }
+        assert_eq!(
+            seen,
+            vec![
+                TranscodeBitrate::Kbps320,
+                TranscodeBitrate::Kbps256,
+                TranscodeBitrate::Kbps192,
+                TranscodeBitrate::Kbps128,
+            ],
+            "ladder must step once per rung and stop at the floor"
+        );
+    }
+
+    #[test]
+    fn test_degrade_steps_are_paced() {
+        let (player, _) = make_player();
+        configure_for_streaming(&player, PlaybackMode::WhenSlow);
+        player.load_queue(vec![flac_track("1")], 0);
+
+        make_starving(&player);
+        assert!(player.consider_bandwidth_degrade().is_some());
+        // Fresh evidence inside the cooldown must not walk another rung —
+        // the new stream hasn't had a full window to prove itself yet.
+        make_starving(&player);
+        player.inner.lock().last_degrade_at = Some(Instant::now());
+        assert_eq!(player.consider_bandwidth_degrade(), None);
+        assert_eq!(player.bandwidth_degrade(), Some(TranscodeBitrate::Kbps320));
+    }
+
+    #[test]
+    fn test_degrade_waits_for_the_boundary_near_the_end_of_a_track() {
+        let (player, _) = make_player();
+        configure_for_streaming(&player, PlaybackMode::WhenSlow);
+        player.load_queue(vec![flac_track("1"), flac_track("2")], 0);
+        make_starving(&player);
+        // Seconds from the end: the step is worth making, but not worth an
+        // audible gap when the track is about to change anyway.
+        {
+            let mut inner = player.inner.lock();
+            inner.position = inner.duration - 10.0;
+        }
+        let step = player.consider_bandwidth_degrade().expect("must step");
+        assert!(!step.applied_to_current);
+        // It still takes effect — the next track resolves under it.
+        assert_eq!(player.bandwidth_degrade(), Some(TranscodeBitrate::Kbps320));
+    }
+
+    #[test]
+    fn test_lossy_tracks_have_nowhere_to_degrade_to() {
+        let (player, _) = make_player();
+        configure_for_streaming(&player, PlaybackMode::WhenSlow);
+        let mp3 = Track {
+            codec: Some("mp3".into()),
+            part_key: Some("/library/parts/1/file.mp3".into()),
+            duration: 300.0,
+            ..make_test_track("1")
+        };
+        player.load_queue(vec![mp3], 0);
+        make_starving(&player);
+        assert_eq!(player.consider_bandwidth_degrade(), None);
+    }
+
+    #[test]
+    fn test_degrade_never_applies_to_a_lossy_track_in_a_mixed_queue() {
+        // The override is session-scoped, but it must not re-encode a source
+        // that was never eligible in the first place.
+        let (player, _) = make_player();
+        configure_for_streaming(&player, PlaybackMode::WhenSlow);
+        player.load_queue(vec![flac_track("1")], 0);
+        make_starving(&player);
+        assert!(player.consider_bandwidth_degrade().is_some());
+
+        let mp3 = Track {
+            codec: Some("mp3".into()),
+            ..make_test_track("2")
+        };
+        let inner = player.inner.lock();
+        assert!(!effective_stream_policy(&mp3, &inner).0);
+        assert!(effective_stream_policy(&flac_track("3"), &inner).0);
+    }
+
+    #[test]
+    fn test_degrade_clears_only_on_an_external_event() {
+        let (player, _) = make_player();
+        configure_for_streaming(&player, PlaybackMode::WhenSlow);
+        player.load_queue(vec![flac_track("1"), flac_track("2")], 0);
+        make_starving(&player);
+        assert!(player.consider_bandwidth_degrade().is_some());
+
+        // The step reloaded the current track, which arms the reload settle
+        // window; let it lapse as the real 45s-of-track-left gap would.
+        {
+            let mut inner = player.inner.lock();
+            inner.reloading_pos = None;
+            inner.reload_started_at = None;
+        }
+        // Surviving a track change is the point — a session-scoped step
+        // that reset every boundary would starve at the top of every track.
+        assert!(player.handle_playlist_pos_change(1));
+        assert_eq!(player.bandwidth_degrade(), Some(TranscodeBitrate::Kbps320));
+
+        player.clear_bandwidth_degrade();
+        assert_eq!(player.bandwidth_degrade(), None);
+    }
+
+    #[test]
+    fn test_restating_the_policy_clears_the_degrade() {
+        let (player, _) = make_player();
+        configure_for_streaming(&player, PlaybackMode::WhenSlow);
+        player.load_queue(vec![flac_track("1")], 0);
+        make_starving(&player);
+        assert!(player.consider_bandwidth_degrade().is_some());
+
+        // An unrelated settings save must leave it alone...
+        player.update_config(PlaybackConfig {
+            playback_mode: PlaybackMode::WhenSlow,
+            transcode_bitrate: TranscodeBitrate::Kbps320,
+            lookahead_depth: 9,
+            ..PlaybackConfig::default()
+        });
+        assert_eq!(player.bandwidth_degrade(), Some(TranscodeBitrate::Kbps320));
+
+        // ...but the user restating the transcode policy supersedes it.
+        player.update_config(PlaybackConfig {
+            playback_mode: PlaybackMode::WhenSlow,
+            transcode_bitrate: TranscodeBitrate::Kbps192,
+            ..PlaybackConfig::default()
+        });
+        assert_eq!(player.bandwidth_degrade(), None);
+    }
+
+    #[test]
+    fn test_locally_cached_tracks_are_never_degraded() {
+        // A file playing off disk that stutters has a problem no re-encode
+        // is going to fix, and the reload would be pure loss.
+        let (player, _) = make_player();
+        configure_for_streaming(&player, PlaybackMode::WhenSlow);
+        player.load_queue(vec![flac_track("1")], 0);
+        player.register_persistent_download("1".into(), PathBuf::from("/tmp/1.flac"));
+        make_starving(&player);
+        assert_eq!(player.consider_bandwidth_degrade(), None);
     }
 
     #[test]

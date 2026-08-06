@@ -23,6 +23,7 @@ import FlowLayout from "../components/FlowLayout";
 import UltraBlurBackground from "../components/UltraBlurBackground";
 import MarqueeText from "../components/MarqueeText";
 import LyricsOverlay from "../components/LyricsOverlay";
+import PlaybackQualityNotice from "../components/PlaybackQualityNotice";
 
 import {
   IconPlay,
@@ -75,6 +76,9 @@ interface Props {
   expanded: boolean;
   onExpand: () => void;
   onCollapse: () => void;
+  /** Threaded through to the quality notice, whose only action opens the
+      transcode settings when the current mode forbids adapting. */
+  onOpenSettings: () => void;
 }
 
 /**
@@ -85,7 +89,12 @@ interface Props {
  * rendered once and the progress overlay is cheap. Album-art palette
  * extraction runs once per track on the expanded hero image.
  */
-export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Props) {
+export default function MobileNowPlaying({
+  expanded,
+  onExpand,
+  onCollapse,
+  onOpenSettings,
+}: Props) {
   const status = usePlaybackStore((s) => s.status);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
   const albumBlurColors = usePlaybackStore((s) => s.ultraBlurColors);
@@ -581,6 +590,12 @@ export default function MobileNowPlaying({ expanded, onExpand, onCollapse }: Pro
           ref={sheetBodyRef}
         >
           <div className={`mobile-sheet-main${showLyrics ? " lyrics-mode" : ""}`}>
+            {/* Renders nothing unless the link is struggling, and then the
+                art absorbs the row (it's the only flexible item on the
+                page). Suppressed in lyrics mode, which regrids this
+                container to CSS grid where an extra child would take a
+                cell of its own. */}
+            {!showLyrics && <PlaybackQualityNotice onOpenSettings={onOpenSettings} />}
             <div ref={artRef} className="mobile-sheet-art">
               {artSrc && !artErr ? (
                 <img
