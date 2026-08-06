@@ -145,6 +145,17 @@ pub struct DebugInfo {
     /// Bitrate the adaptive layer has forced this session, in kbps, or
     /// `None` when playing under the user's configured policy.
     pub degraded_to_kbps: Option<u16>,
+    /// mpv's raw `demuxer-cache-time` — seconds of media buffered ahead.
+    ///
+    /// This is the signal the starvation discriminator reads, surfaced so it
+    /// can be checked against reality: during a stall it should keep climbing
+    /// while bytes are still arriving (however slowly), and sit frozen once
+    /// the socket is dead. `None` where the bridge can't report it.
+    pub demuxer_cache_time: Option<f64>,
+    /// Completed rebuffer episodes inside the starvation window — the
+    /// evidence accumulating toward (or ageing out of) the `starving`
+    /// verdict, visible before it flips.
+    pub starvation_episodes: usize,
     /// Seconds since the last `time-pos` event, or `None` if the current
     /// load hasn't produced one yet.
     pub seconds_since_position_update: Option<u64>,
@@ -266,6 +277,15 @@ impl StarvationTracker {
 
     fn episodes(&self) -> &[(Instant, Duration)] {
         &self.episodes
+    }
+
+    /// Episodes still inside the window. Pruning only happens on `record`,
+    /// so a read-time filter is needed for an honest count.
+    fn recent_count(&self, now: Instant) -> usize {
+        self.episodes
+            .iter()
+            .filter(|(t, _)| now.saturating_duration_since(*t) <= STARVATION_WINDOW)
+            .count()
     }
 }
 
@@ -1386,6 +1406,11 @@ impl AudioPlayer {
             phase,
             starving: inner.starvation_verdict(now),
             degraded_to_kbps: inner.bandwidth_degrade.map(|b| b.as_kbps()),
+            // Read under the lock, as `current_source_fully_drained` does.
+            // Only reached from `get_debug_info`, polled at 1 Hz while the
+            // panel is open, so the extra property read costs nothing.
+            demuxer_cache_time: self.mpv.demuxer_cache_time(),
+            starvation_episodes: inner.starvation.recent_count(now),
             seconds_since_position_update: inner
                 .last_position_update
                 .map(|t| now.saturating_duration_since(t).as_secs()),

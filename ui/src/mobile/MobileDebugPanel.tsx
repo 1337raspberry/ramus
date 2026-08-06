@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getDebugInfo, type DebugInfo, type DebugPhase } from "../lib/commands";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useConnectionStatus } from "../lib/useConnectionStatus";
@@ -69,9 +69,26 @@ export default function MobileDebugPanel({ onDismiss }: { onDismiss: () => void 
   const position = usePlaybackStore((s) => s.position);
   const connection = useConnectionStatus();
 
+  // Whether the demuxer cache grew between polls. This is the question the
+  // starvation discriminator asks, so showing the answer alongside the raw
+  // value makes its behaviour checkable: during a stall it should keep
+  // climbing while bytes still arrive, and freeze once the socket is dead.
+  const prevCacheRef = useRef<number | null>(null);
+  const [cacheTrend, setCacheTrend] = useState<"arriving" | "frozen" | null>(null);
+
   const refresh = useCallback(() => {
     getDebugInfo()
-      .then(setInfo)
+      .then((next) => {
+        const prev = prevCacheRef.current;
+        const cur = next.demuxerCacheTime;
+        // Same 0.05s tolerance the backend uses — mpv's reported value
+        // wobbles fractionally even when nothing new is being pulled.
+        setCacheTrend(
+          cur != null && prev != null ? (cur - prev > 0.05 ? "arriving" : "frozen") : null,
+        );
+        prevCacheRef.current = cur;
+        setInfo(next);
+      })
       .catch(() => {});
   }, []);
 
@@ -140,6 +157,26 @@ export default function MobileDebugPanel({ onDismiss }: { onDismiss: () => void 
             {info?.phase === "opening" || info?.phase === "buffering" ? (
               <Row label="Loading for" value={formatAge(info.secondsSinceLoad)} />
             ) : null}
+            {/* Always shown, unlike the verdict rows below: these are the raw
+                inputs the starvation logic reads, and they're only useful if
+                you can watch them before anything trips. Read together with
+                "Last update" — ticks dried up while the buffer keeps
+                climbing is a slow link; dried up while it sits frozen is a
+                dead socket. */}
+            <Row
+              label="Buffer"
+              value={
+                info?.demuxerCacheTime != null
+                  ? `${info.demuxerCacheTime.toFixed(1)}s${cacheTrend ? ` (${cacheTrend})` : ""}`
+                  : "unavailable"
+              }
+              tag={cacheTrend === "arriving" ? "green" : cacheTrend === "frozen" ? "yellow" : "dim"}
+            />
+            <Row
+              label="Rebuffers"
+              value={`${info?.starvationEpisodes ?? 0} in last 60s`}
+              tag={(info?.starvationEpisodes ?? 0) >= 2 ? "yellow" : "dim"}
+            />
             {/* Only meaningful while it holds — a link fast enough for the
                 stream never sets it, so a permanent "no" row would be noise. */}
             {info?.starving ? (

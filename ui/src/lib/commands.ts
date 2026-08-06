@@ -344,6 +344,13 @@ export interface DebugInfo {
   starving: boolean;
   /** Bitrate forced by the adaptive layer, or null under the user's policy. */
   degradedToKbps: number | null;
+  /**
+   * mpv's raw `demuxer-cache-time` — seconds buffered ahead. Climbing during
+   * a stall means bytes are still arriving; frozen means a dead socket.
+   */
+  demuxerCacheTime: number | null;
+  /** Completed rebuffer episodes inside the starvation window. */
+  starvationEpisodes: number;
   /** Seconds since the last `time-pos` update, or `null` if none yet. */
   secondsSincePositionUpdate: number | null;
   /** Seconds since the current track was loaded. */
