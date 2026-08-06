@@ -1517,6 +1517,14 @@ impl AudioPlayer {
     /// otherwise the queue resweep carries it into the next track.
     pub fn consider_bandwidth_degrade(&self) -> Option<BandwidthDegrade> {
         let (next, reload) = {
+            // Persistent read BEFORE the inner lock, matching every other
+            // combined-lock site in this file. `parking_lot`'s RwLock is
+            // task-fair — a queued writer blocks new readers — so taking
+            // these in the opposite order closes a deadlock cycle against
+            // any thread holding the read and waiting on `inner` (e.g.
+            // `try_recover_current_track`) while a prefetch completion
+            // queues `register_persistent_download`'s write.
+            let persistent = self.persistent_cache.read();
             let mut inner = self.inner.lock();
             let now = Instant::now();
             if !inner.starvation_verdict(now) {
@@ -1530,7 +1538,7 @@ impl AudioPlayer {
             }
             let track = inner.state.queue.get(inner.state.queue_index)?.clone();
             // A local file that stutters has a problem no re-encode fixes.
-            if self.persistent_cache.read().contains_key(&track.rating_key)
+            if persistent.contains_key(&track.rating_key)
                 || inner.cache.get(&track.rating_key).is_some()
             {
                 return None;

@@ -45,6 +45,11 @@ pub struct AppState {
     /// `lib.rs::set_recovery_grace`). Tracked Rust-side so only real
     /// transitions cross the mobile bridge.
     pub recovery_grace: Arc<AtomicBool>,
+    /// Signals `on_position_change` to re-anchor the OS now-playing scrubber
+    /// after a connection-failover reload froze it. Lives here rather than
+    /// local to `setup()` so the connection callbacks can be installed from
+    /// the onboarding path too (see `lib.rs::install_connection_callbacks`).
+    pub mc_reanchor: Arc<AtomicBool>,
 }
 
 impl AppState {

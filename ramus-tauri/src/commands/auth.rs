@@ -190,6 +190,7 @@ pub async fn find_music_libraries(state: State<'_, AppState>) -> CmdResult<Vec<L
 
 #[tauri::command]
 pub async fn finalize_onboarding(
+    app: AppHandle,
     state: State<'_, AppState>,
     machine_identifier: String,
     library_key: String,
@@ -296,25 +297,18 @@ pub async fn finalize_onboarding(
         *state.genre_mapper.write() = Some(mapper);
     }
 
-    // Connection monitor with player failover callback.
+    // Connection monitor with the full failover/recovery callback set.
+    //
+    // This is the ONLY path that installs them on a fresh install — `setup()`
+    // registers them from its session-restore branch, which needs a stored
+    // server config and so doesn't run until the next app launch. Share the
+    // registration rather than keeping a second copy here: the local copy
+    // this replaced had drifted into a stripped-down subset, leaving the
+    // whole first session without the client repoint, the scrobble flush,
+    // the reachability flips, or the recovered edge.
     let allow_http = !state.settings.read().refuse_http;
     state.connection_monitor.set_allow_http(allow_http);
-    let monitor_player = state.player.clone();
-    let monitor_prefetch = state.prefetch_handle.clone();
-    state
-        .connection_monitor
-        .set_on_connection_changed(std::sync::Arc::new(
-            move |url, token, is_local, _is_http| {
-                let is_remote = !is_local;
-                monitor_player.update_server_connection(url, token, is_remote);
-                monitor_player.rewrite_stale_playlist_urls();
-                monitor_prefetch.notify_skip();
-                log::info!(
-                    "monitor: updated player connection (is_remote={})",
-                    is_remote
-                );
-            },
-        ));
+    crate::install_connection_callbacks(&app, &state);
     state
         .connection_monitor
         .start(PlexServer::from(&config), server_url, auth_token);

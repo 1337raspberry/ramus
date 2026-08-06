@@ -138,6 +138,158 @@ fn set_recovery_grace(
     }
 }
 
+/// Install the `ConnectionMonitor`'s three callbacks.
+///
+/// Must be called from **every** path that starts the monitor. There are two:
+/// the session-restore branch in `setup()` (which only runs when a server
+/// config is already stored) and `finalize_onboarding` (the only one that
+/// runs on a fresh install). Registering these separately let the onboarding
+/// path drift into a stripped-down copy, so a fresh install spent its entire
+/// first session — until the next app launch — without the client repoint,
+/// the scrobble flush, the reachability flips, or the recovered edge. Keep
+/// them here, together, so a new recovery mechanism can't reach one path and
+/// miss the other.
+pub(crate) fn install_connection_callbacks(app: &AppHandle, state: &crate::state::AppState) {
+    let monitor_player = state.player.clone();
+    let monitor_client = state.client.clone();
+    let monitor_reporter = state.session_reporter.clone();
+    let monitor_reachable = state.server_reachable.clone();
+    let monitor_app = app.clone();
+    let monitor_settings_for_changed = state.settings.clone();
+    let monitor_prefetch = state.prefetch_handle.clone();
+    let monitor_mc = state.media_controls.clone();
+    let monitor_reanchor = state.mc_reanchor.clone();
+    let monitor_grace = state.recovery_grace.clone();
+    state.connection_monitor.set_on_connection_changed(std::sync::Arc::new(
+        move |url, token, is_local, _is_http| {
+            let is_remote = !is_local;
+            // Repoint the shared API client too — timeline reports,
+            // scrobbles, art and sync all ride it, and it otherwise keeps
+            // addressing the dead connection until the next full startup
+            // probe.
+            monitor_client.set_server_url(Some(url.clone()));
+            monitor_client.set_token(Some(token.clone()));
+            monitor_player.update_server_connection(url, token, is_remote);
+            // A different connection is a different set of bandwidth
+            // conditions — drop the adaptive step before the resweep so
+            // entries rebuild under the user's configured policy and the
+            // new link gets measured on its own merits.
+            monitor_player.clear_bandwidth_degrade();
+            monitor_player.rewrite_stale_playlist_urls();
+            // rewrite_stale_playlist_urls skips the current entry to avoid
+            // disrupting playback, but an in-flight transcode session
+            // pointing at the dead upstream stays loaded — mpv hangs for the
+            // full `network-timeout=15` before file-ended retry kicks in.
+            // This forces a fresh load of the current track too. Cached and
+            // stopped paths no-op internally.
+            //
+            // Everything below is gated on a live track actually being
+            // reloaded: a stopped/cached track or a coalesced-away reload
+            // (return false) must not freeze the OS scrubber (which would
+            // resurrect a ghost "paused" card after the queue ended on
+            // desktop souvlaki), leave a stale re-anchor armed, or arm a
+            // stale scanner. The reload has already stamped the resume point
+            // into the player position, so reading position() after the call
+            // still freezes at the right value.
+            if monitor_player.force_reload_current_track() {
+                // Freeze the OS now-playing scrubber: the reload stops and
+                // restarts the track, but nothing else reports that, so the
+                // system would keep extrapolating position forward as if
+                // still playing. `on_position_change` re-anchors it once
+                // audio resumes (via the `mc_reanchor` flag).
+                if let Some(ref mc) = *monitor_mc.lock() {
+                    mc.update_playback_state(false, monitor_player.position());
+                }
+                monitor_reanchor.store(true, std::sync::atomic::Ordering::Release);
+                // Reconnecting — drive the scanning indicator until audio
+                // flows again (a position tick clears it frontend-side).
+                emit_playback_buffering(&monitor_app, true);
+                // Hold the process awake through the reload gap (iOS
+                // background-task assertion; no-op elsewhere).
+                set_recovery_grace(&monitor_app, &monitor_grace, true);
+            }
+            monitor_prefetch.notify_skip();
+            // The server is reachable again on a fresh address — retry any
+            // scrobbles the outage stranded.
+            monitor_reporter.flush_failed_scrobbles();
+            monitor_reachable.store(true, std::sync::atomic::Ordering::Release);
+            let offline_manual = monitor_settings_for_changed.read().offline_mode;
+            crate::events::emit_connection_status(
+                &monitor_app,
+                crate::events::ConnectionStatusPayload {
+                    online: true,
+                    offline_mode_manual: offline_manual,
+                    effective_offline: offline_manual,
+                },
+            );
+            log::info!("monitor: updated player connection (is_remote={is_remote})");
+        },
+    ));
+
+    // Flip reachable=false when all connections fail.
+    let lost_reachable = state.server_reachable.clone();
+    let lost_app = app.clone();
+    let lost_settings = state.settings.clone();
+    state.connection_monitor.set_on_connection_lost(std::sync::Arc::new(move || {
+        lost_reachable.store(false, std::sync::atomic::Ordering::Release);
+        let offline_manual = lost_settings.read().offline_mode;
+        crate::events::emit_connection_status(
+            &lost_app,
+            crate::events::ConnectionStatusPayload {
+                online: false,
+                offline_mode_manual: offline_manual,
+                effective_offline: true,
+            },
+        );
+        log::info!("monitor: connection lost");
+    }));
+
+    // Same-URI recovery: the active connection verifies healthy again after
+    // a Lost verdict. A remote/cloud server's URI is identical before and
+    // after an outage, so on_connection_changed can never announce this —
+    // without the edge, reachability stays latched false and held playback
+    // waits for a manual tap. Mirrors the changed handler minus the
+    // URL/playlist swap (nothing went stale; playback just needs a kick).
+    let rec_player = state.player.clone();
+    let rec_reporter = state.session_reporter.clone();
+    let rec_reachable = state.server_reachable.clone();
+    let rec_app = app.clone();
+    let rec_settings = state.settings.clone();
+    let rec_prefetch = state.prefetch_handle.clone();
+    let rec_grace = state.recovery_grace.clone();
+    state.connection_monitor.set_on_connection_recovered(std::sync::Arc::new(move || {
+        // Resume whatever the outage interrupted. No-op when nothing is
+        // held/stalled or the user paused during the outage. The reload
+        // stamps the resume point; the now-playing keeper re-anchors the OS
+        // scrubber once position ticks flow again.
+        if rec_player.recover_interrupted_playback() {
+            emit_playback_buffering(&rec_app, true);
+            // Keep the process awake until audio flows (first position tick
+            // releases it).
+            set_recovery_grace(&rec_app, &rec_grace, true);
+        }
+        // The outage invalidates whatever the adaptive layer measured
+        // beforehand; let the restored link earn its own verdict.
+        rec_player.clear_bandwidth_degrade();
+        // Fresh prefetch cycle: re-checks targets and clears the per-cycle
+        // failure set.
+        rec_prefetch.notify_skip();
+        // Back online — retry any scrobbles the outage stranded.
+        rec_reporter.flush_failed_scrobbles();
+        rec_reachable.store(true, std::sync::atomic::Ordering::Release);
+        let offline_manual = rec_settings.read().offline_mode;
+        crate::events::emit_connection_status(
+            &rec_app,
+            crate::events::ConnectionStatusPayload {
+                online: true,
+                offline_mode_manual: offline_manual,
+                effective_offline: offline_manual,
+            },
+        );
+        log::info!("monitor: connection recovered");
+    }));
+}
+
 pub fn create_mpv_player(
     app_handle: AppHandle,
     prefetch_handle_ref: PrefetchHandleRef,
@@ -900,6 +1052,7 @@ pub fn run() {
                 // from the connection monitor.
                 server_reachable: Arc::new(std::sync::atomic::AtomicBool::new(true)),
                 recovery_grace: recovery_grace.clone(),
+                mc_reanchor: mc_reanchor.clone(),
             };
 
             // Restore previous session. State is set synchronously (no blocking
@@ -1007,168 +1160,7 @@ pub fn run() {
                                 connection_monitor.set_allow_http(allow_http);
                                 let bg_auth_token = auth_token.clone();
 
-                                // Update player when monitor switches connections.
-                                let monitor_player = state.player.clone();
-                                let monitor_client = state.client.clone();
-                                let monitor_reporter = state.session_reporter.clone();
-                                let monitor_reachable = state.server_reachable.clone();
-                                let monitor_app = app_handle.clone();
-                                let monitor_settings_for_changed = state.settings.clone();
-                                let monitor_prefetch = state.prefetch_handle.clone();
-                                let monitor_mc = state.media_controls.clone();
-                                let monitor_reanchor = mc_reanchor.clone();
-                                let monitor_grace = state.recovery_grace.clone();
-                                connection_monitor.set_on_connection_changed(
-                                    std::sync::Arc::new(move |url, token, is_local, _is_http| {
-                                        let is_remote = !is_local;
-                                        // Repoint the shared API client too — timeline
-                                        // reports, scrobbles, art and sync all ride it,
-                                        // and it otherwise keeps addressing the dead
-                                        // connection until the next full startup probe.
-                                        monitor_client.set_server_url(Some(url.clone()));
-                                        monitor_client.set_token(Some(token.clone()));
-                                        monitor_player.update_server_connection(url, token, is_remote);
-                                        // A different connection is a different set of
-                                        // bandwidth conditions — drop the adaptive step
-                                        // before the resweep so entries rebuild under the
-                                        // user's configured policy and the new link gets
-                                        // measured on its own merits.
-                                        monitor_player.clear_bandwidth_degrade();
-                                        monitor_player.rewrite_stale_playlist_urls();
-                                        // rewrite_stale_playlist_urls skips the current entry to avoid
-                                        // disrupting playback, but an in-flight transcode session
-                                        // pointing at the dead upstream stays loaded — mpv hangs for
-                                        // the full `network-timeout=15` before file-ended retry kicks
-                                        // in. This forces a fresh load of the current track too.
-                                        // Cached and stopped paths no-op internally.
-                                        //
-                                        // Everything below is gated on a live track actually being
-                                        // reloaded: a stopped/cached track or a coalesced-away reload
-                                        // (return false) must not freeze the OS scrubber (which would
-                                        // resurrect a ghost "paused" card after the queue ended on
-                                        // desktop souvlaki), leave a stale re-anchor armed, or arm a
-                                        // stale scanner. The reload has already stamped the resume
-                                        // point into the player position, so reading position() after
-                                        // the call still freezes at the right value.
-                                        if monitor_player.force_reload_current_track() {
-                                            // Freeze the OS now-playing scrubber: the reload stops
-                                            // and restarts the track, but nothing else reports that,
-                                            // so the system would keep extrapolating position forward
-                                            // as if still playing. `on_position_change` re-anchors it
-                                            // once audio resumes (via the `mc_reanchor` flag).
-                                            if let Some(ref mc) = *monitor_mc.lock() {
-                                                mc.update_playback_state(
-                                                    false,
-                                                    monitor_player.position(),
-                                                );
-                                            }
-                                            monitor_reanchor
-                                                .store(true, std::sync::atomic::Ordering::Release);
-                                            // Reconnecting — drive the scanning indicator until audio
-                                            // flows again (a position tick clears it frontend-side).
-                                            emit_playback_buffering(&monitor_app, true);
-                                            // Hold the process awake through the reload gap (iOS
-                                            // background-task assertion; no-op elsewhere).
-                                            set_recovery_grace(&monitor_app, &monitor_grace, true);
-                                        }
-                                        monitor_prefetch.notify_skip();
-                                        // The server is reachable again on a fresh
-                                        // address — retry any scrobbles the outage
-                                        // stranded.
-                                        monitor_reporter.flush_failed_scrobbles();
-                                        monitor_reachable
-                                            .store(true, std::sync::atomic::Ordering::Release);
-                                        let offline_manual =
-                                            monitor_settings_for_changed.read().offline_mode;
-                                        crate::events::emit_connection_status(
-                                            &monitor_app,
-                                            crate::events::ConnectionStatusPayload {
-                                                online: true,
-                                                offline_mode_manual: offline_manual,
-                                                effective_offline: offline_manual,
-                                            },
-                                        );
-                                        log::info!(
-                                            "monitor: updated player connection (is_remote={})",
-                                            is_remote,
-                                        );
-                                    }),
-                                );
-
-                                // Flip reachable=false when all connections fail.
-                                let lost_reachable = state.server_reachable.clone();
-                                let lost_app = app_handle.clone();
-                                let lost_settings = state.settings.clone();
-                                connection_monitor.set_on_connection_lost(std::sync::Arc::new(
-                                    move || {
-                                        lost_reachable
-                                            .store(false, std::sync::atomic::Ordering::Release);
-                                        let offline_manual = lost_settings.read().offline_mode;
-                                        crate::events::emit_connection_status(
-                                            &lost_app,
-                                            crate::events::ConnectionStatusPayload {
-                                                online: false,
-                                                offline_mode_manual: offline_manual,
-                                                effective_offline: true,
-                                            },
-                                        );
-                                        log::info!("monitor: connection lost");
-                                    },
-                                ));
-
-                                // Same-URI recovery: the active connection verifies
-                                // healthy again after a Lost verdict. A remote/cloud
-                                // server's URI is identical before and after an outage,
-                                // so on_connection_changed can never announce this —
-                                // without the edge, reachability stays latched false
-                                // and held playback waits for a manual tap. Mirrors the
-                                // changed handler minus the URL/playlist swap (nothing
-                                // went stale; playback just needs a kick).
-                                let rec_player = state.player.clone();
-                                let rec_reporter = state.session_reporter.clone();
-                                let rec_reachable = state.server_reachable.clone();
-                                let rec_app = app_handle.clone();
-                                let rec_settings = state.settings.clone();
-                                let rec_prefetch = state.prefetch_handle.clone();
-                                let rec_grace = state.recovery_grace.clone();
-                                connection_monitor.set_on_connection_recovered(
-                                    std::sync::Arc::new(move || {
-                                        // Resume whatever the outage interrupted. No-op
-                                        // when nothing is held/stalled or the user paused
-                                        // during the outage. The reload stamps the resume
-                                        // point; the now-playing keeper re-anchors the OS
-                                        // scrubber once position ticks flow again.
-                                        if rec_player.recover_interrupted_playback() {
-                                            emit_playback_buffering(&rec_app, true);
-                                            // Keep the process awake until audio flows
-                                            // (first position tick releases it).
-                                            set_recovery_grace(&rec_app, &rec_grace, true);
-                                        }
-                                        // The outage invalidates whatever the adaptive
-                                        // layer measured beforehand; let the restored
-                                        // link earn its own verdict.
-                                        rec_player.clear_bandwidth_degrade();
-                                        // Fresh prefetch cycle: re-checks targets and
-                                        // clears the per-cycle failure set.
-                                        rec_prefetch.notify_skip();
-                                        // Back online — retry any scrobbles the outage
-                                        // stranded.
-                                        rec_reporter.flush_failed_scrobbles();
-                                        rec_reachable
-                                            .store(true, std::sync::atomic::Ordering::Release);
-                                        let offline_manual = rec_settings.read().offline_mode;
-                                        crate::events::emit_connection_status(
-                                            &rec_app,
-                                            crate::events::ConnectionStatusPayload {
-                                                online: true,
-                                                offline_mode_manual: offline_manual,
-                                                effective_offline: offline_manual,
-                                            },
-                                        );
-                                        log::info!("monitor: connection recovered");
-                                    }),
-                                );
-
+                                install_connection_callbacks(&app_handle, &state);
                                 connection_monitor.start(
                                     plex_server.clone(),
                                     url_str.clone(),
