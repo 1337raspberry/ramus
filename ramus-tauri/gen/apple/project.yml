@@ -25,9 +25,17 @@ packages:
     from: 0.41.0
 settingGroups:
   app:
+    # Substituted by xcodegen at generate-time from the environment.
+    # scripts/ios-flavor.sh sets these (defaulting to the shipping
+    # values) so a stable and a dev build can be installed side by side
+    # on one device. Always regenerate through
+    # scripts/regen-ios-project.sh, which sources the flavour defaults
+    # and then verifies the substitution actually happened — an unset
+    # variable leaves the literal ${...} behind, which Xcode expands as
+    # an empty build setting rather than failing.
     base:
-      PRODUCT_NAME: ramus
-      PRODUCT_BUNDLE_IDENTIFIER: com.ramus.app
+      PRODUCT_NAME: ${RAMUS_PRODUCT_NAME}
+      PRODUCT_BUNDLE_IDENTIFIER: ${RAMUS_BUNDLE_ID}
 targetTemplates:
   app:
     type: application
@@ -89,6 +97,10 @@ targets:
         RUST_LOG: info
     settings:
       base:
+        # Picks which .appiconset in Assets.xcassets ships in the
+        # bundle. Set explicitly because the catalog now holds two, and
+        # xcodegen's own inference only makes sense when there is one.
+        ASSETCATALOG_COMPILER_APPICON_NAME: ${RAMUS_APPICON}
         ENABLE_BITCODE: false
         ARCHS: [arm64]
         VALID_ARCHS: arm64
