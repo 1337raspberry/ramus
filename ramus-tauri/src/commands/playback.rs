@@ -73,32 +73,93 @@ pub async fn play_tracks(
     // coalesces (only starts a new cycle when idle).
     state.prefetch_handle.notify_natural_advance();
 
+    crate::queue_persist::save_soon(&app);
+
     Ok(())
 }
 
+/// Open the Plex session and push OS metadata for a queue that has just been
+/// materialised from a restored snapshot.
+///
+/// A materialisation reaches `load_queue_at` directly, bypassing
+/// `play_tracks`, so this is the only thing that tells Plex (and the lock
+/// screen) that playback started. The playlist-pos callback can't: it reports
+/// from the player's transition snapshot, which a fresh queue load clears.
+///
+/// No-op unless a materialisation actually ran, so every transport command
+/// below can call it unconditionally.
+fn report_if_materialised(app: &AppHandle, state: &AppState) {
+    if !state.player.take_just_materialized() {
+        return;
+    }
+    let ps = state.player.state();
+    let Some(ref track) = ps.current_track else {
+        return;
+    };
+    let playing = ps.status == ramus_core::models::PlaybackStatus::Playing;
+
+    state
+        .session_reporter
+        .track_started(track, &state.player.play_session_id());
+
+    if let Some(ref mc) = *state.media_controls.lock() {
+        // Restore deliberately leaves the OS widget empty, so this is the
+        // first metadata the platform sees for this track.
+        let meta = MediaMetadata::from_track(track, 0.0, track.duration, playing);
+        mc.update_metadata(&meta);
+    }
+
+    emit_playback_state(
+        app,
+        PlaybackStatePayload {
+            status: format!("{:?}", ps.status).to_lowercase(),
+            current_track: ps.current_track.clone(),
+            queue_index: ps.queue_index,
+        },
+    );
+
+    // The restored queue's lookahead window is new to the worker — it has
+    // been idle since launch.
+    state.prefetch_handle.notify_natural_advance();
+}
+
 #[tauri::command]
-pub async fn toggle_play_pause(state: State<'_, AppState>) -> CmdResult<()> {
+pub async fn toggle_play_pause(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     state.player.toggle_play_pause();
+    report_if_materialised(&app, &state);
     Ok(())
 }
 
+// The queue-moving and queue-editing commands below all take an `AppHandle`
+// solely to persist the resulting queue. Tauri injects it, so the JS invokes
+// are unchanged. They save explicitly rather than relying on the mpv
+// playlist-pos callback: materialising a restored queue at index 0 issues no
+// `playlist_play_index`, so no pos-change event follows.
+
 #[tauri::command]
-pub async fn next_track(state: State<'_, AppState>) -> CmdResult<()> {
+pub async fn next_track(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     state.prefetch_handle.notify_skip();
     state.player.next();
+    report_if_materialised(&app, &state);
+    crate::queue_persist::save_soon(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn previous_track(state: State<'_, AppState>) -> CmdResult<()> {
+pub async fn previous_track(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     state.prefetch_handle.notify_skip();
     state.player.previous();
+    report_if_materialised(&app, &state);
+    crate::queue_persist::save_soon(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn seek(state: State<'_, AppState>, position: f64) -> CmdResult<()> {
+pub async fn seek(app: AppHandle, state: State<'_, AppState>, position: f64) -> CmdResult<()> {
     state.player.seek(position);
+    // Scrubbing a restored track materialises it — that is the play intent,
+    // so the session opens here rather than on a later transport command.
+    report_if_materialised(&app, &state);
     state.session_reporter.playback_seeked(position);
     // Report new position to OS media controls so the scrubber jumps.
     if let Some(ref mc) = *state.media_controls.lock() {
@@ -120,33 +181,116 @@ pub async fn get_volume(state: State<'_, AppState>) -> CmdResult<f64> {
 }
 
 #[tauri::command]
-pub async fn append_to_queue(state: State<'_, AppState>, tracks: Vec<Track>) -> CmdResult<()> {
+pub async fn append_to_queue(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tracks: Vec<Track>,
+) -> CmdResult<()> {
     state.player.append_to_queue(tracks);
+    crate::queue_persist::save_soon(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn insert_next(state: State<'_, AppState>, tracks: Vec<Track>) -> CmdResult<()> {
+pub async fn insert_next(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tracks: Vec<Track>,
+) -> CmdResult<()> {
     state.player.insert_next(tracks);
+    crate::queue_persist::save_soon(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn remove_from_queue(state: State<'_, AppState>, index: usize) -> CmdResult<()> {
+pub async fn remove_from_queue(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    index: usize,
+) -> CmdResult<()> {
     state.player.remove_from_queue(index);
+    crate::queue_persist::save_soon(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn jump_to_queue_index(state: State<'_, AppState>, index: usize) -> CmdResult<()> {
+pub async fn jump_to_queue_index(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    index: usize,
+) -> CmdResult<()> {
     state.prefetch_handle.notify_skip();
     state.player.jump_to_index(index);
+    report_if_materialised(&app, &state);
+    crate::queue_persist::save_soon(&app);
+    Ok(())
+}
+
+/// Write the queue snapshot to disk immediately.
+///
+/// The frontend calls this when a mobile webview backgrounds: the process may
+/// be suspended moments later, freezing the periodic writer mid-interval.
+#[tauri::command]
+pub async fn flush_queue_state(app: AppHandle) -> CmdResult<()> {
+    crate::queue_persist::save_blocking(&app);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn get_queue(state: State<'_, AppState>) -> CmdResult<Vec<Track>> {
     Ok(state.player.state().queue)
+}
+
+/// Stop playback and empty the queue.
+///
+/// Deliberately self-sufficient rather than leaning on the mpv idle callback
+/// for the stopped teardown. Two reasons:
+///
+/// 1. `AudioPlayer::stop` clears `current_track` and the pending-transition
+///    snapshot before mpv goes idle, so by the time the idle handler runs it
+///    has nothing left to close the outgoing Plex session with — the final
+///    track's stopped-at-position report and any boundary scrobble would be
+///    lost. Close it out here first, while the player still holds its
+///    pre-stop state.
+/// 2. Android suppresses `mpvIdleActive` while the player carries an error,
+///    so clearing a queue whose current track failed to load would never
+///    reach the teardown at all.
+///
+/// The idle callback still runs on the platforms that emit it; everything it
+/// repeats (stopped report with no track, controls clear, prefetch cancel) is
+/// idempotent.
+#[tauri::command]
+pub async fn clear_queue(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    let prev = state.player.state().current_track.clone();
+    if let Some(ref prev) = prev {
+        let pos = state.player.position();
+        let dur = state.player.duration();
+        let sid = state.player.play_session_id();
+        state
+            .session_reporter
+            .track_transition(prev, pos, dur, None, &sid);
+    } else {
+        state.session_reporter.playback_stopped();
+    }
+
+    state.prefetch_handle.notify_cancel();
+    state.player.stop();
+    crate::queue_persist::forget();
+
+    if let Some(ref mc) = *state.media_controls.lock() {
+        mc.clear();
+    }
+
+    emit_playback_state(
+        &app,
+        PlaybackStatePayload {
+            status: "stopped".to_string(),
+            current_track: None,
+            queue_index: 0,
+        },
+    );
+
+    Ok(())
 }
 
 #[tauri::command]

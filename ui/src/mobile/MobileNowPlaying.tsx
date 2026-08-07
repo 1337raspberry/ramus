@@ -108,6 +108,7 @@ export default function MobileNowPlaying({
   const queueIndex = usePlaybackStore((s) => s.queueIndex);
   const jumpToIndex = usePlaybackStore((s) => s.jumpToIndex);
   const removeQueueItem = usePlaybackStore((s) => s.removeQueueItem);
+  const clearQueue = usePlaybackStore((s) => s.clearQueue);
 
   const {
     track,
@@ -808,6 +809,9 @@ export default function MobileNowPlaying({
                 <button onClick={() => runMenuAction(() => setShowEQ(true))}>Adjust EQ</button>
                 <button onClick={() => runMenuAction(() => setShowDebug(true))}>
                   Network Stats for Nerds
+                </button>
+                <button className="destructive" onClick={() => runMenuAction(clearQueue)}>
+                  Clear Queue
                 </button>
               </div>
               <button className="mobile-action-sheet-cancel" onClick={() => setShowMenu(false)}>

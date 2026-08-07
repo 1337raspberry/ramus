@@ -333,6 +333,8 @@ pub async fn is_authenticated(state: State<'_, AppState>) -> CmdResult<bool> {
 #[tauri::command]
 pub async fn logout(state: State<'_, AppState>) -> CmdResult<()> {
     state.player.stop();
+    // One account's queue must never surface under the next sign-in.
+    crate::queue_persist::forget();
     state.connection_monitor.stop();
     state.client.set_token(None);
     state.client.set_server_url(None);

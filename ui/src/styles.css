@@ -2264,11 +2264,39 @@ textarea {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
+  margin-right: 6px;
 }
 
+/* Absorbs the header's free space so the title and count stay paired on the
+   left while the clear button holds the right edge. */
 .queue-count {
   font-size: 10px;
   color: var(--text-muted);
+  margin-right: auto;
+}
+
+.queue-clear {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.queue-clear:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.queue-clear:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .queue-empty {
@@ -7049,6 +7077,11 @@ body.is-fullscreen .focus-body {
   cursor: pointer;
   text-align: center;
   position: relative;
+}
+/* Destructive rows read as a warning without leaving the sheet's flat
+   iOS-style chassis — colour only, no separate treatment. */
+.mobile-action-sheet-group button.destructive {
+  color: #ff6b6b;
 }
 .mobile-action-sheet-group button + button::before,
 .mobile-action-sheet-header + button::before {

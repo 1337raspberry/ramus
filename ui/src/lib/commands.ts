@@ -232,6 +232,10 @@ export const jumpToQueueIndex = (index: number) => invoke<void>("jump_to_queue_i
 
 export const getQueue = () => invoke<Track[]>("get_queue");
 
+export const clearQueue = () => invoke<void>("clear_queue");
+
+export const flushQueueState = () => invoke<void>("flush_queue_state");
+
 export const applyEqualizer = (enabled: boolean, bands: number[]) =>
   invoke<void>("apply_equalizer", { enabled, bands });
 

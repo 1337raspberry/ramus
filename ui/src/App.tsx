@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { foregroundResync, isAuthenticated } from "./lib/commands";
+import { flushQueueState, foregroundResync, isAuthenticated } from "./lib/commands";
 import { clearGenreMetadataCache } from "./lib/genreMetadataCache";
 import type { SyncProgress } from "./lib/types";
 import { usePlaybackEvents } from "./lib/usePlaybackEvents";
@@ -112,7 +112,9 @@ export default function App() {
     usePlaybackQualityStore.getState().ensureListener();
   }, [authed]);
 
-  usePlaybackEvents();
+  // Owns the initial playback-snapshot pull too — it has to wait until the
+  // event listeners are actually subscribed, which only the hook knows.
+  usePlaybackEvents(authed === true);
   useWindowTitle();
 
   // Foreground resync: when the OS resumes the app (phone unlock, app
@@ -127,7 +129,13 @@ export default function App() {
     if (authed !== true) return;
     let lastResync = 0;
     const onVisibility = () => {
-      if (document.visibilityState !== "visible") return;
+      if (document.visibilityState !== "visible") {
+        // Backgrounding is the last moment we're reliably scheduled — a
+        // suspended process freezes the periodic queue writer mid-interval,
+        // so flush the playing position now rather than lose it.
+        flushQueueState().catch(() => {});
+        return;
+      }
       const now = Date.now();
       if (now - lastResync < 3000) return;
       lastResync = now;

@@ -66,6 +66,13 @@ export default function MobileApp({ onOpenSettings }: Props) {
     }
   }, [sheetExpanded]);
 
+  // Losing the current track (queue cleared, or a stop) unmounts the sheet
+  // without collapsing it. Reset here or the next track to play would mount
+  // it already expanded, over whatever view the user was on.
+  useEffect(() => {
+    if (!hasTrack) setSheetExpanded(false);
+  }, [hasTrack]);
+
   // Expanding the player sheet dismisses an active search. The search
   // bar is a NATIVE UISearchBar layered above the webview on iOS, so the
   // sheet cannot cover it — it must be torn down. Clearing searchQuery

@@ -222,6 +222,9 @@ export interface Settings {
   /** Background colour styling: art-derived, brand default everywhere,
    *  or pure-black backdrop (accent still follows the artwork). */
   backgroundStyle: BackgroundStyle;
+  /** Restore the previous session's queue at launch, paused where it left
+   *  off. Turning it off deletes the saved snapshot immediately. */
+  resumeQueueOnLaunch: boolean;
 }
 
 export type BackgroundStyle = "dynamic" | "defaultColours" | "oledVoid";

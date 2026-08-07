@@ -2421,3 +2421,559 @@ fn test_transcode_resume_failure_holds_at_position() {
         "re-attempt must resume at position, got {url}"
     );
 }
+
+// --- Restored-queue materialisation -------------------------------------
+//
+// A queue restored from disk is real state (it drives the UI) with an empty
+// mpv playlist behind it. That split is the one invariant these tests exist
+// to pin: nothing may command mpv about the queue until a genuine play
+// intent materialises it, and every transport path must materialise onto the
+// track the user actually asked for.
+
+/// Restore a three-track queue sitting 90s into track "2".
+fn restored_player() -> (AudioPlayer, Arc<MockMpv>) {
+    let (player, mpv) = make_player();
+    let tracks = vec![
+        make_test_track("1"),
+        make_test_track("2"),
+        make_test_track("3"),
+    ];
+    player.restore_queue(tracks, 1, 90.0);
+    (player, mpv)
+}
+
+#[test]
+fn test_restore_queue_issues_no_mpv_commands() {
+    let (player, mpv) = restored_player();
+
+    assert_eq!(
+        mpv.call_count(),
+        0,
+        "restoring must not touch mpv — a launch costs no network"
+    );
+
+    let state = player.state();
+    assert_eq!(state.queue.len(), 3);
+    assert_eq!(state.queue_index, 1);
+    assert_eq!(state.current_track.as_ref().unwrap().rating_key, "2");
+    // Paused, not Stopped: the UI should read "paused at 1:30", and
+    // `user_paused` keeps every automatic recovery path away from it.
+    assert_eq!(state.status, PlaybackStatus::Paused);
+    assert!((player.position() - 90.0).abs() < 0.01);
+    assert_eq!(player.duration(), 180.0);
+}
+
+#[test]
+fn test_restore_queue_declines_when_a_queue_is_already_loaded() {
+    let (player, _) = make_player();
+    player.load_queue(vec![make_test_track("live")], 0);
+
+    player.restore_queue(vec![make_test_track("stale")], 0, 30.0);
+
+    assert_eq!(
+        player.state().current_track.as_ref().unwrap().rating_key,
+        "live",
+        "a restore must never displace live playback"
+    );
+}
+
+#[test]
+fn test_restore_queue_clamps_a_position_past_the_end() {
+    let (player, _) = make_player();
+    player.restore_queue(vec![make_test_track("1")], 0, 9_999.0);
+    assert!(
+        player.position() <= 180.0,
+        "restored position must clamp to the track, got {}",
+        player.position()
+    );
+}
+
+#[test]
+fn test_restored_queue_is_not_a_recovery_candidate() {
+    let (player, mpv) = restored_player();
+
+    // `user_paused` is what buys this: the stall watchdog, the
+    // connection-recovered edge and foreground resync all funnel through
+    // these two, and none may start audio nobody asked for.
+    assert!(!player.needs_connection_recovery());
+    assert!(!player.recover_interrupted_playback());
+    assert_eq!(mpv.call_count(), 0);
+}
+
+#[test]
+fn test_first_play_materialises_at_the_restored_position() {
+    let (player, mpv) = restored_player();
+
+    player.resume();
+
+    // Whole queue pushed into mpv: Replace for the first entry, Append for
+    // the rest.
+    let loads: Vec<_> = mpv
+        .calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            MockCall::LoadFile { url, mode, options } => Some((url, mode, options)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(loads.len(), 3, "the whole queue must be loaded");
+    assert!(matches!(loads[0].1, LoadMode::Replace));
+    assert!(matches!(loads[1].1, LoadMode::Append));
+
+    // Direct-play resumes via an mpv `start=` on the playing entry only.
+    assert_eq!(
+        loads[1].2.as_deref(),
+        Some("start=90.000"),
+        "the restored entry must resume at its saved position"
+    );
+    assert!(
+        loads[0].2.as_deref().is_none_or(|o| !o.contains("start=")),
+        "the resume must not leak onto other entries"
+    );
+    assert!(
+        loads[2].2.as_deref().is_none_or(|o| !o.contains("start=")),
+        "the resume must not leak onto other entries"
+    );
+
+    // ...and playback actually starts on the restored track.
+    assert!(mpv
+        .calls()
+        .iter()
+        .any(|c| matches!(c, MockCall::PlaylistPlayIndex(1))));
+    assert!(mpv
+        .calls()
+        .iter()
+        .any(|c| matches!(c, MockCall::SetPause(false))));
+
+    let state = player.state();
+    assert_eq!(state.status, PlaybackStatus::Playing);
+    assert_eq!(state.queue_index, 1);
+    assert_eq!(state.current_track.as_ref().unwrap().rating_key, "2");
+}
+
+#[test]
+fn test_materialising_a_transcode_resume_sets_the_position_base() {
+    let (player, mpv) = make_player();
+    player.update_config(PlaybackConfig {
+        playback_mode: PlaybackMode::Always,
+        ..PlaybackConfig::default()
+    });
+    player.restore_queue(vec![make_test_track("1"), make_test_track("2")], 0, 90.0);
+
+    player.resume();
+
+    // A transcode stream is `Accept-Ranges: none`, so the resume is baked
+    // into the URL server-side rather than sought by mpv.
+    let url = mpv
+        .calls()
+        .into_iter()
+        .find_map(|c| match c {
+            MockCall::LoadFile { url, mode: LoadMode::Replace, .. } => Some(url),
+            _ => None,
+        })
+        .expect("expected a Replace load for the restored entry");
+    assert!(
+        url.contains("offset=90"),
+        "transcode resume must carry a server-side offset, got {url}"
+    );
+
+    // mpv sees a fresh 0-based stream, so `position_base` remaps its ticks
+    // back onto the track timeline.
+    player.handle_position_change(5.0);
+    assert!(
+        (player.position() - 95.0).abs() < 0.5,
+        "expected ~95s on the track timeline, got {}",
+        player.position()
+    );
+}
+
+#[test]
+fn test_materialising_a_resume_carries_no_stream_record() {
+    let (player, mpv) = make_player();
+    player.set_stream_record_dir(PathBuf::from("/tmp/ramus-test-record"));
+    player.restore_queue(vec![make_test_track("1"), make_test_track("2")], 0, 90.0);
+
+    player.resume();
+
+    let loads: Vec<_> = mpv
+        .calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            MockCall::LoadFile { mode, options, .. } => Some((mode, options)),
+            _ => None,
+        })
+        .collect();
+    // The resumed entry would record from partway through the source, and
+    // the analyser would render a spectrum offset from the audio.
+    assert!(
+        !loads[0].1.as_deref().unwrap_or("").contains("stream-record"),
+        "a resumed entry must not be captured, got {:?}",
+        loads[0].1
+    );
+    // Entries loading from the top still capture normally.
+    assert!(
+        loads[1].1.as_deref().unwrap_or("").contains("stream-record"),
+        "a from-the-top entry must still capture, got {:?}",
+        loads[1].1
+    );
+}
+
+#[test]
+fn test_next_on_a_restored_queue_materialises_at_the_next_track() {
+    let (player, mpv) = restored_player();
+
+    player.next();
+
+    assert_eq!(player.state().queue_index, 2);
+    assert_eq!(player.state().current_track.as_ref().unwrap().rating_key, "3");
+    // Nothing may resume: the skipped-past track must not get a `start=`,
+    // and no stream should have been opened for it.
+    let options: Vec<_> = mpv
+        .calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            MockCall::LoadFile { options, .. } => options,
+            _ => None,
+        })
+        .collect();
+    assert!(
+        options.iter().all(|o| !o.contains("start=")),
+        "a skip must start the new track from the top, got {options:?}"
+    );
+}
+
+#[test]
+fn test_next_past_the_end_of_a_restored_queue_stops() {
+    let (player, mpv) = make_player();
+    player.restore_queue(vec![make_test_track("1")], 0, 30.0);
+
+    player.next();
+
+    // The materialise target is out of range, so it declines and the normal
+    // stop-at-end branch runs.
+    assert_eq!(player.state().status, PlaybackStatus::Stopped);
+    assert!(player.state().current_track.is_none());
+    assert!(mpv.calls().iter().any(|c| matches!(c, MockCall::Stop)));
+}
+
+#[test]
+fn test_previous_on_a_restored_queue_respects_the_restart_threshold() {
+    // 90s in — past the threshold, so `previous` restarts the current track.
+    let (player, mpv) = restored_player();
+    player.previous();
+    assert_eq!(player.state().queue_index, 1);
+    assert_eq!(player.state().current_track.as_ref().unwrap().rating_key, "2");
+    let options: Vec<_> = mpv
+        .calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            MockCall::LoadFile { options, .. } => options,
+            _ => None,
+        })
+        .collect();
+    assert!(
+        options.iter().all(|o| !o.contains("start=")),
+        "a restart must begin at 0:00, got {options:?}"
+    );
+
+    // Under the threshold it steps back a track instead.
+    let (player, _) = make_player();
+    player.restore_queue(
+        vec![make_test_track("1"), make_test_track("2")],
+        1,
+        1.0,
+    );
+    player.previous();
+    assert_eq!(player.state().queue_index, 0);
+    assert_eq!(player.state().current_track.as_ref().unwrap().rating_key, "1");
+}
+
+#[test]
+fn test_jump_to_index_on_a_restored_queue_materialises_there() {
+    let (player, mpv) = restored_player();
+
+    player.jump_to_index(2);
+
+    assert_eq!(player.state().queue_index, 2);
+    assert_eq!(player.state().current_track.as_ref().unwrap().rating_key, "3");
+    assert_eq!(player.state().status, PlaybackStatus::Playing);
+    assert!(mpv
+        .calls()
+        .iter()
+        .any(|c| matches!(c, MockCall::LoadFile { mode: LoadMode::Replace, .. })));
+}
+
+#[test]
+fn test_seek_on_a_restored_queue_materialises_at_the_target() {
+    let (player, mpv) = restored_player();
+
+    player.seek(120.0);
+
+    let loads: Vec<_> = mpv
+        .calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            MockCall::LoadFile { options, .. } => options,
+            _ => None,
+        })
+        .collect();
+    assert!(
+        loads.iter().any(|o| o.contains("start=120.000")),
+        "scrubbing a restored track must load it at the drag target, got {loads:?}"
+    );
+    // A bare mpv seek against an idle player would have been silent.
+    assert!(
+        !mpv.calls().iter().any(|c| matches!(c, MockCall::Seek(_))),
+        "must load rather than seek an unmaterialised queue"
+    );
+}
+
+#[test]
+fn test_materialising_clears_the_pending_flag() {
+    let (player, mpv) = restored_player();
+
+    player.resume();
+    let after_first = mpv.call_count();
+    assert!(after_first > 0);
+
+    // A second play command is an ordinary unpause against a live playlist,
+    // never another full queue load.
+    mpv.calls.lock().clear();
+    player.pause();
+    player.resume();
+    assert!(
+        !mpv.calls()
+            .iter()
+            .any(|c| matches!(c, MockCall::LoadFile { .. })),
+        "the queue must only materialise once, got {:?}",
+        mpv.calls()
+    );
+}
+
+#[test]
+fn test_appending_to_a_restored_queue_touches_state_only() {
+    let (player, mpv) = restored_player();
+
+    player.append_to_queue(vec![make_test_track("4")]);
+
+    assert_eq!(player.state().queue.len(), 4);
+    assert_eq!(player.state().queue[3].rating_key, "4");
+    // Loading now would place the entry at mpv index 0 while we hold it at
+    // index 3 — a permanent desync between the two playlists.
+    assert_eq!(
+        mpv.call_count(),
+        0,
+        "appending must not load into an empty mpv playlist"
+    );
+
+    // The appended track is part of the queue that materialises later.
+    player.resume();
+    let loads = mpv
+        .calls()
+        .into_iter()
+        .filter(|c| matches!(c, MockCall::LoadFile { .. }))
+        .count();
+    assert_eq!(loads, 4);
+}
+
+#[test]
+fn test_inserting_into_a_restored_queue_touches_state_only() {
+    let (player, mpv) = restored_player();
+
+    player.insert_next(vec![make_test_track("new")]);
+
+    assert_eq!(player.state().queue.len(), 4);
+    assert_eq!(player.state().queue[2].rating_key, "new");
+    assert_eq!(mpv.call_count(), 0);
+}
+
+#[test]
+fn test_removing_from_a_restored_queue_touches_state_only() {
+    let (player, mpv) = restored_player();
+
+    player.remove_from_queue(0);
+
+    assert_eq!(player.state().queue.len(), 2);
+    // The playing track followed the shift.
+    assert_eq!(player.state().queue_index, 0);
+    assert_eq!(player.state().current_track.as_ref().unwrap().rating_key, "2");
+    assert!(
+        !mpv.calls()
+            .iter()
+            .any(|c| matches!(c, MockCall::PlaylistRemove(_))),
+        "there is no mpv playlist to remove from yet"
+    );
+}
+
+#[test]
+fn test_stop_clears_the_pending_materialise() {
+    let (player, mpv) = restored_player();
+
+    player.stop();
+    assert!(player.state().queue.is_empty());
+
+    // Nothing left to materialise: a stray transport command must not try to
+    // load a queue that no longer exists.
+    mpv.calls.lock().clear();
+    player.resume();
+    assert!(
+        !mpv.calls()
+            .iter()
+            .any(|c| matches!(c, MockCall::LoadFile { .. })),
+        "a cleared queue must not materialise"
+    );
+}
+
+#[test]
+fn test_load_queue_at_applies_the_resume_to_the_start_index_only() {
+    let (player, mpv) = make_player();
+
+    player.load_queue_at(
+        vec![
+            make_test_track("1"),
+            make_test_track("2"),
+            make_test_track("3"),
+        ],
+        2,
+        Some(45.0),
+    );
+
+    let options: Vec<Option<String>> = mpv
+        .calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            MockCall::LoadFile { options, .. } => Some(options),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(options.len(), 3);
+    assert_eq!(options[2].as_deref(), Some("start=45.000"));
+    assert!(options[0].as_deref().is_none_or(|o| !o.contains("start=")));
+    assert!(options[1].as_deref().is_none_or(|o| !o.contains("start=")));
+    assert!((player.position() - 45.0).abs() < 0.01);
+}
+
+#[test]
+fn test_materialising_latches_for_session_reporting() {
+    let (player, _) = restored_player();
+
+    // Nothing has materialised yet.
+    assert!(!player.take_just_materialized());
+
+    player.resume();
+    assert!(
+        player.take_just_materialized(),
+        "the platform layer needs this to open the Plex session — a fresh \
+         queue load clears the transition snapshot the pos-change callback \
+         would otherwise report from"
+    );
+    // Consumed, so a second command can't re-report the same start.
+    assert!(!player.take_just_materialized());
+}
+
+#[test]
+fn test_a_declined_materialise_does_not_latch() {
+    let (player, _) = make_player();
+    player.restore_queue(vec![make_test_track("1")], 0, 30.0);
+
+    // Out of range: declines, so nothing started and nothing may be reported.
+    player.jump_to_index(99);
+    assert!(!player.take_just_materialized());
+    assert_eq!(player.state().status, PlaybackStatus::Paused);
+}
+
+#[test]
+fn test_mpv_going_idle_does_not_tear_down_a_restored_queue() {
+    // mpv runs with `idle=yes` and reports idle-active the moment it
+    // initialises at app start, which races the restore. Processing that as
+    // a queue completion wiped `current_track` and flipped the status to
+    // Stopped while leaving the queue populated — so the UI showed no player
+    // at all, and every transport path read Stopped and declined. Observed
+    // on device with a 1141-track restore.
+    let (player, _) = restored_player();
+
+    assert!(
+        !player.handle_idle_active(),
+        "an idle mpv is only a queue completion once mpv has been given the queue"
+    );
+
+    let state = player.state();
+    assert_eq!(state.status, PlaybackStatus::Paused);
+    assert_eq!(state.current_track.as_ref().unwrap().rating_key, "2");
+    assert_eq!(state.queue.len(), 3);
+    assert!((player.position() - 90.0).abs() < 0.01);
+
+    // ...and the queue is still playable afterwards.
+    player.resume();
+    assert_eq!(player.state().status, PlaybackStatus::Playing);
+}
+
+#[test]
+fn test_mpv_going_idle_still_tears_down_a_materialised_queue() {
+    // The guard above must not swallow a real queue completion.
+    let (player, _) = restored_player();
+    player.resume();
+
+    assert!(player.handle_idle_active());
+    assert_eq!(player.state().status, PlaybackStatus::Stopped);
+    assert!(player.state().current_track.is_none());
+}
+
+#[test]
+fn test_an_ordinary_queue_load_does_not_latch() {
+    let (player, _) = make_player();
+
+    // play_tracks reports its own start; a false latch here would double it.
+    player.load_queue(vec![make_test_track("1")], 0);
+    assert!(!player.take_just_materialized());
+}
+
+#[test]
+fn test_mpv_startup_events_do_not_disturb_a_restored_queue() {
+    // mpv initialises with `idle=yes` and `pause=no` and announces both the
+    // moment it starts, which races the restore. Every one of these events is
+    // about a player that has never been given our tracks, so none may be
+    // applied. Observed on device: the `pause=false` report flipped the
+    // restored Paused status to Playing, so the UI showed a playing track
+    // with a frozen seek bar and no audio.
+    let (player, mpv) = restored_player();
+
+    player.handle_pause_change(false);
+    player.handle_position_change(0.0);
+    let _ = player.handle_playlist_pos_change(0);
+    assert!(!player.handle_idle_active());
+
+    let state = player.state();
+    assert_eq!(
+        state.status,
+        PlaybackStatus::Paused,
+        "mpv's startup pause report must not claim the restored queue is playing"
+    );
+    assert_eq!(state.current_track.as_ref().unwrap().rating_key, "2");
+    assert_eq!(state.queue_index, 1);
+    assert!(
+        (player.position() - 90.0).abs() < 0.01,
+        "restored position must survive mpv's startup chatter, got {}",
+        player.position()
+    );
+    assert_eq!(mpv.call_count(), 0);
+
+    // Still materialises correctly afterwards.
+    player.resume();
+    assert_eq!(player.state().status, PlaybackStatus::Playing);
+    assert_eq!(player.state().queue_index, 1);
+}
+
+#[test]
+fn test_pause_reports_are_honoured_once_materialised() {
+    // The guard must not outlive the restore: mpv's pause property is the
+    // authority again the moment it owns the queue.
+    let (player, _) = restored_player();
+    player.resume();
+    assert_eq!(player.state().status, PlaybackStatus::Playing);
+
+    player.handle_pause_change(true);
+    assert_eq!(player.state().status, PlaybackStatus::Paused);
+    player.handle_pause_change(false);
+    assert_eq!(player.state().status, PlaybackStatus::Playing);
+}

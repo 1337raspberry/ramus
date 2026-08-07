@@ -414,6 +414,19 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
                 How many upcoming tracks to download in advance, so the next song is always ready.
               </HelperText>
 
+              <label className="settings-row">
+                <span>Resume queue on launch</span>
+                <input
+                  type="checkbox"
+                  checked={settings.resumeQueueOnLaunch}
+                  onChange={(e) => save({ resumeQueueOnLaunch: e.target.checked })}
+                />
+              </label>
+              <HelperText>
+                Reopen the app on the track you left off on, paused at the same spot. Turning this
+                off forgets the saved queue straight away.
+              </HelperText>
+
               {!isMobile && (
                 <>
                   <label className="settings-row">

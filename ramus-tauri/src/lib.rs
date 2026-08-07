@@ -35,6 +35,7 @@ pub mod mpv_mobile;
 pub mod ios_backup;
 pub mod now_playing_keeper;
 pub mod prefetch;
+pub mod queue_persist;
 pub mod session_reporter;
 pub mod spectrum_analyzer;
 pub mod stall_watchdog;
@@ -452,6 +453,11 @@ pub fn create_mpv_player(
                         queue_index: state.queue_index,
                     },
                 );
+
+                // A real advance moved the queue pointer — record it now so a
+                // restart resumes on this track rather than the previous one.
+                // The periodic writer only tracks position.
+                crate::queue_persist::save_soon(&app3);
 
                 // Push metadata to lock screen immediately. With gapless
                 // prefetch, on_duration_change may have already fired (for
@@ -1136,6 +1142,28 @@ pub fn run() {
                                     }
                                 }
 
+                                // Adopt the previous session's queue. Placed
+                                // after `rehydrate_persistent_downloads` so a
+                                // downloaded track materialises straight to
+                                // its `file://` copy instead of re-fetching.
+                                // Nothing is sent to mpv here — see
+                                // `AudioPlayer::restore_queue`.
+                                //
+                                // Only this branch needs it: a fresh install
+                                // reaches `finalize_onboarding` with no stored
+                                // queue to restore.
+                                if settings.resume_queue_on_launch {
+                                    if let Some(q) = ramus_core::playback::queue_store::load() {
+                                        log::info!(
+                                            "restoring queue: {} tracks, index {}, position {:.1}s",
+                                            q.tracks.len(),
+                                            q.index,
+                                            q.position
+                                        );
+                                        player.restore_queue(q.tracks, q.index, q.position);
+                                    }
+                                }
+
                                 // Load genre mapper; prefer custom genres if configured.
                                 let custom_mapper = (settings.genre_source == ramus_core::models::GenreSource::Custom)
                                     .then(ramus_core::settings::load_custom_genres)
@@ -1528,6 +1556,12 @@ pub fn run() {
             // forward as if still playing, and re-syncs it on resume.
             crate::now_playing_keeper::spawn(app_handle.clone());
 
+            // Queue persistence: records the playing position on a slow
+            // ticker so a restart resumes mid-track. Structural changes
+            // (new queue, append/remove, track advance) write immediately
+            // from their own call sites.
+            crate::queue_persist::spawn(app_handle.clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1582,6 +1616,8 @@ pub fn run() {
             commands::playback::remove_from_queue,
             commands::playback::jump_to_queue_index,
             commands::playback::get_queue,
+            commands::playback::clear_queue,
+            commands::playback::flush_queue_state,
             commands::playback::apply_equalizer,
             commands::playback::get_eq_config,
             commands::playback::fetch_lyrics,
@@ -1638,6 +1674,9 @@ pub fn run() {
         .expect("error building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
+                // Flush synchronously — the periodic writer's next tick will
+                // never come, and a spawned task may not run before exit.
+                crate::queue_persist::save_blocking(app_handle);
                 if let Some(state) = app_handle.try_state::<AppState>() {
                     state.session_reporter.stop_sync();
                     // Clear Now Playing so the OS widget disappears on quit.

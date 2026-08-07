@@ -192,6 +192,44 @@ struct PlayerInner {
     /// Wall-clock of the last adaptive step, pacing them at
     /// [`DEGRADE_COOLDOWN`].
     last_degrade_at: Option<Instant>,
+    /// True when `state.queue` was restored from disk at startup and mpv's
+    /// playlist is still empty.
+    ///
+    /// The queue, index and position are real — they drive the UI, the seek
+    /// bar and the now-playing card — but no stream has been opened. That is
+    /// deliberate: opening one at launch would cost network on every start,
+    /// begin a `stream-record` capture nobody asked for, and race the
+    /// background probe that corrects a stale server URL seconds after
+    /// `setup()` picked it.
+    ///
+    /// **Every path that would command mpv about the queue must consult
+    /// this.** Transport paths materialise first (see
+    /// [`AudioPlayer::ensure_materialized_at`]); the queue mutators
+    /// (`append_to_queue`, `insert_next`, `remove_from_queue`) skip their mpv
+    /// half and touch `state.queue` only, since issuing playlist commands
+    /// against an empty mpv playlist would desync its indices from ours.
+    ///
+    /// Restored state carries `Paused` + `user_paused`, which keeps the
+    /// recovery machinery away from it for free: `needs_connection_recovery`
+    /// returns early on `user_paused`, so the stall watchdog, the
+    /// connection-recovered edge and `foreground_resync` all leave an
+    /// untouched restored queue alone.
+    ///
+    /// Cleared by materialisation, `load_queue`, and `stop`.
+    pending_materialize: bool,
+    /// Latched when a materialisation actually ran, consumed by the platform
+    /// layer via [`AudioPlayer::take_just_materialized`].
+    ///
+    /// Materialisation reaches `load_queue_at` directly rather than through
+    /// the `play_tracks` command, so nothing else opens the Plex session for
+    /// the track the user just started. The playlist-pos callback can't cover
+    /// it either — that reports from `pending_transition`, which every fresh
+    /// queue load deliberately clears.
+    ///
+    /// A latch rather than a "was it pending before?" check at the call site,
+    /// so a declined materialisation (an out-of-range target) can't be
+    /// mistaken for a start.
+    just_materialized: bool,
 }
 
 impl PlayerInner {
@@ -296,6 +334,8 @@ impl AudioPlayer {
                 starvation: StarvationTracker::default(),
                 bandwidth_degrade: None,
                 last_degrade_at: None,
+                pending_materialize: false,
+                just_materialized: false,
             }),
             persistent_cache: RwLock::new(HashMap::new()),
         }

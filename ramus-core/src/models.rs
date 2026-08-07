@@ -721,6 +721,10 @@ pub struct Settings {
     /// OLED black). Replaces the old `keepDefaultColours` bool — absent
     /// or legacy settings.json files default to `Dynamic`.
     pub background_style: BackgroundStyle,
+    /// Restore the previous session's queue at launch, paused where it left
+    /// off. When `false` the snapshot is neither written nor read, and the
+    /// existing one is deleted the moment the toggle flips.
+    pub resume_queue_on_launch: bool,
 }
 
 impl Default for Settings {
@@ -747,6 +751,7 @@ impl Default for Settings {
             show_artist_flags: true,
             download_quality: DownloadQuality::default(),
             background_style: BackgroundStyle::default(),
+            resume_queue_on_launch: true,
         }
     }
 }

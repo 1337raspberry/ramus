@@ -145,7 +145,18 @@ final class MpvController {
 
     func loadFile(_ url: String, mode: String, options: String?) {
         if let options, !options.isEmpty {
-            command("loadfile", url, mode, options)
+            // mpv 0.38+ signature is `loadfile <url> <flags> <index> <options>`.
+            // The index slot only means anything for `insert-at`, but it must
+            // still be supplied positionally: without it the options string
+            // lands in the index slot, mpv rejects the whole command
+            // ("invalid parameter"), and the entry is silently missing from
+            // the playlist — which then desyncs mpv's indices from ours.
+            // `-1` is mpv's documented "no explicit index".
+            //
+            // `loadFileAt` below already passes four arguments because its
+            // index is meaningful, which is why this only shows up on the
+            // paths that attach per-file options to a plain load.
+            command("loadfile", url, mode, "-1", options)
         } else {
             command("loadfile", url, mode)
         }

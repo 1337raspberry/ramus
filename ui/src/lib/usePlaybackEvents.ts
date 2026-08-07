@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { foregroundResync } from "./commands";
 import type {
   AccentColorPayload,
   PlaybackStatePayload,
@@ -16,8 +17,23 @@ import { bumpArtRetry } from "./useArtUrl";
 /**
  * Subscribe to Tauri playback events (accent-color, playback-state,
  * playback-position, spectrum-ready) and load the saved volume on mount.
+ *
+ * Once authenticated it also pulls the authoritative playback snapshot, so a
+ * queue restored during Rust `setup()` — before the webview existed — shows
+ * up without waiting for the first playback event. That pull lives here, and
+ * not in the caller, because it must not run until the listeners are
+ * genuinely registered; see `ready` below.
  */
-export function usePlaybackEvents(): void {
+export function usePlaybackEvents(authed: boolean): void {
+  // Resolves once the `playback-state` / `playback-position` listeners are
+  // actually subscribed. `listen()` registers asynchronously, so kicking the
+  // snapshot pull off a plain effect races it: the command's reply can land
+  // before anything is listening, and the emit is dropped on the floor. The
+  // stores are pure event replay with nothing else to correct them, so the
+  // restored queue then stays invisible for the whole session (observed:
+  // launch restores 500 tracks in Rust, UI shows no player at all).
+  const ready = useRef<Promise<unknown>>(Promise.resolve());
+
   useEffect(() => {
     const unlisten = listen<AccentColorPayload>("accent-color", (event) => {
       const { r, g, b } = event.payload;
@@ -117,6 +133,7 @@ export function usePlaybackEvents(): void {
     }, 250);
 
     store.loadVolume();
+    ready.current = Promise.all([u1, u2]);
 
     return () => {
       window.clearInterval(watchdog);
@@ -128,4 +145,20 @@ export function usePlaybackEvents(): void {
       u5.then((fn) => fn());
     };
   }, []);
+
+  // Gated on auth so a not-yet-onboarded launch doesn't emit a snapshot for
+  // an empty player or spawn `foreground_resync`'s connection evaluation
+  // before there is a server to evaluate.
+  useEffect(() => {
+    if (!authed) return;
+    let cancelled = false;
+    ready.current
+      .then(() => {
+        if (!cancelled) return foregroundResync();
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authed]);
 }

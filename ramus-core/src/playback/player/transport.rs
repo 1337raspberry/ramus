@@ -10,6 +10,14 @@ use super::{AudioPlayer, AudioPlayerState};
 impl AudioPlayer {
     /// Toggle between playing and paused.
     pub fn toggle_play_pause(&self) {
+        // A restored queue reads as Paused but has no mpv playlist behind it,
+        // so unpausing would be silent. Load it now, resuming where the
+        // previous session left off.
+        if let Some((idx, pos)) = self.pending_resume_target() {
+            if self.ensure_materialized_at(idx, Some(pos)) {
+                return;
+            }
+        }
         // A track held after exhausted recovery re-attempts the resume rather
         // than toggling a dead (idle) stream.
         if self.inner.lock().held_for_recovery {
@@ -51,6 +59,13 @@ impl AudioPlayer {
 
     /// Unconditionally resume playback. Safe to call when already playing.
     pub fn resume(&self) {
+        // See `toggle_play_pause`: a restored queue needs loading before an
+        // unpause means anything.
+        if let Some((idx, pos)) = self.pending_resume_target() {
+            if self.ensure_materialized_at(idx, Some(pos)) {
+                return;
+            }
+        }
         let mut inner = self.inner.lock();
         inner.user_paused = false;
         if inner.held_for_recovery {
@@ -78,6 +93,21 @@ impl AudioPlayer {
 
     /// Seek to an absolute position in seconds.
     pub fn seek(&self, position: f64) {
+        // Scrubbing a restored track is itself the play intent: load the
+        // queue with the drag target as the resume point rather than issuing
+        // a seek against an idle mpv.
+        if self.pending_resume_target().is_some() {
+            let (idx, clamped) = {
+                let inner = self.inner.lock();
+                (
+                    inner.state.queue_index,
+                    position.max(0.0).min((inner.duration - 0.5).max(0.0)),
+                )
+            };
+            if self.ensure_materialized_at(idx, Some(clamped)) {
+                return;
+            }
+        }
         let mut inner = self.inner.lock();
         let clamped = position.max(0.0).min((inner.duration - 0.5).max(0.0));
         let idx = inner.state.queue_index;
@@ -136,6 +166,10 @@ impl AudioPlayer {
         inner.reloading_pos = None;
         inner.reload_started_at = None;
         inner.pending_transition = None;
+        // The queue is gone, so there is nothing left to materialise. Leaving
+        // this armed would make the next transport command try to load a
+        // queue that no longer exists.
+        inner.pending_materialize = false;
         drop(inner);
         self.mpv.stop();
     }
@@ -159,6 +193,26 @@ impl AudioPlayer {
 
     pub fn position(&self) -> f64 {
         self.inner.lock().position
+    }
+
+    /// Playback status without cloning the queue.
+    ///
+    /// [`state`](Self::state) deep-clones the whole `PlayerState`, queue
+    /// included — far too much work for a caller that polls on a timer and
+    /// only wants to know whether audio is running.
+    pub fn status(&self) -> PlaybackStatus {
+        self.inner.lock().state.status
+    }
+
+    /// The playing track's rating key, without cloning the queue. See
+    /// [`status`](Self::status) for why this exists.
+    pub fn current_track_key(&self) -> Option<String> {
+        self.inner
+            .lock()
+            .state
+            .current_track
+            .as_ref()
+            .map(|t| t.rating_key.clone())
     }
 
     pub fn duration(&self) -> f64 {

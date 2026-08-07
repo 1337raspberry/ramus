@@ -9,12 +9,31 @@ use crate::util::redact_urls;
 
 use super::diagnostics::BUFFERING_HINT_SECS;
 use super::recovery::{RecoverOutcome, RELOAD_SETTLE_WINDOW};
-use super::AudioPlayer;
+use super::{AudioPlayer, PlayerInner};
 
 impl AudioPlayer {
+    /// Whether mpv's reports currently describe our queue at all.
+    ///
+    /// A queue restored from disk lives in `state` with an **empty mpv
+    /// playlist** behind it until something materialises it, so every event
+    /// mpv raises in the meantime is about a player that has never seen our
+    /// tracks — and applying any of them corrupts the restored state. mpv
+    /// initialises with `idle=yes` and `pause=no` and announces both as soon
+    /// as it starts, which races the restore, so this is the common path on
+    /// launch rather than an edge case.
+    ///
+    /// Callers hold the lock already; this takes `&PlayerInner` so it can be
+    /// checked inside their existing critical section.
+    fn ignores_mpv_events(inner: &PlayerInner) -> bool {
+        inner.pending_materialize
+    }
+
     /// Handle mpv position change (called by event loop, ~30fps).
     pub fn handle_position_change(&self, pos: f64) {
         let mut inner = self.inner.lock();
+        if Self::ignores_mpv_events(&inner) {
+            return;
+        }
         // `position_base` is non-zero while a transcode `offset=` resume
         // stream plays (mpv reports 0-based; the real position is shifted
         // by the resume point).
@@ -83,6 +102,12 @@ impl AudioPlayer {
             return false;
         }
         let mut inner = self.inner.lock();
+        // A restored queue's indices mean nothing to mpv yet; treating an
+        // idle player's pos-change as an advance would zero the restored
+        // position.
+        if Self::ignores_mpv_events(&inner) {
+            return false;
+        }
         let pos = pos as usize;
         if pos >= inner.state.queue.len() {
             // An insert-at during a current-track reload transiently shifts the
@@ -182,6 +207,13 @@ impl AudioPlayer {
     /// Handle mpv pause state change.
     pub fn handle_pause_change(&self, paused: bool) {
         let mut inner = self.inner.lock();
+        // mpv starts unpaused and announces `pause=false` at init, which
+        // would flip a restored queue's honest Paused status to Playing —
+        // leaving the UI showing a playing track with a frozen seek bar and
+        // no audio.
+        if Self::ignores_mpv_events(&inner) {
+            return;
+        }
         if paused && inner.state.status == PlaybackStatus::Playing {
             inner.state.status = PlaybackStatus::Paused;
         } else if !paused && inner.state.status == PlaybackStatus::Paused {
@@ -277,6 +309,19 @@ impl AudioPlayer {
         let mut inner = self.inner.lock();
         if inner.held_for_recovery {
             log::debug!("idle_active ignored: held for recovery");
+            return false;
+        }
+        // A restored queue has never been handed to mpv, so mpv sitting idle
+        // says nothing about it. mpv runs with `idle=yes` and reports
+        // idle-active as soon as it initialises at app start — which races
+        // the restore — and processing that would wipe the `current_track`
+        // and Paused status the restore just adopted, leaving the queue
+        // present but invisible to the UI and unplayable (every transport
+        // path reads Stopped). Same reasoning as the recovery hold above:
+        // an idle mpv is only a queue completion when mpv was actually
+        // given the queue.
+        if Self::ignores_mpv_events(&inner) {
+            log::debug!("idle_active ignored: queue restored, not yet materialised");
             return false;
         }
         inner.state.status = PlaybackStatus::Stopped;

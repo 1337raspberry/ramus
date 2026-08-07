@@ -23,6 +23,7 @@ export default function QueueView() {
   const queueIndex = usePlaybackStore((s) => s.queueIndex);
   const removeQueueItem = usePlaybackStore((s) => s.removeQueueItem);
   const jumpToIndex = usePlaybackStore((s) => s.jumpToIndex);
+  const clearQueue = usePlaybackStore((s) => s.clearQueue);
   const [visibleCount, setVisibleCount] = useState(30);
 
   const upcomingStart = queueIndex + 1;
@@ -34,6 +35,14 @@ export default function QueueView() {
       <div className="queue-header">
         <span className="queue-title">Up Next</span>
         <span className="queue-count">{totalUpcoming} tracks</span>
+        <button
+          className="queue-clear"
+          onClick={clearQueue}
+          disabled={queue.length === 0}
+          title="Stop playback and empty the queue"
+        >
+          Clear
+        </button>
       </div>
       {totalUpcoming === 0 ? (
         <div className="queue-empty">No upcoming tracks</div>

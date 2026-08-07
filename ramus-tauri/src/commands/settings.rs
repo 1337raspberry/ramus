@@ -48,6 +48,13 @@ pub async fn update_settings(
     let prev_offline_mode = state.settings.read().offline_mode;
     let prev_config = state.settings.read().to_playback_config();
 
+    // Turning resume off must delete what's already on disk, not just stop
+    // writing — otherwise the next launch restores a stale queue from
+    // whenever the user last had it enabled.
+    if !settings.resume_queue_on_launch && state.settings.read().resume_queue_on_launch {
+        crate::queue_persist::forget();
+    }
+
     let config = settings.to_playback_config();
     // Queue entries resolved their URLs (direct-play vs transcode, bitrate)
     // under the old policy — a mid-session PlaybackMode/bitrate change

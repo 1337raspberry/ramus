@@ -34,6 +34,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   showArtistFlags: true,
   downloadQuality: "original",
   backgroundStyle: "dynamic",
+  resumeQueueOnLaunch: true,
 
   loadSettings: async () => {
     try {

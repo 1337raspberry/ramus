@@ -33,6 +33,7 @@ import {
   getAlbumColors,
   removeFromQueue as removeFromQueueCmd,
   jumpToQueueIndex as jumpToQueueIndexCmd,
+  clearQueue as clearQueueCmd,
 } from "../lib/commands";
 
 interface PlaybackState {
@@ -122,6 +123,9 @@ interface PlaybackState {
   cycleVisualizerMode: () => void;
   removeQueueItem: (index: number) => void;
   jumpToIndex: (index: number) => void;
+  /// Stop playback and empty the queue. Clears local state optimistically;
+  /// the backend's `playback-state` emit lands on the same values.
+  clearQueue: () => void;
 }
 
 function activeLineIndex(lyrics: LyricsResult, position: number): number {
@@ -490,5 +494,33 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   jumpToIndex: (index) => {
     jumpToQueueIndexCmd(index).catch(() => {});
+  },
+
+  clearQueue: () => {
+    clearQueueCmd().catch(() => {});
+    // Same reset the `!track` branch of onPlaybackState performs, applied up
+    // front so the UI empties on the tap rather than on the IPC round-trip.
+    spectrumGen += 1;
+    lyricsGen += 1;
+    resetUltraBlurGate();
+    set({
+      status: "stopped",
+      currentTrack: null,
+      queueIndex: 0,
+      position: 0,
+      duration: 0,
+      queue: [],
+      showQueue: false,
+      lyrics: null,
+      lyricsStatus: null,
+      lyricsLoading: false,
+      showLyrics: false,
+      waveformLevels: null,
+      spectrumState: null,
+      currentGenres: [],
+      nowPlayingAlbum: null,
+      vibrantPalette: null,
+      isBuffering: false,
+    });
   },
 }));
