@@ -180,6 +180,18 @@ textarea {
   initial-value: transparent;
 }
 
+/* Crossfade between the mini-player and the expanded now-playing sheet. The
+   sheet's gradient backdrop is the same one the mini-player already paints,
+   so only the foreground has to fade — set on `.mobile-sheet` and inherited
+   by its three content rows. Registered so it can be transitioned: an
+   unregistered custom property animates as a string swap (instant), which is
+   the same reason the UltraBlur colours above are declared. */
+@property --np-content-opacity {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
 .ultrablur-bg {
   position: fixed;
   inset: 0;
@@ -5840,15 +5852,21 @@ body.is-fullscreen .focus-body {
   background: transparent;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   cursor: pointer;
+  will-change: transform;
 }
 
+/* Both backdrop layers run past the bar so the area below it — home indicator,
+   Android nav bar — stays filled while the bar is docked. While the bar is
+   being dragged up as the leading edge of the sheet, that overhang would sit
+   on top of the panel it is revealing, so mobile/useSheetDrag.ts pulls this
+   back to 0 for the length of the gesture. */
 .mobile-miniplayer::before {
   content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  bottom: -100vh;
+  bottom: var(--mini-bg-extend, -100vh);
   background: #0a0a0c;
   z-index: -1;
 }
@@ -5858,7 +5876,7 @@ body.is-fullscreen .focus-body {
   top: 0;
   left: 0;
   right: 0;
-  bottom: -100vh;
+  bottom: var(--mini-bg-extend, -100vh);
   z-index: 0;
   overflow: hidden;
   contain: strict;
@@ -6005,29 +6023,82 @@ body.is-fullscreen .focus-body {
   padding-bottom: calc(var(--safe-bottom) + 2px);
   will-change: transform;
   background: #0a0a0c;
-  transform: translateY(100%);
+  /* Closed, the sheet rests ON the mini-player's frame rather than off the
+     bottom of the screen — so a drag that grabs the bar has the panel under
+     the finger from the first pixel instead of a bar-height below it. The
+     height is published by mobile/useSheetDrag.ts; without it this is the
+     old off-screen resting place. */
+  transform: translateY(calc(100% - var(--np-mini-height, 0px)));
   visibility: hidden;
   pointer-events: none;
+  /* Content fades with the panel rather than appearing whole at the end of
+     the slide. Declared here so a tap-driven open/close animates it for free;
+     a drag overrides both the value and the transition inline, frame by
+     frame (mobile/useSheetDrag.ts). */
+  --np-content-opacity: 0;
+  /* `visibility` is deliberately NOT transitioned. Closed, the sheet rests on
+     the mini-player's frame, so the moment it stops being invisible it hides
+     the bar. A delayed transition ties that to React's commit of `expanded`,
+     which lands whenever the re-render finishes — mobile/useSheetDrag.ts pins
+     visibility inline instead, so hiding the sheet and dropping the bar back
+     underneath it always land in the same style recalc. */
   transition:
     transform 300ms cubic-bezier(0.2, 0.9, 0.2, 1),
-    visibility 0s 300ms;
+    --np-content-opacity 300ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 
 .mobile-sheet.expanded {
   transform: translateY(0);
   visibility: visible;
   pointer-events: auto;
+  --np-content-opacity: 1;
   transition:
     transform 300ms cubic-bezier(0.2, 0.9, 0.2, 1),
-    visibility 0s 0s;
+    --np-content-opacity 300ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 
-.mobile-sheet.expanded.dismissing {
-  transform: translateY(100%);
+/* There is deliberately no drag-state rule here. While a drag or its settle is
+   in progress the sheet's transform, transition and visibility are all written
+   inline by mobile/useSheetDrag.ts — inline rather than through a class,
+   because React owns this element's `className` and rewrites the attribute
+   wholesale when `expanded` flips, which happens mid-settle. Suppressing the
+   transition for the span of a drag is the point: left on, every touchmove
+   restarts a 300ms ease toward the finger, so the sheet coasts and lurches
+   instead of tracking it. */
+
+/* The backdrop is deliberately excluded — it matches the mini-player's own
+   gradient, so holding it opaque is what makes the two states read as one
+   surface while everything on top of it crossfades. */
+.mobile-sheet-header,
+.mobile-sheet-body,
+.mobile-sheet-dock {
+  opacity: var(--np-content-opacity);
+}
+
+/* Album art in flight between the mini-player thumbnail and the sheet's hero
+   image (mobile/artMorph.ts). Sits above the sheet's z-100 so it stays
+   visible as the panel slides underneath it; below the action sheets and the
+   genre modal at z-1100. Sized at the hero box and scaled down toward the
+   thumbnail, so it is never resampled above its natural size. */
+.np-art-morph {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 105;
+  overflow: hidden;
+  transform-origin: 0 0;
   pointer-events: none;
-  transition:
-    transform 200ms cubic-bezier(0.2, 0.9, 0.2, 1),
-    visibility 0s 200ms;
+  will-change: transform;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 32px 64px -24px rgba(0, 0, 0, 0.55);
+}
+
+.np-art-morph img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
 }
 
 /* Wrapper that scopes the .ultrablur-bg (which uses `position: fixed;
@@ -6332,15 +6403,17 @@ body.is-fullscreen .focus-body {
   z-index: 1;
 }
 
+/* Wraps a `MarqueeText`, so this is the clipping frame and `.marquee-inner`
+   carries the nowrap/ellipsis. `max-width` is what makes overflow detectable
+   at all: the element is shrink-to-fit inside a centred flex column, so
+   without a cap it would simply size to the full title and never overflow. */
 .mobile-sheet-title {
   font-size: 18px;
   font-weight: 700;
   line-height: 1.3;
   color: #fff;
   max-width: 100%;
-  white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   flex-shrink: 0;
   padding: 2px 0;
 }
@@ -6743,20 +6816,6 @@ body.is-fullscreen .focus-body {
     font-size: 11px;
     margin-top: 16px;
   }
-}
-
-/* --- Mini-player drag-to-expand feedback --- */
-
-.mobile-miniplayer {
-  will-change: transform;
-  transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.2, 1);
-}
-
-/* Disable the transition during an active drag so the transform tracks the
-   pointer without smoothing lag. We detect "active drag" by the non-zero
-   inline-style transform set by MobileNowPlaying. */
-.mobile-miniplayer[style*="transform"] {
-  transition: none;
 }
 
 /* --- Force dynamic viewport height on iOS so the layout tracks the

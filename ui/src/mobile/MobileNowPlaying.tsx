@@ -18,6 +18,7 @@ import { extractCornerColors } from "../lib/blurArt";
 import { applyAccent, DEFAULT_BLUR_COLORS, OLED_VOID_BLUR_COLORS } from "../lib/accent";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
+import { useSheetDrag } from "./useSheetDrag";
 import WaveformSeekBar from "../components/WaveformSeekBar";
 import FlowLayout from "../components/FlowLayout";
 import UltraBlurBackground from "../components/UltraBlurBackground";
@@ -170,101 +171,28 @@ export default function MobileNowPlaying({
   const [showMenu, setShowMenu] = useState(false);
 
   // --- Swipe gestures ---
-  // Mini-player: swipe up to expand. Sheet header: swipe down to collapse.
-  // Both use the imperative non-passive touchmove pattern (same as the
-  // album-art drag below) instead of React pointer events. Android
-  // Chromium WebView cancels pointer events the moment it decides a
-  // vertical drag is a scroll gesture, so a React-pointer approach
-  // silently fails on Android even though it works on iOS WebKit.
-  const SWIPE_THRESHOLD = 50;
-  const [dragDeltaY, setDragDeltaY] = useState(0);
+  // Pull up from the mini-player to open, pull down from the sheet header or
+  // the hero art to dismiss. All of it — including the album-art morph
+  // between the two states — lives in useSheetDrag, which drives the sheet
+  // imperatively so a drag costs no React renders.
   const miniRef = useRef<HTMLDivElement>(null);
-  const miniDragYRef = useRef(0);
-
-  useEffect(() => {
-    const el = miniRef.current;
-    if (!el) return;
-    let startY: number | null = null;
-    let claimY = 0;
-    let claimed = false;
-    let skip = false;
-
-    const onStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1) {
-        skip = true;
-        return;
-      }
-      const target = e.target as HTMLElement | null;
-      // Skip drags that start on an interactive child (controls, waveform
-      // scrubber, art button) so taps and scrubs aren't intercepted.
-      skip = !!target?.closest(
-        'button, [role="button"], input, .mobile-miniplayer-wave, .mobile-miniplayer-controls',
-      );
-      startY = e.touches[0].clientY;
-      claimed = false;
-    };
-
-    const onMove = (e: TouchEvent) => {
-      if (startY == null || skip) return;
-      const y = e.touches[0].clientY;
-      const dy = y - startY;
-      if (!claimed) {
-        if (dy < -3) {
-          claimed = true;
-          claimY = y;
-        } else {
-          return;
-        }
-      }
-      e.preventDefault();
-      const dragY = Math.min(0, y - claimY);
-      if (miniDragYRef.current !== dragY) {
-        miniDragYRef.current = dragY;
-        setDragDeltaY(dragY);
-      }
-    };
-
-    const onEnd = () => {
-      if (claimed) {
-        const finalDragY = miniDragYRef.current;
-        miniDragYRef.current = 0;
-        setDragDeltaY(0);
-        if (finalDragY < -SWIPE_THRESHOLD) onExpand();
-      }
-      startY = null;
-      claimed = false;
-      skip = false;
-    };
-
-    el.addEventListener("touchstart", onStart, { passive: true });
-    el.addEventListener("touchmove", onMove, { passive: false });
-    el.addEventListener("touchend", onEnd, { passive: true });
-    el.addEventListener("touchcancel", onEnd, { passive: true });
-    return () => {
-      el.removeEventListener("touchstart", onStart);
-      el.removeEventListener("touchmove", onMove);
-      el.removeEventListener("touchend", onEnd);
-      el.removeEventListener("touchcancel", onEnd);
-    };
-  }, [onExpand]);
-
-  const [sheetDragY, setSheetDragY] = useState(0);
-  const [dismissing, setDismissing] = useState(false);
-  // The drag-dismiss path sets `dismissing=true` and waits for the
-  // `transform` transitionend to fire `onCollapse()` and reset the flag.
-  // If `expanded` flips to false by an external path first (Android
-  // hardware back collapses the sheet directly), the transitionend may
-  // never arrive and `dismissing` stays stuck. Next open then renders the
-  // sheet with `dismissing=true`, transitionend fires on the open
-  // animation, and the sheet immediately re-collapses. Resetting on every
-  // collapse keeps the flag consistent with the rendered state.
-  useEffect(() => {
-    if (!expanded) setDismissing(false);
-  }, [expanded]);
+  const miniArtRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const sheetBodyRef = useRef<HTMLDivElement>(null);
   const sheetHeaderRef = useRef<HTMLElement>(null);
-  const sheetDragYRef = useRef(0);
+  const heroArtRef = useRef<HTMLDivElement>(null);
+
+  useSheetDrag(
+    {
+      sheet: sheetRef,
+      body: sheetBodyRef,
+      header: sheetHeaderRef,
+      heroArt: heroArtRef,
+      mini: miniRef,
+      miniArt: miniArtRef,
+    },
+    { expanded, artSrc: artErr ? null : artSrc, onExpand, onCollapse },
+  );
 
   // Entering lyrics mode pins the body (overflow: hidden) — snap any
   // existing scroll offset back to the top so the fixed lyrics layout
@@ -274,160 +202,6 @@ export default function MobileNowPlaying({
       sheetBodyRef.current.scrollTop = 0;
     }
   }, [showLyrics]);
-
-  useEffect(() => {
-    const el = sheetHeaderRef.current;
-    if (!el) return;
-    let startY: number | null = null;
-    let claimY = 0;
-    let claimed = false;
-    let skip = false;
-
-    const onStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1) {
-        skip = true;
-        return;
-      }
-      const target = e.target as HTMLElement | null;
-      // Skip drags starting on the favourite button so the star tap
-      // doesn't get swallowed.
-      skip = !!target?.closest('button, [role="button"]');
-      startY = e.touches[0].clientY;
-      claimed = false;
-    };
-
-    const onMove = (e: TouchEvent) => {
-      if (startY == null || skip) return;
-      const y = e.touches[0].clientY;
-      const dy = y - startY;
-      if (!claimed) {
-        if (dy > 3) {
-          claimed = true;
-          claimY = y;
-        } else {
-          return;
-        }
-      }
-      e.preventDefault();
-      const dragY = Math.max(0, y - claimY);
-      if (sheetDragYRef.current !== dragY) {
-        sheetDragYRef.current = dragY;
-        setSheetDragY(dragY);
-      }
-    };
-
-    const onEnd = () => {
-      if (claimed) {
-        const finalDragY = sheetDragYRef.current;
-        sheetDragYRef.current = 0;
-        if (finalDragY > SWIPE_THRESHOLD) {
-          setSheetDragY(0);
-          setDismissing(true);
-        } else {
-          setSheetDragY(0);
-        }
-      }
-      startY = null;
-      claimed = false;
-      skip = false;
-    };
-
-    el.addEventListener("touchstart", onStart, { passive: true });
-    el.addEventListener("touchmove", onMove, { passive: false });
-    el.addEventListener("touchend", onEnd, { passive: true });
-    el.addEventListener("touchcancel", onEnd, { passive: true });
-    return () => {
-      el.removeEventListener("touchstart", onStart);
-      el.removeEventListener("touchmove", onMove);
-      el.removeEventListener("touchend", onEnd);
-      el.removeEventListener("touchcancel", onEnd);
-    };
-  }, []);
-
-  // Drag-to-dismiss on the album art. We let native touch-scrolling handle
-  // upward drags and downward drags while the body is scrolled (so momentum
-  // and inertial flick work as the user expects). We only intercept the
-  // gesture (preventDefault) once we observe a downward drag while the body
-  // is at scrollTop=0 — at which point the gesture transitions seamlessly
-  // into a sheet-dismiss preview, even if it started as a body scroll-back.
-  const artRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const art = artRef.current;
-    if (!art) return;
-
-    let startY: number | null = null;
-    let claimY = 0;
-    let claimed = false;
-
-    const onStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      startY = e.touches[0].clientY;
-      claimed = false;
-    };
-
-    const onMove = (e: TouchEvent) => {
-      if (startY == null) return;
-      const y = e.touches[0].clientY;
-      if (!claimed) {
-        // Defer to the lyrics overlay when it's mounted — it owns its own
-        // internal scroll + tap-to-seek and we don't want preventDefault
-        // on the outer art container eating those gestures.
-        if (usePlaybackStore.getState().showLyrics) return;
-        const dy = y - startY;
-        const atTop = (sheetBodyRef.current?.scrollTop ?? 0) <= 0;
-        if (dy > 3 && atTop) {
-          claimed = true;
-          claimY = y;
-        } else {
-          return;
-        }
-      }
-      // Only safe because the listener is registered as { passive: false }.
-      e.preventDefault();
-      const dragY = Math.max(0, y - claimY);
-      if (sheetDragYRef.current !== dragY) {
-        sheetDragYRef.current = dragY;
-        setSheetDragY(dragY);
-      }
-    };
-
-    const onEnd = () => {
-      if (claimed) {
-        const finalDragY = sheetDragYRef.current;
-        sheetDragYRef.current = 0;
-        if (finalDragY > SWIPE_THRESHOLD) {
-          setSheetDragY(0);
-          setDismissing(true);
-        } else {
-          setSheetDragY(0);
-        }
-      }
-      startY = null;
-      claimed = false;
-    };
-
-    art.addEventListener("touchstart", onStart, { passive: true });
-    art.addEventListener("touchmove", onMove, { passive: false });
-    art.addEventListener("touchend", onEnd, { passive: true });
-    art.addEventListener("touchcancel", onEnd, { passive: true });
-    return () => {
-      art.removeEventListener("touchstart", onStart);
-      art.removeEventListener("touchmove", onMove);
-      art.removeEventListener("touchend", onEnd);
-      art.removeEventListener("touchcancel", onEnd);
-    };
-  }, []);
-
-  const onSheetTransitionEnd = useCallback(
-    (e: React.TransitionEvent) => {
-      if (e.propertyName === "transform" && dismissing) {
-        setDismissing(false);
-        onCollapse();
-      }
-    },
-    [dismissing, onCollapse],
-  );
 
   useEffect(() => {
     if (expanded) {
@@ -493,11 +267,7 @@ export default function MobileNowPlaying({
     <>
       {/* Mini-player: always mounted to keep the waveform offscreen shape
           warm, hidden when expanded so taps hit the sheet. */}
-      <div
-        ref={miniRef}
-        className="mobile-miniplayer"
-        style={dragDeltaY !== 0 ? { transform: `translateY(${dragDeltaY}px)` } : undefined}
-      >
+      <div ref={miniRef} className="mobile-miniplayer">
         <div className="mobile-miniplayer-bg">
           <UltraBlurBackground colors={sheetBlurColors} />
           <div className="mobile-miniplayer-darken" style={{ background: "rgba(0,0,0,0.3)" }} />
@@ -551,6 +321,7 @@ export default function MobileNowPlaying({
           </div>
         </div>
         <button
+          ref={miniArtRef}
           className="mobile-miniplayer-art mobile-miniplayer-art-float"
           onClick={onExpand}
           onPointerDown={(e) => e.stopPropagation()}
@@ -574,12 +345,7 @@ export default function MobileNowPlaying({
       </div>
 
       {/* Expanded sheet — always mounted, visibility controlled by CSS */}
-      <div
-        ref={sheetRef}
-        className={`mobile-sheet${expanded ? " expanded" : ""}${dismissing ? " dismissing" : ""}`}
-        style={sheetDragY > 0 ? { transform: `translateY(${sheetDragY}px)` } : undefined}
-        onTransitionEnd={dismissing ? onSheetTransitionEnd : undefined}
-      >
+      <div ref={sheetRef} className={`mobile-sheet${expanded ? " expanded" : ""}`}>
         <div className="mobile-sheet-bg">
           <UltraBlurBackground colors={sheetBlurColors} />
         </div>
@@ -597,7 +363,7 @@ export default function MobileNowPlaying({
                 container to CSS grid where an extra child would take a
                 cell of its own. */}
             {!showLyrics && <PlaybackQualityNotice onOpenSettings={onOpenSettings} />}
-            <div ref={artRef} className="mobile-sheet-art">
+            <div ref={heroArtRef} className="mobile-sheet-art">
               {artSrc && !artErr ? (
                 <img
                   src={artSrc}
@@ -621,7 +387,7 @@ export default function MobileNowPlaying({
                 working across track changes while lyrics are open. */}
             <LyricsOverlay />
 
-            <div className="mobile-sheet-title">{track.title}</div>
+            <MarqueeText className="mobile-sheet-title">{track.title}</MarqueeText>
             <div className="mobile-sheet-artist">
               {hasTrackArtist ? `${track.artistName} (${track.trackArtist})` : track.artistName}
             </div>
