@@ -89,6 +89,77 @@ impl CacheDatabase {
         Ok(())
     }
 
+    /// Tag an album (by Plex ratingKey) with a collection, creating the
+    /// collection row if needed. Returns `false` when no album with that
+    /// sourceId exists. Duplicate links are ignored.
+    pub fn add_album_to_collection(
+        &self,
+        source_id: &str,
+        name: &str,
+    ) -> Result<bool, CacheError> {
+        let conn = self.conn.lock();
+        let tx = conn.unchecked_transaction()?;
+
+        let album_id: Option<i64> = tx
+            .query_row(
+                "SELECT id FROM albums WHERE sourceId = ?1",
+                params![source_id],
+                |r| r.get(0),
+            )
+            .ok();
+        let Some(album_id) = album_id else {
+            return Ok(false);
+        };
+
+        tx.execute(
+            "INSERT INTO collections (name) VALUES (?1) ON CONFLICT(name) DO NOTHING",
+            params![name],
+        )?;
+        let col_id: i64 = tx.query_row(
+            "SELECT id FROM collections WHERE name = ?1 COLLATE NOCASE",
+            params![name],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "INSERT OR IGNORE INTO album_collections (albumId, collectionId) VALUES (?1, ?2)",
+            params![album_id, col_id],
+        )?;
+
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Untag an album (by Plex ratingKey) from a collection. Returns `false`
+    /// when the album or collection is unknown, or the link didn't exist.
+    /// A collection left with no albums is dropped, mirroring the server
+    /// (Plex auto-deletes emptied collections).
+    pub fn remove_album_from_collection(
+        &self,
+        source_id: &str,
+        name: &str,
+    ) -> Result<bool, CacheError> {
+        let conn = self.conn.lock();
+        let tx = conn.unchecked_transaction()?;
+
+        let removed = tx.execute(
+            "DELETE FROM album_collections
+             WHERE albumId = (SELECT id FROM albums WHERE sourceId = ?1)
+               AND collectionId = (SELECT id FROM collections WHERE name = ?2 COLLATE NOCASE)",
+            params![source_id, name],
+        )?;
+        if removed > 0 {
+            tx.execute(
+                "DELETE FROM collections
+                 WHERE name = ?1 COLLATE NOCASE
+                   AND id NOT IN (SELECT DISTINCT collectionId FROM album_collections)",
+                params![name],
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(removed > 0)
+    }
+
     /// Collection names for an album.
     pub fn album_collections(&self, source_id: &str) -> Result<Vec<String>, CacheError> {
         let conn = self.conn.lock();

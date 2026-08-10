@@ -5174,7 +5174,8 @@ body.is-fullscreen .focus-body {
   -webkit-backdrop-filter: blur(20px);
   border-radius: 10px;
   padding: 4px;
-  min-width: 150px;
+  /* Wide enough that "Add to Collection…" stays on one line. */
+  min-width: 185px;
   z-index: 100;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
@@ -7162,6 +7163,41 @@ body.is-fullscreen .focus-body {
 .mobile-action-sheet-group button:active {
   background: rgba(255, 255, 255, 0.06);
 }
+/* Collection picker: the list scrolls inside the sheet so a large library
+   of collections can't push the Cancel button off screen. */
+.mobile-collection-list {
+  max-height: 45vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.mobile-collection-list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+.mobile-collection-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Rows only disable while a toggle is in flight. */
+.mobile-collection-list button:disabled {
+  color: var(--text-secondary);
+}
+.mobile-collection-check {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
+}
+.mobile-collection-empty {
+  padding: 18px 20px;
+  font-size: 15px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 /* Leading glyph for rows whose state matters at a glance (favourite). The
    label stays optically centred because the icon is absolutely placed. */
 .mobile-action-sheet-icon {

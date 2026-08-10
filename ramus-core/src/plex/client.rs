@@ -832,6 +832,53 @@ impl PlexClient {
         )
         .await
     }
+
+    /// Tag an album with a collection. Tag edits are additive — existing
+    /// collection memberships on the item are preserved. `collection.locked=1`
+    /// locks the field so a metadata agent refresh can't strip the tag.
+    pub async fn add_album_to_collection(
+        &self,
+        library_key: &str,
+        rating_key: &str,
+        collection_name: &str,
+    ) -> Result<(), PlexClientError> {
+        let path = format!("library/sections/{}/all", library_key);
+        self.put(
+            &path,
+            &[
+                // 9 = album (see fetch_all_items type codes).
+                ("type", "9"),
+                ("id", rating_key),
+                ("collection.locked", "1"),
+                ("collection[0].tag.tag", collection_name),
+            ],
+        )
+        .await
+    }
+
+    /// Remove a collection tag from an album. The removal parameter takes a
+    /// comma-separated list, so each name is percent-encoded first (the
+    /// transport encoding on top of that is undone by the server before it
+    /// splits the list) — this is the wire shape official-ish clients use.
+    pub async fn remove_album_from_collection(
+        &self,
+        library_key: &str,
+        rating_key: &str,
+        collection_name: &str,
+    ) -> Result<(), PlexClientError> {
+        let path = format!("library/sections/{}/all", library_key);
+        let encoded = crate::util::percent_encode(collection_name);
+        self.put(
+            &path,
+            &[
+                ("type", "9"),
+                ("id", rating_key),
+                ("collection.locked", "1"),
+                ("collection[].tag.tag-", &encoded),
+            ],
+        )
+        .await
+    }
 }
 
 #[cfg(test)]
@@ -1138,6 +1185,46 @@ mod tests {
 
         let client = test_client(&server.uri());
         let result = client.rate_item("123", 10.0).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_album_to_collection() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/library/sections/2/all"))
+            .and(query_param("type", "9"))
+            .and(query_param("id", "123"))
+            .and(query_param("collection.locked", "1"))
+            .and(query_param("collection[0].tag.tag", "Late Night"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let client = test_client(&server.uri());
+        let result = client.add_album_to_collection("2", "123", "Late Night").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_remove_album_from_collection() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/library/sections/2/all"))
+            .and(query_param("type", "9"))
+            .and(query_param("id", "123"))
+            .and(query_param("collection.locked", "1"))
+            // The name is percent-encoded once before transport encoding —
+            // the space arrives as a literal %20 in the decoded value.
+            .and(query_param("collection[].tag.tag-", "Late%20Night"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let client = test_client(&server.uri());
+        let result = client
+            .remove_album_from_collection("2", "123", "Late Night")
+            .await;
         assert!(result.is_ok());
     }
 

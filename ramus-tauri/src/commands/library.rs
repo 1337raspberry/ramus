@@ -379,6 +379,82 @@ pub async fn toggle_track_favourite(
 }
 
 #[tauri::command]
+pub async fn get_album_collections(
+    state: State<'_, AppState>,
+    source_id: String,
+) -> CmdResult<Vec<String>> {
+    with_cache(&state, |db| db.album_collections(&source_id))
+}
+
+/// Add an album to a collection on the server, then mirror the link into the
+/// local cache. Returns `false` (without touching the server) when the album
+/// is already in that collection.
+#[tauri::command]
+pub async fn add_album_to_collection(
+    state: State<'_, AppState>,
+    source_id: String,
+    collection_name: String,
+) -> CmdResult<bool> {
+    let collection_name = collection_name.trim().to_string();
+    if collection_name.is_empty() {
+        return Err("Collection name is empty".into());
+    }
+
+    let existing = with_cache(&state, |db| db.album_collections(&source_id))?;
+    if existing
+        .iter()
+        .any(|c| c.eq_ignore_ascii_case(&collection_name))
+    {
+        return Ok(false);
+    }
+
+    let library_key = crate::commands::sync::get_library_key()?;
+    state
+        .client
+        .add_album_to_collection(&library_key, &source_id, &collection_name)
+        .await
+        .map_err(|e| e.to_string())?;
+    with_cache(&state, |db| {
+        db.add_album_to_collection(&source_id, &collection_name)
+    })?;
+    Ok(true)
+}
+
+/// Remove an album from a collection on the server, then mirror the unlink
+/// into the local cache. Returns `false` (without touching the server) when
+/// the album isn't in that collection.
+#[tauri::command]
+pub async fn remove_album_from_collection(
+    state: State<'_, AppState>,
+    source_id: String,
+    collection_name: String,
+) -> CmdResult<bool> {
+    let collection_name = collection_name.trim().to_string();
+    if collection_name.is_empty() {
+        return Err("Collection name is empty".into());
+    }
+
+    let existing = with_cache(&state, |db| db.album_collections(&source_id))?;
+    if !existing
+        .iter()
+        .any(|c| c.eq_ignore_ascii_case(&collection_name))
+    {
+        return Ok(false);
+    }
+
+    let library_key = crate::commands::sync::get_library_key()?;
+    state
+        .client
+        .remove_album_from_collection(&library_key, &source_id, &collection_name)
+        .await
+        .map_err(|e| e.to_string())?;
+    with_cache(&state, |db| {
+        db.remove_album_from_collection(&source_id, &collection_name)
+    })?;
+    Ok(true)
+}
+
+#[tauri::command]
 pub async fn get_album_genres(
     state: State<'_, AppState>,
     source_id: String,

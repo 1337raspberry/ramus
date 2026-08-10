@@ -39,7 +39,7 @@ fn acquire_sync_guard(flag: &Arc<AtomicBool>) -> CmdResult<SyncGuard> {
     Ok(SyncGuard(flag.clone()))
 }
 
-fn get_library_key() -> CmdResult<String> {
+pub(crate) fn get_library_key() -> CmdResult<String> {
     let token_store = TokenStore::new().map_err(|e| e.to_string())?;
     let config = auth::stored_server_config(&token_store).ok_or("No server config")?;
     config

@@ -1517,6 +1517,47 @@ mod tests {
     }
 
     #[test]
+    fn test_add_album_to_collection_by_source_id() {
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Radiohead");
+        seed_album(&db, "al1", "OK Computer", artist_id, Some(1997));
+
+        // Creates the collection row and the link.
+        assert!(db.add_album_to_collection("al1", "Late Night").unwrap());
+        assert_eq!(db.album_collections("al1").unwrap(), vec!["Late Night"]);
+
+        // Re-adding (any case) is a no-op, not an error or a duplicate.
+        assert!(db.add_album_to_collection("al1", "late night").unwrap());
+        assert_eq!(db.album_collections("al1").unwrap(), vec!["Late Night"]);
+
+        // Unknown album reports false and creates nothing.
+        assert!(!db.add_album_to_collection("missing", "Gym").unwrap());
+        assert!(!db.all_collection_names().unwrap().contains(&"Gym".into()));
+    }
+
+    #[test]
+    fn test_remove_album_from_collection_by_source_id() {
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Radiohead");
+        seed_album(&db, "al1", "OK Computer", artist_id, Some(1997));
+        seed_album(&db, "al2", "Kid A", artist_id, Some(2000));
+        db.add_album_to_collection("al1", "Late Night").unwrap();
+        db.add_album_to_collection("al2", "Late Night").unwrap();
+
+        // Case-insensitive removal drops only the one link.
+        assert!(db.remove_album_from_collection("al1", "late night").unwrap());
+        assert!(db.album_collections("al1").unwrap().is_empty());
+        assert_eq!(db.album_collections("al2").unwrap(), vec!["Late Night"]);
+
+        // Not a member (any more) → false.
+        assert!(!db.remove_album_from_collection("al1", "Late Night").unwrap());
+
+        // Removing the last member drops the orphaned collection row.
+        assert!(db.remove_album_from_collection("al2", "Late Night").unwrap());
+        assert!(db.all_collection_names().unwrap().is_empty());
+    }
+
+    #[test]
     fn test_collection_upsert_case_insensitivity() {
         let db = setup();
         let id1 = db.upsert_collection("Sleep").unwrap();

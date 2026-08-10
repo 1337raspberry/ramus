@@ -199,6 +199,17 @@ export const getDistinctCountries = () => invoke<string[]>("get_distinct_countri
 
 export const getAllCollectionNames = () => invoke<string[]>("get_all_collection_names");
 
+export const getAlbumCollections = (sourceId: string) =>
+  invoke<string[]>("get_album_collections", { sourceId });
+
+/** Resolves false when the album was already in the collection. */
+export const addAlbumToCollection = (sourceId: string, collectionName: string) =>
+  invoke<boolean>("add_album_to_collection", { sourceId, collectionName });
+
+/** Resolves false when the album wasn't in the collection. */
+export const removeAlbumFromCollection = (sourceId: string, collectionName: string) =>
+  invoke<boolean>("remove_album_from_collection", { sourceId, collectionName });
+
 export const getGenreSuggestions = (query: string, limit = 200) =>
   invoke<string[]>("get_genre_suggestions", { query, limit });
 

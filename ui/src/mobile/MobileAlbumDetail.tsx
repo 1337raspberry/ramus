@@ -17,6 +17,7 @@ import {
 import FlowLayout from "../components/FlowLayout";
 import MarqueeText from "../components/MarqueeText";
 import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "../components/DownloadMenuItems";
+import CollectionPickerSheet from "./CollectionPickerSheet";
 import { useDownloadsStore } from "../stores/downloadsStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useGenreInfoStore } from "../stores/genreInfoStore";
@@ -44,6 +45,7 @@ export default function MobileAlbumDetail() {
   const { artSrc, artErr, setArtErr } = useArtUrl(album?.thumb, ART_SIZE.MEDIUM);
   const [genres, setGenres] = useState<string[]>([]);
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
+  const [collectionsOpen, setCollectionsOpen] = useState(false);
 
   const { effectiveOffline } = useConnectionStatus();
   const downloadedIds = useDownloadsStore((s) => s.downloadedTrackIds);
@@ -207,6 +209,14 @@ export default function MobileAlbumDetail() {
                   <div className="mobile-dropdown">
                     <button onClick={() => queueAction(insertNext, tracks)}>Play Next</button>
                     <button onClick={() => queueAction(appendToQueue, tracks)}>Add to Queue</button>
+                    <button
+                      onClick={() => {
+                        setOpenMenuKey(null);
+                        setCollectionsOpen(true);
+                      }}
+                    >
+                      Add to Collection…
+                    </button>
                     <AlbumDownloadMenuItem
                       albumRatingKey={album.ratingKey}
                       onDone={() => setOpenMenuKey(null)}
@@ -339,6 +349,9 @@ export default function MobileAlbumDetail() {
           </div>
         )}
       </div>
+      {collectionsOpen && (
+        <CollectionPickerSheet album={album} onDismiss={() => setCollectionsOpen(false)} />
+      )}
     </div>
   );
 }

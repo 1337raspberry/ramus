@@ -41,6 +41,7 @@ import {
 } from "../components/Icons";
 import EqualizerPanel from "../components/EqualizerPanel";
 import MobileDebugPanel from "./MobileDebugPanel";
+import CollectionPickerSheet from "./CollectionPickerSheet";
 
 function IconSkipBack({ size = 22 }: { size?: number }) {
   return (
@@ -169,6 +170,7 @@ export default function MobileNowPlaying({
   const [showEQ, setShowEQ] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showCollections, setShowCollections] = useState(false);
 
   // --- Swipe gestures ---
   // Pull up from the mini-player to open, pull down from the sheet header or
@@ -239,12 +241,13 @@ export default function MobileNowPlaying({
     const h = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (showEQ || showDebug) return;
-      if (showMenu) setShowMenu(false);
+      if (showCollections) setShowCollections(false);
+      else if (showMenu) setShowMenu(false);
       else onCollapse();
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [expanded, onCollapse, showMenu, showEQ, showDebug]);
+  }, [expanded, onCollapse, showMenu, showEQ, showDebug, showCollections]);
 
   // Same for hardware back — without this the sheet collapses out from
   // under the menu, stranding it (it portals to <body>, so it does not
@@ -572,6 +575,11 @@ export default function MobileNowPlaying({
                     {albumFav ? "Remove Album Favourite" : "Favourite Album"}
                   </button>
                 )}
+                {nowPlayingAlbum && (
+                  <button onClick={() => runMenuAction(() => setShowCollections(true))}>
+                    Add to Collection…
+                  </button>
+                )}
                 <button onClick={() => runMenuAction(() => setShowEQ(true))}>Adjust EQ</button>
                 <button onClick={() => runMenuAction(() => setShowDebug(true))}>
                   Network Stats for Nerds
@@ -589,6 +597,13 @@ export default function MobileNowPlaying({
         )}
       {showEQ && <EqualizerPanel onDismiss={() => setShowEQ(false)} />}
       {showDebug && <MobileDebugPanel onDismiss={() => setShowDebug(false)} />}
+      {showCollections && nowPlayingAlbum && (
+        <CollectionPickerSheet
+          album={nowPlayingAlbum}
+          overSheet
+          onDismiss={() => setShowCollections(false)}
+        />
+      )}
     </>
   );
 }

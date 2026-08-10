@@ -1601,6 +1601,9 @@ pub fn run() {
             commands::library::get_cache_stats,
             commands::library::get_distinct_countries,
             commands::library::get_all_collection_names,
+            commands::library::get_album_collections,
+            commands::library::add_album_to_collection,
+            commands::library::remove_album_from_collection,
             commands::library::get_genre_suggestions,
             commands::library::expand_genre_to_library_tags,
             // playback

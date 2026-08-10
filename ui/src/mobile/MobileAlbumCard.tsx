@@ -7,6 +7,7 @@ import { ART_SIZE } from "../lib/commands";
 import { useQueueAlbum } from "../lib/useQueueAlbum";
 import { IconMusicNote, IconStarFilled } from "../components/Icons";
 import { AlbumDownloadMenuItem } from "../components/DownloadMenuItems";
+import CollectionPickerSheet from "./CollectionPickerSheet";
 
 interface Props {
   album: Album;
@@ -20,6 +21,7 @@ export default memo(function MobileAlbumCard({ album }: Props) {
   const { artSrc, artErr, setArtErr } = useArtUrl(album.thumb, ART_SIZE.MEDIUM);
 
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [collectionsOpen, setCollectionsOpen] = useState(false);
   const timerRef = useRef<number | null>(null);
   const longPressedRef = useRef(false);
 
@@ -136,6 +138,14 @@ export default memo(function MobileAlbumCard({ album }: Props) {
                 >
                   Add to Queue
                 </button>
+                <button
+                  onClick={() => {
+                    setSheetOpen(false);
+                    setCollectionsOpen(true);
+                  }}
+                >
+                  Add to Collection…
+                </button>
                 <AlbumDownloadMenuItem
                   albumRatingKey={album.ratingKey}
                   onDone={() => setSheetOpen(false)}
@@ -148,6 +158,9 @@ export default memo(function MobileAlbumCard({ album }: Props) {
           </div>,
           document.body,
         )}
+      {collectionsOpen && (
+        <CollectionPickerSheet album={album} onDismiss={() => setCollectionsOpen(false)} />
+      )}
     </>
   );
 });
