@@ -383,10 +383,26 @@ export function useSheetDrag(refs: SheetDragRefs, opts: Options): void {
        *  the body has bottomed out at the top. `target` is the touchstart
        *  element (touchmove reports the same one for the whole gesture). */
       canClaim: (target: HTMLElement | null) => boolean;
+      /**
+       * Consulted for moves BEFORE the slop is crossed. Returning true calls
+       * `preventDefault()` without starting the drag, which takes the gesture
+       * off a native scroller that would otherwise latch onto it during those
+       * first few pixels — see the note on `attach`.
+       */
+      holdBeforeClaim?: (dy: number) => boolean;
       onTouchStart?: () => void;
       onClaim?: () => void;
     }
 
+    /**
+     * `preventDefault()` on `touchmove` only keeps a native scroller off the
+     * gesture if it lands before that scroller starts scrolling; once WebKit
+     * has handed the gesture to its scrolling thread, later calls are ignored
+     * for the rest of the touch. Sources sitting inside a scroll container
+     * therefore have to stake their claim within the slop window, via
+     * `holdBeforeClaim` — otherwise a drag that reverses direction mid-gesture
+     * ends up driving the sheet AND scrolling the container underneath it.
+     */
     const attach = (el: HTMLElement, dir: 1 | -1, source: Source) => {
       let startY: number | null = null;
       let skip = false;
@@ -405,7 +421,10 @@ export function useSheetDrag(refs: SheetDragRefs, opts: Options): void {
         const y = e.touches[0].clientY;
         if (!owns) {
           const dy = y - startY;
-          if (dir === 1 ? dy <= CLAIM_SLOP : dy >= -CLAIM_SLOP) return;
+          if (dir === 1 ? dy <= CLAIM_SLOP : dy >= -CLAIM_SLOP) {
+            if (source.holdBeforeClaim?.(dy)) e.preventDefault();
+            return;
+          }
           if (drag.current.claimed) return;
           // Not a hard skip: the guard may pass on a later move.
           if (!source.canClaim(e.target as HTMLElement | null)) return;
@@ -477,12 +496,19 @@ export function useSheetDrag(refs: SheetDragRefs, opts: Options): void {
 
     const heroArt = refs.heroArt.current;
     if (heroArt) {
+      // Lyrics mode owns its own scrolling and tap-to-seek inside this box.
+      const dismissable = () =>
+        !usePlaybackStore.getState().showLyrics && (refs.body.current?.scrollTop ?? 0) <= 0;
       attach(heroArt, 1, {
-        canClaim: () => {
-          // Lyrics mode owns its own scrolling and tap-to-seek inside this box.
-          if (usePlaybackStore.getState().showLyrics) return false;
-          return (refs.body.current?.scrollTop ?? 0) <= 0;
-        },
+        canClaim: dismissable,
+        // Unlike the header, this box lives INSIDE `.mobile-sheet-body`, so the
+        // gesture is up for grabs. Downward movement at the top of the body
+        // cannot scroll anything, which makes it free to claim immediately —
+        // and claiming it here is what stops the scroller taking the gesture
+        // during the slop window and then scrolling the queue when the drag
+        // reverses back up. Upward movement is left alone, so a swipe from the
+        // artwork still scrolls to Up Next.
+        holdBeforeClaim: (dy) => dy > 0 && dismissable(),
       });
     }
 
