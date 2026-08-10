@@ -430,6 +430,14 @@ export function useSheetDrag(refs: SheetDragRefs, opts: Options): void {
           if (!source.canClaim(e.target as HTMLElement | null)) return;
           owns = true;
           source.onClaim?.();
+          // The claiming move has to be prevented too, and this is the case
+          // that matters most: a quick pull clears the slop on its very first
+          // touchmove, so this IS the first move of the gesture and the only
+          // chance to stop a scroller taking it. Leaving it unprevented is why
+          // the leak was intermittent and looked velocity-dependent — a slow
+          // start went through `holdBeforeClaim` and was covered, a fast one
+          // skipped straight past it to here.
+          e.preventDefault();
           beginDrag(dir, y);
           return;
         }
