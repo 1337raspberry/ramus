@@ -4,6 +4,7 @@ pub mod colors;
 pub mod downloads;
 pub mod genre;
 pub mod image_cache;
+pub mod playlist;
 pub mod prune;
 pub mod search_queries;
 pub mod sync;

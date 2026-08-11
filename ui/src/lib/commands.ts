@@ -12,6 +12,8 @@ import type {
   GenreTreeResponse,
   LibrarySection,
   LyricsFetchResult,
+  Playlist,
+  PlaylistItem,
   PlexServer,
   BookmarkDownloadEstimate,
   SearchResponse,
@@ -210,6 +212,33 @@ export const addAlbumToCollection = (sourceId: string, collectionName: string) =
 export const removeAlbumFromCollection = (sourceId: string, collectionName: string) =>
   invoke<boolean>("remove_album_from_collection", { sourceId, collectionName });
 
+// --- Playlists (server-first; mirror served when offline) ---
+
+export const getPlaylists = () => invoke<Playlist[]>("get_playlists");
+
+export const getPlaylistItems = (sourceId: string) =>
+  invoke<PlaylistItem[]>("get_playlist_items", { sourceId });
+
+export const createPlaylist = (title: string, trackIds: string[]) =>
+  invoke<Playlist>("create_playlist", { title, trackIds });
+
+/** Append tracks; resolves to the refreshed entry list. */
+export const addTracksToPlaylist = (sourceId: string, trackIds: string[]) =>
+  invoke<PlaylistItem[]>("add_tracks_to_playlist", { sourceId, trackIds });
+
+/** Remove one entry by its per-item id; resolves to the refreshed list. */
+export const removePlaylistItem = (sourceId: string, playlistItemId: number) =>
+  invoke<PlaylistItem[]>("remove_playlist_item", { sourceId, playlistItemId });
+
+/** Move one entry after another (`null` = to the front); refreshed list. */
+export const movePlaylistItem = (
+  sourceId: string,
+  playlistItemId: number,
+  afterItemId: number | null,
+) => invoke<PlaylistItem[]>("move_playlist_item", { sourceId, playlistItemId, afterItemId });
+
+export const deletePlaylist = (sourceId: string) => invoke<void>("delete_playlist", { sourceId });
+
 export const getGenreSuggestions = (query: string, limit = 200) =>
   invoke<string[]>("get_genre_suggestions", { query, limit });
 
@@ -238,6 +267,9 @@ export const appendToQueue = (tracks: Track[]) => invoke<void>("append_to_queue"
 export const insertNext = (tracks: Track[]) => invoke<void>("insert_next", { tracks });
 
 export const removeFromQueue = (index: number) => invoke<void>("remove_from_queue", { index });
+
+export const moveQueueItem = (from: number, to: number) =>
+  invoke<void>("move_queue_item", { from, to });
 
 export const jumpToQueueIndex = (index: number) => invoke<void>("jump_to_queue_index", { index });
 

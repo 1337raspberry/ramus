@@ -1,16 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLibraryStore, hasActiveFilters } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
-import { useSettingsStore } from "../stores/settingsStore";
 import { getFavouriteTracks, playTracks } from "../lib/commands";
 import { pushBackHandler } from "../lib/backHandler";
-import BookmarkEditor from "../components/BookmarkEditor";
-import BookmarkPicker from "../components/BookmarkPicker";
-import { filtersFromBookmark } from "../lib/bookmark";
 import MobileFilterPanel from "./MobileFilterPanel";
-import type { Bookmark } from "../lib/types";
 
-export type MobileView = "genres" | "artists" | "suggestion" | "search";
+export type MobileView = "genres" | "artists" | "suggestion" | "search" | "lists";
 
 interface Props {
   view: MobileView;
@@ -71,7 +66,7 @@ function IconDice() {
   );
 }
 
-function IconBookmark() {
+function IconStack() {
   return (
     <svg
       width="22"
@@ -83,7 +78,9 @@ function IconBookmark() {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+      <polygon points="12 2 22 7.5 12 13 2 7.5" />
+      <polyline points="2 12.5 12 18 22 12.5" />
+      <polyline points="2 17.5 12 23 22 17.5" />
     </svg>
   );
 }
@@ -165,9 +162,6 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
   const setSidebarMode = useLibraryStore((s) => s.setSidebarMode);
   const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
   const albumFilters = useLibraryStore((s) => s.albumFilters);
-  const bookmarks = useSettingsStore((s) => s.bookmarks);
-  const [showEditor, setShowEditor] = useState(false);
-  const [showPicker, setShowPicker] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   const [showShuffleConfirm, setShowShuffleConfirm] = useState(false);
   const filterActive = hasActiveFilters(albumFilters);
@@ -195,26 +189,6 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
     },
   });
 
-  const loadBookmarkEntry = useCallback(
-    (entry: Bookmark) => {
-      useLibraryStore.setState({
-        detailAlbum: null,
-        detailTracks: [],
-        suggestion: null,
-        suggestionMissed: false,
-        searchQuery: null,
-        browseArtistName: null,
-        browseYear: null,
-        selectedGenreId: "__all__",
-        selectedArtistId: null,
-      });
-      usePlaybackStore.setState({ isFocusMode: false });
-      useLibraryStore.getState().loadBookmark(filtersFromBookmark(entry), entry.name);
-      onSelect("genres");
-    },
-    [onSelect],
-  );
-
   const pick = (v: MobileView) => {
     useLibraryStore.setState({
       detailAlbum: null,
@@ -224,6 +198,8 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
       searchQuery: null,
       browseArtistName: null,
       browseYear: null,
+      browseCollectionName: null,
+      browsePlaylist: null,
       selectedGenreId: null,
       selectedArtistId: null,
     });
@@ -243,32 +219,12 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
   };
 
   useEffect(() => {
-    if (!showEditor) return;
-    return pushBackHandler(() => {
-      setShowEditor(false);
-      return true;
-    });
-  }, [showEditor]);
-
-  useEffect(() => {
-    if (!showPicker) return;
-    return pushBackHandler(() => {
-      setShowPicker(false);
-      return true;
-    });
-  }, [showPicker]);
-
-  useEffect(() => {
     if (!showShuffleConfirm) return;
     return pushBackHandler(() => {
       setShowShuffleConfirm(false);
       return true;
     });
   }, [showShuffleConfirm]);
-
-  const handleBookmarksTap = () => {
-    setShowPicker(true);
-  };
 
   return (
     <>
@@ -294,8 +250,12 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
         >
           <IconDice />
         </button>
-        <button className="mobile-toolbar-btn" aria-label="Bookmarks" onClick={handleBookmarksTap}>
-          <IconBookmark />
+        <button
+          className={`mobile-toolbar-btn${view === "lists" ? " active" : ""}`}
+          aria-label="Lists"
+          onClick={() => pick("lists")}
+        >
+          <IconStack />
         </button>
         <button
           className={`mobile-toolbar-btn${filterActive ? " active" : ""}`}
@@ -320,17 +280,6 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
         </button>
       </nav>
 
-      {showPicker && (
-        <BookmarkPicker
-          variant="sheet"
-          entries={bookmarks}
-          onSelect={loadBookmarkEntry}
-          onManage={() => setShowEditor(true)}
-          onDismiss={() => setShowPicker(false)}
-        />
-      )}
-
-      {showEditor && <BookmarkEditor onDismiss={() => setShowEditor(false)} />}
       {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
 
       {showShuffleConfirm && (

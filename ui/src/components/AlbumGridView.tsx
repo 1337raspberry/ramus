@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useLibraryStore, hasActiveFilters, type AlbumSortOrder } from "../stores/libraryStore";
+import { useLibraryStore, hasActiveFilters } from "../stores/libraryStore";
 import type { Album } from "../lib/types";
 import { ART_SIZE } from "../lib/commands";
 import { useArtUrl } from "../lib/useArtUrl";
@@ -8,18 +8,12 @@ import { useQueueAlbum } from "../lib/useQueueAlbum";
 import { IconPlay, IconStarFilled, IconStarEmpty, IconMusicNote, IconMoreDots } from "./Icons";
 import BreadcrumbBar from "./BreadcrumbBar";
 import FilterDropdown from "./FilterDropdown";
+import SortDropdown from "./SortDropdown";
 import ShuffleFavsButton from "./ShuffleFavsButton";
 import { AlbumDownloadMenuItem } from "./DownloadMenuItems";
 
 let savedGridScroll = 0;
 let savedGridKey = "";
-
-const SORT_OPTIONS: { value: AlbumSortOrder; label: string }[] = [
-  { value: "alphabetical", label: "A-Z" },
-  { value: "latestAdded", label: "Latest Added" },
-  { value: "recentlyPlayed", label: "Recently Played" },
-  { value: "random", label: "Random" },
-];
 
 const MIN_CARD_WIDTH = 125;
 const GAP = 16;
@@ -160,8 +154,6 @@ function useGridLayout() {
 
 export default function AlbumGridView() {
   const albums = useLibraryStore((s) => s.albums);
-  const albumSortOrder = useLibraryStore((s) => s.albumSortOrder);
-  const setAlbumSortOrder = useLibraryStore((s) => s.setAlbumSortOrder);
   const searchQuery = useLibraryStore((s) => s.searchQuery);
   const clearSearchResults = useLibraryStore((s) => s.clearSearchResults);
   const albumFilters = useLibraryStore((s) => s.albumFilters);
@@ -220,13 +212,6 @@ export default function AlbumGridView() {
     virtualizer.measure();
   }, [rowHeight, virtualizer]);
 
-  const onSortChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      setAlbumSortOrder(e.target.value as AlbumSortOrder);
-    },
-    [setAlbumSortOrder],
-  );
-
   const maskImage = scrolled ? `linear-gradient(to bottom, transparent, black 36px)` : undefined;
 
   if (!albums.length) {
@@ -237,13 +222,7 @@ export default function AlbumGridView() {
           <div className="breadcrumb-right">
             <ShuffleFavsButton />
             <FilterDropdown />
-            <select className="sort-select" value={albumSortOrder} onChange={onSortChange}>
-              {SORT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            <SortDropdown />
           </div>
         </div>
         <div className="empty-state">
@@ -271,13 +250,7 @@ export default function AlbumGridView() {
         <div className="breadcrumb-right">
           <ShuffleFavsButton />
           <FilterDropdown />
-          <select className="sort-select" value={albumSortOrder} onChange={onSortChange}>
-            {SORT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+          <SortDropdown />
         </div>
       </div>
       <div

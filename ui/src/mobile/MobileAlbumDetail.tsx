@@ -18,6 +18,7 @@ import FlowLayout from "../components/FlowLayout";
 import MarqueeText from "../components/MarqueeText";
 import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "../components/DownloadMenuItems";
 import CollectionPickerSheet from "./CollectionPickerSheet";
+import PlaylistPickerSheet from "./PlaylistPickerSheet";
 import { useDownloadsStore } from "../stores/downloadsStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useGenreInfoStore } from "../stores/genreInfoStore";
@@ -46,6 +47,7 @@ export default function MobileAlbumDetail() {
   const [genres, setGenres] = useState<string[]>([]);
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
   const [collectionsOpen, setCollectionsOpen] = useState(false);
+  const [playlistOpen, setPlaylistOpen] = useState(false);
 
   const { effectiveOffline } = useConnectionStatus();
   const downloadedIds = useDownloadsStore((s) => s.downloadedTrackIds);
@@ -217,6 +219,14 @@ export default function MobileAlbumDetail() {
                     >
                       Add to Collection…
                     </button>
+                    <button
+                      onClick={() => {
+                        setOpenMenuKey(null);
+                        setPlaylistOpen(true);
+                      }}
+                    >
+                      Add to Playlist…
+                    </button>
                     <AlbumDownloadMenuItem
                       albumRatingKey={album.ratingKey}
                       onDone={() => setOpenMenuKey(null)}
@@ -351,6 +361,13 @@ export default function MobileAlbumDetail() {
       </div>
       {collectionsOpen && (
         <CollectionPickerSheet album={album} onDismiss={() => setCollectionsOpen(false)} />
+      )}
+      {playlistOpen && (
+        <PlaylistPickerSheet
+          heading={album.title}
+          getTrackIds={() => Promise.resolve(tracks.map((t) => t.ratingKey))}
+          onDismiss={() => setPlaylistOpen(false)}
+        />
       )}
     </div>
   );

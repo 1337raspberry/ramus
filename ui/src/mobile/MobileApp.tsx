@@ -11,6 +11,8 @@ import MobileArtistList from "./MobileArtistList";
 import MobileSuggestion from "./MobileSuggestion";
 import MobileSearch from "./MobileSearch";
 import MobileNowPlaying from "./MobileNowPlaying";
+import MobileListsHub from "./MobileListsHub";
+import MobilePlaylistDetail from "./MobilePlaylistDetail";
 import GenreInfoSheet from "./GenreInfoSheet";
 import type { GenreNode } from "../lib/types";
 
@@ -37,6 +39,8 @@ export default function MobileApp({ onOpenSettings }: Props) {
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
   const browseArtistName = useLibraryStore((s) => s.browseArtistName);
   const browseYear = useLibraryStore((s) => s.browseYear);
+  const browseCollectionName = useLibraryStore((s) => s.browseCollectionName);
+  const browsePlaylist = useLibraryStore((s) => s.browsePlaylist);
   const hasTrack = usePlaybackStore((s) => !!s.currentTrack);
   const [sheetExpanded, setSheetExpanded] = useState(false);
 
@@ -91,6 +95,8 @@ export default function MobileApp({ onOpenSettings }: Props) {
     !!selectedGenreId ||
     !!browseArtistName ||
     !!browseYear ||
+    !!browseCollectionName ||
+    !!browsePlaylist ||
     (view === "artists" && !!selectedArtistId);
   const showToolbar = !inGrid && !detailAlbum && view !== "search" && view !== "suggestion";
 
@@ -115,10 +121,25 @@ export default function MobileApp({ onOpenSettings }: Props) {
       return;
     }
 
+    if (s.browsePlaylist) {
+      useLibraryStore.setState({ browsePlaylist: null });
+      return;
+    }
+
+    if (s.browseCollectionName) {
+      // Collection grid (Lists view) → back to the hub. The store list is
+      // reloaded so the next grid isn't left showing the collection subset.
+      useLibraryStore.setState({ browseCollectionName: null });
+      s.loadAllAlbums();
+      return;
+    }
+
     if (s.browseArtistName || s.browseYear || s.searchQuery !== null) {
       useLibraryStore.setState({
         browseArtistName: null,
         browseYear: null,
+        browseCollectionName: null,
+        browsePlaylist: null,
         searchQuery: null,
       });
       const gid = s.selectedGenreId;
@@ -153,6 +174,8 @@ export default function MobileApp({ onOpenSettings }: Props) {
     view === "suggestion" ||
     !!browseArtistName ||
     !!browseYear ||
+    !!browseCollectionName ||
+    !!browsePlaylist ||
     searchQuery !== null ||
     (view === "artists" && !!selectedArtistId) ||
     !!selectedGenreId;
@@ -198,6 +221,18 @@ export default function MobileApp({ onOpenSettings }: Props) {
       if (selectedArtistId) return <MobileAlbumGrid contextLabel="Artist" />;
       if (browseArtistName) return <MobileAlbumGrid contextLabel="" />;
       return <MobileArtistList onOpenSettings={onOpenSettings} />;
+    }
+
+    if (view === "lists") {
+      if (browsePlaylist)
+        return (
+          <MobilePlaylistDetail
+            playlist={browsePlaylist}
+            onBack={() => useLibraryStore.setState({ browsePlaylist: null })}
+          />
+        );
+      if (browseCollectionName) return <MobileAlbumGrid contextLabel="" />;
+      return <MobileListsHub onOpenGrid={() => setView("genres")} />;
     }
 
     const drillGrid =

@@ -211,7 +211,26 @@ impl CacheDatabase {
                 collectionId INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
                 PRIMARY KEY (albumId, collectionId)
             );
-            CREATE INDEX IF NOT EXISTS idx_album_collections_collectionId ON album_collections(collectionId);",
+            CREATE INDEX IF NOT EXISTS idx_album_collections_collectionId ON album_collections(collectionId);
+
+            CREATE TABLE IF NOT EXISTS playlists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sourceId TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL,
+                smart INTEGER NOT NULL DEFAULT 0,
+                trackCount INTEGER,
+                durationMs INTEGER,
+                thumb TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS playlist_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playlistId INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                plexItemId INTEGER,
+                trackSourceId TEXT NOT NULL,
+                position INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist ON playlist_items(playlistId, position);",
         )?;
 
         // Back-compat: add firstGenre to an albums table that predates the

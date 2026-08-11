@@ -6,9 +6,10 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { useGenreInfoStore } from "../stores/genreInfoStore";
 import { useLongPress } from "../lib/useLongPress";
 import { IconChevronLeft, IconChevronDown, IconFilter } from "../components/Icons";
-import { type AlbumSortOrder, hasActiveFilters } from "../stores/libraryStore";
+import { hasActiveFilters } from "../stores/libraryStore";
 import MobileAlbumCard from "./MobileAlbumCard";
 import MobileFilterPanel from "./MobileFilterPanel";
+import MobileSortSheet from "./MobileSortSheet";
 import { countryToFlag } from "../lib/countryFlag";
 
 let savedGridScroll = 0;
@@ -17,7 +18,45 @@ let savedGridKey = "";
 function SortIcon({ mode }: { mode: string }) {
   const s = 22;
   switch (mode) {
-    case "latestAdded":
+    case "artist":
+      return (
+        <svg
+          width={s}
+          height={s}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        >
+          <circle cx="12" cy="8" r="3.6" />
+          <path d="M4.5 20c0-4 3.4-6.2 7.5-6.2s7.5 2.2 7.5 6.2" />
+        </svg>
+      );
+    case "plays":
+      return (
+        <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor">
+          <rect x="3.5" y="12" width="4.4" height="8.5" rx="1" />
+          <rect x="9.8" y="7" width="4.4" height="13.5" rx="1" />
+          <rect x="16.1" y="3" width="4.4" height="17.5" rx="1" />
+        </svg>
+      );
+    case "year":
+      return (
+        <svg
+          width={s}
+          height={s}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        >
+          <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+          <path d="M3.5 10h17M8 2.8v4M16 2.8v4" />
+        </svg>
+      );
+    case "dateAdded":
       return (
         <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor">
           <path
@@ -26,7 +65,7 @@ function SortIcon({ mode }: { mode: string }) {
           />
         </svg>
       );
-    case "recentlyPlayed":
+    case "datePlayed":
       return (
         <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor">
           <path
@@ -123,11 +162,11 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
   const genreTree = useLibraryStore((s) => s.genreTree);
   const browseArtistName = useLibraryStore((s) => s.browseArtistName);
   const browseYear = useLibraryStore((s) => s.browseYear);
+  const browseCollectionName = useLibraryStore((s) => s.browseCollectionName);
   const searchQuery = useLibraryStore((s) => s.searchQuery);
   const artists = useLibraryStore((s) => s.artists);
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
-  const albumSortOrder = useLibraryStore((s) => s.albumSortOrder);
-  const setAlbumSortOrder = useLibraryStore((s) => s.setAlbumSortOrder);
+  const albumSort = useLibraryStore((s) => s.albumSort);
   const selectGenre = useLibraryStore((s) => s.selectGenre);
   const albumFilters = useLibraryStore((s) => s.albumFilters);
   const activeBookmarkName = useLibraryStore((s) => s.activeBookmarkName);
@@ -136,6 +175,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
 
   const [showBreadcrumb, setShowBreadcrumb] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
+  const [showSort, setShowSort] = useState(false);
   const filterActive = hasActiveFilters(albumFilters);
 
   const title = useMemo(() => {
@@ -143,6 +183,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
     if (searchQuery) return `"${searchQuery}"`;
     if (browseArtistName) return browseArtistName;
     if (browseYear) return String(browseYear);
+    if (browseCollectionName) return browseCollectionName;
     if (sidebarMode === "artists" && selectedArtistId) {
       return artists.find((a) => a.sourceId === selectedArtistId)?.name ?? "Artist";
     }
@@ -157,6 +198,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
     searchQuery,
     browseArtistName,
     browseYear,
+    browseCollectionName,
     sidebarMode,
     selectedArtistId,
     artists,
@@ -182,6 +224,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
     !searchQuery &&
     !browseArtistName &&
     !browseYear &&
+    !browseCollectionName &&
     !(sidebarMode === "artists" && selectedArtistId) &&
     !!selectedGenreId &&
     selectedGenreId !== "__all__";
@@ -230,10 +273,19 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
       return;
     }
     const store = useLibraryStore.getState();
+    if (browseCollectionName) {
+      // Collection grid opened from the Lists hub — clearing the context
+      // returns to the hub, so just restore the full album list for later.
+      useLibraryStore.setState({ browseCollectionName: null });
+      store.loadAllAlbums();
+      return;
+    }
     if (browseArtistName || browseYear || searchQuery !== null) {
       useLibraryStore.setState({
         browseArtistName: null,
         browseYear: null,
+        browseCollectionName: null,
+        browsePlaylist: null,
         searchQuery: null,
       });
       // Reload the underlying view.
@@ -308,22 +360,17 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
           <IconFilter size={18} />
           {filterActive && <span className="mobile-filter-dot" />}
         </button>
-        <div className="mobile-sort-wrap">
-          <SortIcon mode={albumSortOrder} />
+        <button
+          className="mobile-sort-wrap"
+          onClick={() => setShowSort(true)}
+          aria-label="Sort albums"
+        >
+          <SortIcon mode={albumSort.field} />
           <IconChevronDown size={10} />
-          <select
-            className="mobile-sort-select"
-            value={albumSortOrder}
-            onChange={(e) => setAlbumSortOrder(e.target.value as AlbumSortOrder)}
-          >
-            <option value="alphabetical">A-Z</option>
-            <option value="latestAdded">Latest Added</option>
-            <option value="recentlyPlayed">Recently Played</option>
-            <option value="random">Random</option>
-          </select>
-        </div>
+        </button>
       </header>
       {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
+      {showSort && <MobileSortSheet onDismiss={() => setShowSort(false)} />}
 
       {albums.length === 0 ? (
         <div className="mobile-empty">No albums</div>

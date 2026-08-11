@@ -213,6 +213,21 @@ pub async fn remove_from_queue(
     Ok(())
 }
 
+/// Drag-reorder one queue entry. The prefetch nudge re-evaluates the
+/// lookahead window under the new order.
+#[tauri::command]
+pub async fn move_queue_item(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    from: usize,
+    to: usize,
+) -> CmdResult<()> {
+    state.player.move_queue_item(from, to);
+    state.prefetch_handle.notify_skip();
+    crate::queue_persist::save_soon(&app);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn jump_to_queue_index(
     app: AppHandle,

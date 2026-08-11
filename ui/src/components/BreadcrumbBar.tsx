@@ -41,6 +41,7 @@ export default function BreadcrumbBar() {
   const activeBookmarkName = useLibraryStore((s) => s.activeBookmarkName);
   const browseArtistName = useLibraryStore((s) => s.browseArtistName);
   const browseYear = useLibraryStore((s) => s.browseYear);
+  const browseCollectionName = useLibraryStore((s) => s.browseCollectionName);
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
   const artists = useLibraryStore((s) => s.artists);
   const selectGenre = useLibraryStore((s) => s.selectGenre);
@@ -71,6 +72,10 @@ export default function BreadcrumbBar() {
 
     if (browseYear) {
       return [{ label: String(browseYear) }];
+    }
+
+    if (browseCollectionName) {
+      return [{ label: browseCollectionName }];
     }
 
     if (sidebarMode === "artists" && selectedArtistId) {
@@ -120,6 +125,7 @@ export default function BreadcrumbBar() {
     searchQuery,
     browseArtistName,
     browseYear,
+    browseCollectionName,
     sidebarMode,
     selectedArtistId,
     artists,

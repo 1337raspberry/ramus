@@ -19,6 +19,7 @@ import { applyAccent, DEFAULT_BLUR_COLORS, OLED_VOID_BLUR_COLORS } from "../lib/
 import { useArtUrl } from "../lib/useArtUrl";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
 import { useSheetDrag } from "./useSheetDrag";
+import { useListReorder } from "../lib/useListReorder";
 import WaveformSeekBar from "../components/WaveformSeekBar";
 import FlowLayout from "../components/FlowLayout";
 import UltraBlurBackground from "../components/UltraBlurBackground";
@@ -42,6 +43,11 @@ import {
 import EqualizerPanel from "../components/EqualizerPanel";
 import MobileDebugPanel from "./MobileDebugPanel";
 import CollectionPickerSheet from "./CollectionPickerSheet";
+import PlaylistPickerSheet from "./PlaylistPickerSheet";
+
+/** Fixed Up Next row height (44px thumb + 2×6px padding) — the reorder drag
+ * computes slots from it, so the CSS height must match. */
+const UPNEXT_ROW_HEIGHT = 56;
 
 function IconSkipBack({ size = 22 }: { size?: number }) {
   return (
@@ -110,7 +116,18 @@ export default function MobileNowPlaying({
   const queueIndex = usePlaybackStore((s) => s.queueIndex);
   const jumpToIndex = usePlaybackStore((s) => s.jumpToIndex);
   const removeQueueItem = usePlaybackStore((s) => s.removeQueueItem);
+  const moveQueueItem = usePlaybackStore((s) => s.moveQueueItem);
   const clearQueue = usePlaybackStore((s) => s.clearQueue);
+
+  // Up Next drag-reorder. The hook works in upcoming-list space; the store
+  // takes absolute queue indices.
+  const upcomingStart = queueIndex + 1;
+  const upcoming = queue.slice(upcomingStart);
+  const { setRowRef: setUpNextRowRef, handleProps: upNextHandleProps } = useListReorder({
+    count: upcoming.length,
+    rowHeight: UPNEXT_ROW_HEIGHT,
+    onReorder: (from, to) => moveQueueItem(upcomingStart + from, upcomingStart + to),
+  });
 
   const {
     track,
@@ -171,6 +188,8 @@ export default function MobileNowPlaying({
   const [showDebug, setShowDebug] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showCollections, setShowCollections] = useState(false);
+  /** null = closed; "track" = add current track; "queue" = save queue as new. */
+  const [playlistSheet, setPlaylistSheet] = useState<"track" | "queue" | null>(null);
 
   // --- Swipe gestures ---
   // Pull up from the mini-player to open, pull down from the sheet header or
@@ -242,12 +261,13 @@ export default function MobileNowPlaying({
       if (e.key !== "Escape") return;
       if (showEQ || showDebug) return;
       if (showCollections) setShowCollections(false);
+      else if (playlistSheet) setPlaylistSheet(null);
       else if (showMenu) setShowMenu(false);
       else onCollapse();
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [expanded, onCollapse, showMenu, showEQ, showDebug, showCollections]);
+  }, [expanded, onCollapse, showMenu, showEQ, showDebug, showCollections, playlistSheet]);
 
   // Same for hardware back — without this the sheet collapses out from
   // under the menu, stranding it (it portals to <body>, so it does not
@@ -476,52 +496,63 @@ export default function MobileNowPlaying({
             </div>
           </div>
 
-          {(() => {
-            const upcomingStart = queueIndex + 1;
-            const upcoming = queue.slice(upcomingStart);
-            if (upcoming.length === 0) return null;
-            return (
-              <div className="mobile-upnext">
-                <div className="mobile-upnext-header">Up Next</div>
-                {upcoming.map((t, i) => {
-                  const globalIndex = upcomingStart + i;
-                  return (
-                    <div
-                      key={`${globalIndex}-${t.ratingKey}`}
-                      className="mobile-upnext-row"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => jumpToIndex(globalIndex)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          jumpToIndex(globalIndex);
-                        }
+          {upcoming.length > 0 && (
+            <div className="mobile-upnext">
+              <div className="mobile-upnext-header">Up Next</div>
+              {upcoming.map((t, i) => {
+                const globalIndex = upcomingStart + i;
+                return (
+                  <div
+                    key={`${globalIndex}-${t.ratingKey}`}
+                    className="mobile-upnext-row"
+                    role="button"
+                    tabIndex={0}
+                    ref={(el) => setUpNextRowRef(i, el)}
+                    onClick={() => jumpToIndex(globalIndex)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        jumpToIndex(globalIndex);
+                      }
+                    }}
+                  >
+                    <button
+                      className="mobile-upnext-remove"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeQueueItem(globalIndex);
                       }}
+                      aria-label="Remove from queue"
                     >
-                      <span className="mobile-upnext-num">{i + 1}</span>
-                      <UpNextThumb thumb={t.thumb} />
-                      <div className="mobile-upnext-info">
-                        <div className="mobile-upnext-title">{t.title}</div>
-                        <div className="mobile-upnext-artist">{t.trackArtist || t.artistName}</div>
-                      </div>
-                      <span className="mobile-upnext-duration">{formatDuration(t.duration)}</span>
-                      <button
-                        className="mobile-upnext-remove"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeQueueItem(globalIndex);
-                        }}
-                        aria-label="Remove from queue"
-                      >
-                        <IconClose size={12} />
-                      </button>
+                      <IconClose size={12} />
+                    </button>
+                    <span className="mobile-upnext-num">{i + 1}</span>
+                    <UpNextThumb thumb={t.thumb} />
+                    <div className="mobile-upnext-info">
+                      <div className="mobile-upnext-title">{t.title}</div>
+                      <div className="mobile-upnext-artist">{t.trackArtist || t.artistName}</div>
                     </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
+                    <span className="mobile-upnext-duration">{formatDuration(t.duration)}</span>
+                    <span
+                      className="mobile-upnext-grab"
+                      aria-label="Reorder"
+                      onClick={(e) => e.stopPropagation()}
+                      {...upNextHandleProps(i)}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="9" cy="6" r="1.6" />
+                        <circle cx="15" cy="6" r="1.6" />
+                        <circle cx="9" cy="12" r="1.6" />
+                        <circle cx="15" cy="12" r="1.6" />
+                        <circle cx="9" cy="18" r="1.6" />
+                        <circle cx="15" cy="18" r="1.6" />
+                      </svg>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Pinned dock — a sibling of the scroll body, so its contents stay
@@ -577,7 +608,17 @@ export default function MobileNowPlaying({
                 )}
                 {nowPlayingAlbum && (
                   <button onClick={() => runMenuAction(() => setShowCollections(true))}>
-                    Add to Collection…
+                    Add Album to Collection…
+                  </button>
+                )}
+                {track && (
+                  <button onClick={() => runMenuAction(() => setPlaylistSheet("track"))}>
+                    Add Track to Playlist…
+                  </button>
+                )}
+                {queue.length > 0 && (
+                  <button onClick={() => runMenuAction(() => setPlaylistSheet("queue"))}>
+                    Save Queue as Playlist…
                   </button>
                 )}
                 <button onClick={() => runMenuAction(() => setShowEQ(true))}>Adjust EQ</button>
@@ -602,6 +643,25 @@ export default function MobileNowPlaying({
           album={nowPlayingAlbum}
           overSheet
           onDismiss={() => setShowCollections(false)}
+        />
+      )}
+      {playlistSheet === "track" && track && (
+        <PlaylistPickerSheet
+          heading={track.title}
+          getTrackIds={() => Promise.resolve([track.ratingKey])}
+          overSheet
+          onDismiss={() => setPlaylistSheet(null)}
+        />
+      )}
+      {playlistSheet === "queue" && (
+        <PlaylistPickerSheet
+          heading="Queue"
+          createOnly
+          getTrackIds={() =>
+            Promise.resolve(usePlaybackStore.getState().queue.map((t) => t.ratingKey))
+          }
+          overSheet
+          onDismiss={() => setPlaylistSheet(null)}
         />
       )}
     </>

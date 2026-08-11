@@ -163,19 +163,19 @@ export default function FilterPanelMenu({ onAfterAction }: Props) {
         {open && (
           <div className="filter-panel-menu-dropdown" role="menu">
             <button type="button" role="menuitem" onClick={handleAddAlbums}>
-              Add all Albums to playlist
+              Add all albums to queue
             </button>
             <button type="button" role="menuitem" onClick={handleAddTracks}>
-              Add all tracks to playlist
+              Add all tracks to queue
             </button>
             <button
               type="button"
               role="menuitem"
               onClick={handleBookmark}
               disabled={!canBookmark}
-              title={canBookmark ? undefined : "Set a filter first to bookmark it"}
+              title={canBookmark ? undefined : "Set a filter first to save it"}
             >
-              Bookmark
+              Save as Smart Filter
             </button>
           </div>
         )}

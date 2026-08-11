@@ -403,6 +403,71 @@ fn test_remove_from_queue() {
 }
 
 #[test]
+fn test_move_queue_item_reorders_and_maps_mpv_index() {
+    let (player, mpv) = make_player();
+    player.load_queue(
+        vec![
+            make_test_track("1"),
+            make_test_track("2"),
+            make_test_track("3"),
+            make_test_track("4"),
+        ],
+        0,
+    );
+    let initial_calls = mpv.call_count();
+
+    // Downward move: entry 1 → index 3.
+    player.move_queue_item(1, 3);
+    let state = player.state();
+    let order: Vec<&str> = state.queue.iter().map(|t| t.rating_key.as_str()).collect();
+    assert_eq!(order, vec!["1", "3", "4", "2"]);
+    assert_eq!(state.queue_index, 0);
+    // mpv insert-before semantics need the +1 on downward moves.
+    let new_calls = &mpv.calls()[initial_calls..];
+    assert!(new_calls
+        .iter()
+        .any(|c| matches!(c, MockCall::PlaylistMove { from: 1, to: 4 })));
+
+    // Upward move: entry 3 → index 1 restores the original order.
+    player.move_queue_item(3, 1);
+    let state = player.state();
+    let order: Vec<&str> = state.queue.iter().map(|t| t.rating_key.as_str()).collect();
+    assert_eq!(order, vec!["1", "2", "3", "4"]);
+    assert!(mpv
+        .calls()
+        .iter()
+        .any(|c| matches!(c, MockCall::PlaylistMove { from: 3, to: 1 })));
+}
+
+#[test]
+fn test_move_queue_item_guards_current_and_bounds() {
+    let (player, mpv) = make_player();
+    player.load_queue(
+        vec![make_test_track("1"), make_test_track("2"), make_test_track("3")],
+        1,
+    );
+    let initial_calls = mpv.call_count();
+
+    // The playing entry can't be moved; out-of-bounds is ignored.
+    player.move_queue_item(1, 0);
+    player.move_queue_item(0, 5);
+    player.move_queue_item(2, 2);
+    let state = player.state();
+    let order: Vec<&str> = state.queue.iter().map(|t| t.rating_key.as_str()).collect();
+    assert_eq!(order, vec!["1", "2", "3"]);
+    assert_eq!(mpv.call_count(), initial_calls);
+
+    // A move crossing the playing position keeps queue_index on the same
+    // track: entry 0 moved past current (index 1) pulls current back to 0.
+    player.move_queue_item(0, 2);
+    let state = player.state();
+    let order: Vec<&str> = state.queue.iter().map(|t| t.rating_key.as_str()).collect();
+    assert_eq!(order, vec!["2", "3", "1"]);
+    assert_eq!(state.queue_index, 0);
+    assert_eq!(state.queue[state.queue_index].rating_key, "2");
+}
+
+#[test]
 fn test_remove_current_track_is_noop() {
     let (player, mpv) = make_player();
     player.load_queue(

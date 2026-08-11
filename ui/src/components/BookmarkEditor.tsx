@@ -97,7 +97,7 @@ export default function BookmarkEditor({ onDismiss }: Props) {
         aria-labelledby="bookmark-editor-title"
       >
         <div className="settings-header">
-          <h2 id="bookmark-editor-title">Bookmarks</h2>
+          <h2 id="bookmark-editor-title">Smart Filters</h2>
           <button className="settings-close" onClick={onDismiss} aria-label="Close">
             x
           </button>
@@ -112,7 +112,7 @@ export default function BookmarkEditor({ onDismiss }: Props) {
 
           {rows.length === 0 ? (
             <div className="downloads-empty">
-              No bookmarks yet — set a filter and use the … menu in the filter panel to save one.
+              No Smart Filters yet — set a filter and use the … menu in the filter panel to save one.
             </div>
           ) : (
             <ul className="bookmark-edit-list">
@@ -136,7 +136,7 @@ export default function BookmarkEditor({ onDismiss }: Props) {
                         type="text"
                         value={r.name}
                         onChange={(e) => updateRow(r.id, { name: e.target.value })}
-                        placeholder="Bookmark name"
+                        placeholder="Smart Filter name"
                         autoComplete="off"
                         autoCorrect="off"
                         autoCapitalize="off"
@@ -152,7 +152,7 @@ export default function BookmarkEditor({ onDismiss }: Props) {
                     <button
                       className="downloads-row-action"
                       onClick={() => deleteRow(r.id)}
-                      title="Remove bookmark"
+                      title="Remove Smart Filter"
                     >
                       x
                     </button>
@@ -163,12 +163,12 @@ export default function BookmarkEditor({ onDismiss }: Props) {
           )}
 
           <div className="bookmark-hint">
-            To create or update a bookmark, set a filter and use the … menu in the filter panel.
+            To create or update a Smart Filter, set a filter and use the … menu in the filter panel.
             Bookmarks store the filter, not the results, so newly added matching albums show up
             automatically.
           </div>
           {rows.length >= MAX_BOOKMARKS && (
-            <div className="bookmark-hint">Maximum of {MAX_BOOKMARKS} bookmarks reached.</div>
+            <div className="bookmark-hint">Maximum of {MAX_BOOKMARKS} Smart Filters reached.</div>
           )}
 
           <div className="bookmark-actions">

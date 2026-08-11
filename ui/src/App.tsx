@@ -19,6 +19,7 @@ import ThreeColumnLayout from "./components/ThreeColumnLayout";
 import SidebarView from "./components/SidebarView";
 import AlbumGridView from "./components/AlbumGridView";
 import AlbumDetailView from "./components/AlbumDetailView";
+import PlaylistDetailView from "./components/PlaylistDetailView";
 import SuggestionView from "./components/SuggestionView";
 import DetailColumn from "./components/DetailColumn";
 import FocusNowPlayingView from "./components/FocusNowPlayingView";
@@ -54,6 +55,7 @@ export default function App() {
   const [showDownloads, setShowDownloads] = useState(false);
   const suggestion = useLibraryStore((s) => s.suggestion);
   const detailAlbum = useLibraryStore((s) => s.detailAlbum);
+  const browsePlaylist = useLibraryStore((s) => s.browsePlaylist);
   const albumColors = usePlaybackStore((s) => s.ultraBlurColors);
   const isFocusMode = usePlaybackStore((s) => s.isFocusMode);
   const toggleFocusMode = usePlaybackStore((s) => s.toggleFocusMode);
@@ -299,7 +301,15 @@ export default function App() {
       <ThreeColumnLayout
         sidebar={<SidebarView onOpenSettings={() => setShowSettings(true)} />}
         content={
-          detailAlbum ? <AlbumDetailView /> : suggestion ? <SuggestionView /> : <AlbumGridView />
+          detailAlbum ? (
+            <AlbumDetailView />
+          ) : browsePlaylist ? (
+            <PlaylistDetailView />
+          ) : suggestion ? (
+            <SuggestionView />
+          ) : (
+            <AlbumGridView />
+          )
         }
         detail={
           <DetailColumn

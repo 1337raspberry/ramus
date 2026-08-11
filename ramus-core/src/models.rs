@@ -290,6 +290,34 @@ impl Album {
     }
 }
 
+// --- Playlist ---
+
+/// A Plex audio playlist (per-user server object, mirrored into the local
+/// cache after every successful server fetch).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Playlist {
+    pub source_id: PlexID,
+    pub title: String,
+    /// Smart playlists are filter-driven — display/play only, no item edits.
+    #[serde(default)]
+    pub smart: bool,
+    pub track_count: Option<i64>,
+    /// Total runtime in seconds.
+    pub duration: Option<f64>,
+    pub thumb: Option<String>,
+}
+
+/// One entry of a playlist. `playlist_item_id` is Plex's per-entry id — the
+/// handle the remove/reorder endpoints take (NOT the track's ratingKey, which
+/// can appear multiple times in one playlist).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistItem {
+    pub playlist_item_id: i64,
+    pub track: Track,
+}
+
 // --- Track ---
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

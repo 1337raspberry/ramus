@@ -6,6 +6,7 @@ pub mod downloads;
 pub mod library;
 pub mod platform;
 pub mod playback;
+pub mod playlists;
 pub mod search;
 pub mod settings;
 pub mod spectrum;

@@ -4,6 +4,7 @@ import {
   type Album,
   type ArtistInfo,
   type GenreNode,
+  type Playlist,
   type Track,
 } from "../lib/types";
 import { useToastStore } from "../components/Toast";
@@ -27,26 +28,17 @@ import {
   expandGenreToLibraryTags,
 } from "../lib/commands";
 import { filtersToIPC } from "../lib/filters";
+import {
+  loadPersistedAlbumSort,
+  persistAlbumSort,
+  sortAlbums,
+  type AlbumSort,
+} from "../lib/albumSort";
 import { usePlaybackStore } from "./playbackStore";
 import { useConnectionStore } from "./connectionStore";
 import { useDownloadsStore } from "./downloadsStore";
 
-export type SidebarMode = "genres" | "artists";
-export type AlbumSortOrder = "alphabetical" | "latestAdded" | "recentlyPlayed" | "random";
-
-const ALBUM_SORT_ORDERS: readonly AlbumSortOrder[] = [
-  "alphabetical",
-  "latestAdded",
-  "recentlyPlayed",
-  "random",
-];
-
-function loadPersistedAlbumSort(): AlbumSortOrder {
-  const stored = localStorage.getItem("ramus-album-sort");
-  return ALBUM_SORT_ORDERS.includes(stored as AlbumSortOrder)
-    ? (stored as AlbumSortOrder)
-    : "alphabetical";
-}
+export type SidebarMode = "genres" | "artists" | "lists";
 
 export interface AlbumFilters {
   unplayed: boolean;
@@ -258,11 +250,11 @@ export function countActiveFilters(filters: AlbumFilters): number {
 
 function sortAndFilter(
   albums: Album[],
-  order: AlbumSortOrder,
+  sort: AlbumSort,
   filters: AlbumFilters,
   genreExpansions: Record<string, string[]>,
 ): { sorted: Album[]; filtered: Album[] } {
-  const sorted = sortAlbums(albums, order);
+  const sorted = sortAlbums(albums, sort);
   return { sorted, filtered: filterAlbums(sorted, filters, genreExpansions) };
 }
 
@@ -295,14 +287,14 @@ interface LibraryState {
   // --- Albums ---
   albums: Album[];
   unfilteredAlbums: Album[];
-  albumSortOrder: AlbumSortOrder;
+  albumSort: AlbumSort;
   albumFilters: AlbumFilters;
   /// Per-chip cache of "lowercased library tag names this chip's subtree
   /// covers" — populated lazily by `setAlbumFilters`. Drives the AND-filter
   /// for the album grid: see `albumMatchesGenres`. Persists for the session
   /// only; not written to localStorage (the source IPC is cheap to repeat).
   genreExpansions: Record<string, string[]>;
-  setAlbumSortOrder: (order: AlbumSortOrder) => void;
+  setAlbumSort: (sort: AlbumSort) => void;
   setAlbumFilters: (filters: AlbumFilters) => void;
   /// Lazy-load expansions for any current genre chips that haven't been
   /// fetched yet. Call this once at boot so chips restored from localStorage
@@ -313,6 +305,7 @@ interface LibraryState {
   loadAlbumsForArtist: (sourceId: string) => Promise<void>;
   loadAlbumsForArtistName: (name: string) => Promise<void>;
   loadAlbumsForYear: (year: number) => Promise<void>;
+  loadAlbumsForCollection: (name: string) => Promise<void>;
   shuffleAlbums: () => void;
 
   // --- Selected Album & Tracks ---
@@ -343,6 +336,12 @@ interface LibraryState {
   // --- Browse context (from album detail clicks) ---
   browseArtistName: string | null;
   browseYear: number | null;
+  /// Collection currently driving the album grid (opened from the Lists
+  /// hub). Cleared by every other navigation, like the other browse fields.
+  browseCollectionName: string | null;
+  /// Playlist whose detail view is open (from the Lists hub / sidebar).
+  /// Cleared by every other navigation, like the other browse fields.
+  browsePlaylist: Playlist | null;
 
   // --- Search Results ---
   searchQuery: string | null;
@@ -366,28 +365,6 @@ interface LibraryState {
   toggleAlbumFav: (album: Album) => Promise<void>;
   toggleTrackFav: (track: Track) => Promise<void>;
   playAlbum: (album: Album, startAt?: number) => Promise<void>;
-}
-
-function sortAlbums(albums: Album[], order: AlbumSortOrder): Album[] {
-  const sorted = [...albums];
-  switch (order) {
-    case "alphabetical":
-      sorted.sort((a, b) => a.title.localeCompare(b.title));
-      break;
-    case "latestAdded":
-      sorted.sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0));
-      break;
-    case "recentlyPlayed":
-      sorted.sort((a, b) => (b.lastViewedAt ?? 0) - (a.lastViewedAt ?? 0));
-      break;
-    case "random":
-      for (let i = sorted.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [sorted[i], sorted[j]] = [sorted[j], sorted[i]];
-      }
-      break;
-  }
-  return sorted;
 }
 
 /**
@@ -483,6 +460,8 @@ function genreSelectionState(node: GenreNode, currentExpanded: Set<string>): Par
     detailAlbum: null,
     browseArtistName: null,
     browseYear: null,
+    browseCollectionName: null,
+    browsePlaylist: null,
     searchQuery: null,
     activeBookmarkName: null,
   };
@@ -499,7 +478,7 @@ function fetchGenreAlbums(
       set((state) => {
         const { sorted, filtered } = sortAndFilter(
           albums,
-          state.albumSortOrder,
+          state.albumSort,
           state.albumFilters,
           state.genreExpansions,
         );
@@ -529,6 +508,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       detailAlbum: null,
       browseArtistName: null,
       browseYear: null,
+      browseCollectionName: null,
+      browsePlaylist: null,
       searchQuery: null,
       activeBookmarkName: null,
     });
@@ -607,6 +588,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       suggestion: null,
       browseArtistName: null,
       browseYear: null,
+      browseCollectionName: null,
+      browsePlaylist: null,
       activeBookmarkName: null,
     });
     // Skip loadAllAlbums() on mode switch: genre-specific albums load
@@ -646,6 +629,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       detailAlbum: null,
       browseArtistName: null,
       browseYear: null,
+      browseCollectionName: null,
+      browsePlaylist: null,
       searchQuery: null,
       activeBookmarkName: null,
     });
@@ -655,20 +640,20 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   // --- Albums ---
   albums: [],
   unfilteredAlbums: [],
-  albumSortOrder: loadPersistedAlbumSort(),
+  albumSort: loadPersistedAlbumSort(),
   albumFilters: loadPersistedFilters(),
   genreExpansions: {},
 
-  setAlbumSortOrder: (order) => {
-    localStorage.setItem("ramus-album-sort", order);
+  setAlbumSort: (sort) => {
+    persistAlbumSort(sort);
     set((state) => {
       const { sorted, filtered } = sortAndFilter(
         state.unfilteredAlbums,
-        order,
+        sort,
         state.albumFilters,
         state.genreExpansions,
       );
-      return { albumSortOrder: order, unfilteredAlbums: sorted, albums: filtered };
+      return { albumSort: sort, unfilteredAlbums: sorted, albums: filtered };
     });
   },
 
@@ -699,7 +684,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       set((state) => {
         const { sorted, filtered } = sortAndFilter(
           albums,
-          state.albumSortOrder,
+          state.albumSort,
           state.albumFilters,
           state.genreExpansions,
         );
@@ -714,7 +699,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       set((state) => {
         const { sorted, filtered } = sortAndFilter(
           albums,
-          state.albumSortOrder,
+          state.albumSort,
           state.albumFilters,
           state.genreExpansions,
         );
@@ -732,6 +717,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       selectedArtistId: null,
       browseArtistName: name,
       browseYear: null,
+      browseCollectionName: null,
+      browsePlaylist: null,
       activeBookmarkName: null,
     });
     try {
@@ -739,7 +726,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       set((state) => {
         const { sorted, filtered } = sortAndFilter(
           albums,
-          state.albumSortOrder,
+          state.albumSort,
           state.albumFilters,
           state.genreExpansions,
         );
@@ -756,6 +743,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       suggestion: null,
       browseYear: year,
       browseArtistName: null,
+      browseCollectionName: null,
+      browsePlaylist: null,
       activeBookmarkName: null,
     });
     try {
@@ -763,7 +752,37 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       set((state) => {
         const { sorted, filtered } = sortAndFilter(
           albums,
-          state.albumSortOrder,
+          state.albumSort,
+          state.albumFilters,
+          state.genreExpansions,
+        );
+        return { unfilteredAlbums: sorted, albums: filtered };
+      });
+    } catch {}
+  },
+
+  loadAlbumsForCollection: async (name) => {
+    set({
+      detailAlbum: null,
+      detailTracks: [],
+      searchQuery: null,
+      suggestion: null,
+      browseYear: null,
+      browseArtistName: null,
+      browseCollectionName: name,
+      activeBookmarkName: null,
+    });
+    try {
+      // Collections ride on every returned Album (populated by all album
+      // fetches), so browsing one is a client-side filter over the full
+      // list — no dedicated IPC.
+      const all = await getAllAlbums();
+      const wanted = name.toLowerCase();
+      const albums = all.filter((a) => a.collections.some((c) => c.toLowerCase() === wanted));
+      set((state) => {
+        const { sorted, filtered } = sortAndFilter(
+          albums,
+          state.albumSort,
           state.albumFilters,
           state.genreExpansions,
         );
@@ -774,7 +793,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   shuffleAlbums: () =>
     set((state) => {
-      const shuffled = sortAlbums(state.unfilteredAlbums, "random");
+      const shuffled = sortAlbums(state.unfilteredAlbums, { field: "random", direction: "asc" });
       return {
         unfilteredAlbums: shuffled,
         albums: filterAlbums(shuffled, state.albumFilters, state.genreExpansions),
@@ -784,6 +803,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   // --- Browse context (from album detail clicks) ---
   browseArtistName: null,
   browseYear: null,
+  browseCollectionName: null,
+  browsePlaylist: null,
 
   // --- Search Results ---
   searchQuery: null,
@@ -795,7 +816,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       set((state) => {
         const { sorted, filtered } = sortAndFilter(
           albums,
-          state.albumSortOrder,
+          state.albumSort,
           state.albumFilters,
           state.genreExpansions,
         );
@@ -805,6 +826,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           searchQuery: query,
           browseArtistName: null,
           browseYear: null,
+          browseCollectionName: null,
+          browsePlaylist: null,
           detailAlbum: null,
           suggestion: null,
           activeBookmarkName: null,
@@ -817,6 +840,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         searchQuery: query,
         browseArtistName: null,
         browseYear: null,
+        browseCollectionName: null,
+        browsePlaylist: null,
         detailAlbum: null,
         suggestion: null,
         activeBookmarkName: null,
@@ -831,6 +856,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       searchQuery: null,
       browseArtistName: null,
       browseYear: null,
+      browseCollectionName: null,
+      browsePlaylist: null,
       detailAlbum: null,
       suggestion: null,
     });
@@ -850,6 +877,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       searchQuery: null,
       browseArtistName: null,
       browseYear: null,
+      browseCollectionName: null,
+      browsePlaylist: null,
       activeBookmarkName: null,
     });
 

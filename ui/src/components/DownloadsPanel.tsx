@@ -361,7 +361,7 @@ function BookmarkDownloadSection({ onError }: { onError: (msg: string | null) =>
     if (!selected) return;
     try {
       const n = await startBookmarkDownload(selected.filters);
-      if (n === 0) onError("No downloadable tracks for that bookmark.");
+      if (n === 0) onError("No downloadable tracks for that Smart Filter.");
     } catch (e) {
       onError(String(e));
     }
@@ -370,9 +370,9 @@ function BookmarkDownloadSection({ onError }: { onError: (msg: string | null) =>
   if (bookmarks.length === 0) {
     return (
       <section className="downloads-section">
-        <h3 className="downloads-section-title">Bookmarks</h3>
+        <h3 className="downloads-section-title">Smart Filters</h3>
         <div className="downloads-empty">
-          No bookmarks yet — set a filter and tap the … menu to save one.
+          No Smart Filters yet — set a filter and tap the … menu to save one.
         </div>
       </section>
     );
@@ -380,7 +380,7 @@ function BookmarkDownloadSection({ onError }: { onError: (msg: string | null) =>
 
   return (
     <section className="downloads-section">
-      <h3 className="downloads-section-title">Bookmarks</h3>
+      <h3 className="downloads-section-title">Smart Filters</h3>
       <div className="bookmark-download-row">
         <select
           className="sort-select bookmark-download-select"

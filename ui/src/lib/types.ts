@@ -87,6 +87,25 @@ export interface Track {
   ratingCount: number | null;
 }
 
+/** A Plex audio playlist (per-user server object, mirrored locally). */
+export interface Playlist {
+  sourceId: string;
+  title: string;
+  /** Smart playlists are filter-driven — display/play only, no item edits. */
+  smart: boolean;
+  trackCount: number | null;
+  /** Total runtime in seconds. */
+  duration: number | null;
+  thumb: string | null;
+}
+
+/** One playlist entry. `playlistItemId` is Plex's per-entry id — the handle
+ * remove/reorder take (NOT the track's ratingKey, which can repeat). */
+export interface PlaylistItem {
+  playlistItemId: number;
+  track: Track;
+}
+
 export interface ArtistInfo {
   id: number;
   name: string;

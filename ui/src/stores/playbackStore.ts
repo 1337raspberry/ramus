@@ -32,6 +32,7 @@ import {
   getAlbumGenres,
   getAlbumColors,
   removeFromQueue as removeFromQueueCmd,
+  moveQueueItem as moveQueueItemCmd,
   jumpToQueueIndex as jumpToQueueIndexCmd,
   clearQueue as clearQueueCmd,
 } from "../lib/commands";
@@ -122,6 +123,9 @@ interface PlaybackState {
   toggleFocusMode: () => void;
   cycleVisualizerMode: () => void;
   removeQueueItem: (index: number) => void;
+  /// Drag reorder: move the entry at `from` to position `to` (absolute
+  /// queue indices). Optimistic, like removeQueueItem.
+  moveQueueItem: (from: number, to: number) => void;
   jumpToIndex: (index: number) => void;
   /// Stop playback and empty the queue. Clears local state optimistically;
   /// the backend's `playback-state` emit lands on the same values.
@@ -490,6 +494,16 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     set((s) => ({
       queue: s.queue.filter((_, i) => i !== index),
     }));
+  },
+
+  moveQueueItem: (from, to) => {
+    moveQueueItemCmd(from, to).catch(() => {});
+    set((s) => {
+      const queue = [...s.queue];
+      const [moved] = queue.splice(from, 1);
+      queue.splice(to, 0, moved);
+      return { queue };
+    });
   },
 
   jumpToIndex: (index) => {

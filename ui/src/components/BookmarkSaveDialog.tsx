@@ -70,7 +70,7 @@ export default function BookmarkSaveDialog({ onDismiss }: Props) {
     try {
       const bookmark = makeBookmark(trimmed, filtersToIPC(filters));
       await setBookmarks([...bookmarks, bookmark]);
-      useToastStore.getState().show("Bookmark saved");
+      useToastStore.getState().show("Smart Filter saved");
       onDismiss();
     } catch (e) {
       setError(String(e));
@@ -97,7 +97,7 @@ export default function BookmarkSaveDialog({ onDismiss }: Props) {
         aria-labelledby="bookmark-save-title"
       >
         <div className="settings-header">
-          <h2 id="bookmark-save-title">Save bookmark</h2>
+          <h2 id="bookmark-save-title">Save Smart Filter</h2>
           <button className="settings-close" onClick={onDismiss} aria-label="Close">
             x
           </button>
@@ -135,7 +135,7 @@ export default function BookmarkSaveDialog({ onDismiss }: Props) {
           )}
           {!saving && atCap && (
             <div className="bookmark-edit-error">
-              Maximum of {MAX_BOOKMARKS} bookmarks reached. Delete one from the bookmarks editor
+              Maximum of {MAX_BOOKMARKS} Smart Filters reached. Delete one from the Smart Filters editor
               first.
             </div>
           )}

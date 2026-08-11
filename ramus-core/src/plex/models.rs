@@ -46,6 +46,11 @@ pub struct MediaItem {
     pub style: Option<Vec<PlexTag>>,
     #[serde(rename = "UltraBlurColors")]
     pub ultra_blur_colors: Option<UltraBlurColors>,
+    /// Present only on playlist item listings (`/playlists/{key}/items`).
+    /// This per-item id — not the track's ratingKey — is what the playlist
+    /// remove/move endpoints address, so it must survive the parse.
+    #[serde(rename = "playlistItemID")]
+    pub playlist_item_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -123,12 +128,60 @@ pub struct LevelSample {
     pub v: f32,
 }
 
+/// One playlist from `/playlists` (or a create response). Playlists are
+/// per-user server objects rather than library items, so they get their own
+/// raw struct instead of riding on `MediaItem`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistMetadata {
+    pub rating_key: String,
+    pub title: String,
+    /// Smart playlists are filter-driven; their item list can't be edited.
+    #[serde(default, deserialize_with = "bool_from_int_or_bool")]
+    pub smart: bool,
+    pub playlist_type: Option<String>,
+    /// Number of tracks.
+    pub leaf_count: Option<i64>,
+    /// Total runtime in milliseconds.
+    pub duration: Option<i64>,
+    /// Generated mosaic art path (`/playlists/{key}/composite/...`) — served
+    /// through the same art transcoder as any other thumb path.
+    pub composite: Option<String>,
+}
+
+// `smart` arrives as a JSON bool from PMS but as 0/1 from some proxied
+// responses — accept both (same situation as `StreamInfo.timed`).
+fn bool_from_int_or_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(match v {
+        Some(serde_json::Value::Bool(b)) => b,
+        Some(serde_json::Value::Number(n)) => n.as_i64().unwrap_or(0) != 0,
+        Some(serde_json::Value::String(s)) => s == "1" || s.eq_ignore_ascii_case("true"),
+        _ => false,
+    })
+}
+
 // Plex wraps all responses in a `MediaContainer`.
 
 #[derive(Debug, Deserialize)]
 pub struct MediaContainerResponse {
     #[serde(rename = "MediaContainer")]
     pub media_container: MediaContainerBody,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlaylistContainerResponse {
+    #[serde(rename = "MediaContainer")]
+    pub media_container: PlaylistContainerBody,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlaylistContainerBody {
+    #[serde(rename = "Metadata")]
+    pub metadata: Option<Vec<PlaylistMetadata>>,
 }
 
 #[derive(Debug, Deserialize)]

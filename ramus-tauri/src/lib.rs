@@ -1606,6 +1606,14 @@ pub fn run() {
             commands::library::remove_album_from_collection,
             commands::library::get_genre_suggestions,
             commands::library::expand_genre_to_library_tags,
+            // playlists
+            commands::playlists::get_playlists,
+            commands::playlists::get_playlist_items,
+            commands::playlists::create_playlist,
+            commands::playlists::add_tracks_to_playlist,
+            commands::playlists::remove_playlist_item,
+            commands::playlists::move_playlist_item,
+            commands::playlists::delete_playlist,
             // playback
             commands::playback::play_tracks,
             commands::playback::toggle_play_pause,
@@ -1617,6 +1625,7 @@ pub fn run() {
             commands::playback::append_to_queue,
             commands::playback::insert_next,
             commands::playback::remove_from_queue,
+            commands::playback::move_queue_item,
             commands::playback::jump_to_queue_index,
             commands::playback::get_queue,
             commands::playback::clear_queue,

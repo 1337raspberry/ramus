@@ -12,7 +12,7 @@ use crate::models::{LibrarySection, PlexServer, PlexServerConnection};
 // Re-export public model types so `use crate::plex::client::X` paths keep resolving.
 pub use super::models::{
     LevelSample, MediaContainerBody, MediaContainerResponse, MediaInfo, MediaItem, PartInfo,
-    PlexTag, StreamInfo,
+    PlaylistMetadata, PlexTag, StreamInfo,
 };
 use super::models::*;
 
@@ -241,6 +241,73 @@ impl PlexClient {
                 query.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
 
             let builder = self.http.put(url).query(&pairs);
+            let builder = self.apply_standard_headers(builder, Some(&token));
+
+            let resp = builder.send().await.map_err(|e| {
+                if Self::is_connection_error(&e) {
+                    PlexClientError::ConnectionFailed
+                } else {
+                    PlexClientError::InvalidResponse
+                }
+            })?;
+
+            let status = resp.status().as_u16();
+            if status == 401 {
+                return Err(PlexClientError::Unauthorized);
+            }
+            if !(200..300).contains(&(status as usize)) {
+                return Err(PlexClientError::HttpError(status));
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    async fn post(&self, path: &str, query: &[(&str, &str)]) -> Result<Vec<u8>, PlexClientError> {
+        self.with_retry(|| async {
+            let (base, token) = self.read_state()?;
+            let url = join_path(&base, path).map_err(|_| PlexClientError::InvalidResponse)?;
+
+            let pairs: Vec<(String, String)> =
+                query.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+
+            let builder = self.http.post(url).query(&pairs);
+            let builder = self.apply_standard_headers(builder, Some(&token));
+
+            let resp = builder.send().await.map_err(|e| {
+                if Self::is_connection_error(&e) {
+                    PlexClientError::ConnectionFailed
+                } else {
+                    PlexClientError::InvalidResponse
+                }
+            })?;
+
+            let status = resp.status().as_u16();
+            if status == 401 {
+                return Err(PlexClientError::Unauthorized);
+            }
+            if !(200..300).contains(&(status as usize)) {
+                return Err(PlexClientError::HttpError(status));
+            }
+
+            let body = resp.bytes().await.map_err(|_| PlexClientError::InvalidResponse)?;
+            if body.len() > MAX_RESPONSE_BYTES {
+                return Err(PlexClientError::InvalidResponse);
+            }
+            Ok(body.to_vec())
+        })
+        .await
+    }
+
+    async fn delete(&self, path: &str, query: &[(&str, &str)]) -> Result<(), PlexClientError> {
+        self.with_retry(|| async {
+            let (base, token) = self.read_state()?;
+            let url = join_path(&base, path).map_err(|_| PlexClientError::InvalidResponse)?;
+
+            let pairs: Vec<(String, String)> =
+                query.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+
+            let builder = self.http.delete(url).query(&pairs);
             let builder = self.apply_standard_headers(builder, Some(&token));
 
             let resp = builder.send().await.map_err(|e| {
@@ -879,6 +946,108 @@ impl PlexClient {
         )
         .await
     }
+
+    // --- Playlists ---
+    // Playlists are per-user server objects (`/playlists`), not library
+    // items. Every mutation below addresses entries by their per-item
+    // `playlistItemID`, never by track ratingKey.
+
+    /// All audio playlists visible to the signed-in account.
+    pub async fn list_audio_playlists(&self) -> Result<Vec<PlaylistMetadata>, PlexClientError> {
+        let body = self.get("playlists", &[("playlistType", "audio")]).await?;
+        let container: PlaylistContainerResponse =
+            serde_json::from_slice(&body).map_err(|_| PlexClientError::InvalidResponse)?;
+        Ok(container.media_container.metadata.unwrap_or_default())
+    }
+
+    /// A playlist's entries, in playlist order. Each `MediaItem` carries its
+    /// `playlist_item_id`.
+    pub async fn playlist_items(
+        &self,
+        rating_key: &str,
+    ) -> Result<Vec<MediaItem>, PlexClientError> {
+        let path = format!("playlists/{}/items", rating_key);
+        let body = self.get(&path, &[]).await?;
+        let container: MediaContainerResponse =
+            serde_json::from_slice(&body).map_err(|_| PlexClientError::InvalidResponse)?;
+        Ok(container.media_container.metadata.unwrap_or_default())
+    }
+
+    /// Create a regular (non-smart) audio playlist from a library `uri` (see
+    /// [`build_library_uri`]). Returns the created playlist's metadata.
+    pub async fn create_playlist(
+        &self,
+        title: &str,
+        uri: &str,
+    ) -> Result<PlaylistMetadata, PlexClientError> {
+        let body = self
+            .post(
+                "playlists",
+                &[("type", "audio"), ("smart", "0"), ("title", title), ("uri", uri)],
+            )
+            .await?;
+        let container: PlaylistContainerResponse =
+            serde_json::from_slice(&body).map_err(|_| PlexClientError::InvalidResponse)?;
+        container
+            .media_container
+            .metadata
+            .and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) })
+            .ok_or(PlexClientError::InvalidResponse)
+    }
+
+    /// Append the tracks addressed by `uri` to a playlist.
+    pub async fn add_playlist_items(
+        &self,
+        rating_key: &str,
+        uri: &str,
+    ) -> Result<(), PlexClientError> {
+        let path = format!("playlists/{}/items", rating_key);
+        self.put(&path, &[("uri", uri)]).await
+    }
+
+    /// Remove one entry (by its per-item id) from a playlist.
+    pub async fn remove_playlist_item(
+        &self,
+        rating_key: &str,
+        playlist_item_id: i64,
+    ) -> Result<(), PlexClientError> {
+        let path = format!("playlists/{}/items/{}", rating_key, playlist_item_id);
+        self.delete(&path, &[]).await
+    }
+
+    /// Move one entry after another (`after` = the entry it should follow;
+    /// `None` moves it to the front).
+    pub async fn move_playlist_item(
+        &self,
+        rating_key: &str,
+        playlist_item_id: i64,
+        after: Option<i64>,
+    ) -> Result<(), PlexClientError> {
+        let path = format!("playlists/{}/items/{}/move", rating_key, playlist_item_id);
+        match after {
+            Some(after_id) => {
+                let after_str = after_id.to_string();
+                self.put(&path, &[("after", &after_str)]).await
+            }
+            None => self.put(&path, &[]).await,
+        }
+    }
+
+    /// Delete a whole playlist.
+    pub async fn delete_playlist(&self, rating_key: &str) -> Result<(), PlexClientError> {
+        let path = format!("playlists/{}", rating_key);
+        self.delete(&path, &[]).await
+    }
+}
+
+/// Build the `uri` parameter the playlist create/append endpoints take:
+/// a server-scoped pointer at one or more library items.
+pub fn build_library_uri(machine_identifier: &str, rating_keys: &[String]) -> String {
+    format!(
+        "server://{}/com.plexapp.plugins.library/library/metadata/{}",
+        machine_identifier,
+        rating_keys.join(",")
+    )
 }
 
 #[cfg(test)]
@@ -920,6 +1089,129 @@ mod tests {
         let client = test_client(&server.uri());
         let result = client.find_music_libraries().await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_list_audio_playlists_parses_smart_as_bool_or_int() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/playlists"))
+            .and(query_param("playlistType", "audio"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "MediaContainer": {
+                        "Metadata": [
+                            {"ratingKey": "100", "title": "Road Trip", "smart": false,
+                             "playlistType": "audio", "leafCount": 12, "duration": 2_760_000,
+                             "composite": "/playlists/100/composite/17"},
+                            {"ratingKey": "101", "title": "Auto Mix", "smart": 1,
+                             "playlistType": "audio", "leafCount": 50}
+                        ]
+                    }
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = test_client(&server.uri());
+        let playlists = client.list_audio_playlists().await.unwrap();
+        assert_eq!(playlists.len(), 2);
+        assert!(!playlists[0].smart);
+        assert_eq!(playlists[0].leaf_count, Some(12));
+        assert_eq!(playlists[0].composite.as_deref(), Some("/playlists/100/composite/17"));
+        assert!(playlists[1].smart);
+    }
+
+    #[tokio::test]
+    async fn test_playlist_items_carry_playlist_item_id() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/playlists/100/items"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "MediaContainer": {
+                        "Metadata": [
+                            {"ratingKey": "555", "title": "Song", "playlistItemID": 42}
+                        ]
+                    }
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = test_client(&server.uri());
+        let items = client.playlist_items("100").await.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].playlist_item_id, Some(42));
+        assert_eq!(items[0].rating_key, "555");
+    }
+
+    #[tokio::test]
+    async fn test_create_playlist_posts_uri_and_parses_response() {
+        let server = MockServer::start().await;
+        let uri = build_library_uri("machine-1", &["10".into(), "11".into()]);
+        assert_eq!(
+            uri,
+            "server://machine-1/com.plexapp.plugins.library/library/metadata/10,11"
+        );
+        Mock::given(method("POST"))
+            .and(path("/playlists"))
+            .and(query_param("type", "audio"))
+            .and(query_param("smart", "0"))
+            .and(query_param("title", "My Mix"))
+            .and(query_param("uri", uri.as_str()))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "MediaContainer": {
+                        "Metadata": [
+                            {"ratingKey": "200", "title": "My Mix", "smart": false, "leafCount": 2}
+                        ]
+                    }
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = test_client(&server.uri());
+        let created = client.create_playlist("My Mix", &uri).await.unwrap();
+        assert_eq!(created.rating_key, "200");
+        assert_eq!(created.leaf_count, Some(2));
+    }
+
+    #[tokio::test]
+    async fn test_move_playlist_item_sends_after_only_when_present() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/playlists/100/items/42/move"))
+            .and(query_param("after", "41"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("PUT"))
+            .and(path("/playlists/100/items/43/move"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = test_client(&server.uri());
+        client.move_playlist_item("100", 42, Some(41)).await.unwrap();
+        client.move_playlist_item("100", 43, None).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_remove_playlist_item_is_a_delete() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/playlists/100/items/42"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = test_client(&server.uri());
+        client.remove_playlist_item("100", 42).await.unwrap();
     }
 
     #[tokio::test]

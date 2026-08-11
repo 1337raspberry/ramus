@@ -1270,6 +1270,8 @@ textarea {
   color: var(--accent);
 }
 
+/* Generic compact styled <select>, used across the settings + downloads
+   panels (the album grid's sort control is the popover below instead). */
 .sort-select {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-secondary);
@@ -1294,6 +1296,64 @@ textarea {
 .sort-select option {
   background: #1a1a1a;
   color: var(--text-primary);
+}
+
+/* --- Desktop sort popover --- */
+
+.sort-dropdown-wrap {
+  position: relative;
+}
+
+.sort-dropdown-btn {
+  font-size: 11px;
+}
+
+.sort-dropdown-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 6px;
+  min-width: 170px;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+}
+
+.sort-dropdown-panel .sort-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 7px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sort-dropdown-panel .sort-option:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.sort-dropdown-panel .sort-option.active {
+  color: var(--accent);
+}
+
+/* Chevron doubles as the direction readout: down = descending (default
+   glyph), rotated = ascending. */
+.sort-dir-chevron {
+  transition: transform 0.15s;
+}
+
+.sort-dir-chevron.asc {
+  transform: rotate(180deg);
 }
 
 .album-grid {
@@ -4455,7 +4515,7 @@ body.is-fullscreen .focus-body {
   cursor: default;
 }
 
-/* --- Mobile sort dropdown --- */
+/* --- Mobile sort button + sheet --- */
 
 .mobile-sort-wrap {
   position: relative;
@@ -4466,20 +4526,24 @@ body.is-fullscreen .focus-body {
   width: 40px;
   height: 40px;
   color: rgba(255, 255, 255, 0.85);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
 }
 
-.mobile-sort-select {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
-  border: none;
-  background: none;
-  font-size: 16px;
+/* Sort sheet rows: label left, direction chevron right. Shares the action
+   sheet chassis, so only the layout + active accent live here. */
+.mobile-action-sheet-group button.mobile-sort-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+
+.mobile-action-sheet-group button.mobile-sort-row.active {
+  color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
 }
 
 /* --- Mobile header 4-col variant (with filter button) --- */
@@ -4927,6 +4991,378 @@ body.is-fullscreen .focus-body {
 
 .mobile-artist-row:active {
   background: rgba(255, 255, 255, 0.04);
+}
+
+/* --- Desktop Lists sidebar tab --- */
+
+.lists-panel {
+  height: 100%;
+  overflow-y: auto;
+  padding: 4px 0 12px;
+}
+
+.lists-panel-heading {
+  padding: 12px 12px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.lists-panel-row {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: left;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.lists-panel-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.lists-panel-row.selected {
+  color: var(--accent);
+}
+
+.lists-panel-row-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lists-panel-empty {
+  padding: 4px 12px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.lists-panel-manage {
+  margin: 8px 12px 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 11px;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* --- Playlist detail --- */
+
+.playlist-subtitle {
+  padding: 0 20px 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.playlist-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 24px;
+}
+
+/* Fixed row height — the reorder drag computes slots from it. */
+.playlist-row {
+  display: flex;
+  align-items: stretch;
+  height: 56px;
+}
+
+.playlist-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  padding: 0 4px 0 20px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.playlist-row-body:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.playlist-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.playlist-row-title {
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-row-artist {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+.playlist-row-duration {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* touch-action: none lets Android start the drag without the scroller
+   claiming the vertical pan first; iOS relies on the hook's non-passive
+   preventDefault. */
+.playlist-grab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  color: var(--text-muted);
+  touch-action: none;
+  cursor: grab;
+}
+
+/* --- Desktop playlist detail --- */
+
+.playlist-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.playlist-view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px 10px;
+}
+
+.playlist-view-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.playlist-view-subtitle {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.playlist-view-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.playlist-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.playlist-view-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.playlist-view-btn.danger:hover,
+.playlist-view-btn.danger.confirm {
+  color: #ff6b6b;
+  border-color: rgba(255, 107, 107, 0.4);
+}
+
+/* Desktop rows are tighter than mobile — same class family, smaller box. */
+.playlist-row.desktop {
+  height: 44px;
+}
+
+.playlist-row.desktop .playlist-row-title {
+  font-size: 13px;
+}
+
+.playlist-row.desktop .playlist-row-artist {
+  font-size: 11px;
+}
+
+.playlist-row-num {
+  width: 26px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.playlist-row-queue,
+.playlist-row-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  width: 30px;
+  cursor: pointer;
+  opacity: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+
+.playlist-row.desktop:hover .playlist-row-queue,
+.playlist-row.desktop:hover .playlist-row-remove {
+  opacity: 1;
+}
+
+.playlist-row-queue:hover {
+  color: var(--text-primary);
+}
+
+.playlist-row-remove:hover {
+  color: #ff6b6b;
+}
+
+.playlist-row.desktop .playlist-grab {
+  width: 32px;
+}
+
+/* Inline name entry inside the playlist picker sheet. */
+.playlist-name-entry {
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px 16px;
+}
+
+.playlist-name-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 16px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.playlist-name-input:focus {
+  border-color: rgb(var(--accent-r), var(--accent-g), var(--accent-b));
+}
+
+/* Must out-rank `.mobile-action-sheet-group button` (which forces
+   display:block + width:100% and would squash the input out of the row). */
+.mobile-action-sheet-group button.playlist-name-create {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  flex-shrink: 0;
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.6);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 0 16px;
+  cursor: pointer;
+}
+
+.mobile-action-sheet-group button.playlist-name-create:disabled {
+  opacity: 0.45;
+}
+
+/* --- Mobile Lists hub --- */
+
+.mobile-lists-hub {
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 24px;
+}
+
+.mobile-lists-section-title {
+  padding: 18px 20px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.mobile-lists-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+}
+
+.mobile-lists-row-count {
+  color: var(--text-muted);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.mobile-lists-row-summary {
+  color: var(--text-muted);
+  font-size: 12px;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mobile-lists-smart-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  padding: 2px 5px;
+  flex-shrink: 0;
+}
+
+.mobile-lists-chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+.mobile-lists-empty {
+  padding: 8px 20px 12px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.mobile-lists-manage {
+  margin: 10px 20px 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 14px;
+  padding: 8px 0;
+  cursor: pointer;
+  text-align: left;
 }
 
 .mobile-artist-flag {
@@ -5625,94 +6061,6 @@ body.is-fullscreen .focus-body {
 .bookmark-save {
   background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.6);
   color: #fff;
-}
-
-/* --- Bookmarks: desktop popover (anchored above the Bookmarks button) --- */
-
-.sidebar-bookmarks-anchor {
-  position: relative;
-  flex: 1;
-  display: flex;
-}
-
-.bookmark-popover {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  right: 0;
-  min-width: 200px;
-  max-width: 320px;
-  max-height: 320px;
-  overflow-y: auto;
-  z-index: 150;
-  background: rgba(28, 28, 30, 0.96);
-  backdrop-filter: blur(20px) saturate(1.3);
-  -webkit-backdrop-filter: blur(20px) saturate(1.3);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
-  padding: 4px 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.bookmark-popover-row {
-  background: none;
-  border: none;
-  color: var(--text-primary);
-  font-size: 12px;
-  padding: 8px 14px;
-  text-align: left;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.bookmark-popover-row:hover {
-  background: var(--bg-hover);
-}
-
-.bookmark-popover-divider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.06);
-  margin: 4px 0;
-}
-
-.bookmark-popover-manage {
-  color: var(--text-secondary);
-  font-size: 11px;
-}
-
-.bookmark-empty-row {
-  padding: 12px 14px;
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.4;
-  text-align: left;
-}
-
-.bookmark-row-name {
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.bookmark-row-summary {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Mobile sheet rows reuse the popover styles for consistency. */
-.bookmark-sheet-row {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
 }
 
 /* --- Bookmark editor (shared modal, list layout) --- */
@@ -6627,12 +6975,18 @@ body.is-fullscreen .focus-body {
   padding: 0 0 12px;
 }
 
+/* Columns: remove ✕, number, art, title/artist, duration, grab handle —
+   matching the playlist editor (destructive control left, drag right).
+   Height is FIXED at 56px (44px thumb + 2×6px padding): the drag-reorder
+   hook computes slots from `UPNEXT_ROW_HEIGHT`, keep them in sync. */
 .mobile-upnext-row {
   width: 100%;
   display: grid;
-  grid-template-columns: 24px 44px 1fr auto 44px;
+  grid-template-columns: 32px 20px 44px 1fr auto 32px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  height: 56px;
+  box-sizing: border-box;
   padding: 6px 0;
   background: transparent;
   border: none;
@@ -6697,7 +7051,7 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-upnext-remove {
-  width: 44px;
+  width: 32px;
   height: 44px;
   display: inline-flex;
   align-items: center;
@@ -6712,6 +7066,20 @@ body.is-fullscreen .focus-body {
 .mobile-upnext-remove:active {
   background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.6);
+}
+
+/* touch-action: none lets Android start the drag without the scroller
+   claiming the vertical pan; iOS relies on the hook's non-passive
+   preventDefault (same pattern as .playlist-grab). */
+.mobile-upnext-grab {
+  width: 32px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.35);
+  touch-action: none;
+  cursor: grab;
 }
 
 /* Genre pills override: make touch-friendly on mobile */

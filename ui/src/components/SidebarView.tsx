@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, type SidebarMode } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import GenreTreeView from "./GenreTreeView";
 import BookmarkEditor from "./BookmarkEditor";
-import BookmarkPicker from "./BookmarkPicker";
 import { filtersFromBookmark } from "../lib/bookmark";
+import { describeFilters } from "../lib/filterDescribe";
+import { getAllCollectionNames, getPlaylists } from "../lib/commands";
 import { countryToFlag } from "../lib/countryFlag";
-import type { Bookmark } from "../lib/types";
+import type { Bookmark, Playlist } from "../lib/types";
 
 const TEXT_SIZE = 12;
 const PAD_H = 6;
@@ -17,6 +18,7 @@ const CHEVRON_WIDTH = 20;
 const TABS: { mode: SidebarMode; label: string }[] = [
   { mode: "genres", label: "Genres" },
   { mode: "artists", label: "Artists" },
+  { mode: "lists", label: "Lists" },
 ];
 
 interface SidebarProps {
@@ -104,14 +106,112 @@ function ArtistList({
   );
 }
 
+/**
+ * "Lists" sidebar tab: Playlists, Collections (browse) and Smart Filters
+ * (saved filter snapshots) in one place.
+ */
+function ListsPanel({
+  onLoadBookmark,
+  onManage,
+}: {
+  onLoadBookmark: (entry: Bookmark) => void;
+  onManage: () => void;
+}) {
+  const bookmarks = useSettingsStore((s) => s.bookmarks);
+  const loadAlbumsForCollection = useLibraryStore((s) => s.loadAlbumsForCollection);
+  const browseCollectionName = useLibraryStore((s) => s.browseCollectionName);
+  const browsePlaylist = useLibraryStore((s) => s.browsePlaylist);
+  const activeBookmarkName = useLibraryStore((s) => s.activeBookmarkName);
+  const [collections, setCollections] = useState<string[]>([]);
+  const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
+
+  useEffect(() => {
+    getAllCollectionNames()
+      .then(setCollections)
+      .catch(() => {});
+    getPlaylists()
+      .then(setPlaylists)
+      .catch(() => setPlaylists([]));
+  }, []);
+
+  const summaries = useMemo(
+    () => bookmarks.map((b) => describeFilters(filtersFromBookmark(b))),
+    [bookmarks],
+  );
+
+  return (
+    <div className="lists-panel">
+      <div className="lists-panel-heading">Playlists</div>
+      {playlists === null ? (
+        <div className="lists-panel-empty">Loading…</div>
+      ) : playlists.length === 0 ? (
+        <div className="lists-panel-empty">
+          No playlists yet. Save the queue as one from the player&rsquo;s … menu.
+        </div>
+      ) : (
+        playlists.map((p) => (
+          <button
+            key={p.sourceId}
+            className={`lists-panel-row${browsePlaylist?.sourceId === p.sourceId ? " selected" : ""}`}
+            onClick={() => useLibraryStore.setState({ browsePlaylist: p, detailAlbum: null })}
+          >
+            <span className="lists-panel-row-name">
+              {p.title}
+              {p.smart ? " (smart)" : ""}
+            </span>
+          </button>
+        ))
+      )}
+
+      <div className="lists-panel-heading">Collections</div>
+      {collections.length === 0 ? (
+        <div className="lists-panel-empty">
+          No collections yet. Add an album to one from its … menu.
+        </div>
+      ) : (
+        collections.map((name) => (
+          <button
+            key={name}
+            className={`lists-panel-row${browseCollectionName === name ? " selected" : ""}`}
+            onClick={() => loadAlbumsForCollection(name)}
+          >
+            <span className="lists-panel-row-name">{name}</span>
+          </button>
+        ))
+      )}
+
+      <div className="lists-panel-heading">Smart Filters</div>
+      {bookmarks.length === 0 ? (
+        <div className="lists-panel-empty">
+          No Smart Filters yet. Set a filter, then save it from the filter panel&rsquo;s … menu.
+        </div>
+      ) : (
+        bookmarks.map((entry, i) => (
+          <button
+            key={entry.id}
+            className={`lists-panel-row${activeBookmarkName === entry.name ? " selected" : ""}`}
+            onClick={() => onLoadBookmark(entry)}
+            title={summaries[i]}
+          >
+            <span className="lists-panel-row-name">{entry.name}</span>
+          </button>
+        ))
+      )}
+      {bookmarks.length > 0 && (
+        <button className="lists-panel-manage" onClick={onManage}>
+          Manage Smart Filters…
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function SidebarView({ onOpenSettings }: SidebarProps) {
   const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const setSidebarMode = useLibraryStore((s) => s.setSidebarMode);
   const artists = useLibraryStore((s) => s.artists);
   const selectedArtistId = useLibraryStore((s) => s.selectedArtistId);
   const selectArtist = useLibraryStore((s) => s.selectArtist);
-  const bookmarks = useSettingsStore((s) => s.bookmarks);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
 
   useEffect(() => {
@@ -124,10 +224,6 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
   const loadEntry = useCallback((entry: Bookmark) => {
     useLibraryStore.getState().loadBookmark(filtersFromBookmark(entry), entry.name);
   }, []);
-
-  const handleSavedClick = () => {
-    setPickerOpen((v) => !v);
-  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -151,6 +247,9 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
             selectArtist={selectArtist}
           />
         )}
+        {sidebarMode === "lists" && (
+          <ListsPanel onLoadBookmark={loadEntry} onManage={() => setEditorOpen(true)} />
+        )}
       </div>
       <div className="sidebar-bottom-row">
         {onOpenSettings && (
@@ -164,20 +263,6 @@ export default function SidebarView({ onOpenSettings }: SidebarProps) {
         >
           Suggest
         </button>
-        <div className="sidebar-bookmarks-anchor">
-          <button className="sidebar-bottom-btn" onClick={handleSavedClick}>
-            Bookmarks
-          </button>
-          {pickerOpen && (
-            <BookmarkPicker
-              variant="popover"
-              entries={bookmarks}
-              onSelect={loadEntry}
-              onManage={() => setEditorOpen(true)}
-              onDismiss={() => setPickerOpen(false)}
-            />
-          )}
-        </div>
       </div>
 
       {editorOpen && <BookmarkEditor onDismiss={() => setEditorOpen(false)} />}

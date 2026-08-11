@@ -385,6 +385,44 @@ impl AudioPlayer {
         }
     }
 
+    /// Move a queue entry to a new position (drag reorder in the Up Next
+    /// list). The playing entry can't be moved; a move that crosses the
+    /// playing position shifts `queue_index` so it keeps pointing at the
+    /// same track.
+    pub fn move_queue_item(&self, from: usize, to: usize) {
+        let mut inner = self.inner.lock();
+        let len = inner.state.queue.len();
+        if from == to || from >= len || to >= len {
+            return;
+        }
+        if from == inner.state.queue_index {
+            return;
+        }
+
+        let track = inner.state.queue.remove(from);
+        inner.state.queue.insert(to, track);
+
+        let qi = inner.state.queue_index;
+        if from < qi && to >= qi {
+            inner.state.queue_index = qi - 1;
+        } else if from > qi && to <= qi {
+            inner.state.queue_index = qi + 1;
+        }
+
+        // See `append_to_queue`: a restored queue has no mpv playlist to
+        // reorder, and issuing the command anyway would act on whatever
+        // mpv happens to hold.
+        let pending = inner.pending_materialize;
+        drop(inner);
+        if !pending {
+            // mpv's playlist-move inserts BEFORE the destination entry, so a
+            // downward move needs the +1 to land on the same index the Vec
+            // edit produced.
+            let mpv_to = if from < to { to + 1 } else { to };
+            self.mpv.playlist_move(from as i64, mpv_to as i64);
+        }
+    }
+
     /// Jump to a specific queue position.
     pub fn jump_to_index(&self, index: usize) {
         // A restored queue has no mpv playlist: load it starting at the

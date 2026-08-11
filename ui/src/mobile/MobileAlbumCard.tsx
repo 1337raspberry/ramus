@@ -8,6 +8,8 @@ import { useQueueAlbum } from "../lib/useQueueAlbum";
 import { IconMusicNote, IconStarFilled } from "../components/Icons";
 import { AlbumDownloadMenuItem } from "../components/DownloadMenuItems";
 import CollectionPickerSheet from "./CollectionPickerSheet";
+import PlaylistPickerSheet from "./PlaylistPickerSheet";
+import { getTracksForAlbum } from "../lib/commands";
 
 interface Props {
   album: Album;
@@ -22,6 +24,7 @@ export default memo(function MobileAlbumCard({ album }: Props) {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [collectionsOpen, setCollectionsOpen] = useState(false);
+  const [playlistOpen, setPlaylistOpen] = useState(false);
   const timerRef = useRef<number | null>(null);
   const longPressedRef = useRef(false);
 
@@ -146,6 +149,14 @@ export default memo(function MobileAlbumCard({ album }: Props) {
                 >
                   Add to Collection…
                 </button>
+                <button
+                  onClick={() => {
+                    setSheetOpen(false);
+                    setPlaylistOpen(true);
+                  }}
+                >
+                  Add to Playlist…
+                </button>
                 <AlbumDownloadMenuItem
                   albumRatingKey={album.ratingKey}
                   onDone={() => setSheetOpen(false)}
@@ -160,6 +171,15 @@ export default memo(function MobileAlbumCard({ album }: Props) {
         )}
       {collectionsOpen && (
         <CollectionPickerSheet album={album} onDismiss={() => setCollectionsOpen(false)} />
+      )}
+      {playlistOpen && (
+        <PlaylistPickerSheet
+          heading={album.title}
+          getTrackIds={() =>
+            getTracksForAlbum(album.ratingKey).then((ts) => ts.map((t) => t.ratingKey))
+          }
+          onDismiss={() => setPlaylistOpen(false)}
+        />
       )}
     </>
   );
