@@ -8,6 +8,7 @@ import type {
   CacheStats,
   ConnectionStatusPayload,
   DownloadsOverview,
+  FilterChoice,
   GenreMetadata,
   GenreTreeResponse,
   LibrarySection,
@@ -18,6 +19,7 @@ import type {
   BookmarkDownloadEstimate,
   SearchResponse,
   Settings,
+  SmartFilter,
   SpectrumState,
   Track,
   UltraBlurColors,
@@ -221,6 +223,16 @@ export const getPlaylistItems = (sourceId: string) =>
 
 export const createPlaylist = (title: string, trackIds: string[]) =>
   invoke<Playlist>("create_playlist", { title, trackIds });
+
+/** Create a smart playlist — the server stores the filter and recomputes
+ * the track list on every read. */
+export const createSmartPlaylist = (title: string, filter: SmartFilter) =>
+  invoke<Playlist>("create_smart_playlist", { title, filter });
+
+/** Selectable values for a smart-filter tag field (curated backend
+ * allowlist: "album.genre", "track.audioCodec"). */
+export const getSmartFilterChoices = (field: string) =>
+  invoke<FilterChoice[]>("get_smart_filter_choices", { field });
 
 /** Append tracks; resolves to the refreshed entry list. */
 export const addTracksToPlaylist = (sourceId: string, trackIds: string[]) =>

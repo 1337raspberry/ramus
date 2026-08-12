@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use reqwest::Client;
 use url::Url;
 
-use crate::models::{LibrarySection, PlexServer, PlexServerConnection};
+use crate::models::{FilterChoice, LibrarySection, PlexServer, PlexServerConnection};
 
 // Re-export public model types so `use crate::plex::client::X` paths keep resolving.
 pub use super::models::{
@@ -980,10 +980,30 @@ impl PlexClient {
         title: &str,
         uri: &str,
     ) -> Result<PlaylistMetadata, PlexClientError> {
+        self.post_create_playlist(title, uri, "0").await
+    }
+
+    /// Create a smart audio playlist from a section-search `uri` (see
+    /// [`super::smart::build_smart_uri`]). The server stores the query and
+    /// recomputes the track list on every read — there is no item list.
+    pub async fn create_smart_playlist(
+        &self,
+        title: &str,
+        uri: &str,
+    ) -> Result<PlaylistMetadata, PlexClientError> {
+        self.post_create_playlist(title, uri, "1").await
+    }
+
+    async fn post_create_playlist(
+        &self,
+        title: &str,
+        uri: &str,
+        smart: &str,
+    ) -> Result<PlaylistMetadata, PlexClientError> {
         let body = self
             .post(
                 "playlists",
-                &[("type", "audio"), ("smart", "0"), ("title", title), ("uri", uri)],
+                &[("type", "audio"), ("smart", smart), ("title", title), ("uri", uri)],
             )
             .await?;
         let container: PlaylistContainerResponse =
@@ -993,6 +1013,30 @@ impl PlexClient {
             .metadata
             .and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) })
             .ok_or(PlexClientError::InvalidResponse)
+    }
+
+    /// The selectable values of a tag-type filter field (genre, audioCodec,
+    /// …): the server's tag ids with display titles, scoped by metadata type
+    /// code (8 = artists, 9 = albums, 10 = tracks). Smart-filter terms
+    /// address tags by these ids, never by name.
+    pub async fn filter_choices(
+        &self,
+        section_key: &str,
+        field: &str,
+        type_code: u32,
+    ) -> Result<Vec<FilterChoice>, PlexClientError> {
+        let path = format!("library/sections/{}/{}", section_key, field);
+        let type_code = type_code.to_string();
+        let body = self.get(&path, &[("type", &type_code)]).await?;
+        let container: FilterChoicesResponse =
+            serde_json::from_slice(&body).map_err(|_| PlexClientError::InvalidResponse)?;
+        Ok(container
+            .media_container
+            .directory
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| FilterChoice { id: d.key, title: d.title })
+            .collect())
     }
 
     /// Append the tracks addressed by `uri` to a playlist.
@@ -1187,6 +1231,69 @@ mod tests {
         let created = client.create_playlist("My Mix", &uri).await.unwrap();
         assert_eq!(created.rating_key, "200");
         assert_eq!(created.leaf_count, Some(2));
+    }
+
+    #[tokio::test]
+    async fn test_create_smart_playlist_posts_smart_flag_and_search_uri() {
+        let server = MockServer::start().await;
+        let filter = crate::plex::smart::SmartFilter {
+            terms: vec![crate::plex::smart::SmartTerm {
+                field: "album.genre".into(),
+                op: crate::plex::smart::SmartOp::Eq,
+                values: vec!["419916".into()],
+            }],
+            sort: Some("random".into()),
+            limit: Some(50),
+        };
+        let uri = crate::plex::smart::build_smart_uri("machine-1", "12", &filter);
+        Mock::given(method("POST"))
+            .and(path("/playlists"))
+            .and(query_param("type", "audio"))
+            .and(query_param("smart", "1"))
+            .and(query_param("title", "Auto Mix"))
+            .and(query_param("uri", uri.as_str()))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "MediaContainer": {
+                        "Metadata": [
+                            {"ratingKey": "300", "title": "Auto Mix", "smart": true, "leafCount": 50}
+                        ]
+                    }
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = test_client(&server.uri());
+        let created = client.create_smart_playlist("Auto Mix", &uri).await.unwrap();
+        assert_eq!(created.rating_key, "300");
+        assert!(created.smart);
+    }
+
+    #[tokio::test]
+    async fn test_filter_choices_parses_directory_tags() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/library/sections/12/genre"))
+            .and(query_param("type", "9"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "MediaContainer": {
+                        "Directory": [
+                            {"key": "419916", "title": "2 Tone"},
+                            {"key": "464672", "title": "2-Step"}
+                        ]
+                    }
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = test_client(&server.uri());
+        let choices = client.filter_choices("12", "genre", 9).await.unwrap();
+        assert_eq!(choices.len(), 2);
+        assert_eq!(choices[0].id, "419916");
+        assert_eq!(choices[0].title, "2 Tone");
     }
 
     #[tokio::test]

@@ -1610,6 +1610,8 @@ pub fn run() {
             commands::playlists::get_playlists,
             commands::playlists::get_playlist_items,
             commands::playlists::create_playlist,
+            commands::playlists::create_smart_playlist,
+            commands::playlists::get_smart_filter_choices,
             commands::playlists::add_tracks_to_playlist,
             commands::playlists::remove_playlist_item,
             commands::playlists::move_playlist_item,

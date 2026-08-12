@@ -193,6 +193,26 @@ pub struct MediaContainerBody {
 }
 
 #[derive(Debug, Deserialize)]
+pub(super) struct FilterChoicesResponse {
+    #[serde(rename = "MediaContainer")]
+    pub media_container: FilterChoicesContainer,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct FilterChoicesContainer {
+    #[serde(rename = "Directory")]
+    pub directory: Option<Vec<FilterChoiceRaw>>,
+}
+
+/// Raw tag-choice row (`/library/sections/{key}/{field}?type=`). `key` is
+/// the tag id the smart-filter grammar addresses values by.
+#[derive(Debug, Deserialize)]
+pub(super) struct FilterChoiceRaw {
+    pub key: String,
+    pub title: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub(super) struct LibrarySectionsResponse {
     #[serde(rename = "MediaContainer")]
     pub media_container: LibrarySectionsContainer,

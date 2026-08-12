@@ -9,6 +9,7 @@ import { filtersFromBookmark } from "../lib/bookmark";
 import { useArtUrl } from "../lib/useArtUrl";
 import { IconChevronRight, IconMusicNote } from "../components/Icons";
 import BookmarkEditor from "../components/BookmarkEditor";
+import SmartPlaylistBuilder from "./SmartPlaylistBuilder";
 import type { Bookmark, Playlist } from "../lib/types";
 
 /** Small square thumb for hub rows — playlist composites and collection
@@ -45,6 +46,7 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
   const [collections, setCollections] = useState<string[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
   const [showEditor, setShowEditor] = useState(false);
+  const [showSmartBuilder, setShowSmartBuilder] = useState(false);
 
   useEffect(() => {
     getAllCollectionNames()
@@ -141,6 +143,9 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
           </button>
         ))
       )}
+      <button className="mobile-lists-manage" onClick={() => setShowSmartBuilder(true)}>
+        New Smart Playlist…
+      </button>
 
       <div className="mobile-lists-section-title">Collections</div>
       {collections.length === 0 ? (
@@ -186,6 +191,20 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
       )}
 
       {showEditor && <BookmarkEditor onDismiss={() => setShowEditor(false)} />}
+      {showSmartBuilder && (
+        <SmartPlaylistBuilder
+          onDismiss={() => setShowSmartBuilder(false)}
+          onCreated={(p) => {
+            setShowSmartBuilder(false);
+            // Refresh the hub list for back-nav, and open the new playlist
+            // so its computed tracks show immediately.
+            getPlaylists()
+              .then(setPlaylists)
+              .catch(() => {});
+            useLibraryStore.setState({ browsePlaylist: p });
+          }}
+        />
+      )}
     </div>
   );
 }

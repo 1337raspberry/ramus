@@ -7,14 +7,16 @@
 use tauri::State;
 
 use ramus_core::cache::playlist::{PlaylistItemRow, PlaylistUpsertRow};
-use ramus_core::models::{Playlist, PlaylistItem};
+use ramus_core::models::{FilterChoice, Playlist, PlaylistItem};
 use ramus_core::plex::auth;
 use ramus_core::plex::client::build_library_uri;
 use ramus_core::plex::client::PlaylistMetadata;
+use ramus_core::plex::smart::{build_smart_uri, SmartFilter};
 use ramus_core::plex::token_store::TokenStore;
 
 use crate::state::AppState;
 
+use super::sync::get_library_key;
 use super::{with_cache, CmdResult};
 
 fn get_machine_identifier() -> CmdResult<String> {
@@ -124,6 +126,77 @@ pub async fn create_playlist(
         duration: created.duration.map(|ms| ms as f64 / 1000.0),
         thumb: created.composite.clone(),
     })
+}
+
+/// Create a smart playlist from a filter. The server stores the query and
+/// recomputes the track list on every read. Zero rules are allowed only
+/// together with a limit — otherwise the "filter" is the entire library.
+#[tauri::command]
+pub async fn create_smart_playlist(
+    state: State<'_, AppState>,
+    title: String,
+    filter: SmartFilter,
+) -> CmdResult<Playlist> {
+    let title = title.trim().to_string();
+    if title.is_empty() {
+        return Err("Playlist name is empty".into());
+    }
+    if filter
+        .terms
+        .iter()
+        .any(|t| t.field.trim().is_empty() || t.values.is_empty())
+    {
+        return Err("Malformed filter rule".into());
+    }
+    if filter.terms.is_empty() && filter.limit.is_none() {
+        return Err("Add at least one rule or a track limit".into());
+    }
+    let machine_id = get_machine_identifier()?;
+    let section_key = get_library_key()?;
+    let uri = build_smart_uri(&machine_id, &section_key, &filter);
+    let created = state
+        .client
+        .create_smart_playlist(&title, &uri)
+        .await
+        .map_err(|e| e.to_string())?;
+    // Force the smart flag rather than trusting the response's shape — a
+    // missed flag would leave the mirror thinking this playlist takes item
+    // edits (`ensure_not_smart` reads the mirror).
+    let mut row = to_upsert_row(&created);
+    row.smart = true;
+    with_cache(&state, |db| db.upsert_playlist(&row))?;
+    // Best-effort: mirror the computed entries too, so the detail view
+    // opens warm.
+    let _ = refresh_items(&state, &created.rating_key).await;
+    Ok(Playlist {
+        source_id: created.rating_key.clone(),
+        title: created.title.clone(),
+        smart: true,
+        track_count: created.leaf_count,
+        duration: created.duration.map(|ms| ms as f64 / 1000.0),
+        thumb: created.composite.clone(),
+    })
+}
+
+/// The selectable values for a smart-filter tag field. Curated allowlist —
+/// the server silently ignores unknown filter fields (returning the whole
+/// library), so field names are never passed through raw.
+#[tauri::command]
+pub async fn get_smart_filter_choices(
+    state: State<'_, AppState>,
+    field: String,
+) -> CmdResult<Vec<FilterChoice>> {
+    // Genres are album-scoped (the whole genre model is album-level).
+    let (path_field, type_code) = match field.as_str() {
+        "album.genre" => ("genre", 9),
+        _ => return Err("Unknown filter field".into()),
+    };
+    let section_key = get_library_key()?;
+    state
+        .client
+        .filter_choices(&section_key, path_field, type_code)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Append tracks to a playlist; returns the refreshed entry list.

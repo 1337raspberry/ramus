@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSettingsStore } from "../stores/settingsStore";
 import { filtersFromBookmark, isNameUnique } from "../lib/bookmark";
 import { MAX_BOOKMARKS, type Bookmark } from "../lib/types";
@@ -88,7 +89,11 @@ export default function BookmarkEditor({ onDismiss }: Props) {
     }
   };
 
-  return (
+  // Portaled to <body> so `position: fixed` resolves against the viewport —
+  // mounted inline, a transformed/filtered ancestor (mobile Lists hub)
+  // becomes the containing block and squeezes the panel between the
+  // toolbar and the mini player.
+  return createPortal(
     <div className="settings-backdrop" onClick={handleBackdrop}>
       <div
         className="settings-panel glass bookmark-editor"
@@ -112,7 +117,8 @@ export default function BookmarkEditor({ onDismiss }: Props) {
 
           {rows.length === 0 ? (
             <div className="downloads-empty">
-              No Smart Filters yet — set a filter and use the … menu in the filter panel to save one.
+              No Smart Filters yet — set a filter and use the … menu in the filter panel to save
+              one.
             </div>
           ) : (
             <ul className="bookmark-edit-list">
@@ -187,6 +193,7 @@ export default function BookmarkEditor({ onDismiss }: Props) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -292,6 +292,16 @@ impl Album {
 
 // --- Playlist ---
 
+/// One selectable value of a tag-type smart-filter field (genre, codec, …).
+/// `id` is the server's tag id — the value filter terms address tags by;
+/// titles are display-only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilterChoice {
+    pub id: String,
+    pub title: String,
+}
+
 /// A Plex audio playlist (per-user server object, mirrored into the local
 /// cache after every successful server fetch).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

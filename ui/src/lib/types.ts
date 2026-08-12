@@ -87,6 +87,43 @@ export interface Track {
   ratingCount: number | null;
 }
 
+/** Smart-filter operator. On the wire the operator rides the field name;
+ * semantics vary by field type: `eq` is tag/integer "is" but string
+ * "contains"; `gt`/`lt` are strict integer comparisons and date
+ * after/before (relative values like `-30d` mean "the last 30 days"). */
+export type SmartOp =
+  | "eq"
+  | "notEq"
+  | "exact"
+  | "notExact"
+  | "gt"
+  | "lt"
+  | "beginsWith"
+  | "endsWith";
+
+/** One smart-filter rule: `field op (v1 OR v2 OR …)`. Fields are fully
+ * scoped (`album.genre`, `track.userRating`); tag fields take tag ids. */
+export interface SmartTerm {
+  field: string;
+  op: SmartOp;
+  values: string[];
+}
+
+/** Flat smart-playlist filter: terms AND together. `sort` is the raw wire
+ * value (`random`, `userRating:desc`, …). */
+export interface SmartFilter {
+  terms: SmartTerm[];
+  sort: string | null;
+  limit: number | null;
+}
+
+/** One selectable value of a tag-type smart-filter field. `id` is the
+ * server's tag id — what filter terms address; titles are display-only. */
+export interface FilterChoice {
+  id: string;
+  title: string;
+}
+
 /** A Plex audio playlist (per-user server object, mirrored locally). */
 export interface Playlist {
   sourceId: string;

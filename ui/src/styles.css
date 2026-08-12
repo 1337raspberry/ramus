@@ -7318,18 +7318,32 @@ body.is-fullscreen .focus-body {
 
 @media (pointer: coarse) {
   .settings-panel {
-    width: 100% \!important;
-    height: 100% \!important;
-    max-height: 100% \!important;
-    max-width: 100% \!important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    max-width: 100% !important;
     border-radius: 0;
     padding-top: var(--safe-top);
     padding-bottom: var(--safe-bottom);
+    /* A full-screen sheet is a page, not a floating glass card — stay
+       opaque so hub content can't glow through the glass. */
+    background: #131318;
   }
 
   .settings-backdrop {
     align-items: stretch;
     justify-content: stretch;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* A full-screen chassis surface makes the now-playing surfaces
+     unreachable — hide them outright instead of fighting WebKit's
+     compositor: the mini player's promoted layers paint over even an
+     opaque z-1000 body-level panel, so z-index alone provably loses. */
+  body:has(.settings-backdrop) .mobile-miniplayer,
+  body:has(.settings-backdrop) .mobile-sheet {
+    visibility: hidden;
   }
 
   .settings-header {
@@ -8244,4 +8258,166 @@ body.is-fullscreen .focus-body {
 
 .quality-notice-action:hover {
   opacity: 1;
+}
+
+/* --- Smart playlist builder --- */
+
+.smartpl-panel {
+  max-width: 560px;
+}
+
+.smartpl-input {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.smartpl-input:focus {
+  border-color: var(--accent);
+}
+
+.smartpl-name {
+  width: 100%;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.smartpl-grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.smartpl-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.smartpl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Expander rows are buttons — neutralise the UA chrome. */
+.smartpl-expander {
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.smartpl-row-label {
+  flex: 0 0 auto;
+  min-width: 96px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.smartpl-row-value {
+  flex: 1;
+  text-align: right;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smartpl-row .sort-select {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  padding: 6px 8px;
+}
+
+.smartpl-genre-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 2px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.smartpl-genre-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.smartpl-genre-row {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.smartpl-genre-row:last-child {
+  border-bottom: none;
+}
+
+.smartpl-genre-row.selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.smartpl-genre-empty {
+  padding: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.smartpl-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.smartpl-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.smartpl-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.smartpl-create {
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.28);
+  border-color: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.55);
+}
+
+.smartpl-year {
+  width: 64px;
+  text-align: center;
+}
+
+.smartpl-year-sep {
+  color: var(--text-secondary);
 }
