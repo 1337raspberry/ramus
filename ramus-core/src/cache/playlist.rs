@@ -187,6 +187,17 @@ impl CacheDatabase {
         Ok(items)
     }
 
+    /// Rename one mirrored playlist. A no-op if the row isn't mirrored yet
+    /// (the next list fetch would bring the new title anyway).
+    pub fn rename_playlist(&self, playlist_source_id: &str, title: &str) -> Result<(), CacheError> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE playlists SET title = ?2 WHERE sourceId = ?1",
+            params![playlist_source_id, title],
+        )?;
+        Ok(())
+    }
+
     /// Drop one playlist (and its entries) from the mirror.
     pub fn remove_playlist(&self, playlist_source_id: &str) -> Result<(), CacheError> {
         let conn = self.conn.lock();
@@ -341,6 +352,27 @@ mod tests {
         let items = db.playlist_items("p1").unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].playlist_item_id, Some(2));
+    }
+
+    #[test]
+    fn test_rename_playlist_updates_title_and_keeps_items() {
+        let db = setup();
+        seed_track(&db, "t1", "One");
+        db.replace_playlists(&[row("p1", "Mix", false)]).unwrap();
+        db.replace_playlist_items(
+            "p1",
+            &[PlaylistItemRow { plex_item_id: Some(1), track_source_id: "t1".into() }],
+        )
+        .unwrap();
+
+        db.rename_playlist("p1", "Mixtape").unwrap();
+        let playlists = db.all_playlists().unwrap();
+        assert_eq!(playlists[0].title, "Mixtape");
+        assert_eq!(db.playlist_items("p1").unwrap().len(), 1);
+
+        // Unknown playlist: silently a no-op, never an error.
+        db.rename_playlist("nope", "Ghost").unwrap();
+        assert_eq!(db.all_playlists().unwrap().len(), 1);
     }
 
     #[test]

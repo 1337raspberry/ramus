@@ -237,6 +237,9 @@ export const movePlaylistItem = (
   afterItemId: number | null,
 ) => invoke<PlaylistItem[]>("move_playlist_item", { sourceId, playlistItemId, afterItemId });
 
+export const renamePlaylist = (sourceId: string, title: string) =>
+  invoke<Playlist>("rename_playlist", { sourceId, title });
+
 export const deletePlaylist = (sourceId: string) => invoke<void>("delete_playlist", { sourceId });
 
 export const getGenreSuggestions = (query: string, limit = 200) =>

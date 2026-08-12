@@ -9,6 +9,7 @@ import {
   movePlaylistItem,
   playTracks,
   removePlaylistItem,
+  renamePlaylist,
   appendToQueue,
 } from "../lib/commands";
 import { useListReorder } from "../lib/useListReorder";
@@ -82,6 +83,9 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
   const [items, setItems] = useState<PlaylistItem[] | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
   const [rowSheet, setRowSheet] = useState<number | null>(null);
   const { artSrc, artErr, setArtErr } = useArtUrl(playlist.thumb, ART_SIZE.MEDIUM);
 
@@ -100,14 +104,15 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
   }, [playlist.sourceId]);
 
   useEffect(() => {
-    if (!showMenu && !confirmDelete && rowSheet === null) return;
+    if (!showMenu && !confirmDelete && !renaming && rowSheet === null) return;
     return pushBackHandler(() => {
       setShowMenu(false);
       setConfirmDelete(false);
+      setRenaming(false);
       setRowSheet(null);
       return true;
     });
-  }, [showMenu, confirmDelete, rowSheet]);
+  }, [showMenu, confirmDelete, renaming, rowSheet]);
 
   const reorder = (from: number, to: number) => {
     if (!items) return;
@@ -171,6 +176,28 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
         getPlaylistItems(playlist.sourceId)
           .then(setItems)
           .catch(() => {});
+      });
+  };
+
+  const handleRename = () => {
+    const trimmed = renameValue.trim();
+    if (!trimmed || renameBusy) return;
+    if (trimmed === playlist.title) {
+      setRenaming(false);
+      return;
+    }
+    setRenameBusy(true);
+    renamePlaylist(playlist.sourceId, trimmed)
+      .then((updated) => {
+        // The detail view renders from browsePlaylist; the hub refetches
+        // lazily on view, so patching the store is all the UI needs.
+        useLibraryStore.setState({ browsePlaylist: updated });
+        setRenaming(false);
+        setRenameBusy(false);
+      })
+      .catch(() => {
+        useToastStore.getState().show("Couldn't rename playlist");
+        setRenameBusy(false);
       });
   };
 
@@ -332,14 +359,15 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
                 <button disabled className="soon">
                   Download Playlist<span className="soon-tag">soon</span>
                 </button>
-                <button disabled className="soon">
-                  Rename Playlist<span className="soon-tag">soon</span>
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    setRenameValue(playlist.title);
+                    setRenaming(true);
+                  }}
+                >
+                  Rename Playlist
                 </button>
-                {playlist.smart && (
-                  <button disabled className="soon">
-                    Edit Smart Filters<span className="soon-tag">soon</span>
-                  </button>
-                )}
                 <button
                   className="destructive"
                   onClick={() => {
@@ -351,6 +379,46 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
                 </button>
               </div>
               <button className="mobile-action-sheet-cancel" onClick={() => setShowMenu(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {renaming &&
+        createPortal(
+          <div
+            className="mobile-action-sheet-backdrop text-entry"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setRenaming(false);
+            }}
+          >
+            <div className="mobile-action-sheet">
+              <div className="mobile-action-sheet-group">
+                <div className="mobile-action-sheet-header">Rename “{playlist.title}”</div>
+                <div className="playlist-name-entry">
+                  <input
+                    className="playlist-name-input"
+                    type="text"
+                    value={renameValue}
+                    autoFocus
+                    placeholder="Playlist name"
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleRename();
+                    }}
+                  />
+                  <button
+                    className="playlist-name-create"
+                    disabled={!renameValue.trim() || renameBusy}
+                    onClick={handleRename}
+                  >
+                    Rename
+                  </button>
+                </div>
+              </div>
+              <button className="mobile-action-sheet-cancel" onClick={() => setRenaming(false)}>
                 Cancel
               </button>
             </div>

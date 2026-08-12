@@ -92,7 +92,7 @@ export default function PlaylistPickerSheet({
 
   return createPortal(
     <div
-      className={`mobile-action-sheet-backdrop${overSheet ? " over-sheet" : ""}`}
+      className={`mobile-action-sheet-backdrop${overSheet ? " over-sheet" : ""}${naming ? " text-entry" : ""}`}
       onClick={(e) => {
         if (e.target === e.currentTarget) onDismiss();
       }}

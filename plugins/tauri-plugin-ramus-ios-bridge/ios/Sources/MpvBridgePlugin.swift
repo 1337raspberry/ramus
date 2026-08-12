@@ -43,23 +43,74 @@ class MpvBridgePlugin: Plugin {
     /// outage and every timer/monitor the recovery relies on freezes.
     /// Accessed on the main queue only.
     private var recoveryGraceTask: UIBackgroundTaskIdentifier = .invalid
+    private var keyboardObservers: [NSObjectProtocol] = []
+    private var scrollPin: NSKeyValueObservation?
 
     override func load(webview: WKWebView) {
         self.webView = webview
         webview.scrollView.keyboardDismissMode = .interactive
         webview.overrideUserInterfaceStyle = .dark
         Self.removeInputAccessoryView()
+        installKeyboardInsetObserver()
+        // All scrolling happens inside the page's own DOM scrollers — the
+        // outer scroll view never legitimately moves. UIKit still scrolls
+        // it to "reveal" a focused input under the keyboard, which would
+        // stack with the page's own --keyboard-inset lift and shove the
+        // whole UI off the top. Pin it flat instead.
+        scrollPin = webview.scrollView.observe(\.contentOffset, options: [.new]) {
+            scrollView, _ in
+            if scrollView.contentOffset != .zero {
+                scrollView.setContentOffset(.zero, animated: false)
+            }
+        }
     }
 
     deinit {
         // NWPathMonitor must be explicitly cancelled before release;
         // letting ARC drop it leaves the dispatch source live and leaks
         // the kernel network-path subscription. Same for the audio
-        // session interruption observer.
+        // session interruption observer and the keyboard observers.
         pathMonitor?.cancel()
         if let token = interruptionObserver {
             NotificationCenter.default.removeObserver(token)
         }
+        for token in keyboardObservers {
+            NotificationCenter.default.removeObserver(token)
+        }
+    }
+
+    /// Pushes the software keyboard's overlap with the webview into the
+    /// page as a `--keyboard-inset` CSS variable (px). The keyboard slides
+    /// OVER the webview — it never resizes it — and WebKit's visualViewport
+    /// does not report the occlusion, so bottom-anchored page UI holding a
+    /// text input reads this variable to lift itself clear. Same host-push
+    /// pattern as the Android activity's `--android-inset-*` variables.
+    private func installKeyboardInsetObserver() {
+        let center = NotificationCenter.default
+        let push: (CGFloat) -> Void = { [weak self] inset in
+            let js =
+                "document.documentElement.style.setProperty('--keyboard-inset', '\(Int(inset.rounded()))px')"
+            self?.webView?.evaluateJavaScript(js, completionHandler: nil)
+        }
+        keyboardObservers.append(
+            center.addObserver(
+                forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main
+            ) { [weak self] note in
+                guard let webView = self?.webView,
+                    let frameValue = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey]
+                        as? NSValue
+                else { return }
+                // The end frame arrives in screen coordinates; a hide (or a
+                // detached hardware-keyboard bar) lands outside the webview,
+                // so the intersection naturally reports 0.
+                let endFrame = webView.convert(frameValue.cgRectValue, from: nil)
+                let overlap = webView.bounds.intersection(endFrame)
+                push(overlap.isNull ? 0 : overlap.height)
+            })
+        keyboardObservers.append(
+            center.addObserver(
+                forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main
+            ) { _ in push(0) })
     }
 
     /// Swizzle WKContentView's inputAccessoryView to return nil, removing

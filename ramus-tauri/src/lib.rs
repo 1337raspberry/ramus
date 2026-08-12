@@ -1613,6 +1613,7 @@ pub fn run() {
             commands::playlists::add_tracks_to_playlist,
             commands::playlists::remove_playlist_item,
             commands::playlists::move_playlist_item,
+            commands::playlists::rename_playlist,
             commands::playlists::delete_playlist,
             // playback
             commands::playback::play_tracks,

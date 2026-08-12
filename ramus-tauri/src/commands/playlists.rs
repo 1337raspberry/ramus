@@ -181,6 +181,32 @@ pub async fn move_playlist_item(
     refresh_items(&state, &source_id).await
 }
 
+/// Rename a playlist; returns the updated playlist. Deliberately not gated
+/// by `ensure_not_smart` — the title lives on the playlist object itself,
+/// so renaming a smart playlist is fine (its filter is untouched).
+#[tauri::command]
+pub async fn rename_playlist(
+    state: State<'_, AppState>,
+    source_id: String,
+    title: String,
+) -> CmdResult<Playlist> {
+    let title = title.trim().to_string();
+    if title.is_empty() {
+        return Err("Playlist name is empty".into());
+    }
+    state
+        .client
+        .rename_playlist(&source_id, &title)
+        .await
+        .map_err(|e| e.to_string())?;
+    with_cache(&state, |db| db.rename_playlist(&source_id, &title))?;
+    let playlists = with_cache(&state, |db| db.all_playlists())?;
+    playlists
+        .into_iter()
+        .find(|p| p.source_id == source_id)
+        .ok_or_else(|| "Playlist not found".to_string())
+}
+
 /// Delete a playlist server-side and drop it from the mirror.
 #[tauri::command]
 pub async fn delete_playlist(state: State<'_, AppState>, source_id: String) -> CmdResult<()> {

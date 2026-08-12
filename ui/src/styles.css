@@ -60,6 +60,13 @@
   --safe-top: max(env(safe-area-inset-top, 0px), var(--android-inset-top, 0px));
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--android-inset-bottom, 0px));
 
+  /* Software-keyboard overlap with the webview, pushed by the iOS host
+     (MpvBridgePlugin keyboard observer) — the keyboard slides over the
+     webview without resizing it and visualViewport doesn't report it, so
+     the page can't measure this itself. 0 while hidden; stays 0 on
+     Android, where the webview resizes for the keyboard instead. */
+  --keyboard-inset: 0px;
+
   color-scheme: dark;
 }
 
@@ -7637,6 +7644,15 @@ body.is-fullscreen .focus-body {
    clear it — matching the EQ and debug panels that share that context. */
 .mobile-action-sheet-backdrop.over-sheet {
   z-index: 1100;
+}
+/* Sheets holding a text input: on iOS the software keyboard slides over
+   the bottom of the screen without resizing the webview, so a
+   bottom-anchored sheet disappears behind it. Lift the sheet by the
+   keyboard's height (published as --keyboard-inset) so it rides on top of
+   the keyboard; the transition tracks the keyboard's slide-in. */
+.mobile-action-sheet-backdrop.text-entry {
+  padding-bottom: calc(8px + max(var(--safe-bottom), var(--keyboard-inset)));
+  transition: padding-bottom 220ms ease-out;
 }
 @keyframes mobile-sheet-fade-in {
   from {

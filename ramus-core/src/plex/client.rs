@@ -1033,6 +1033,17 @@ impl PlexClient {
         }
     }
 
+    /// Rename a playlist. The title lives on the playlist object itself, so
+    /// this applies to smart playlists too (their filter is untouched).
+    pub async fn rename_playlist(
+        &self,
+        rating_key: &str,
+        title: &str,
+    ) -> Result<(), PlexClientError> {
+        let path = format!("playlists/{}", rating_key);
+        self.put(&path, &[("title", title)]).await
+    }
+
     /// Delete a whole playlist.
     pub async fn delete_playlist(&self, rating_key: &str) -> Result<(), PlexClientError> {
         let path = format!("playlists/{}", rating_key);
