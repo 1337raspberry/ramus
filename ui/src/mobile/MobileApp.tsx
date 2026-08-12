@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { pushBackHandler } from "../lib/backHandler";
@@ -85,13 +85,30 @@ export default function MobileApp({ onOpenSettings }: Props) {
     if (!hasTrack) setSheetExpanded(false);
   }, [hasTrack]);
 
-  // Artist navigation (grid long-press, album detail, playlist rows) lands
-  // on the album grid — the "lists" view has no surface for a
-  // browseArtistName context, so flip to the grid view when one appears
-  // (e.g. Go to Artist from a collection grid or a lists-launched detail).
+  // Artist/year navigation (grid long-press, album detail, playlist rows,
+  // the now-playing sheet's year link) lands on the album grid — the
+  // "lists" view has no surface for these browse contexts, so flip to the
+  // grid view when one appears (e.g. Go to Artist from a collection grid
+  // or a lists-launched detail). Safe to key on presence: both contexts
+  // are transient (cleared by every nav action), so they can't be set
+  // while the user is legitimately on the Lists tab.
   useEffect(() => {
-    if (browseArtistName && view === "lists") setView("genres");
-  }, [browseArtistName, view]);
+    if ((browseArtistName || browseYear) && view === "lists") setView("genres");
+  }, [browseArtistName, browseYear, view]);
+
+  // Genre navigation needs the same heal, but keyed on the selection
+  // CHANGING, not being set: a genre selection legitimately persists in
+  // the store while the user visits the Lists tab, so a presence check
+  // (with `view` in the deps) would instantly bounce them back off it.
+  // The change-only trigger fires for the now-playing sheet's genre pills
+  // and the genre info sheet's drill navigation, which float above every
+  // view — without it, a pill tapped over a playlist stranded the user on
+  // a toolbar-less Lists hub (selectedGenreId counts toward `inGrid`).
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  useEffect(() => {
+    if (selectedGenreId && viewRef.current === "lists") setView("genres");
+  }, [selectedGenreId]);
 
   // Expanding the player sheet dismisses an active search. The search
   // bar is a NATIVE UISearchBar layered above the webview on iOS, so the
