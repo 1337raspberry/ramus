@@ -3,6 +3,7 @@ import { useLibraryStore } from "../stores/libraryStore";
 import { useToastStore } from "./Toast";
 import type { PlaylistItem } from "../lib/types";
 import {
+  ART_SIZE,
   appendToQueue,
   deletePlaylist,
   getPlaylistItems,
@@ -11,10 +12,28 @@ import {
   removePlaylistItem,
 } from "../lib/commands";
 import { useListReorder } from "../lib/useListReorder";
-import { formatDuration } from "../lib/format";
-import { IconClose, IconPlay, IconShuffle } from "./Icons";
+import { useArtUrl } from "../lib/useArtUrl";
+import { formatDuration, formatLongDuration } from "../lib/format";
+import { IconClose, IconMusicNote, IconPlay, IconShuffle } from "./Icons";
 
 const ROW_HEIGHT = 44;
+
+/** Per-row album thumbnail (own component so each row gets its own art
+ * hook instance). */
+function RowArt({ thumb }: { thumb: string | null }) {
+  const { artSrc, artErr, setArtErr } = useArtUrl(thumb, ART_SIZE.SMALL);
+  return (
+    <div className="playlist-row-art">
+      {artSrc && !artErr ? (
+        <img src={artSrc} alt="" onError={() => setArtErr(true)} />
+      ) : (
+        <div className="playlist-row-art-ph">
+          <IconMusicNote size={12} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Desktop playlist detail (main content area, driven by
@@ -26,6 +45,7 @@ export default function PlaylistDetailView() {
   const [items, setItems] = useState<PlaylistItem[] | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const confirmTimer = useRef<number | null>(null);
+  const { artSrc, artErr, setArtErr } = useArtUrl(playlist?.thumb, ART_SIZE.MEDIUM);
 
   useEffect(() => {
     setItems(null);
@@ -53,12 +73,16 @@ export default function PlaylistDetailView() {
 
   const reorder = (from: number, to: number) => {
     if (!playlist || !items) return;
+    // Smart-playlist entries carry no per-item id (the handles aren't
+    // rendered for them, so this is a type-level backstop).
+    const movedId = items[from]?.playlistItemId;
+    if (movedId == null) return;
     const next = [...items];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
     setItems(next);
     const afterItemId = to > 0 ? next[to - 1].playlistItemId : null;
-    movePlaylistItem(playlist.sourceId, moved.playlistItemId, afterItemId)
+    movePlaylistItem(playlist.sourceId, movedId, afterItemId)
       .then(setItems)
       .catch(() => {
         useToastStore.getState().show("Couldn't reorder playlist");
@@ -97,6 +121,7 @@ export default function PlaylistDetailView() {
   const removeRow = (index: number) => {
     if (!items) return;
     const item = items[index];
+    if (item.playlistItemId == null) return;
     setItems(items.filter((_, i) => i !== index));
     removePlaylistItem(playlist.sourceId, item.playlistItemId)
       .then(setItems)
@@ -125,12 +150,21 @@ export default function PlaylistDetailView() {
   const count = items?.length ?? playlist.trackCount;
   const subtitleBits: string[] = [];
   if (count != null) subtitleBits.push(`${count} track${count === 1 ? "" : "s"}`);
-  if (playlist.duration) subtitleBits.push(formatDuration(playlist.duration));
+  if (playlist.duration) subtitleBits.push(formatLongDuration(playlist.duration));
   if (playlist.smart) subtitleBits.push("Smart Playlist");
 
   return (
     <div className="playlist-view">
       <div className="playlist-view-header">
+        <div className="playlist-view-art">
+          {artSrc && !artErr ? (
+            <img src={artSrc} alt={playlist.title} onError={() => setArtErr(true)} />
+          ) : (
+            <div className="playlist-view-art-ph">
+              <IconMusicNote size={24} />
+            </div>
+          )}
+        </div>
         <div className="playlist-view-titles">
           <h2 className="playlist-view-title">{playlist.title}</h2>
           {subtitleBits.length > 0 && (
@@ -161,12 +195,13 @@ export default function PlaylistDetailView() {
         <div className="playlist-scroll">
           {items.map((item, index) => (
             <div
-              key={item.playlistItemId}
+              key={item.playlistItemId ?? index}
               className="playlist-row desktop"
               ref={(el) => setRowRef(index, el)}
             >
               <button className="playlist-row-body" onClick={() => play(index)}>
                 <span className="playlist-row-num">{index + 1}</span>
+                <RowArt thumb={item.track.thumb} />
                 <div className="playlist-row-info">
                   <div className="playlist-row-title">{item.track.title}</div>
                   <div className="playlist-row-artist">

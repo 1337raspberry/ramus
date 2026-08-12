@@ -155,9 +155,10 @@ impl CacheDatabase {
     }
 
     /// A playlist's mirrored entries in order, joined against the library
-    /// tracks. Entries whose track isn't in the synced library (or whose
-    /// per-item id never made it into the mirror) are skipped — they can't
-    /// be played or addressed anyway.
+    /// tracks. Entries whose track isn't in the synced library are skipped —
+    /// they can't be played. A NULL per-item id is kept: smart-playlist
+    /// entries never have one (filter-computed server-side), and they're
+    /// display/play-only anyway.
     pub fn playlist_items(&self, playlist_source_id: &str) -> Result<Vec<PlaylistItem>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
@@ -176,16 +177,13 @@ impl CacheDatabase {
         let items = stmt
             .query_map(params![playlist_source_id], |row| {
                 let track = Self::map_track_row(row)?;
-                let plex_item_id: Option<i64> = row.get(16)?;
-                Ok(plex_item_id.map(|id| PlaylistItem {
-                    playlist_item_id: id,
+                let playlist_item_id: Option<i64> = row.get(16)?;
+                Ok(PlaylistItem {
+                    playlist_item_id,
                     track,
-                }))
+                })
             })?
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .flatten()
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(items)
     }
 
@@ -283,7 +281,36 @@ mod tests {
                 PlaylistItemRow { plex_item_id: Some(12), track_source_id: "t1".into() },
                 // Not in the library — must be skipped, not error.
                 PlaylistItemRow { plex_item_id: Some(13), track_source_id: "missing".into() },
-                // No per-item id — unaddressable, skipped.
+                // No per-item id — kept, just unaddressable for edits.
+                PlaylistItemRow { plex_item_id: None, track_source_id: "t1".into() },
+            ],
+        )
+        .unwrap();
+
+        let items = db.playlist_items("p1").unwrap();
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].playlist_item_id, Some(11));
+        assert_eq!(items[0].track.title, "Two");
+        assert_eq!(items[1].playlist_item_id, Some(12));
+        assert_eq!(items[1].track.title, "One");
+        assert_eq!(items[2].playlist_item_id, None);
+        assert_eq!(items[2].track.title, "One");
+    }
+
+    /// Smart-playlist entries come off the server with no `playlistItemID`
+    /// at all (they're filter-computed, not persistent rows). Every entry
+    /// must still be returned, in order — dropping id-less rows rendered
+    /// whole smart playlists as empty.
+    #[test]
+    fn test_smart_playlist_items_without_ids_are_all_returned() {
+        let db = setup();
+        seed_track(&db, "t1", "One");
+        seed_track(&db, "t2", "Two");
+        db.replace_playlists(&[row("p1", "Smarty", true)]).unwrap();
+        db.replace_playlist_items(
+            "p1",
+            &[
+                PlaylistItemRow { plex_item_id: None, track_source_id: "t2".into() },
                 PlaylistItemRow { plex_item_id: None, track_source_id: "t1".into() },
             ],
         )
@@ -291,9 +318,8 @@ mod tests {
 
         let items = db.playlist_items("p1").unwrap();
         assert_eq!(items.len(), 2);
-        assert_eq!(items[0].playlist_item_id, 11);
+        assert!(items.iter().all(|i| i.playlist_item_id.is_none()));
         assert_eq!(items[0].track.title, "Two");
-        assert_eq!(items[1].playlist_item_id, 12);
         assert_eq!(items[1].track.title, "One");
     }
 
@@ -314,7 +340,7 @@ mod tests {
         .unwrap();
         let items = db.playlist_items("p1").unwrap();
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0].playlist_item_id, 2);
+        assert_eq!(items[0].playlist_item_id, Some(2));
     }
 
     #[test]

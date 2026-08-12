@@ -310,11 +310,13 @@ pub struct Playlist {
 
 /// One entry of a playlist. `playlist_item_id` is Plex's per-entry id — the
 /// handle the remove/reorder endpoints take (NOT the track's ratingKey, which
-/// can appear multiple times in one playlist).
+/// can appear multiple times in one playlist). Smart-playlist entries are
+/// computed from the filter server-side and carry no per-item id at all —
+/// they're display/play-only, so `None` here is a normal state, not an error.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaylistItem {
-    pub playlist_item_id: i64,
+    pub playlist_item_id: Option<i64>,
     pub track: Track,
 }
 

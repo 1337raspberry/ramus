@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Playlist, PlaylistItem } from "../lib/types";
+import type { Playlist, PlaylistItem, Track } from "../lib/types";
 import {
+  ART_SIZE,
   deletePlaylist,
+  getAlbum,
   getPlaylistItems,
   movePlaylistItem,
   playTracks,
@@ -11,20 +13,34 @@ import {
 } from "../lib/commands";
 import { useListReorder } from "../lib/useListReorder";
 import { useLongPress } from "../lib/useLongPress";
+import { useSwipeToDelete } from "../lib/useSwipeToDelete";
+import { useArtUrl } from "../lib/useArtUrl";
+import { useLibraryStore } from "../stores/libraryStore";
 import { useToastStore } from "../components/Toast";
 import { pushBackHandler } from "../lib/backHandler";
-import { formatDuration } from "../lib/format";
-import { IconChevronLeft, IconMoreDots } from "../components/Icons";
+import { formatDuration, formatLongDuration } from "../lib/format";
+import {
+  IconChevronLeft,
+  IconMoreDots,
+  IconMusicNote,
+  IconPlay,
+  IconShuffle,
+} from "../components/Icons";
 
 const ROW_HEIGHT = 56;
 
 interface Props {
   playlist: Playlist;
   onBack: () => void;
+  /** Navigate to an artist's album grid. Owned by MobileApp so it can
+   * breadcrumb the way back here — plain back from the grid returns to
+   * this playlist, matching the album-detail overlay's behaviour. */
+  onGoToArtist: (artistName: string) => void;
 }
 
-/** One row's body: tap plays the playlist from here, long-press opens the
- * per-row sheet. Isolated so the long-press hook runs per row. */
+/** One row's body: album thumb + titles + duration. Tap plays the playlist
+ * from here, long-press opens the per-row sheet (same sheet as the `…`
+ * button beside it). */
 function RowBody({
   item,
   onPlay,
@@ -35,8 +51,18 @@ function RowBody({
   onSheet: () => void;
 }) {
   const longPress = useLongPress({ onLongPress: onSheet, onClick: onPlay });
+  const { artSrc, artErr, setArtErr } = useArtUrl(item.track.thumb, ART_SIZE.SMALL);
   return (
     <button className="playlist-row-body" {...longPress}>
+      <div className="playlist-row-art">
+        {artSrc && !artErr ? (
+          <img src={artSrc} alt="" onError={() => setArtErr(true)} />
+        ) : (
+          <div className="playlist-row-art-ph">
+            <IconMusicNote size={16} />
+          </div>
+        )}
+      </div>
       <div className="playlist-row-info">
         <div className="playlist-row-title">{item.track.title}</div>
         <div className="playlist-row-artist">{item.track.trackArtist || item.track.artistName}</div>
@@ -47,15 +73,17 @@ function RowBody({
 }
 
 /**
- * Playlist detail: ordered track list with drag-to-reorder via the `::` grab
- * handles (regular playlists only — smart playlists are display/play only).
- * Reorder is optimistic; the server's refreshed list reconciles on landing.
+ * Playlist detail: hero (composite art, meta, play/shuffle) over the ordered
+ * track list. Drag-to-reorder via the `::` grab handles (regular playlists
+ * only — smart playlists are display/play only). Reorder is optimistic; the
+ * server's refreshed list reconciles on landing.
  */
-export default function MobilePlaylistDetail({ playlist, onBack }: Props) {
+export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }: Props) {
   const [items, setItems] = useState<PlaylistItem[] | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [rowSheet, setRowSheet] = useState<number | null>(null);
+  const { artSrc, artErr, setArtErr } = useArtUrl(playlist.thumb, ART_SIZE.MEDIUM);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,12 +111,16 @@ export default function MobilePlaylistDetail({ playlist, onBack }: Props) {
 
   const reorder = (from: number, to: number) => {
     if (!items) return;
+    // Smart-playlist entries carry no per-item id (the handles aren't
+    // rendered for them, so this is a type-level backstop).
+    const movedId = items[from]?.playlistItemId;
+    if (movedId == null) return;
     const next = [...items];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
     setItems(next);
     const afterItemId = to > 0 ? next[to - 1].playlistItemId : null;
-    movePlaylistItem(playlist.sourceId, moved.playlistItemId, afterItemId)
+    movePlaylistItem(playlist.sourceId, movedId, afterItemId)
       .then(setItems)
       .catch(() => {
         useToastStore.getState().show("Couldn't reorder playlist");
@@ -103,6 +135,10 @@ export default function MobilePlaylistDetail({ playlist, onBack }: Props) {
     rowHeight: ROW_HEIGHT,
     onReorder: reorder,
   });
+
+  // Swipe-left-to-remove on regular playlists (smart entries can't be
+  // removed, so their rows don't take the gesture at all).
+  const swipe = useSwipeToDelete({ onDelete: (i) => removeRow(i) });
 
   const play = (startAt: number) => {
     if (!items || items.length === 0) return;
@@ -125,6 +161,7 @@ export default function MobilePlaylistDetail({ playlist, onBack }: Props) {
   const removeRow = (index: number) => {
     if (!items) return;
     const item = items[index];
+    if (item.playlistItemId == null) return;
     // Optimistic removal; the refreshed server list reconciles.
     setItems(items.filter((_, i) => i !== index));
     removePlaylistItem(playlist.sourceId, item.playlistItemId)
@@ -146,10 +183,37 @@ export default function MobilePlaylistDetail({ playlist, onBack }: Props) {
       .catch(() => useToastStore.getState().show("Couldn't delete playlist"));
   };
 
+  const goToAlbum = (track: Track) => {
+    if (!track.albumKey) return;
+    getAlbum(track.albumKey)
+      .then((album) => {
+        if (album) void useLibraryStore.getState().openAlbumDetail(album);
+        else useToastStore.getState().show("Album isn't in the library");
+      })
+      .catch(() => {});
+  };
+
+  const goToArtist = (track: Track) => {
+    onGoToArtist(track.artistName);
+  };
+
+  const toggleFav = (index: number) => {
+    if (!items) return;
+    const track = items[index].track;
+    // libraryStore owns the IPC + cross-store patches; mirror the flip into
+    // this view's local copy so the sheet label stays honest.
+    void useLibraryStore.getState().toggleTrackFav(track);
+    setItems(
+      items.map((it, i) =>
+        i === index ? { ...it, track: { ...it.track, isFavourite: !track.isFavourite } } : it,
+      ),
+    );
+  };
+
   const subtitleBits: string[] = [];
   const count = items?.length ?? playlist.trackCount;
   if (count != null) subtitleBits.push(`${count} track${count === 1 ? "" : "s"}`);
-  if (playlist.duration) subtitleBits.push(formatDuration(playlist.duration));
+  if (playlist.duration) subtitleBits.push(formatLongDuration(playlist.duration));
   if (playlist.smart) subtitleBits.push("Smart Playlist");
 
   return (
@@ -173,9 +237,40 @@ export default function MobilePlaylistDetail({ playlist, onBack }: Props) {
         </button>
       </header>
 
-      {subtitleBits.length > 0 && (
-        <div className="playlist-subtitle">{subtitleBits.join(" · ")}</div>
-      )}
+      <div className="mobile-detail-hero playlist-hero">
+        <div className="mobile-detail-art">
+          {artSrc && !artErr ? (
+            <img src={artSrc} alt={playlist.title} onError={() => setArtErr(true)} />
+          ) : (
+            <div className="mobile-detail-art-ph">
+              <IconMusicNote size={32} />
+            </div>
+          )}
+        </div>
+        <div className="mobile-detail-meta">
+          {subtitleBits.map((bit) => (
+            <div key={bit} className="playlist-hero-line">
+              {bit}
+            </div>
+          ))}
+          <div className="mobile-detail-actions">
+            <button
+              className="mobile-detail-play"
+              aria-label="Play playlist"
+              onClick={() => play(0)}
+            >
+              <IconPlay size={22} />
+            </button>
+            <button
+              className="mobile-detail-play playlist-shuffle"
+              aria-label="Shuffle playlist"
+              onClick={shuffle}
+            >
+              <IconShuffle size={20} />
+            </button>
+          </div>
+        </div>
+      </div>
 
       {items === null ? (
         <div className="mobile-empty">Loading…</div>
@@ -185,23 +280,40 @@ export default function MobilePlaylistDetail({ playlist, onBack }: Props) {
         <div className="playlist-scroll">
           {items.map((item, index) => (
             <div
-              key={item.playlistItemId}
-              className="playlist-row"
+              key={item.playlistItemId ?? index}
+              className={`playlist-row${playlist.smart ? "" : " swipe-row"}`}
               ref={(el) => setRowRef(index, el)}
             >
-              <RowBody item={item} onPlay={() => play(index)} onSheet={() => setRowSheet(index)} />
-              {!playlist.smart && (
-                <span className="playlist-grab" aria-label="Reorder" {...handleProps(index)}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                    <circle cx="9" cy="6" r="1.6" />
-                    <circle cx="15" cy="6" r="1.6" />
-                    <circle cx="9" cy="12" r="1.6" />
-                    <circle cx="15" cy="12" r="1.6" />
-                    <circle cx="9" cy="18" r="1.6" />
-                    <circle cx="15" cy="18" r="1.6" />
-                  </svg>
-                </span>
-              )}
+              <div
+                className="playlist-row-content swipe-row-content"
+                ref={(el) => swipe.setContentRef(index, el)}
+                {...(playlist.smart ? {} : swipe.contentProps(index))}
+              >
+                <RowBody
+                  item={item}
+                  onPlay={() => play(index)}
+                  onSheet={() => setRowSheet(index)}
+                />
+                <button
+                  className="playlist-row-menu"
+                  aria-label="Track actions"
+                  onClick={() => setRowSheet(index)}
+                >
+                  <IconMoreDots size={18} />
+                </button>
+                {!playlist.smart && (
+                  <span className="playlist-grab" aria-label="Reorder" {...handleProps(index)}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                      <circle cx="9" cy="6" r="1.6" />
+                      <circle cx="15" cy="6" r="1.6" />
+                      <circle cx="9" cy="12" r="1.6" />
+                      <circle cx="15" cy="12" r="1.6" />
+                      <circle cx="9" cy="18" r="1.6" />
+                      <circle cx="15" cy="18" r="1.6" />
+                    </svg>
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -217,22 +329,17 @@ export default function MobilePlaylistDetail({ playlist, onBack }: Props) {
           >
             <div className="mobile-action-sheet">
               <div className="mobile-action-sheet-group">
-                <button
-                  onClick={() => {
-                    setShowMenu(false);
-                    play(0);
-                  }}
-                >
-                  Play
+                <button disabled className="soon">
+                  Download Playlist<span className="soon-tag">soon</span>
                 </button>
-                <button
-                  onClick={() => {
-                    setShowMenu(false);
-                    shuffle();
-                  }}
-                >
-                  Shuffle
+                <button disabled className="soon">
+                  Rename Playlist<span className="soon-tag">soon</span>
                 </button>
+                {playlist.smart && (
+                  <button disabled className="soon">
+                    Edit Smart Filters<span className="soon-tag">soon</span>
+                  </button>
+                )}
                 <button
                   className="destructive"
                   onClick={() => {
@@ -316,6 +423,33 @@ export default function MobilePlaylistDetail({ playlist, onBack }: Props) {
                   }}
                 >
                   Add to Queue
+                </button>
+                <button
+                  onClick={() => {
+                    const track = items[rowSheet].track;
+                    setRowSheet(null);
+                    goToAlbum(track);
+                  }}
+                >
+                  Go to Album
+                </button>
+                <button
+                  onClick={() => {
+                    const track = items[rowSheet].track;
+                    setRowSheet(null);
+                    goToArtist(track);
+                  }}
+                >
+                  Go to Artist
+                </button>
+                <button
+                  onClick={() => {
+                    const idx = rowSheet;
+                    setRowSheet(null);
+                    toggleFav(idx);
+                  }}
+                >
+                  {items[rowSheet].track.isFavourite ? "Unfavourite Track" : "Favourite Track"}
                 </button>
                 {!playlist.smart && (
                   <button

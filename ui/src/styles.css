@@ -5055,10 +5055,16 @@ body.is-fullscreen .focus-body {
 
 /* --- Playlist detail --- */
 
-.playlist-subtitle {
-  padding: 0 20px 10px;
-  color: var(--text-muted);
+/* Meta lines beside the hero art (count / runtime / smart badge). */
+.playlist-hero-line {
   font-size: 13px;
+  color: var(--text-muted);
+}
+
+.playlist-hero-line:first-child {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .playlist-scroll {
@@ -5069,11 +5075,62 @@ body.is-fullscreen .focus-body {
   padding-bottom: 24px;
 }
 
+/* Playlist hero art is smaller than the album detail's — the track list is
+   the star here. */
+.playlist-hero .mobile-detail-art {
+  width: min(30vw, 124px);
+  height: min(30vw, 124px);
+}
+
+/* Shuffle twin of the hero play button: same circle, quieter fill. */
+.mobile-detail-play.playlist-shuffle {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
 /* Fixed row height — the reorder drag computes slots from it. */
 .playlist-row {
   display: flex;
   align-items: stretch;
   height: 56px;
+  padding-right: 6px;
+}
+
+.playlist-row-art {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.playlist-row-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.playlist-row-art-ph {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.playlist-row-menu {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  width: 40px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
 .playlist-row-body {
@@ -5085,7 +5142,7 @@ body.is-fullscreen .focus-body {
   background: none;
   border: none;
   color: var(--text-primary);
-  padding: 0 4px 0 20px;
+  padding: 0 16px 0 20px;
   text-align: left;
   cursor: pointer;
 }
@@ -5134,6 +5191,58 @@ body.is-fullscreen .focus-body {
   cursor: grab;
 }
 
+/* The sliding layer of a playlist row (see .swipe-row below) — carries the
+   flex layout the row itself used to have. */
+.playlist-row-content {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+}
+
+/* --- Swipe-to-remove rows (useSwipeToDelete, mobile only) --- */
+
+/* Container clips the sliding content and hosts the action layer. */
+.swipe-row {
+  position: relative;
+  overflow: hidden;
+}
+
+.swipe-row-action {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background: #b3261e;
+  border-radius: inherit;
+  /* Hidden until the hook displaces this row's content — rows are
+     transparent over the backdrop, so it would bleed through at rest. */
+  visibility: hidden;
+}
+
+.swipe-row-action button {
+  height: 100%;
+  padding: 0 22px;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* pan-y keeps Android's scroller off horizontal moves so the hook can
+   claim them; vertical pans stay native. NO will-change here — these lists
+   run 1000+ unvirtualized rows, and promoting every row to its own
+   compositor layer wrecks the now-playing sheet drag (the gesture's own
+   transform promotes the one moving row on demand). */
+.swipe-row-content {
+  position: relative;
+  height: 100%;
+  touch-action: pan-y;
+  border-radius: inherit;
+}
+
 /* --- Desktop playlist detail --- */
 
 .playlist-view {
@@ -5149,6 +5258,37 @@ body.is-fullscreen .focus-body {
   justify-content: space-between;
   gap: 16px;
   padding: 16px 20px 10px;
+}
+
+.playlist-view-art {
+  width: 84px;
+  height: 84px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.playlist-view-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.playlist-view-art-ph {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.playlist-view-titles {
+  flex: 1;
+  min-width: 0;
 }
 
 .playlist-view-title {
@@ -5244,6 +5384,32 @@ body.is-fullscreen .focus-body {
   width: 32px;
 }
 
+.playlist-row.desktop .playlist-row-art {
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+}
+
+/* Placeholder rows in the playlist action sheet — future functionality,
+   visible but inert. Out-ranks the sheet group's forced display:block. */
+.mobile-action-sheet-group button.soon {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  opacity: 0.55;
+  cursor: default;
+}
+
+.soon-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
 /* Inline name entry inside the playlist picker sheet. */
 .playlist-name-entry {
   display: flex;
@@ -5304,6 +5470,31 @@ body.is-fullscreen .focus-body {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
+}
+
+.mobile-lists-thumb {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mobile-lists-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mobile-lists-thumb-ph {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.3);
 }
 
 .mobile-lists-row-name {
@@ -6975,28 +7166,31 @@ body.is-fullscreen .focus-body {
   padding: 0 0 12px;
 }
 
-/* Columns: remove ✕, number, art, title/artist, duration, grab handle —
-   matching the playlist editor (destructive control left, drag right).
-   Height is FIXED at 56px (44px thumb + 2×6px padding): the drag-reorder
-   hook computes slots from `UPNEXT_ROW_HEIGHT`, keep them in sync. */
+/* Height is FIXED at 56px (44px thumb + 2×6px padding): the drag-reorder
+   hook computes slots from `UPNEXT_ROW_HEIGHT`, keep them in sync. The row
+   itself is the swipe container; the grid lives on the sliding content. */
 .mobile-upnext-row {
   width: 100%;
-  display: grid;
-  grid-template-columns: 32px 20px 44px 1fr auto 32px;
-  align-items: center;
-  gap: 8px;
   height: 56px;
-  box-sizing: border-box;
-  padding: 6px 0;
-  background: transparent;
-  border: none;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
   border-radius: 8px;
 }
 
-.mobile-upnext-row:active {
+/* Columns: number (wide enough for 4 digits), art, title/artist, duration,
+   grab handle. Removal is the swipe gesture — no ✕ column. */
+.mobile-upnext-content {
+  display: grid;
+  grid-template-columns: 36px 44px 1fr auto 32px;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 6px 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mobile-upnext-content:active {
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -7048,24 +7242,6 @@ body.is-fullscreen .focus-body {
   color: rgba(255, 255, 255, 0.5);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-}
-
-.mobile-upnext-remove {
-  width: 32px;
-  height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.3);
-  cursor: pointer;
-  border-radius: 50%;
-}
-
-.mobile-upnext-remove:active {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
 }
 
 /* touch-action: none lets Android start the drag without the scroller

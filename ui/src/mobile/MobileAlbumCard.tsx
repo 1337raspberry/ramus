@@ -20,6 +20,7 @@ const LONG_PRESS_MS = 500;
 export default memo(function MobileAlbumCard({ album }: Props) {
   const openAlbumDetail = useLibraryStore((s) => s.openAlbumDetail);
   const playAlbum = useLibraryStore((s) => s.playAlbum);
+  const loadAlbumsForArtistName = useLibraryStore((s) => s.loadAlbumsForArtistName);
   const { artSrc, artErr, setArtErr } = useArtUrl(album.thumb, ART_SIZE.MEDIUM);
 
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -140,6 +141,14 @@ export default memo(function MobileAlbumCard({ album }: Props) {
                   }}
                 >
                   Add to Queue
+                </button>
+                <button
+                  onClick={() => {
+                    setSheetOpen(false);
+                    void loadAlbumsForArtistName(album.artistName);
+                  }}
+                >
+                  Go to Artist
                 </button>
                 <button
                   onClick={() => {

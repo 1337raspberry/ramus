@@ -4,6 +4,23 @@ export function formatDuration(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+/** Long-form total duration for playlist/collection headers: "2 days, 3 hours,
+ * 5 minutes", "4 hours, 51 minutes", "28 minutes". Zero components are
+ * skipped; anything under a minute rounds up to "1 minute". */
+export function formatLongDuration(seconds: number): string {
+  const totalMinutes = Math.round(seconds / 60);
+  if (totalMinutes < 1) return "1 minute";
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  const part = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+  const parts: string[] = [];
+  if (days > 0) parts.push(part(days, "day"));
+  if (hours > 0) parts.push(part(hours, "hour"));
+  if (minutes > 0) parts.push(part(minutes, "minute"));
+  return parts.join(", ");
+}
+
 const LOSSLESS = ["flac", "alac", "wav", "aiff", "aif", "pcm"];
 const CBR_BITRATES = new Set([96, 128, 192, 256, 320]);
 

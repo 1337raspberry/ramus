@@ -12,14 +12,13 @@ import {
   previousTrack,
   getQueue,
 } from "../lib/commands";
-import { formatDuration } from "../lib/format";
 import { extractPalette, accentFromPalette } from "../lib/vibrantColor";
 import { extractCornerColors } from "../lib/blurArt";
 import { applyAccent, DEFAULT_BLUR_COLORS, OLED_VOID_BLUR_COLORS } from "../lib/accent";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
 import { useSheetDrag } from "./useSheetDrag";
-import { useListReorder } from "../lib/useListReorder";
+import UpNextList from "./UpNextList";
 import WaveformSeekBar from "../components/WaveformSeekBar";
 import FlowLayout from "../components/FlowLayout";
 import UltraBlurBackground from "../components/UltraBlurBackground";
@@ -45,10 +44,6 @@ import MobileDebugPanel from "./MobileDebugPanel";
 import CollectionPickerSheet from "./CollectionPickerSheet";
 import PlaylistPickerSheet from "./PlaylistPickerSheet";
 
-/** Fixed Up Next row height (44px thumb + 2×6px padding) — the reorder drag
- * computes slots from it, so the CSS height must match. */
-const UPNEXT_ROW_HEIGHT = 56;
-
 function IconSkipBack({ size = 22 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -64,19 +59,6 @@ function IconSkipForward({ size = 22 }: { size?: number }) {
       <path d="M2 6l9 6-9 6V6z" />
       <path d="M12 6l9 6-9 6V6z" />
     </svg>
-  );
-}
-
-function UpNextThumb({ thumb }: { thumb: string | null }) {
-  const { artSrc: src, artErr: err, setArtErr: setErr } = useArtUrl(thumb, ART_SIZE.SMALL);
-
-  if (src && !err) {
-    return <img className="mobile-upnext-thumb" src={src} alt="" onError={() => setErr(true)} />;
-  }
-  return (
-    <div className="mobile-upnext-thumb mobile-upnext-thumb-ph">
-      <IconMusicNote size={14} />
-    </div>
   );
 }
 
@@ -118,16 +100,6 @@ export default function MobileNowPlaying({
   const removeQueueItem = usePlaybackStore((s) => s.removeQueueItem);
   const moveQueueItem = usePlaybackStore((s) => s.moveQueueItem);
   const clearQueue = usePlaybackStore((s) => s.clearQueue);
-
-  // Up Next drag-reorder. The hook works in upcoming-list space; the store
-  // takes absolute queue indices.
-  const upcomingStart = queueIndex + 1;
-  const upcoming = queue.slice(upcomingStart);
-  const { setRowRef: setUpNextRowRef, handleProps: upNextHandleProps } = useListReorder({
-    count: upcoming.length,
-    rowHeight: UPNEXT_ROW_HEIGHT,
-    onReorder: (from, to) => moveQueueItem(upcomingStart + from, upcomingStart + to),
-  });
 
   const {
     track,
@@ -496,62 +468,15 @@ export default function MobileNowPlaying({
             </div>
           </div>
 
-          {upcoming.length > 0 && (
-            <div className="mobile-upnext">
-              <div className="mobile-upnext-header">Up Next</div>
-              {upcoming.map((t, i) => {
-                const globalIndex = upcomingStart + i;
-                return (
-                  <div
-                    key={`${globalIndex}-${t.ratingKey}`}
-                    className="mobile-upnext-row"
-                    role="button"
-                    tabIndex={0}
-                    ref={(el) => setUpNextRowRef(i, el)}
-                    onClick={() => jumpToIndex(globalIndex)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        jumpToIndex(globalIndex);
-                      }
-                    }}
-                  >
-                    <button
-                      className="mobile-upnext-remove"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeQueueItem(globalIndex);
-                      }}
-                      aria-label="Remove from queue"
-                    >
-                      <IconClose size={12} />
-                    </button>
-                    <span className="mobile-upnext-num">{i + 1}</span>
-                    <UpNextThumb thumb={t.thumb} />
-                    <div className="mobile-upnext-info">
-                      <div className="mobile-upnext-title">{t.title}</div>
-                      <div className="mobile-upnext-artist">{t.trackArtist || t.artistName}</div>
-                    </div>
-                    <span className="mobile-upnext-duration">{formatDuration(t.duration)}</span>
-                    <span
-                      className="mobile-upnext-grab"
-                      aria-label="Reorder"
-                      onClick={(e) => e.stopPropagation()}
-                      {...upNextHandleProps(i)}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="9" cy="6" r="1.6" />
-                        <circle cx="15" cy="6" r="1.6" />
-                        <circle cx="9" cy="12" r="1.6" />
-                        <circle cx="15" cy="12" r="1.6" />
-                        <circle cx="9" cy="18" r="1.6" />
-                        <circle cx="15" cy="18" r="1.6" />
-                      </svg>
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+          {hasUpNext && (
+            <UpNextList
+              queue={queue}
+              queueIndex={queueIndex}
+              scrollBodyRef={sheetBodyRef}
+              onJump={jumpToIndex}
+              onRemove={removeQueueItem}
+              onMove={moveQueueItem}
+            />
           )}
         </div>
 

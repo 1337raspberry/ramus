@@ -100,9 +100,10 @@ export interface Playlist {
 }
 
 /** One playlist entry. `playlistItemId` is Plex's per-entry id — the handle
- * remove/reorder take (NOT the track's ratingKey, which can repeat). */
+ * remove/reorder take (NOT the track's ratingKey, which can repeat). Smart
+ * playlist entries are filter-computed and have no id (display/play only). */
 export interface PlaylistItem {
-  playlistItemId: number;
+  playlistItemId: number | null;
   track: Track;
 }
 

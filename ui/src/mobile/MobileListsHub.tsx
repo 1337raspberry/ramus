@@ -2,13 +2,31 @@ import { useEffect, useMemo, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { getAllCollectionNames, getPlaylists } from "../lib/commands";
+import { ART_SIZE, getAllCollectionNames, getPlaylists } from "../lib/commands";
 import { pushBackHandler } from "../lib/backHandler";
 import { describeFilters } from "../lib/filterDescribe";
 import { filtersFromBookmark } from "../lib/bookmark";
-import { IconChevronRight } from "../components/Icons";
+import { useArtUrl } from "../lib/useArtUrl";
+import { IconChevronRight, IconMusicNote } from "../components/Icons";
 import BookmarkEditor from "../components/BookmarkEditor";
 import type { Bookmark, Playlist } from "../lib/types";
+
+/** Small square thumb for hub rows — playlist composites and collection
+ * stand-ins share the one placeholder look. */
+function HubThumb({ thumb }: { thumb: string | null }) {
+  const { artSrc, artErr, setArtErr } = useArtUrl(thumb, ART_SIZE.SMALL);
+  return (
+    <div className="mobile-lists-thumb">
+      {artSrc && !artErr ? (
+        <img src={artSrc} alt="" onError={() => setArtErr(true)} />
+      ) : (
+        <div className="mobile-lists-thumb-ph">
+          <IconMusicNote size={14} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface Props {
   /** Switch the app back to the grid view after a Smart Filter is applied. */
@@ -59,6 +77,22 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
     return counts;
   }, [albums]);
 
+  // First member album's art stands in for each collection — the mirror
+  // stores collections as name tags off the albums, not as server objects,
+  // so Plex's own collection composite isn't on hand. Same best-effort
+  // source (and caveat) as the counts above.
+  const collectionArt = useMemo(() => {
+    const art = new Map<string, string>();
+    for (const a of albums) {
+      if (!a.thumb) continue;
+      for (const c of a.collections) {
+        const key = c.toLowerCase();
+        if (!art.has(key)) art.set(key, a.thumb);
+      }
+    }
+    return art;
+  }, [albums]);
+
   const summaries = useMemo(
     () => bookmarks.map((b) => describeFilters(filtersFromBookmark(b))),
     [bookmarks],
@@ -99,6 +133,7 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
             className="mobile-artist-row"
             onClick={() => useLibraryStore.setState({ browsePlaylist: p })}
           >
+            <HubThumb thumb={p.thumb} />
             <span className="mobile-lists-row-name">{p.title}</span>
             {p.smart && <span className="mobile-lists-smart-badge">SMART</span>}
             {p.trackCount != null && <span className="mobile-lists-row-count">{p.trackCount}</span>}
@@ -121,6 +156,7 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
               className="mobile-artist-row"
               onClick={() => loadAlbumsForCollection(name)}
             >
+              <HubThumb thumb={collectionArt.get(name.toLowerCase()) ?? null} />
               <span className="mobile-lists-row-name">{name}</span>
               {count != null && <span className="mobile-lists-row-count">{count}</span>}
               <IconChevronRight size={18} className="mobile-lists-chevron" />

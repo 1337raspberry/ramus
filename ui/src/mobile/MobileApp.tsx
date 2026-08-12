@@ -14,7 +14,7 @@ import MobileNowPlaying from "./MobileNowPlaying";
 import MobileListsHub from "./MobileListsHub";
 import MobilePlaylistDetail from "./MobilePlaylistDetail";
 import GenreInfoSheet from "./GenreInfoSheet";
-import type { GenreNode } from "../lib/types";
+import type { GenreNode, Playlist } from "../lib/types";
 
 function findNode(nodes: GenreNode[], id: string): GenreNode | null {
   for (const n of nodes) {
@@ -43,6 +43,14 @@ export default function MobileApp({ onOpenSettings }: Props) {
   const browsePlaylist = useLibraryStore((s) => s.browsePlaylist);
   const hasTrack = usePlaybackStore((s) => !!s.currentTrack);
   const [sheetExpanded, setSheetExpanded] = useState(false);
+  // Breadcrumb for "Go to Artist" from a playlist: back from that artist
+  // grid returns to the playlist (matching the album-detail overlay's back)
+  // instead of falling out to the genre tree. Tied to the artist name so a
+  // grid that has since navigated elsewhere drops the crumb.
+  const [returnPlaylist, setReturnPlaylist] = useState<{
+    playlist: Playlist;
+    artistName: string;
+  } | null>(null);
 
   useEffect(() => {
     const store = useLibraryStore.getState();
@@ -77,6 +85,14 @@ export default function MobileApp({ onOpenSettings }: Props) {
     if (!hasTrack) setSheetExpanded(false);
   }, [hasTrack]);
 
+  // Artist navigation (grid long-press, album detail, playlist rows) lands
+  // on the album grid — the "lists" view has no surface for a
+  // browseArtistName context, so flip to the grid view when one appears
+  // (e.g. Go to Artist from a collection grid or a lists-launched detail).
+  useEffect(() => {
+    if (browseArtistName && view === "lists") setView("genres");
+  }, [browseArtistName, view]);
+
   // Expanding the player sheet dismisses an active search. The search
   // bar is a NATIVE UISearchBar layered above the webview on iOS, so the
   // sheet cannot cover it — it must be torn down. Clearing searchQuery
@@ -100,9 +116,31 @@ export default function MobileApp({ onOpenSettings }: Props) {
     (view === "artists" && !!selectedArtistId);
   const showToolbar = !inGrid && !detailAlbum && view !== "search" && view !== "suggestion";
 
+  // Consume the playlist crumb: leave the artist grid, land back on the
+  // playlist. Shared by the unified back handler (hardware/edge back) and
+  // the grid header's own chevron (which bypasses handleBack).
+  const restorePlaylistFromCrumb = useCallback(() => {
+    if (!returnPlaylist) return;
+    setReturnPlaylist(null);
+    useLibraryStore.setState({
+      browseArtistName: null,
+      browseYear: null,
+      browseCollectionName: null,
+      searchQuery: null,
+      browsePlaylist: returnPlaylist.playlist,
+    });
+    setView("lists");
+  }, [returnPlaylist]);
+
   // Unified back navigation — pops one level of the view hierarchy
   const handleBack = useCallback(() => {
     const s = useLibraryStore.getState();
+
+    // A stale playlist crumb (the grid moved on to some other context)
+    // must not teleport a later back to the playlist.
+    if (returnPlaylist && s.browseArtistName !== returnPlaylist.artistName) {
+      setReturnPlaylist(null);
+    }
 
     if (s.detailAlbum) {
       s.closeAlbumDetail();
@@ -135,6 +173,10 @@ export default function MobileApp({ onOpenSettings }: Props) {
     }
 
     if (s.browseArtistName || s.browseYear || s.searchQuery !== null) {
+      if (returnPlaylist && s.browseArtistName === returnPlaylist.artistName) {
+        restorePlaylistFromCrumb();
+        return;
+      }
       useLibraryStore.setState({
         browseArtistName: null,
         browseYear: null,
@@ -166,7 +208,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
       useLibraryStore.setState({ selectedGenreId: null });
       return;
     }
-  }, [view]);
+  }, [view, returnPlaylist, restorePlaylistFromCrumb]);
 
   const canGoBack =
     !!detailAlbum ||
@@ -229,6 +271,11 @@ export default function MobileApp({ onOpenSettings }: Props) {
           <MobilePlaylistDetail
             playlist={browsePlaylist}
             onBack={() => useLibraryStore.setState({ browsePlaylist: null })}
+            onGoToArtist={(artistName) => {
+              setReturnPlaylist({ playlist: browsePlaylist, artistName });
+              void useLibraryStore.getState().loadAlbumsForArtistName(artistName);
+              setView("genres");
+            }}
           />
         );
       if (browseCollectionName) return <MobileAlbumGrid contextLabel="" />;
@@ -238,7 +285,17 @@ export default function MobileApp({ onOpenSettings }: Props) {
     const drillGrid =
       (selectedGenreId && selectedGenreId !== "__all__") || !!browseArtistName || !!browseYear;
 
-    if (drillGrid) return <MobileAlbumGrid contextLabel="" />;
+    // The grid's header chevron uses its own back ladder, not handleBack —
+    // an armed playlist crumb must override it too.
+    const crumbActive = returnPlaylist !== null && browseArtistName === returnPlaylist.artistName;
+
+    if (drillGrid)
+      return (
+        <MobileAlbumGrid
+          contextLabel=""
+          onBack={crumbActive ? restorePlaylistFromCrumb : undefined}
+        />
+      );
     if (selectedGenreId === "__all__") return <MobileAlbumGrid contextLabel="All" />;
 
     return <MobileGenreTree onOpenSettings={onOpenSettings} />;

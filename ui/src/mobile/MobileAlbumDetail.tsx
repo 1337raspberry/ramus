@@ -214,6 +214,14 @@ export default function MobileAlbumDetail() {
                     <button
                       onClick={() => {
                         setOpenMenuKey(null);
+                        loadAlbumsForArtistName(album.artistName);
+                      }}
+                    >
+                      Go to Artist
+                    </button>
+                    <button
+                      onClick={() => {
+                        setOpenMenuKey(null);
                         setCollectionsOpen(true);
                       }}
                     >
