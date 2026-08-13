@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useLibraryStore, hasActiveFilters } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
-import { getFavouriteTracks, playTracks } from "../lib/commands";
-import { pushBackHandler } from "../lib/backHandler";
+import { useDownloadsStore } from "../stores/downloadsStore";
+import { IconDownload } from "../components/Icons";
 import MobileFilterPanel from "./MobileFilterPanel";
 
 export type MobileView = "genres" | "artists" | "suggestion" | "search" | "lists";
@@ -85,32 +85,6 @@ function IconStack() {
   );
 }
 
-function IconShuffleStar() {
-  return (
-    <svg
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M16 3h5v5" />
-      <path d="M11 13L21 3" />
-      <path d="M21 16v5h-5" />
-      <path d="M15 15l6 6" />
-      <path d="M4 4l3.5 3.5" />
-      <path
-        d="M5.5 14L6.74 17.5 10.5 17.56 7.46 19.8 8.56 23.3 5.5 21.05 2.44 23.3 3.54 19.8 0.5 17.56 4.26 17.5Z"
-        fill="currentColor"
-        stroke="none"
-      />
-    </svg>
-  );
-}
-
 function IconFilterToolbar() {
   return (
     <svg
@@ -146,24 +120,13 @@ function IconMagnifier() {
   );
 }
 
-async function shuffleFavourites() {
-  try {
-    const tracks = await getFavouriteTracks();
-    if (!tracks.length) return;
-    for (let i = tracks.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
-    }
-    await playTracks(tracks, 0);
-  } catch {}
-}
-
 export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props) {
   const setSidebarMode = useLibraryStore((s) => s.setSidebarMode);
   const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
   const albumFilters = useLibraryStore((s) => s.albumFilters);
+  const openDownloadsHub = useDownloadsStore((s) => s.openHub);
+  const downloadsHubOpen = useDownloadsStore((s) => s.hubOpen);
   const [showFilter, setShowFilter] = useState(false);
-  const [showShuffleConfirm, setShowShuffleConfirm] = useState(false);
   const filterActive = hasActiveFilters(albumFilters);
 
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -218,14 +181,6 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
     onSelect(v);
   };
 
-  useEffect(() => {
-    if (!showShuffleConfirm) return;
-    return pushBackHandler(() => {
-      setShowShuffleConfirm(false);
-      return true;
-    });
-  }, [showShuffleConfirm]);
-
   return (
     <>
       <nav className="mobile-toolbar" aria-label="Primary">
@@ -265,11 +220,11 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
           <IconFilterToolbar />
         </button>
         <button
-          className="mobile-toolbar-btn"
-          aria-label="Shuffle favourite tracks"
-          onClick={() => setShowShuffleConfirm(true)}
+          className={`mobile-toolbar-btn${downloadsHubOpen ? " active" : ""}`}
+          aria-label="Downloads"
+          onClick={openDownloadsHub}
         >
-          <IconShuffleStar />
+          <IconDownload size={22} />
         </button>
         <button
           className={`mobile-toolbar-btn${view === "search" ? " active" : ""}`}
@@ -281,35 +236,6 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
       </nav>
 
       {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
-
-      {showShuffleConfirm && (
-        <div
-          className="mobile-action-sheet-backdrop"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowShuffleConfirm(false);
-          }}
-        >
-          <div className="mobile-action-sheet">
-            <div className="mobile-action-sheet-group">
-              <div className="mobile-action-sheet-header">Play all favourite tracks?</div>
-              <button
-                onClick={() => {
-                  setShowShuffleConfirm(false);
-                  shuffleFavourites();
-                }}
-              >
-                Shuffle
-              </button>
-            </div>
-            <button
-              className="mobile-action-sheet-cancel"
-              onClick={() => setShowShuffleConfirm(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
     </>
   );
 }

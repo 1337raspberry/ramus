@@ -17,6 +17,7 @@ import type {
   PlaylistItem,
   PlexServer,
   BookmarkDownloadEstimate,
+  PlaylistDownloadEstimate,
   SearchResponse,
   Settings,
   SmartFilter,
@@ -72,8 +73,6 @@ export const getAlbumsForGenreNames = (genres: string[]) =>
   invoke<Album[]>("get_albums_for_genre_names", { genres });
 
 export const getAllAlbums = () => invoke<Album[]>("get_all_albums");
-
-export const getFavouriteTracks = () => invoke<Track[]>("get_favourite_tracks");
 
 export const getAlbumsForArtist = (sourceId: string) =>
   invoke<Album[]>("get_albums_for_artist", { sourceId });
@@ -460,9 +459,11 @@ export const downloadTrack = (ratingKey: string) => invoke<void>("download_track
 export const downloadAlbum = (albumRatingKey: string) =>
   invoke<number>("download_album", { albumRatingKey });
 
-export const downloadAllStarredTracks = () => invoke<number>("download_all_starred_tracks");
+export const downloadPlaylist = (sourceId: string) =>
+  invoke<number>("download_playlist", { sourceId });
 
-export const downloadAllStarredAlbums = () => invoke<number>("download_all_starred_albums");
+export const estimatePlaylist = (sourceId: string) =>
+  invoke<PlaylistDownloadEstimate>("estimate_playlist", { sourceId });
 
 export const cancelDownload = (ratingKey: string) => invoke<void>("cancel_download", { ratingKey });
 
@@ -476,10 +477,6 @@ export const removeAlbumDownloads = (albumRatingKey: string) =>
 export const removeAllDownloads = () => invoke<number>("remove_all_downloads");
 
 export const getDownloadsOverview = () => invoke<DownloadsOverview>("get_downloads_overview");
-
-export const estimateStarredTracksSize = () => invoke<number>("estimate_starred_tracks_size");
-
-export const estimateStarredAlbumsSize = () => invoke<number>("estimate_starred_albums_size");
 
 export const downloadBookmark = (filters: AlbumFilterParamsIPC) =>
   invoke<number>("download_bookmark", { filters });

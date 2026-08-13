@@ -216,20 +216,6 @@ pub async fn get_all_albums(state: State<'_, AppState>) -> CmdResult<Vec<Album>>
 }
 
 #[tauri::command]
-pub async fn get_favourite_tracks(state: State<'_, AppState>) -> CmdResult<Vec<Track>> {
-    let tracks = with_cache(&state, |db| db.favourite_tracks())?;
-    if state.effective_offline() {
-        let downloaded = with_cache(&state, |db| db.downloaded_rating_keys())?;
-        Ok(tracks
-            .into_iter()
-            .filter(|t| downloaded.contains(&t.rating_key))
-            .collect())
-    } else {
-        Ok(tracks)
-    }
-}
-
-#[tauri::command]
 pub async fn get_albums_for_artist(
     state: State<'_, AppState>,
     source_id: String,

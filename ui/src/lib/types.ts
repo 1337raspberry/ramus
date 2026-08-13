@@ -477,6 +477,11 @@ export interface BookmarkDownloadEstimate {
   albumCount: number;
 }
 
+export interface PlaylistDownloadEstimate {
+  totalBytes: number;
+  trackCount: number;
+}
+
 // --- Connection / offline mode ---
 
 export interface ConnectionStatusPayload {

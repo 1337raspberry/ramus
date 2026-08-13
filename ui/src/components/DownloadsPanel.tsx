@@ -4,16 +4,17 @@ import { useDownloadsStore } from "../stores/downloadsStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { formatBytes } from "../lib/format";
 import type {
-  Bookmark,
   BookmarkDownloadEstimate,
   DownloadedAlbumSummary,
   DownloadedTrackSummary,
   InProgressDownload,
+  Playlist,
+  PlaylistDownloadEstimate,
 } from "../lib/types";
 import { filtersFromBookmark } from "../lib/bookmark";
 import { describeFilters } from "../lib/filterDescribe";
 import { useArtUrl } from "../lib/useArtUrl";
-import { ART_SIZE } from "../lib/commands";
+import { ART_SIZE, getPlaylists } from "../lib/commands";
 
 interface Props {
   onDismiss: () => void;
@@ -27,25 +28,13 @@ export default function DownloadsPanel({ onDismiss }: Props) {
   const remove = useDownloadsStore((s) => s.remove);
   const removeAlbum = useDownloadsStore((s) => s.removeAlbum);
   const clearAll = useDownloadsStore((s) => s.clearAll);
-  const startStarredTracks = useDownloadsStore((s) => s.startStarredTracks);
-  const startStarredAlbums = useDownloadsStore((s) => s.startStarredAlbums);
-  const estimateStarredTracks = useDownloadsStore((s) => s.estimateStarredTracks);
-  const estimateStarredAlbums = useDownloadsStore((s) => s.estimateStarredAlbums);
 
-  const [starredTracksEst, setStarredTracksEst] = useState<number | null>(null);
-  const [starredAlbumsEst, setStarredAlbumsEst] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
     refresh();
-    estimateStarredTracks()
-      .then(setStarredTracksEst)
-      .catch(() => {});
-    estimateStarredAlbums()
-      .then(setStarredAlbumsEst)
-      .catch(() => {});
-  }, [refresh, estimateStarredTracks, estimateStarredAlbums]);
+  }, [refresh]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -65,24 +54,6 @@ export default function DownloadsPanel({ onDismiss }: Props) {
   const handleBackdrop = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onDismiss();
   };
-
-  const handleStarredTracks = useCallback(async () => {
-    try {
-      const n = await startStarredTracks();
-      if (n === 0) setError("No downloadable starred tracks found.");
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [startStarredTracks]);
-
-  const handleStarredAlbums = useCallback(async () => {
-    try {
-      const n = await startStarredAlbums();
-      if (n === 0) setError("No downloadable starred albums found.");
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [startStarredAlbums]);
 
   const handleClearAll = useCallback(async () => {
     try {
@@ -153,21 +124,7 @@ export default function DownloadsPanel({ onDismiss }: Props) {
             )}
           </section>
 
-          <section className="downloads-section">
-            <h3 className="downloads-section-title">Bulk downloads</h3>
-            <button className="settings-btn" onClick={handleStarredTracks}>
-              Download all starred tracks
-              {starredTracksEst !== null && (
-                <span className="downloads-btn-detail"> (~{formatBytes(starredTracksEst)})</span>
-              )}
-            </button>
-            <button className="settings-btn" onClick={handleStarredAlbums}>
-              Download all starred albums
-              {starredAlbumsEst !== null && (
-                <span className="downloads-btn-detail"> (~{formatBytes(starredAlbumsEst)})</span>
-              )}
-            </button>
-          </section>
+          <PlaylistDownloadSection onError={setError} />
 
           <BookmarkDownloadSection onError={setError} />
 
@@ -308,38 +265,126 @@ function AlbumRow({ album, onRemove }: { album: DownloadedAlbumSummary; onRemove
   );
 }
 
-function BookmarkDownloadSection({ onError }: { onError: (msg: string | null) => void }) {
-  const bookmarks = useSettingsStore((s) => s.bookmarks);
-  const startBookmarkDownload = useDownloadsStore((s) => s.startBookmarkDownload);
-  const estimateBookmark = useDownloadsStore((s) => s.estimateBookmark);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [estimate, setEstimate] = useState<BookmarkDownloadEstimate | null>(null);
+/// Playlists (regular and smart) as expandable download rows. The size
+/// estimate is fetched on expand, not eagerly — each estimate is a
+/// per-playlist items fetch, so warming every row on open would hammer
+/// the server for numbers nobody asked about.
+function PlaylistDownloadSection({ onError }: { onError: (msg: string | null) => void }) {
+  const startPlaylistDownload = useDownloadsStore((s) => s.startPlaylistDownload);
+  const estimatePlaylist = useDownloadsStore((s) => s.estimatePlaylist);
+  const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [estimate, setEstimate] = useState<PlaylistDownloadEstimate | null>(null);
   const [estimating, setEstimating] = useState(false);
 
-  const selected: Bookmark | undefined = bookmarks.find((b) => b.id === selectedId);
-
-  // Auto-pick the first entry when the list changes so the dropdown never
-  // holds a stale selection after an entry is renamed or removed from the
-  // editor.
   useEffect(() => {
-    if (bookmarks.length === 0) {
-      setSelectedId(null);
-      return;
-    }
-    if (!selectedId || !bookmarks.some((b) => b.id === selectedId)) {
-      setSelectedId(bookmarks[0].id);
-    }
-  }, [bookmarks, selectedId]);
+    getPlaylists()
+      .then(setPlaylists)
+      .catch(() => setPlaylists([]));
+  }, []);
 
   useEffect(() => {
-    if (!selected) {
+    if (!expandedId) {
       setEstimate(null);
       return;
     }
     let cancelled = false;
     setEstimating(true);
     setEstimate(null);
-    estimateBookmark(selected.filters)
+    estimatePlaylist(expandedId)
+      .then((e) => {
+        if (!cancelled) setEstimate(e);
+      })
+      .catch(() => {
+        if (!cancelled) setEstimate(null);
+      })
+      .finally(() => {
+        if (!cancelled) setEstimating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expandedId, estimatePlaylist]);
+
+  const handleDownload = async (sourceId: string) => {
+    try {
+      const n = await startPlaylistDownload(sourceId);
+      if (n === 0) onError("No downloadable tracks in that playlist.");
+      setExpandedId(null);
+    } catch (e) {
+      onError(String(e));
+    }
+  };
+
+  return (
+    <section className="downloads-section">
+      <h3 className="downloads-section-title">Playlists</h3>
+      {playlists === null ? (
+        <div className="downloads-empty">Loading…</div>
+      ) : playlists.length === 0 ? (
+        <div className="downloads-empty">No playlists yet.</div>
+      ) : (
+        <ul className="downloads-list">
+          {playlists.map((p) => {
+            const expanded = expandedId === p.sourceId;
+            return (
+              <li key={p.sourceId} className="downloads-source-item">
+                <button
+                  className="downloads-source-row"
+                  aria-expanded={expanded}
+                  onClick={() => setExpandedId(expanded ? null : p.sourceId)}
+                >
+                  <span className="downloads-source-name">{p.title}</span>
+                  {p.smart && <span className="mobile-lists-smart-badge">SMART</span>}
+                  {p.trackCount != null && (
+                    <span className="downloads-source-count">{p.trackCount}</span>
+                  )}
+                </button>
+                {expanded && (
+                  <div className="downloads-source-detail">
+                    <button className="settings-btn" onClick={() => handleDownload(p.sourceId)}>
+                      Download
+                      {estimate && (
+                        <span className="downloads-btn-detail">
+                          {" "}
+                          ({estimate.trackCount} track{estimate.trackCount === 1 ? "" : "s"}, ~
+                          {formatBytes(estimate.totalBytes)})
+                        </span>
+                      )}
+                      {estimating && <span className="downloads-btn-detail"> (estimating…)</span>}
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/// Smart Filters as expandable download rows — same interaction shape as
+/// the playlist rows above so the two source lists read as one surface.
+function BookmarkDownloadSection({ onError }: { onError: (msg: string | null) => void }) {
+  const bookmarks = useSettingsStore((s) => s.bookmarks);
+  const startBookmarkDownload = useDownloadsStore((s) => s.startBookmarkDownload);
+  const estimateBookmark = useDownloadsStore((s) => s.estimateBookmark);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [estimate, setEstimate] = useState<BookmarkDownloadEstimate | null>(null);
+  const [estimating, setEstimating] = useState(false);
+
+  const expanded = bookmarks.find((b) => b.id === expandedId);
+
+  useEffect(() => {
+    if (!expanded) {
+      setEstimate(null);
+      return;
+    }
+    let cancelled = false;
+    setEstimating(true);
+    setEstimate(null);
+    estimateBookmark(expanded.filters)
       .then((e) => {
         if (!cancelled) setEstimate(e);
       })
@@ -355,60 +400,61 @@ function BookmarkDownloadSection({ onError }: { onError: (msg: string | null) =>
     // Key on the bookmark id — the underlying filter shape is stable per
     // bookmark, so we don't need a deep-compare here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.id, estimateBookmark]);
+  }, [expanded?.id, estimateBookmark]);
 
   const handleDownload = useCallback(async () => {
-    if (!selected) return;
+    if (!expanded) return;
     try {
-      const n = await startBookmarkDownload(selected.filters);
+      const n = await startBookmarkDownload(expanded.filters);
       if (n === 0) onError("No downloadable tracks for that Smart Filter.");
+      setExpandedId(null);
     } catch (e) {
       onError(String(e));
     }
-  }, [selected, startBookmarkDownload, onError]);
-
-  if (bookmarks.length === 0) {
-    return (
-      <section className="downloads-section">
-        <h3 className="downloads-section-title">Smart Filters</h3>
-        <div className="downloads-empty">
-          No Smart Filters yet — set a filter and tap the … menu to save one.
-        </div>
-      </section>
-    );
-  }
+  }, [expanded, startBookmarkDownload, onError]);
 
   return (
     <section className="downloads-section">
       <h3 className="downloads-section-title">Smart Filters</h3>
-      <div className="bookmark-download-row">
-        <select
-          className="sort-select bookmark-download-select"
-          value={selectedId ?? ""}
-          onChange={(e) => setSelectedId(e.target.value)}
-        >
-          {bookmarks.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-        <button className="settings-btn" onClick={handleDownload} disabled={!selected}>
-          Download
-          {estimate && (
-            <span className="downloads-btn-detail">
-              {" "}
-              ({estimate.trackCount} track{estimate.trackCount === 1 ? "" : "s"}, ~
-              {formatBytes(estimate.totalBytes)})
-            </span>
-          )}
-          {estimating && <span className="downloads-btn-detail"> (estimating…)</span>}
-        </button>
-      </div>
-      {selected && (
-        <div className="bookmark-download-summary">
-          {describeFilters(filtersFromBookmark(selected))}
+      {bookmarks.length === 0 ? (
+        <div className="downloads-empty">
+          No Smart Filters yet — set a filter and tap the … menu to save one.
         </div>
+      ) : (
+        <ul className="downloads-list">
+          {bookmarks.map((b) => {
+            const isOpen = expandedId === b.id;
+            return (
+              <li key={b.id} className="downloads-source-item">
+                <button
+                  className="downloads-source-row"
+                  aria-expanded={isOpen}
+                  onClick={() => setExpandedId(isOpen ? null : b.id)}
+                >
+                  <span className="downloads-source-name">{b.name}</span>
+                </button>
+                {isOpen && (
+                  <div className="downloads-source-detail">
+                    <div className="bookmark-download-summary">
+                      {describeFilters(filtersFromBookmark(b))}
+                    </div>
+                    <button className="settings-btn" onClick={handleDownload}>
+                      Download
+                      {estimate && (
+                        <span className="downloads-btn-detail">
+                          {" "}
+                          ({estimate.trackCount} track{estimate.trackCount === 1 ? "" : "s"}, ~
+                          {formatBytes(estimate.totalBytes)})
+                        </span>
+                      )}
+                      {estimating && <span className="downloads-btn-detail"> (estimating…)</span>}
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </section>
   );

@@ -52,7 +52,9 @@ export default function App() {
   const [searchInitial, setSearchInitial] = useState<string | undefined>();
   const [showEQ, setShowEQ] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showDownloads, setShowDownloads] = useState(false);
+  // Hub visibility lives in the downloads store so the mobile toolbar and
+  // desktop grid header can open the one panel rendered here.
+  const showDownloads = useDownloadsStore((s) => s.hubOpen);
   const suggestion = useLibraryStore((s) => s.suggestion);
   const detailAlbum = useLibraryStore((s) => s.detailAlbum);
   const browsePlaylist = useLibraryStore((s) => s.browsePlaylist);
@@ -234,7 +236,7 @@ export default function App() {
   useEffect(() => {
     if (!showDownloads) return;
     return pushBackHandler(() => {
-      setShowDownloads(false);
+      useDownloadsStore.getState().closeHub();
       return true;
     });
   }, [showDownloads]);
@@ -284,11 +286,11 @@ export default function App() {
             }}
             onOpenDownloads={() => {
               setShowSettings(false);
-              setShowDownloads(true);
+              useDownloadsStore.getState().openHub();
             }}
           />
         )}
-        {showDownloads && <DownloadsPanel onDismiss={() => setShowDownloads(false)} />}
+        {showDownloads && <DownloadsPanel onDismiss={() => useDownloadsStore.getState().closeHub()} />}
         <Toast />
       </>
     );
@@ -341,11 +343,11 @@ export default function App() {
           }}
           onOpenDownloads={() => {
             setShowSettings(false);
-            setShowDownloads(true);
+            useDownloadsStore.getState().openHub();
           }}
         />
       )}
-      {showDownloads && <DownloadsPanel onDismiss={() => setShowDownloads(false)} />}
+      {showDownloads && <DownloadsPanel onDismiss={() => useDownloadsStore.getState().closeHub()} />}
       <GenreInfoModal />
       <GenreHoverCard />
       <Toast />

@@ -6,6 +6,7 @@ import { useConnectionStore } from "../stores/connectionStore";
 import { useDownloadsStore } from "../stores/downloadsStore";
 import { useToastStore } from "./Toast";
 import { appendToQueue, getTracksForAlbum, playTracks } from "../lib/commands";
+import { shuffleAlbumOrder, shuffleTracks } from "../lib/shuffle";
 import type { Album, Track } from "../lib/types";
 import BookmarkSaveDialog from "./BookmarkSaveDialog";
 
@@ -13,19 +14,6 @@ interface Props {
   /** Optional close-handler so the parent panel can dismiss after an action
    * (e.g. close the desktop filter dropdown after queuing). */
   onAfterAction?: () => void;
-}
-
-// In-place Fisher–Yates. Used for the queue actions which all default to
-// shuffled output — for the "Albums" mode the shuffle is applied to the
-// album order (tracks stay sequential within each album so full LPs play
-// in their original sequence); for the "Tracks" mode the shuffle is
-// applied to the flattened track list.
-function shuffleInPlace<T>(arr: T[]): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
 }
 
 type QueueMode = "albums" | "tracks";
@@ -48,9 +36,10 @@ async function queueAlbumsAsTracks(
 
   // Shuffle album order up front for "albums" mode so even partial fetch
   // failures still produce randomised whole-album playback. Tracks stay
-  // sequential within each album (Fisher-Yates is applied to the album
-  // array, not the flattened tracks).
-  const orderedAlbums = mode === "albums" ? shuffleInPlace(albums.slice()) : albums;
+  // sequential within each album (the shuffle is applied to the album
+  // array, not the flattened tracks) and the order is artist-stratified
+  // so one artist's discography doesn't play back-to-back.
+  const orderedAlbums = mode === "albums" ? shuffleAlbumOrder(albums) : albums;
 
   // Fetch tracks sequentially — Plex kills concurrent remote downloads, and
   // even on cache hits the local SQLite mutex would serialise these anyway.
@@ -80,7 +69,7 @@ async function queueAlbumsAsTracks(
     return;
   }
 
-  if (mode === "tracks") shuffleInPlace(tracks);
+  if (mode === "tracks") tracks = shuffleTracks(tracks);
 
   const playing = !!usePlaybackStore.getState().currentTrack;
   const noun = tracks.length === 1 ? "track" : "tracks";

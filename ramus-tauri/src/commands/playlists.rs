@@ -7,7 +7,7 @@
 use tauri::State;
 
 use ramus_core::cache::playlist::{PlaylistItemRow, PlaylistUpsertRow};
-use ramus_core::models::{FilterChoice, Playlist, PlaylistItem};
+use ramus_core::models::{FilterChoice, Playlist, PlaylistItem, Track};
 use ramus_core::plex::auth;
 use ramus_core::plex::client::build_library_uri;
 use ramus_core::plex::client::PlaylistMetadata;
@@ -66,6 +66,21 @@ async fn refresh_items(
         .collect();
     with_cache(state, |db| db.replace_playlist_items(source_id, &rows))?;
     with_cache(state, |db| db.playlist_items(source_id))
+}
+
+/// Resolve a playlist's entries to their library tracks — server first,
+/// mirror fallback (same policy as `get_playlist_items`). Works identically
+/// for smart playlists: their entries are computed server-side but fetch
+/// through the same items endpoint. Shared with the download commands.
+pub(super) async fn resolve_playlist_tracks(
+    state: &State<'_, AppState>,
+    source_id: &str,
+) -> CmdResult<Vec<Track>> {
+    let items = match refresh_items(state, source_id).await {
+        Ok(items) => items,
+        Err(_) => with_cache(state, |db| db.playlist_items(source_id))?,
+    };
+    Ok(items.into_iter().map(|i| i.track).collect())
 }
 
 /// List audio playlists. Server first (mirroring the result), local mirror

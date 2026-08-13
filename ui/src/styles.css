@@ -1194,61 +1194,6 @@ textarea {
   flex: 1;
 }
 
-.shuffle-confirm-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  background: var(--bg-secondary);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 12px 14px;
-  z-index: 100;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--text-primary);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.shuffle-confirm-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.shuffle-confirm-yes {
-  flex: 1;
-  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.15);
-  border: 1px solid rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.3);
-  color: var(--accent);
-  border-radius: 6px;
-  padding: 5px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.shuffle-confirm-yes:hover {
-  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.25);
-}
-
-.shuffle-confirm-no {
-  flex: 1;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: var(--text-secondary);
-  border-radius: 6px;
-  padding: 5px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.shuffle-confirm-no:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .filter-decades {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -5397,26 +5342,6 @@ body.is-fullscreen .focus-body {
   border-radius: 4px;
 }
 
-/* Placeholder rows in the playlist action sheet — future functionality,
-   visible but inert. Out-ranks the sheet group's forced display:block. */
-.mobile-action-sheet-group button.soon {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  opacity: 0.55;
-  cursor: default;
-}
-
-.soon-tag {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 4px;
-  padding: 2px 6px;
-}
-
 /* Inline name entry inside the playlist picker sheet. */
 .playlist-name-entry {
   display: flex;
@@ -6361,18 +6286,59 @@ body.is-fullscreen .focus-body {
   border-color: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.6);
 }
 
-/* --- Downloads panel: bookmark bulk row --- */
+/* --- Downloads panel: downloadable-source rows (playlists + Smart Filters) --- */
 
-.bookmark-download-row {
+.downloads-source-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.downloads-source-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: none;
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
 }
 
-.bookmark-download-select {
+.downloads-source-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* Expanded rows join visually with the detail area below them. */
+.downloads-source-row[aria-expanded="true"] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.downloads-source-name {
   flex: 1;
-  min-width: 140px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.downloads-source-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.downloads-source-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 0 0 8px 8px;
 }
 
 .bookmark-download-summary {

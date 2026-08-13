@@ -305,32 +305,16 @@ pub async fn download_album(
     Ok(n)
 }
 
-/// Enqueue every favourited track.
+/// Enqueue every downloadable track on a playlist. Works for smart
+/// playlists too — their entries are computed server-side but resolve
+/// through the same items fetch. Returns the number of jobs enqueued.
 #[tauri::command]
-pub async fn download_all_starred_tracks(state: State<'_, AppState>) -> CmdResult<usize> {
-    let tracks = with_cache(&state, |cache| cache.favourite_tracks())?;
+pub async fn download_playlist(state: State<'_, AppState>, source_id: String) -> CmdResult<usize> {
+    let tracks = super::playlists::resolve_playlist_tracks(&state, &source_id).await?;
     let jobs: Vec<UserDownloadJob> = tracks
         .iter()
         .filter_map(|t| build_job(&state, t).ok())
         .collect();
-    let n = jobs.len();
-    state.prefetch_handle.queue_user_downloads(jobs);
-    Ok(n)
-}
-
-/// Enqueue every track on every favourited album.
-#[tauri::command]
-pub async fn download_all_starred_albums(state: State<'_, AppState>) -> CmdResult<usize> {
-    let albums = with_cache(&state, |cache| cache.favourite_albums())?;
-    let mut jobs: Vec<UserDownloadJob> = Vec::new();
-    for album in &albums {
-        let tracks = lookup_album_tracks(&state, &album.rating_key)?;
-        for t in &tracks {
-            if let Ok(job) = build_job(&state, t) {
-                jobs.push(job);
-            }
-        }
-    }
     let n = jobs.len();
     state.prefetch_handle.queue_user_downloads(jobs);
     Ok(n)
@@ -546,27 +530,28 @@ pub async fn get_downloads_overview(state: State<'_, AppState>) -> CmdResult<Dow
     })
 }
 
-/// Estimated bytes for downloading every favourited track. Uses actual
-/// `fileSizeBytes` when known, otherwise `bitrate_kbps × duration_sec / 8`.
-/// When the user has a transcoded download quality selected, lossless
-/// tracks are estimated against the transcode bitrate instead.
-#[tauri::command]
-pub async fn estimate_starred_tracks_size(state: State<'_, AppState>) -> CmdResult<i64> {
-    let tracks = with_cache(&state, |cache| cache.favourite_tracks())?;
-    let quality = state.settings.read().download_quality;
-    Ok(estimate_total_bytes(&tracks, quality))
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistDownloadEstimate {
+    pub total_bytes: i64,
+    pub track_count: usize,
 }
 
+/// Estimated bytes + track count for downloading a playlist. Uses actual
+/// `fileSizeBytes` when known, otherwise `bitrate_kbps × duration_sec / 8`;
+/// when the user has a transcoded download quality selected, lossless
+/// tracks are estimated against the transcode bitrate instead.
 #[tauri::command]
-pub async fn estimate_starred_albums_size(state: State<'_, AppState>) -> CmdResult<i64> {
-    let albums = with_cache(&state, |cache| cache.favourite_albums())?;
+pub async fn estimate_playlist(
+    state: State<'_, AppState>,
+    source_id: String,
+) -> CmdResult<PlaylistDownloadEstimate> {
+    let tracks = super::playlists::resolve_playlist_tracks(&state, &source_id).await?;
     let quality = state.settings.read().download_quality;
-    let mut total: i64 = 0;
-    for album in &albums {
-        let tracks = lookup_album_tracks(&state, &album.rating_key)?;
-        total += estimate_total_bytes(&tracks, quality);
-    }
-    Ok(total)
+    Ok(PlaylistDownloadEstimate {
+        total_bytes: estimate_total_bytes(&tracks, quality),
+        track_count: tracks.len(),
+    })
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

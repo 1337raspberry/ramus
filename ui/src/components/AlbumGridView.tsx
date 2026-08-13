@@ -9,7 +9,7 @@ import { IconPlay, IconStarFilled, IconStarEmpty, IconMusicNote, IconMoreDots } 
 import BreadcrumbBar from "./BreadcrumbBar";
 import FilterDropdown from "./FilterDropdown";
 import SortDropdown from "./SortDropdown";
-import ShuffleFavsButton from "./ShuffleFavsButton";
+import DownloadsHubButton from "./DownloadsHubButton";
 import { AlbumDownloadMenuItem } from "./DownloadMenuItems";
 
 let savedGridScroll = 0;
@@ -220,7 +220,7 @@ export default function AlbumGridView() {
         <div className="album-grid-header">
           <BreadcrumbBar />
           <div className="breadcrumb-right">
-            <ShuffleFavsButton />
+            <DownloadsHubButton />
             <FilterDropdown />
             <SortDropdown />
           </div>
@@ -248,7 +248,7 @@ export default function AlbumGridView() {
       <div className="album-grid-header">
         <BreadcrumbBar />
         <div className="breadcrumb-right">
-          <ShuffleFavsButton />
+          <DownloadsHubButton />
           <FilterDropdown />
           <SortDropdown />
         </div>

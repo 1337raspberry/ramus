@@ -5,13 +5,11 @@ import {
   cancelAllDownloads,
   cancelDownload,
   downloadAlbum,
-  downloadAllStarredAlbums,
-  downloadAllStarredTracks,
   downloadBookmark,
+  downloadPlaylist,
   downloadTrack,
   estimateBookmark as estimateBookmarkIPC,
-  estimateStarredAlbumsSize,
-  estimateStarredTracksSize,
+  estimatePlaylist as estimatePlaylistIPC,
   getDownloadsOverview,
   removeAlbumDownloads,
   removeAllDownloads,
@@ -22,6 +20,7 @@ import type {
   BookmarkDownloadEstimate,
   DownloadProgressPayload,
   DownloadsOverview,
+  PlaylistDownloadEstimate,
 } from "../lib/types";
 
 /// Live per-track byte progress. Kept for the currently-in-flight item
@@ -48,17 +47,23 @@ interface DownloadsState {
   downloadedAlbumIds: Set<string>;
   /// Rating keys of every downloaded track.
   downloadedTrackIds: Set<string>;
+  /// Whether the Downloads hub panel is showing. Lives here (not component
+  /// state) so any surface — mobile toolbar, desktop grid header, settings —
+  /// can open the one panel App renders.
+  hubOpen: boolean;
   /// Listener teardown guard.
   _listenersInstalled: boolean;
   /// Pending refresh handle so we coalesce bursts of downloads-changed.
   _refreshTimer: ReturnType<typeof setTimeout> | null;
 
+  openHub: () => void;
+  closeHub: () => void;
   refresh: () => Promise<void>;
   scheduleRefresh: () => void;
   startTrackDownload: (ratingKey: string) => Promise<void>;
   startAlbumDownload: (albumRatingKey: string) => Promise<void>;
-  startStarredTracks: () => Promise<number>;
-  startStarredAlbums: () => Promise<number>;
+  startPlaylistDownload: (sourceId: string) => Promise<number>;
+  estimatePlaylist: (sourceId: string) => Promise<PlaylistDownloadEstimate>;
   startBookmarkDownload: (filters: AlbumFilterParamsIPC) => Promise<number>;
   estimateBookmark: (filters: AlbumFilterParamsIPC) => Promise<BookmarkDownloadEstimate>;
   cancel: (ratingKey: string) => Promise<void>;
@@ -66,8 +71,6 @@ interface DownloadsState {
   remove: (ratingKey: string) => Promise<void>;
   removeAlbum: (albumRatingKey: string) => Promise<void>;
   clearAll: () => Promise<void>;
-  estimateStarredTracks: () => Promise<number>;
-  estimateStarredAlbums: () => Promise<number>;
   ensureListeners: () => void;
 }
 
@@ -80,8 +83,12 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
   trackPhase: {},
   downloadedAlbumIds: new Set(),
   downloadedTrackIds: new Set(),
+  hubOpen: false,
   _listenersInstalled: false,
   _refreshTimer: null,
+
+  openHub: () => set({ hubOpen: true }),
+  closeHub: () => set({ hubOpen: false }),
 
   refresh: async () => {
     try {
@@ -158,16 +165,14 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
     get().scheduleRefresh();
   },
 
-  startStarredTracks: async () => {
-    const n = await downloadAllStarredTracks();
+  startPlaylistDownload: async (sourceId) => {
+    const n = await downloadPlaylist(sourceId);
     get().scheduleRefresh();
     return n;
   },
 
-  startStarredAlbums: async () => {
-    const n = await downloadAllStarredAlbums();
-    get().scheduleRefresh();
-    return n;
+  estimatePlaylist: async (sourceId) => {
+    return await estimatePlaylistIPC(sourceId);
   },
 
   startBookmarkDownload: async (filters) => {
@@ -210,14 +215,6 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => ({
     await removeAllDownloads();
     set({ trackPhase: {}, liveProgress: null });
     get().scheduleRefresh();
-  },
-
-  estimateStarredTracks: async () => {
-    return await estimateStarredTracksSize();
-  },
-
-  estimateStarredAlbums: async () => {
-    return await estimateStarredAlbumsSize();
   },
 
   ensureListeners: () => {

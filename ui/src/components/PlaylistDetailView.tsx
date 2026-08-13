@@ -13,6 +13,7 @@ import {
 } from "../lib/commands";
 import { useListReorder } from "../lib/useListReorder";
 import { useArtUrl } from "../lib/useArtUrl";
+import { shuffleTracks } from "../lib/shuffle";
 import { formatDuration, formatLongDuration } from "../lib/format";
 import { IconClose, IconMusicNote, IconPlay, IconShuffle } from "./Icons";
 
@@ -110,12 +111,7 @@ export default function PlaylistDetailView() {
 
   const shuffle = () => {
     if (!items || items.length === 0) return;
-    const tracks = items.map((i) => i.track);
-    for (let i = tracks.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
-    }
-    playTracks(tracks, 0).catch(() => {});
+    playTracks(shuffleTracks(items.map((i) => i.track)), 0).catch(() => {});
   };
 
   const removeRow = (index: number) => {

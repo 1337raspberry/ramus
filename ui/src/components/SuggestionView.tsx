@@ -22,7 +22,7 @@ import { formatCodec } from "../lib/format";
 import { countryToFlag } from "../lib/countryFlag";
 import FlowLayout from "./FlowLayout";
 import FilterDropdown from "./FilterDropdown";
-import ShuffleFavsButton from "./ShuffleFavsButton";
+import DownloadsHubButton from "./DownloadsHubButton";
 import { IconMusicNote, IconShuffle } from "./Icons";
 
 export default function SuggestionView() {
@@ -161,7 +161,7 @@ export default function SuggestionView() {
           <span>Reroll</span>
         </button>
         <div style={{ display: "flex", gap: 8 }}>
-          <ShuffleFavsButton />
+          <DownloadsHubButton />
           <FilterDropdown />
         </div>
       </div>

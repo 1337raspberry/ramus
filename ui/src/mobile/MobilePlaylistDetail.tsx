@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Playlist, PlaylistItem, Track } from "../lib/types";
+import type { Playlist, PlaylistDownloadEstimate, PlaylistItem, Track } from "../lib/types";
 import {
   ART_SIZE,
   deletePlaylist,
@@ -16,10 +16,12 @@ import { useListReorder } from "../lib/useListReorder";
 import { useLongPress } from "../lib/useLongPress";
 import { useSwipeToDelete } from "../lib/useSwipeToDelete";
 import { useArtUrl } from "../lib/useArtUrl";
+import { shuffleTracks } from "../lib/shuffle";
 import { useLibraryStore } from "../stores/libraryStore";
+import { useDownloadsStore } from "../stores/downloadsStore";
 import { useToastStore } from "../components/Toast";
 import { pushBackHandler } from "../lib/backHandler";
-import { formatDuration, formatLongDuration } from "../lib/format";
+import { formatBytes, formatDuration, formatLongDuration } from "../lib/format";
 import {
   IconChevronLeft,
   IconMoreDots,
@@ -87,6 +89,8 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
   const [renameValue, setRenameValue] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
   const [rowSheet, setRowSheet] = useState<number | null>(null);
+  const [confirmDownload, setConfirmDownload] = useState(false);
+  const [dlEstimate, setDlEstimate] = useState<PlaylistDownloadEstimate | null>(null);
   const { artSrc, artErr, setArtErr } = useArtUrl(playlist.thumb, ART_SIZE.MEDIUM);
 
   useEffect(() => {
@@ -104,15 +108,50 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
   }, [playlist.sourceId]);
 
   useEffect(() => {
-    if (!showMenu && !confirmDelete && !renaming && rowSheet === null) return;
+    if (!showMenu && !confirmDelete && !renaming && !confirmDownload && rowSheet === null) return;
     return pushBackHandler(() => {
       setShowMenu(false);
       setConfirmDelete(false);
       setRenaming(false);
+      setConfirmDownload(false);
       setRowSheet(null);
       return true;
     });
-  }, [showMenu, confirmDelete, renaming, rowSheet]);
+  }, [showMenu, confirmDelete, renaming, confirmDownload, rowSheet]);
+
+  // Size estimate for the download confirm sheet, fetched when it opens.
+  useEffect(() => {
+    if (!confirmDownload) {
+      setDlEstimate(null);
+      return;
+    }
+    let cancelled = false;
+    useDownloadsStore
+      .getState()
+      .estimatePlaylist(playlist.sourceId)
+      .then((e) => {
+        if (!cancelled) setDlEstimate(e);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [confirmDownload, playlist.sourceId]);
+
+  const handleDownload = () => {
+    setConfirmDownload(false);
+    useDownloadsStore
+      .getState()
+      .startPlaylistDownload(playlist.sourceId)
+      .then((n) => {
+        useToastStore
+          .getState()
+          .show(n === 0 ? "No downloadable tracks" : `Queued ${n} track${n === 1 ? "" : "s"}`);
+      })
+      .catch(() => {
+        useToastStore.getState().show("Couldn't start download");
+      });
+  };
 
   const reorder = (from: number, to: number) => {
     if (!items) return;
@@ -155,12 +194,7 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
 
   const shuffle = () => {
     if (!items || items.length === 0) return;
-    const tracks = items.map((i) => i.track);
-    for (let i = tracks.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
-    }
-    playTracks(tracks, 0).catch(() => {});
+    playTracks(shuffleTracks(items.map((i) => i.track)), 0).catch(() => {});
   };
 
   const removeRow = (index: number) => {
@@ -356,8 +390,13 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
           >
             <div className="mobile-action-sheet">
               <div className="mobile-action-sheet-group">
-                <button disabled className="soon">
-                  Download Playlist<span className="soon-tag">soon</span>
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    setConfirmDownload(true);
+                  }}
+                >
+                  Download Playlist
                 </button>
                 <button
                   onClick={() => {
@@ -379,6 +418,36 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
                 </button>
               </div>
               <button className="mobile-action-sheet-cancel" onClick={() => setShowMenu(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {confirmDownload &&
+        createPortal(
+          <div
+            className="mobile-action-sheet-backdrop"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setConfirmDownload(false);
+            }}
+          >
+            <div className="mobile-action-sheet">
+              <div className="mobile-action-sheet-group">
+                <div className="mobile-action-sheet-header">
+                  {dlEstimate
+                    ? `Download ${dlEstimate.trackCount} track${
+                        dlEstimate.trackCount === 1 ? "" : "s"
+                      } (~${formatBytes(dlEstimate.totalBytes)})?`
+                    : "Download this playlist?"}
+                </div>
+                <button onClick={handleDownload}>Download</button>
+              </div>
+              <button
+                className="mobile-action-sheet-cancel"
+                onClick={() => setConfirmDownload(false)}
+              >
                 Cancel
               </button>
             </div>
