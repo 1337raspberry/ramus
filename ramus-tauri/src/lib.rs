@@ -259,6 +259,13 @@ pub(crate) fn install_connection_callbacks(app: &AppHandle, state: &crate::state
     let rec_prefetch = state.prefetch_handle.clone();
     let rec_grace = state.recovery_grace.clone();
     state.connection_monitor.set_on_connection_recovered(std::sync::Arc::new(move || {
+        // The outage invalidates whatever the adaptive layer measured
+        // beforehand; let the restored link earn its own verdict. Must
+        // precede the reload below, which resolves its URL under whatever
+        // policy is in force at that moment — clearing afterwards would
+        // leave the recovered track on the stale degraded bitrate for its
+        // whole remainder. Mirrors the connection-changed handler.
+        rec_player.clear_bandwidth_degrade();
         // Resume whatever the outage interrupted. No-op when nothing is
         // held/stalled or the user paused during the outage. The reload
         // stamps the resume point; the now-playing keeper re-anchors the OS
@@ -269,9 +276,6 @@ pub(crate) fn install_connection_callbacks(app: &AppHandle, state: &crate::state
             // releases it).
             set_recovery_grace(&rec_app, &rec_grace, true);
         }
-        // The outage invalidates whatever the adaptive layer measured
-        // beforehand; let the restored link earn its own verdict.
-        rec_player.clear_bandwidth_degrade();
         // Fresh prefetch cycle: re-checks targets and clears the per-cycle
         // failure set.
         rec_prefetch.notify_skip();
@@ -536,7 +540,16 @@ pub fn create_mpv_player(
         })),
         on_pause_change: Some(Box::new(move |paused| {
             if let Some(ref p) = *pr4.lock() {
-                p.handle_pause_change(paused);
+                // An ignored report is about a player that has never been
+                // given our tracks — a restored queue still waiting to
+                // materialise. The payload below is derived from the raw
+                // mpv flag, so emitting it anyway would announce the
+                // restored track as playing (frozen seek bar, no audio) and
+                // push the same lie to the OS transport, which is exactly
+                // what the guard inside exists to stop.
+                if !p.handle_pause_change(paused) {
+                    return;
+                }
                 let state = p.state();
                 emit_playback_state(
                     &app4,

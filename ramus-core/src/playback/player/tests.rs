@@ -3003,7 +3003,13 @@ fn test_mpv_startup_events_do_not_disturb_a_restored_queue() {
     // with a frozen seek bar and no audio.
     let (player, mpv) = restored_player();
 
-    player.handle_pause_change(false);
+    // The verdict, not just the state, has to say "ignored" — callers emit
+    // their own payloads from it, and one derived from the raw mpv flag
+    // would tell the UI and the OS transport the restored track is playing.
+    assert!(
+        !player.handle_pause_change(false),
+        "a startup pause report must report itself ignored"
+    );
     player.handle_position_change(0.0);
     let _ = player.handle_playlist_pos_change(0);
     assert!(!player.handle_idle_active());
@@ -3037,8 +3043,8 @@ fn test_pause_reports_are_honoured_once_materialised() {
     player.resume();
     assert_eq!(player.state().status, PlaybackStatus::Playing);
 
-    player.handle_pause_change(true);
+    assert!(player.handle_pause_change(true));
     assert_eq!(player.state().status, PlaybackStatus::Paused);
-    player.handle_pause_change(false);
+    assert!(player.handle_pause_change(false));
     assert_eq!(player.state().status, PlaybackStatus::Playing);
 }

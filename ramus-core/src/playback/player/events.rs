@@ -205,14 +205,19 @@ impl AudioPlayer {
     }
 
     /// Handle mpv pause state change.
-    pub fn handle_pause_change(&self, paused: bool) {
+    ///
+    /// Returns false when the report was ignored, so the caller can skip its
+    /// own side-effects too — mirrors `handle_idle_active`. A caller that
+    /// derives its payload from the raw `paused` flag rather than from this
+    /// verdict re-introduces the very lie the guard below prevents.
+    pub fn handle_pause_change(&self, paused: bool) -> bool {
         let mut inner = self.inner.lock();
         // mpv starts unpaused and announces `pause=false` at init, which
         // would flip a restored queue's honest Paused status to Playing —
         // leaving the UI showing a playing track with a frozen seek bar and
         // no audio.
         if Self::ignores_mpv_events(&inner) {
-            return;
+            return false;
         }
         if paused && inner.state.status == PlaybackStatus::Playing {
             inner.state.status = PlaybackStatus::Paused;
@@ -228,6 +233,7 @@ impl AudioPlayer {
             // judge the resumed stream on its own behaviour.
             inner.starvation.clear();
         }
+        true
     }
 
     /// Handle mpv file-loaded event.
