@@ -1,11 +1,14 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { GENRE_ID_SEP, type Album, type GenreNode } from "../lib/types";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useGenreInfoStore } from "../stores/genreInfoStore";
 import { useLongPress } from "../lib/useLongPress";
-import { IconChevronLeft, IconChevronDown, IconFilter } from "../components/Icons";
+import { pushBackHandler } from "../lib/backHandler";
+import { appendAlbumsToQueue } from "../lib/queueAllAlbums";
+import { IconChevronLeft, IconChevronDown, IconFilter, IconPlus } from "../components/Icons";
 import { hasActiveFilters } from "../stores/libraryStore";
 import MobileAlbumCard from "./MobileAlbumCard";
 import MobileFilterPanel from "./MobileFilterPanel";
@@ -176,7 +179,16 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
   const [showBreadcrumb, setShowBreadcrumb] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   const [showSort, setShowSort] = useState(false);
+  const [showQueueConfirm, setShowQueueConfirm] = useState(false);
   const filterActive = hasActiveFilters(albumFilters);
+
+  useEffect(() => {
+    if (!showQueueConfirm) return;
+    return pushBackHandler(() => {
+      setShowQueueConfirm(false);
+      return true;
+    });
+  }, [showQueueConfirm]);
 
   const title = useMemo(() => {
     if (activeBookmarkName) return activeBookmarkName;
@@ -312,7 +324,7 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
 
   return (
     <div className="mobile-screen">
-      <header className="mobile-header mobile-header-4col">
+      <header className="mobile-header mobile-header-grid5">
         <button className="mobile-header-circle" onClick={handleBack} aria-label="Back">
           <IconChevronLeft size={22} />
         </button>
@@ -353,6 +365,13 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
           )}
         </div>
         <button
+          className="mobile-header-circle accent"
+          onClick={() => setShowQueueConfirm(true)}
+          aria-label="Add all albums to queue"
+        >
+          <IconPlus size={20} />
+        </button>
+        <button
           className={`mobile-header-circle${filterActive ? " accent" : ""}`}
           onClick={() => setShowFilter(true)}
           aria-label="Filter albums"
@@ -371,6 +390,39 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
       </header>
       {showFilter && <MobileFilterPanel onDismiss={() => setShowFilter(false)} />}
       {showSort && <MobileSortSheet onDismiss={() => setShowSort(false)} />}
+
+      {showQueueConfirm &&
+        createPortal(
+          <div
+            className="mobile-action-sheet-backdrop"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowQueueConfirm(false);
+            }}
+          >
+            <div className="mobile-action-sheet">
+              <div className="mobile-action-sheet-group">
+                <div className="mobile-action-sheet-header">
+                  Add all albums to the now playing queue?
+                </div>
+                <button
+                  onClick={() => {
+                    setShowQueueConfirm(false);
+                    void appendAlbumsToQueue(albums);
+                  }}
+                >
+                  Add to queue
+                </button>
+              </div>
+              <button
+                className="mobile-action-sheet-cancel"
+                onClick={() => setShowQueueConfirm(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {albums.length === 0 ? (
         <div className="mobile-empty">No albums</div>

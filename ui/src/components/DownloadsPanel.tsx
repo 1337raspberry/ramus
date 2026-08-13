@@ -7,6 +7,7 @@ import type {
   BookmarkDownloadEstimate,
   DownloadedAlbumSummary,
   DownloadedTrackSummary,
+  DownloadQuality,
   InProgressDownload,
   Playlist,
   PlaylistDownloadEstimate,
@@ -28,6 +29,8 @@ export default function DownloadsPanel({ onDismiss }: Props) {
   const remove = useDownloadsStore((s) => s.remove);
   const removeAlbum = useDownloadsStore((s) => s.removeAlbum);
   const clearAll = useDownloadsStore((s) => s.clearAll);
+  const downloadQuality = useSettingsStore((s) => s.downloadQuality);
+  const setDownloadQuality = useSettingsStore((s) => s.setDownloadQuality);
 
   const [error, setError] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -75,6 +78,23 @@ export default function DownloadsPanel({ onDismiss }: Props) {
       <div className="settings-panel downloads-panel glass">
         <div className="settings-header">
           <h2>Downloads</h2>
+          <select
+            className="sort-select downloads-quality-select"
+            value={downloadQuality}
+            onChange={(e) =>
+              setDownloadQuality(e.target.value as DownloadQuality).catch((err) =>
+                setError(String(err)),
+              )
+            }
+            aria-label="Download quality"
+            title="Lossless downloads the original file as-is. The other options transcode lossless tracks to Ogg/Opus at the chosen bitrate; already-lossy tracks always download as-is."
+          >
+            <option value="original">Lossless</option>
+            <option value="kbps320">320 kbps</option>
+            <option value="kbps256">256 kbps</option>
+            <option value="kbps192">192 kbps</option>
+            <option value="kbps128">128 kbps</option>
+          </select>
           <button className="settings-close" onClick={onDismiss}>
             x
           </button>
@@ -418,7 +438,7 @@ function BookmarkDownloadSection({ onError }: { onError: (msg: string | null) =>
       <h3 className="downloads-section-title">Smart Filters</h3>
       {bookmarks.length === 0 ? (
         <div className="downloads-empty">
-          No Smart Filters yet — set a filter and tap the … menu to save one.
+          No Smart Filters yet — set a filter and tap Save in the filter panel.
         </div>
       ) : (
         <ul className="downloads-list">

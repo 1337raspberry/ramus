@@ -14,7 +14,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { countryToFlag } from "../lib/countryFlag";
 import { filterCountrySuggestions } from "../lib/filterSuggestions";
 import ChipAutocompleteInput from "../components/ChipAutocompleteInput";
-import FilterPanelMenu from "../components/FilterPanelMenu";
+import BookmarkSaveDialog from "../components/BookmarkSaveDialog";
 
 interface Props {
   onDismiss: () => void;
@@ -26,6 +26,7 @@ export default function MobileFilterPanel({ onDismiss }: Props) {
   const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
   const [countries, setCountries] = useState<string[]>([]);
   const [collections, setCollections] = useState<string[]>([]);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
 
   useEffect(() => {
     getDistinctCountries()
@@ -66,7 +67,7 @@ export default function MobileFilterPanel({ onDismiss }: Props) {
 
   const hasTrack = !!usePlaybackStore((s) => s.currentTrack);
 
-  return createPortal(
+  const panel = createPortal(
     <div className="mobile-filter-backdrop" onClick={onDismiss}>
       <div
         className={`mobile-filter-panel${hasTrack ? " with-mini" : ""}`}
@@ -78,7 +79,14 @@ export default function MobileFilterPanel({ onDismiss }: Props) {
               Filters
               {activeCount > 0 && <span className="mobile-filter-count">{activeCount}</span>}
             </span>
-            <FilterPanelMenu onAfterAction={onDismiss} />
+            <button
+              type="button"
+              className="filter-save-btn"
+              onClick={() => setShowSaveDialog(true)}
+              disabled={!hasActiveFilters(filters)}
+            >
+              Save
+            </button>
           </div>
           <button className="mobile-filter-done" onClick={onDismiss}>
             Done
@@ -210,5 +218,16 @@ export default function MobileFilterPanel({ onDismiss }: Props) {
       </div>
     </div>,
     document.body,
+  );
+
+  return (
+    <>
+      {panel}
+      {/* Sibling of the portal, NOT a child of the backdrop div: React
+          synthetic events bubble through the React tree even across the
+          dialog's own portal, so mounting it under the backdrop made every
+          tap inside the dialog fire the backdrop's onDismiss. */}
+      {showSaveDialog && <BookmarkSaveDialog onDismiss={() => setShowSaveDialog(false)} />}
+    </>
   );
 }

@@ -28,7 +28,6 @@ import { useToastStore } from "./Toast";
 interface Props {
   onDismiss: () => void;
   onSignOut: () => void;
-  onOpenDownloads: () => void;
 }
 
 type TabId = "playback" | "looks" | "library" | "storage" | "network" | "about";
@@ -47,7 +46,7 @@ const MODE_PROSE: Record<PlaybackMode, string> = {
   always: "Always transcode lossless files to the chosen bitrate.",
 };
 
-export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownloads }: Props) {
+export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [stats, setStats] = useState<CacheStats | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
@@ -678,34 +677,6 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut, onOpenDownl
               />
 
               <div className="settings-section-header">DOWNLOADS</div>
-
-              <button className="settings-btn" onClick={onOpenDownloads}>
-                Manage downloads
-              </button>
-
-              <label className="settings-row">
-                <span>Download quality</span>
-                <select
-                  className="sort-select"
-                  value={settings.downloadQuality}
-                  onChange={(e) =>
-                    save({
-                      downloadQuality: e.target.value as Settings["downloadQuality"],
-                    })
-                  }
-                >
-                  <option value="original">Lossless</option>
-                  <option value="kbps320">320 kbps</option>
-                  <option value="kbps256">256 kbps</option>
-                  <option value="kbps192">192 kbps</option>
-                  <option value="kbps128">128 kbps</option>
-                </select>
-              </label>
-              <HelperText>
-                <strong>Lossless</strong> downloads the original file as-is. The other options
-                transcode lossless tracks to Ogg/Opus at the chosen bitrate to save storage and
-                data. Already-lossy tracks (MP3, AAC etc) always download as-is.
-              </HelperText>
 
               <label className="settings-row">
                 <span>Offline mode</span>

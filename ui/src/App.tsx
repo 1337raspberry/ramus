@@ -284,10 +284,6 @@ export default function App() {
               clearPin();
               setAuthed(false);
             }}
-            onOpenDownloads={() => {
-              setShowSettings(false);
-              useDownloadsStore.getState().openHub();
-            }}
           />
         )}
         {showDownloads && <DownloadsPanel onDismiss={() => useDownloadsStore.getState().closeHub()} />}
@@ -340,10 +336,6 @@ export default function App() {
             clearOnboardingStorage();
             clearPin();
             setAuthed(false);
-          }}
-          onOpenDownloads={() => {
-            setShowSettings(false);
-            useDownloadsStore.getState().openHub();
           }}
         />
       )}

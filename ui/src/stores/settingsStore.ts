@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Bookmark, Settings } from "../lib/types";
+import type { Bookmark, DownloadQuality, Settings } from "../lib/types";
 import { MAX_BOOKMARKS } from "../lib/types";
 import { getSettings, updateSettings } from "../lib/commands";
 
@@ -10,6 +10,10 @@ interface SettingsState extends Settings {
   /// cannot pollute the payload sent to `update_settings`. Rolls back
   /// `bookmarks` on failure (e.g. server-side validation).
   setBookmarks: (next: Bookmark[]) => Promise<void>;
+  /// Update the download quality. Lives here (not the settings panel's
+  /// debounced form state) because its control sits in the Downloads hub
+  /// header. Same snapshot-and-rollback pattern as setBookmarks.
+  setDownloadQuality: (quality: DownloadQuality) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -56,6 +60,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await updateSettings(snapshot);
     } catch (e) {
       set({ bookmarks: prev });
+      throw e;
+    }
+  },
+
+  setDownloadQuality: async (quality: DownloadQuality) => {
+    const prev = get().downloadQuality;
+    const snapshot: Settings = { ...get(), downloadQuality: quality };
+    set({ downloadQuality: quality });
+    try {
+      await updateSettings(snapshot);
+    } catch (e) {
+      set({ downloadQuality: prev });
       throw e;
     }
   },

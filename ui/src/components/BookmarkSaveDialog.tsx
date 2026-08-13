@@ -15,7 +15,7 @@ interface Props {
 
 /**
  * Modal that captures a name for a new bookmark from the active filter
- * snapshot. Triggered from `FilterPanelMenu.handleBookmark`. The dialog
+ * snapshot. Triggered from the filter panel's Save button. The dialog
  * shows a plain-English summary of what's being saved so the user can see
  * exactly what the bookmark will match before naming it.
  */
@@ -45,7 +45,7 @@ export default function BookmarkSaveDialog({ onDismiss }: Props) {
   }, [onDismiss]);
 
   // Android hardware-back support — the dialog can appear on mobile via the
-  // filter panel's overflow menu, where a back press should close it rather
+  // filter panel's Save button, where a back press should close it rather
   // than the underlying filter panel.
   useEffect(
     () =>

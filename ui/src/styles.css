@@ -966,7 +966,7 @@ textarea {
   text-decoration: underline;
 }
 
-/* --- Filter panel "..." menu (shared by desktop + mobile filter panels) --- */
+/* --- Filter panel Save button (shared by desktop + mobile filter panels) --- */
 
 .filter-panel-header {
   display: flex;
@@ -975,71 +975,25 @@ textarea {
   margin: -4px -4px 0 0;
 }
 
-.filter-panel-menu {
-  position: relative;
-}
-
-/* Prominent accent-coloured trigger — used both in the desktop filter
-   dropdown header and in the mobile bottom-sheet header. Big enough to be
-   tappable on mobile and visible on desktop without dominating the panel. */
-.filter-panel-menu-btn {
-  background: none;
-  border: none;
+.filter-save-btn {
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.15);
+  border: 1px solid rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.3);
   color: var(--accent);
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: inherit;
   cursor: pointer;
-  border-radius: 8px;
-  transition:
-    color 0.12s,
-    background 0.12s;
+  transition: background 0.15s;
 }
 
-.filter-panel-menu-btn:hover,
-.filter-panel-menu-btn:active {
-  color: var(--accent);
-  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.16);
+.filter-save-btn:hover:not(:disabled) {
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.25);
 }
 
-.filter-panel-menu-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  background: var(--bg-secondary);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
-  z-index: 220;
-  min-width: 220px;
-  display: flex;
-  flex-direction: column;
-  padding: 4px 0;
-}
-
-/* Right-anchor when the trigger sits in the desktop panel's top-right corner.
-   The opt-in flag lives on the parent header so we don't need to thread a
-   prop through the component. */
-.filter-panel-header .filter-panel-menu-dropdown {
-  left: auto;
-  right: 0;
-}
-
-.filter-panel-menu-dropdown button {
-  background: none;
-  border: none;
-  text-align: left;
-  color: var(--text-primary);
-  font-size: 13px;
-  padding: 10px 14px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.filter-panel-menu-dropdown button:hover {
-  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.18);
+.filter-save-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .mobile-filter-title-group {
@@ -4510,6 +4464,72 @@ body.is-fullscreen .focus-body {
   grid-template-columns: 48px 44px 1fr 44px 48px;
 }
 
+/* --- Grid header queue-all "+" (desktop popover confirm) --- */
+
+.queue-all-btn {
+  color: var(--accent);
+}
+
+.queue-all-confirm {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 12px 14px;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.queue-all-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.queue-all-yes {
+  flex: 1;
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.15);
+  border: 1px solid rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.3);
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.queue-all-yes:hover {
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.25);
+}
+
+.queue-all-no {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.queue-all-no:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Album grid header: back, title, queue-all +, filter, sort. */
+.mobile-header.mobile-header-grid5 {
+  grid-template-columns: 48px 1fr 44px 44px 48px;
+}
+
 /* Active-filter indicator dot on the filter icon button */
 .mobile-filter-dot {
   position: absolute;
@@ -6284,6 +6304,14 @@ body.is-fullscreen .focus-body {
 
 .bookmark-save-input:focus {
   border-color: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.6);
+}
+
+/* Quality select in the Downloads hub header, tucked against the close
+   button (the header is space-between; auto margin pulls it off the title). */
+.downloads-quality-select {
+  margin-left: auto;
+  margin-right: 12px;
+  font-size: 12px;
 }
 
 /* --- Downloads panel: downloadable-source rows (playlists + Smart Filters) --- */

@@ -12,13 +12,14 @@ import { IconFilter } from "./Icons";
 import { countryToFlag } from "../lib/countryFlag";
 import { filterCountrySuggestions } from "../lib/filterSuggestions";
 import ChipAutocompleteInput from "./ChipAutocompleteInput";
-import FilterPanelMenu from "./FilterPanelMenu";
+import BookmarkSaveDialog from "./BookmarkSaveDialog";
 
 export default function FilterDropdown() {
   const filters = useLibraryStore((s) => s.albumFilters);
   const setFilters = useLibraryStore((s) => s.setAlbumFilters);
   const showArtistFlags = useSettingsStore((s) => s.showArtistFlags);
   const [open, setOpen] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [countries, setCountries] = useState<string[]>([]);
   const [collections, setCollections] = useState<string[]>([]);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -85,7 +86,15 @@ export default function FilterDropdown() {
       {open && (
         <div className="filter-dropdown-panel">
           <div className="filter-panel-header">
-            <FilterPanelMenu onAfterAction={() => setOpen(false)} />
+            <button
+              type="button"
+              className="filter-save-btn"
+              onClick={() => setShowSaveDialog(true)}
+              disabled={!canClear}
+              title={canClear ? "Save as Smart Filter" : "Set a filter first to save it"}
+            >
+              Save
+            </button>
           </div>
           <div className="filter-section">
             <label className="filter-check-row">
@@ -187,6 +196,14 @@ export default function FilterDropdown() {
             </button>
           )}
         </div>
+      )}
+      {showSaveDialog && (
+        <BookmarkSaveDialog
+          onDismiss={() => {
+            setShowSaveDialog(false);
+            setOpen(false);
+          }}
+        />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import type { Album, Track } from "./types";
+import type { Track } from "./types";
 
 /**
  * Stratified shuffle: spreads each key-group's items at ~1/K average spacing
@@ -38,10 +38,4 @@ export function balancedShuffle<T>(items: T[], keyOf: (item: T) => string): T[] 
  * instead of clumping. */
 export function shuffleTracks(tracks: Track[]): Track[] {
   return balancedShuffle(tracks, (t) => (t.trackArtist ?? t.artistName).toLowerCase());
-}
-
-/** Artist-stratified album-order shuffle for whole-album queueing (tracks
- * stay sequential within each album; only the album order is randomised). */
-export function shuffleAlbumOrder(albums: Album[]): Album[] {
-  return balancedShuffle(albums, (a) => a.artistName.toLowerCase());
 }

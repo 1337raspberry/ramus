@@ -173,7 +173,7 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
       <div className="mobile-lists-section-title">Smart Filters</div>
       {bookmarks.length === 0 ? (
         <div className="mobile-lists-empty">
-          No Smart Filters yet. Set a filter, then save it from the filter panel&rsquo;s … menu.
+          No Smart Filters yet. Set a filter, then tap Save in the filter panel.
         </div>
       ) : (
         bookmarks.map((entry, i) => (

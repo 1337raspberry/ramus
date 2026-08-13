@@ -10,6 +10,7 @@ import BreadcrumbBar from "./BreadcrumbBar";
 import FilterDropdown from "./FilterDropdown";
 import SortDropdown from "./SortDropdown";
 import DownloadsHubButton from "./DownloadsHubButton";
+import QueueAllButton from "./QueueAllButton";
 import { AlbumDownloadMenuItem } from "./DownloadMenuItems";
 
 let savedGridScroll = 0;
@@ -220,6 +221,7 @@ export default function AlbumGridView() {
         <div className="album-grid-header">
           <BreadcrumbBar />
           <div className="breadcrumb-right">
+            <QueueAllButton />
             <DownloadsHubButton />
             <FilterDropdown />
             <SortDropdown />
@@ -248,7 +250,8 @@ export default function AlbumGridView() {
       <div className="album-grid-header">
         <BreadcrumbBar />
         <div className="breadcrumb-right">
-          <DownloadsHubButton />
+          <QueueAllButton />
+            <DownloadsHubButton />
           <FilterDropdown />
           <SortDropdown />
         </div>
