@@ -369,6 +369,18 @@ export function useSheetDrag(refs: SheetDragRefs, opts: Options): void {
       settleTo((d.dir === 1) === commit ? 1 : 0, d.translate, d.travel);
     };
 
+    /** The OS took the touch mid-gesture (home-indicator swipe, notification
+     *  shade). The distance travelled says nothing about intent, so settle
+     *  back to whichever end the gesture started from instead of committing —
+     *  treating a cancel like a release is how a half-finished app-switcher
+     *  swipe used to pop the sheet open. */
+    const cancelDrag = () => {
+      const d = drag.current;
+      if (!d.claimed) return;
+      d.claimed = false;
+      settleTo(d.dir === 1 ? 0 : 1, d.translate, d.travel);
+    };
+
     // --- Gesture sources -------------------------------------------------
     // All three use non-passive `touchmove` rather than pointer events:
     // Android's Chromium WebView fires `pointercancel` the moment it decides a
@@ -383,6 +395,9 @@ export function useSheetDrag(refs: SheetDragRefs, opts: Options): void {
        *  the body has bottomed out at the top. `target` is the touchstart
        *  element (touchmove reports the same one for the whole gesture). */
       canClaim: (target: HTMLElement | null) => boolean;
+      /** Touchstart positions this source refuses outright (e.g. the OS
+       *  home-gesture zone along the bottom edge). */
+      ignoreStartY?: (y: number) => boolean;
       /**
        * Consulted for moves BEFORE the slop is crossed. Returning true calls
        * `preventDefault()` without starting the drag, which takes the gesture
@@ -412,7 +427,10 @@ export function useSheetDrag(refs: SheetDragRefs, opts: Options): void {
 
       const onStart = (e: TouchEvent) => {
         source.onTouchStart?.();
-        skip = e.touches.length !== 1 || drag.current.claimed;
+        skip =
+          e.touches.length !== 1 ||
+          drag.current.claimed ||
+          (source.ignoreStartY?.(e.touches[0].clientY) ?? false);
         startY = skip ? null : e.touches[0].clientY;
       };
 
@@ -453,15 +471,22 @@ export function useSheetDrag(refs: SheetDragRefs, opts: Options): void {
         skip = false;
       };
 
+      const onCancel = () => {
+        if (owns) cancelDrag();
+        owns = false;
+        startY = null;
+        skip = false;
+      };
+
       el.addEventListener("touchstart", onStart, { passive: true });
       el.addEventListener("touchmove", onMove, { passive: false });
       el.addEventListener("touchend", onEnd, { passive: true });
-      el.addEventListener("touchcancel", onEnd, { passive: true });
+      el.addEventListener("touchcancel", onCancel, { passive: true });
       cleanups.push(() => {
         el.removeEventListener("touchstart", onStart);
         el.removeEventListener("touchmove", onMove);
         el.removeEventListener("touchend", onEnd);
-        el.removeEventListener("touchcancel", onEnd);
+        el.removeEventListener("touchcancel", onCancel);
       });
     };
 
@@ -482,6 +507,16 @@ export function useSheetDrag(refs: SheetDragRefs, opts: Options): void {
       attach(mini, -1, {
         onTouchStart: () => {
           swallowClick = false;
+        },
+        // The bar sits flush with the bottom edge, so a slow home-indicator
+        // swipe lands its first touches on it before the OS decides whether
+        // to claim them — and a soft swipe the OS passes on is delivered as a
+        // genuine upward drag. Refuse starts inside the bar's safe-area
+        // padding (resolved to px by layout; floor covers devices reporting
+        // zero inset), which is below the bar's content anyway.
+        ignoreStartY: (y) => {
+          const pad = parseFloat(getComputedStyle(mini).paddingBottom) || 0;
+          return y > window.innerHeight - Math.max(pad, 24);
         },
         canClaim: (target) => {
           if (live.current.expanded) return false;
