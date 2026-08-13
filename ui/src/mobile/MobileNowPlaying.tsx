@@ -4,6 +4,7 @@ import { usePlaybackStore, applyUltraBlurColors } from "../stores/playbackStore"
 import { useSettingsStore } from "../stores/settingsStore";
 import { useGenreInfoStore } from "../stores/genreInfoStore";
 import { pushBackHandler } from "../lib/backHandler";
+import type { Album } from "../lib/types";
 import {
   ART_SIZE,
   setAlbumPalette,
@@ -159,9 +160,17 @@ export default function MobileNowPlaying({
   const [showEQ, setShowEQ] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const [showCollections, setShowCollections] = useState(false);
-  /** null = closed; "track" = add current track; "queue" = save queue as new. */
-  const [playlistSheet, setPlaylistSheet] = useState<"track" | "queue" | null>(null);
+  // Both pickers resolve their target when the menu row is tapped, never at
+  // confirm time. The track and album come from live store selectors, so a
+  // natural advance while a picker sits open would silently retarget it —
+  // the tap would file whatever is playing by then, not what was chosen.
+  const [collectionAlbum, setCollectionAlbum] = useState<Album | null>(null);
+  /** null = closed. Carries the snapshot the sheet will commit. */
+  const [playlistSheet, setPlaylistSheet] = useState<{
+    heading: string;
+    ids: string[];
+    createOnly?: boolean;
+  } | null>(null);
 
   // --- Swipe gestures ---
   // Pull up from the mini-player to open, pull down from the sheet header or
@@ -232,14 +241,14 @@ export default function MobileNowPlaying({
     const h = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (showEQ || showDebug) return;
-      if (showCollections) setShowCollections(false);
+      if (collectionAlbum) setCollectionAlbum(null);
       else if (playlistSheet) setPlaylistSheet(null);
       else if (showMenu) setShowMenu(false);
       else onCollapse();
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [expanded, onCollapse, showMenu, showEQ, showDebug, showCollections, playlistSheet]);
+  }, [expanded, onCollapse, showMenu, showEQ, showDebug, collectionAlbum, playlistSheet]);
 
   // Same for hardware back — without this the sheet collapses out from
   // under the menu, stranding it (it portals to <body>, so it does not
@@ -532,17 +541,33 @@ export default function MobileNowPlaying({
                   </button>
                 )}
                 {nowPlayingAlbum && (
-                  <button onClick={() => runMenuAction(() => setShowCollections(true))}>
+                  <button onClick={() => runMenuAction(() => setCollectionAlbum(nowPlayingAlbum))}>
                     Add Album to Collection…
                   </button>
                 )}
                 {track && (
-                  <button onClick={() => runMenuAction(() => setPlaylistSheet("track"))}>
+                  <button
+                    onClick={() =>
+                      runMenuAction(() =>
+                        setPlaylistSheet({ heading: track.title, ids: [track.ratingKey] }),
+                      )
+                    }
+                  >
                     Add Track to Playlist…
                   </button>
                 )}
                 {queue.length > 0 && (
-                  <button onClick={() => runMenuAction(() => setPlaylistSheet("queue"))}>
+                  <button
+                    onClick={() =>
+                      runMenuAction(() =>
+                        setPlaylistSheet({
+                          heading: "Queue",
+                          ids: queue.map((t) => t.ratingKey),
+                          createOnly: true,
+                        }),
+                      )
+                    }
+                  >
                     Save Queue as Playlist…
                   </button>
                 )}
@@ -563,28 +588,18 @@ export default function MobileNowPlaying({
         )}
       {showEQ && <EqualizerPanel onDismiss={() => setShowEQ(false)} />}
       {showDebug && <MobileDebugPanel onDismiss={() => setShowDebug(false)} />}
-      {showCollections && nowPlayingAlbum && (
+      {collectionAlbum && (
         <CollectionPickerSheet
-          album={nowPlayingAlbum}
+          album={collectionAlbum}
           overSheet
-          onDismiss={() => setShowCollections(false)}
+          onDismiss={() => setCollectionAlbum(null)}
         />
       )}
-      {playlistSheet === "track" && track && (
+      {playlistSheet && (
         <PlaylistPickerSheet
-          heading={track.title}
-          getTrackIds={() => Promise.resolve([track.ratingKey])}
-          overSheet
-          onDismiss={() => setPlaylistSheet(null)}
-        />
-      )}
-      {playlistSheet === "queue" && (
-        <PlaylistPickerSheet
-          heading="Queue"
-          createOnly
-          getTrackIds={() =>
-            Promise.resolve(usePlaybackStore.getState().queue.map((t) => t.ratingKey))
-          }
+          heading={playlistSheet.heading}
+          createOnly={playlistSheet.createOnly}
+          getTrackIds={() => Promise.resolve(playlistSheet.ids)}
           overSheet
           onDismiss={() => setPlaylistSheet(null)}
         />

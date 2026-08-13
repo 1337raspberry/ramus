@@ -117,11 +117,22 @@ export function useSwipeToDelete({ onDelete, label = "Remove" }: Options) {
   useEffect(() => () => closeOpenRow(false), [closeOpenRow]);
 
   const setContentRef = useCallback((index: number, el: HTMLElement | null) => {
-    contentsRef.current[index] = el;
     // Virtualized consumers unmount rows that scroll far away; an open row
     // that unmounts loses its inline transform, so the open state must not
     // survive it (a later touch would start from a phantom offset).
-    if (el === null && openRef.current === index) openRef.current = null;
+    //
+    // A detach does not always mean the row is gone, though: a queue advance
+    // renumbers every row, and React re-binds each per-index ref to a
+    // different element while reusing the DOM nodes. The reused node would
+    // keep its inline transform after this hook forgot it was open, leaving
+    // a row stuck open that no longer closes on tap — and whose next touch
+    // measures from a base of 0 and snaps sideways. Reset the node itself
+    // rather than only the state, so the two cannot disagree.
+    if (el === null && openRef.current === index) {
+      setOffset(index, 0, false);
+      openRef.current = null;
+    }
+    contentsRef.current[index] = el;
   }, []);
 
   /** Slide the row out and commit the removal. */

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
+import type { Album } from "../lib/types";
 import CollectionPickerModal from "./CollectionPickerModal";
 import PlaylistPickerModal from "./PlaylistPickerModal";
 import { IconMoreDots } from "./Icons";
@@ -23,8 +24,17 @@ export default function NowPlayingMenu() {
   const clearQueue = usePlaybackStore((s) => s.clearQueue);
   const [menuOpen, setMenuOpen] = useState(false);
   const [openUp, setOpenUp] = useState(false);
-  const [collectionsOpen, setCollectionsOpen] = useState(false);
-  const [playlistFor, setPlaylistFor] = useState<"track" | "queue" | null>(null);
+  // Both pickers resolve their target when the menu item is tapped, never at
+  // confirm time. The live selectors above re-run on every track change, so a
+  // natural advance while the picker sits open would silently retarget it —
+  // the user taps a playlist and the track that happens to be playing now
+  // gets added instead of the one they opened the menu for.
+  const [collectionAlbum, setCollectionAlbum] = useState<Album | null>(null);
+  const [playlistTarget, setPlaylistTarget] = useState<{
+    heading: string;
+    ids: string[];
+    createOnly?: boolean;
+  } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -63,7 +73,7 @@ export default function NowPlayingMenu() {
             <button
               onClick={() => {
                 setMenuOpen(false);
-                setCollectionsOpen(true);
+                setCollectionAlbum(nowPlayingAlbum);
               }}
             >
               Add Album to Collection…
@@ -72,7 +82,7 @@ export default function NowPlayingMenu() {
           <button
             onClick={() => {
               setMenuOpen(false);
-              setPlaylistFor("track");
+              setPlaylistTarget({ heading: track.title, ids: [track.ratingKey] });
             }}
           >
             Add Track to Playlist…
@@ -81,7 +91,11 @@ export default function NowPlayingMenu() {
             <button
               onClick={() => {
                 setMenuOpen(false);
-                setPlaylistFor("queue");
+                setPlaylistTarget({
+                  heading: "Queue",
+                  ids: usePlaybackStore.getState().queue.map((t) => t.ratingKey),
+                  createOnly: true,
+                });
               }}
             >
               Save Queue as Playlist…
@@ -98,27 +112,15 @@ export default function NowPlayingMenu() {
           </button>
         </div>
       )}
-      {collectionsOpen && nowPlayingAlbum && (
-        <CollectionPickerModal
-          album={nowPlayingAlbum}
-          onDismiss={() => setCollectionsOpen(false)}
-        />
+      {collectionAlbum && (
+        <CollectionPickerModal album={collectionAlbum} onDismiss={() => setCollectionAlbum(null)} />
       )}
-      {playlistFor === "track" && (
+      {playlistTarget && (
         <PlaylistPickerModal
-          heading={track.title}
-          getTrackIds={() => Promise.resolve([track.ratingKey])}
-          onDismiss={() => setPlaylistFor(null)}
-        />
-      )}
-      {playlistFor === "queue" && (
-        <PlaylistPickerModal
-          heading="Queue"
-          createOnly
-          getTrackIds={() =>
-            Promise.resolve(usePlaybackStore.getState().queue.map((t) => t.ratingKey))
-          }
-          onDismiss={() => setPlaylistFor(null)}
+          heading={playlistTarget.heading}
+          createOnly={playlistTarget.createOnly}
+          getTrackIds={() => Promise.resolve(playlistTarget.ids)}
+          onDismiss={() => setPlaylistTarget(null)}
         />
       )}
     </div>

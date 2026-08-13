@@ -82,7 +82,11 @@ export default function QueueView() {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [scroller]);
+    // The rows block is absent while the queue is empty, so the first measure
+    // has nothing to read and bails. Re-run when it appears — the outer div
+    // this effect's scroller is derived from never unmounts, so `scroller`
+    // alone would not observe the empty→populated swap.
+  }, [scroller, upcoming.length === 0]);
 
   const virtualizer = useVirtualizer({
     count: upcoming.length,

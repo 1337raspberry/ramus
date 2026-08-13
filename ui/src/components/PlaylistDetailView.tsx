@@ -68,6 +68,13 @@ export default function PlaylistDetailView() {
     setConfirmDelete(false);
     setRenaming(false);
     setRowMenu(null);
+    // The component survives a playlist switch, so an armed confirmation's
+    // timer would outlive the playlist it belongs to and disarm the NEXT
+    // one early — mid-countdown, from the user's point of view at random.
+    if (confirmTimer.current !== null) {
+      window.clearTimeout(confirmTimer.current);
+      confirmTimer.current = null;
+    }
     if (!playlist) return;
     let cancelled = false;
     getPlaylistItems(playlist.sourceId)
@@ -208,6 +215,7 @@ export default function PlaylistDetailView() {
       .then(() => {
         useToastStore.getState().show(`Deleted “${playlist.title}”`);
         useLibraryStore.setState({ browsePlaylist: null });
+        useLibraryStore.getState().bumpPlaylistsRevision();
       })
       .catch(() => useToastStore.getState().show("Couldn't delete playlist"));
   };
@@ -222,9 +230,11 @@ export default function PlaylistDetailView() {
     setRenameBusy(true);
     renamePlaylist(playlist.sourceId, trimmed)
       .then((updated) => {
-        // The detail view renders from browsePlaylist; the sidebar refetches
-        // lazily, so patching the store is all the UI needs.
+        // The detail view renders from browsePlaylist. The desktop sidebar
+        // holds its own fetched copy and stays mounted throughout, so it
+        // needs telling separately — patching the store is not enough there.
         useLibraryStore.setState({ browsePlaylist: updated });
+        useLibraryStore.getState().bumpPlaylistsRevision();
         setRenaming(false);
         setRenameBusy(false);
       })

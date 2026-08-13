@@ -19,6 +19,7 @@ import VolumeSlider from "./VolumeSlider";
 import FlowLayout from "./FlowLayout";
 import LyricsOverlay from "./LyricsOverlay";
 import NowPlayingMenu from "./NowPlayingMenu";
+import PlaybackQualityNotice from "./PlaybackQualityNotice";
 import QueueView from "./QueueView";
 import FocusVisualizer from "./FocusVisualizer";
 import MarqueeText from "./MarqueeText";
@@ -39,6 +40,7 @@ import {
 
 interface Props {
   onOpenEQ?: () => void;
+  onOpenSettings?: () => void;
 }
 
 /**
@@ -56,7 +58,7 @@ interface Props {
  * navigate in the main layout. Favourite toggles route through
  * libraryStore (see CLAUDE.md).
  */
-export default function FocusNowPlayingView({ onOpenEQ }: Props) {
+export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props) {
   const status = usePlaybackStore((s) => s.status);
   const toggleLyrics = usePlaybackStore((s) => s.toggleLyrics);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
@@ -358,6 +360,11 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
           onScroll={queue.onScroll}
         >
           <div className="focus-controls-main">
+            {/* Renders nothing unless the link is struggling, so it costs
+                this surface nothing in the common case — but its absence
+                made focus mode the one place a degraded stream went
+                unexplained. */}
+            <PlaybackQualityNotice onOpenSettings={onOpenSettings} />
             <div className="focus-track-row">
               <MarqueeText className="focus-track-title">{track.title}</MarqueeText>
               {onOpenEQ && (

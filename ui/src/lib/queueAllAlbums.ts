@@ -21,11 +21,15 @@ export async function appendAlbumsToQueue(albums: Album[]) {
   // Fetch tracks sequentially — Plex kills concurrent remote downloads, and
   // even on cache hits the local SQLite mutex would serialise these anyway.
   const trackLists: Track[][] = [];
+  let failed = 0;
   for (const a of albums) {
     try {
       trackLists.push(await getTracksForAlbum(a.ratingKey));
     } catch {
-      trackLists.push([]);
+      // One album failing shouldn't abandon the rest, but the count has to
+      // reach the toast — otherwise a partial result is indistinguishable
+      // from a complete one.
+      failed++;
     }
   }
   let tracks = trackLists.flat();
@@ -45,7 +49,8 @@ export async function appendAlbumsToQueue(albums: Album[]) {
   try {
     await appendToQueue(tracks);
     const noun = tracks.length === 1 ? "track" : "tracks";
-    useToastStore.getState().show(`Added ${tracks.length} ${noun} to queue`);
+    const skipped = failed > 0 ? ` (${failed} ${failed === 1 ? "album" : "albums"} failed)` : "";
+    useToastStore.getState().show(`Added ${tracks.length} ${noun} to queue${skipped}`);
   } catch {
     useToastStore.getState().show("Couldn't queue tracks");
   }

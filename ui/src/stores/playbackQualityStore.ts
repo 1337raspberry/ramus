@@ -10,24 +10,30 @@ import type { PlaybackQualityPayload } from "../lib/types";
 ///
 /// The backend emits only on change, so no local debouncing is needed.
 interface PlaybackQualityState extends PlaybackQualityPayload {
-  _listenerInstalled: boolean;
-  ensureListener: () => void;
+  /** The in-flight or settled `listen()` registration; null until first call. */
+  _listenerInstalled: Promise<unknown> | null;
+  /** Resolves once the subscription is actually live. The backend emits on
+   *  change only, so an emit dropped for want of a subscriber is not resent —
+   *  a steady degraded link would then go unreported for the whole session. */
+  ensureListener: () => Promise<unknown>;
 }
 
 export const usePlaybackQualityStore = create<PlaybackQualityState>((set, get) => ({
   starving: false,
   degradedToKbps: null,
   adaptationBlocked: false,
-  _listenerInstalled: false,
+  _listenerInstalled: null,
 
   ensureListener: () => {
-    if (get()._listenerInstalled) return;
-    set({ _listenerInstalled: true });
+    const existing = get()._listenerInstalled;
+    if (existing) return existing;
     // No initial fetch: "can this link keep up" is only knowable from
     // observed playback, so there's nothing meaningful to seed. The first
     // event lands within a watchdog poll of anything worth reporting.
-    listen<PlaybackQualityPayload>("playback-quality", (event) => {
+    const ready = listen<PlaybackQualityPayload>("playback-quality", (event) => {
       set(event.payload);
     });
+    set({ _listenerInstalled: ready });
+    return ready;
   },
 }));

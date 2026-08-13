@@ -20,6 +20,10 @@ export default function CollectionPickerContent({ album }: { album: Album }) {
   const [collections, setCollections] = useState<string[] | null>(null);
   const [memberOf, setMemberOf] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
+  // Distinct from an empty list: coercing a failed fetch to [] tells the user
+  // they have no collections, which is a different problem with a different
+  // fix from "the server didn't answer".
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,7 +34,9 @@ export default function CollectionPickerContent({ album }: { album: Album }) {
         setMemberOf(new Set(mine.map((n) => n.toLowerCase())));
       })
       .catch(() => {
-        if (!cancelled) setCollections([]);
+        if (cancelled) return;
+        setCollections([]);
+        setLoadFailed(true);
       });
     return () => {
       cancelled = true;
@@ -67,6 +73,8 @@ export default function CollectionPickerContent({ album }: { album: Album }) {
     <div className="mobile-collection-list">
       {collections === null ? (
         <div className="mobile-collection-empty">Loading…</div>
+      ) : loadFailed ? (
+        <div className="mobile-collection-empty">Couldn&rsquo;t load collections</div>
       ) : collections.length === 0 ? (
         <div className="mobile-collection-empty">No collections in your library yet</div>
       ) : (

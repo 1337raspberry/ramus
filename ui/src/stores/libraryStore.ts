@@ -342,6 +342,11 @@ interface LibraryState {
   /// Playlist whose detail view is open (from the Lists hub / sidebar).
   /// Cleared by every other navigation, like the other browse fields.
   browsePlaylist: Playlist | null;
+  /// Bumped whenever the set of playlists changes (create/rename/delete).
+  /// The desktop sidebar stays mounted alongside the content pane, so unlike
+  /// the mobile hub — which unmounts on every navigation and refetches for
+  /// free — nothing else would ever tell it to reload.
+  playlistsRevision: number;
 
   // --- Search Results ---
   searchQuery: string | null;
@@ -353,6 +358,8 @@ interface LibraryState {
   activeBookmarkName: string | null;
   loadSearchResults: (query: string) => Promise<void>;
   clearSearchResults: () => void;
+  /// Call after any create/rename/delete of a playlist so mounted lists reload.
+  bumpPlaylistsRevision: () => void;
   /// Apply a bookmark's saved filter snapshot, clearing any browse/search/
   /// detail context first and reloading the full album list under the new
   /// filter. The `name` is surfaced as the grid title until the user
@@ -770,6 +777,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       browseYear: null,
       browseArtistName: null,
       browseCollectionName: name,
+      browsePlaylist: null,
       activeBookmarkName: null,
     });
     try {
@@ -805,6 +813,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   browseYear: null,
   browseCollectionName: null,
   browsePlaylist: null,
+  playlistsRevision: 0,
 
   // --- Search Results ---
   searchQuery: null,
@@ -869,6 +878,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     set({ activeBookmarkName: name });
     await get().loadAllAlbums();
   },
+
+  bumpPlaylistsRevision: () => set((s) => ({ playlistsRevision: s.playlistsRevision + 1 })),
 
   clearSearchResults: () => {
     // Capture browse context before clearing to pick a fallback view.

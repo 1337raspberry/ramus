@@ -149,15 +149,22 @@ export default function MobileApp({ onOpenSettings }: Props) {
     setView("lists");
   }, [returnPlaylist]);
 
+  // The crumb only means anything while the grid still shows the artist it
+  // was armed from. Retiring it inside the back handler alone is not enough:
+  // the grid header's own chevron navigates without going through there, so
+  // an abandoned crumb could outlive its context and then re-arm itself on
+  // some later, unrelated visit to the same artist — sending that back press
+  // to a playlist the user had long since left. `loadAlbumsForArtistName`
+  // sets `browseArtistName` synchronously, so this cannot race the arming.
+  useEffect(() => {
+    if (returnPlaylist && browseArtistName !== returnPlaylist.artistName) {
+      setReturnPlaylist(null);
+    }
+  }, [browseArtistName, returnPlaylist]);
+
   // Unified back navigation — pops one level of the view hierarchy
   const handleBack = useCallback(() => {
     const s = useLibraryStore.getState();
-
-    // A stale playlist crumb (the grid moved on to some other context)
-    // must not teleport a later back to the playlist.
-    if (returnPlaylist && s.browseArtistName !== returnPlaylist.artistName) {
-      setReturnPlaylist(null);
-    }
 
     if (s.detailAlbum) {
       s.closeAlbumDetail();

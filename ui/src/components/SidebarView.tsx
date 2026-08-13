@@ -123,6 +123,10 @@ function ListsPanel({
   const browseCollectionName = useLibraryStore((s) => s.browseCollectionName);
   const browsePlaylist = useLibraryStore((s) => s.browsePlaylist);
   const activeBookmarkName = useLibraryStore((s) => s.activeBookmarkName);
+  // This panel stays mounted alongside the content pane, so a rename or
+  // delete performed in the detail view would otherwise leave its row
+  // showing a title that no longer exists.
+  const playlistsRevision = useLibraryStore((s) => s.playlistsRevision);
   const [collections, setCollections] = useState<string[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
@@ -134,11 +138,14 @@ function ListsPanel({
   }, []);
 
   useEffect(() => {
+    refreshPlaylists();
+  }, [refreshPlaylists, playlistsRevision]);
+
+  useEffect(() => {
     getAllCollectionNames()
       .then(setCollections)
       .catch(() => {});
-    refreshPlaylists();
-  }, [refreshPlaylists]);
+  }, []);
 
   const summaries = useMemo(
     () => bookmarks.map((b) => describeFilters(filtersFromBookmark(b))),

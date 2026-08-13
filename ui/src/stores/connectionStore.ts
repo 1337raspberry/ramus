@@ -9,24 +9,29 @@ import type { ConnectionStatusPayload } from "../lib/types";
 /// async helper — can read the latest state synchronously via
 /// `useConnectionStore.getState()`.
 interface ConnectionState extends ConnectionStatusPayload {
-  _listenerInstalled: boolean;
-  ensureListener: () => void;
+  /** The in-flight or settled `listen()` registration; null until first call. */
+  _listenerInstalled: Promise<unknown> | null;
+  /** Resolves once the subscription is actually live — callers that trigger a
+   *  re-emit must await it, since Tauri drops events with no subscriber. */
+  ensureListener: () => Promise<unknown>;
 }
 
 export const useConnectionStore = create<ConnectionState>((set, get) => ({
   online: true,
   offlineModeManual: false,
   effectiveOffline: false,
-  _listenerInstalled: false,
+  _listenerInstalled: null,
 
   ensureListener: () => {
-    if (get()._listenerInstalled) return;
-    set({ _listenerInstalled: true });
+    const existing = get()._listenerInstalled;
+    if (existing) return existing;
+    const ready = listen<ConnectionStatusPayload>("connection-status", (event) => {
+      set(event.payload);
+    });
+    set({ _listenerInstalled: ready });
     getConnectionStatus()
       .then((s) => set(s))
       .catch(() => {});
-    listen<ConnectionStatusPayload>("connection-status", (event) => {
-      set(event.payload);
-    });
+    return ready;
   },
 }));

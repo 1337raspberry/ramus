@@ -527,13 +527,29 @@ class LibmpvSimplePlayer(
             evtSawErrorLog = true
             evtLastErrorLogAtMs = SystemClock.elapsedRealtime()
         }
+        // mpv quotes the stream URL back in its own log lines, and those URLs
+        // carry the Plex token — directly on direct-play URLs, nested inside
+        // `X-Plex-Headers` on transcode ones. Logcat is readable by `adb
+        // logcat` and swept up by bug-report tooling, so redact before
+        // anything reaches it (the iOS command logger does the same).
+        val safe = redactTokens(text.trimEnd())
         when {
-            level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_ERROR -> Log.e("mpv/$prefix", text.trimEnd())
-            level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_WARN -> Log.w("mpv/$prefix", text.trimEnd())
-            level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_INFO -> Log.i("mpv/$prefix", text.trimEnd())
-            else -> Log.d("mpv/$prefix", text.trimEnd())
+            level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_ERROR -> Log.e("mpv/$prefix", safe)
+            level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_WARN -> Log.w("mpv/$prefix", safe)
+            level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_INFO -> Log.i("mpv/$prefix", safe)
+            else -> Log.d("mpv/$prefix", safe)
         }
     }
+
+    /**
+     * Strip Plex credentials out of arbitrary text. Both spellings matter:
+     * direct-play URLs carry `X-Plex-Token` as a plain query parameter, while
+     * transcode URLs nest it inside the base64 `X-Plex-Headers` blob. The
+     * value runs to the next parameter separator, whitespace or quote — a log
+     * line is not a bare URL, so it must not swallow the rest of the message.
+     */
+    private fun redactTokens(text: String): String =
+        TOKEN_PATTERN.replace(text) { "${it.groupValues[1]}=REDACTED" }
 
     private fun runOnMain(action: () -> Unit) {
         if (Looper.myLooper() == Looper.getMainLooper()) action()
@@ -549,6 +565,8 @@ class LibmpvSimplePlayer(
         /** Maximum age of the newest error log line for a loaded file's
          * END_FILE to be classified as a mid-stream failure. */
         private const val MIDSTREAM_ERROR_RECENCY_MS = 3_000L
+
+        private val TOKEN_PATTERN = Regex("""(X-Plex-Token|X-Plex-Headers)=[^&\s'"]*""")
 
         private val AUDIO_COMMANDS: Player.Commands = Player.Commands.Builder()
             .addAll(

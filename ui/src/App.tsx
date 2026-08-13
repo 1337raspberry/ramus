@@ -286,7 +286,9 @@ export default function App() {
             }}
           />
         )}
-        {showDownloads && <DownloadsPanel onDismiss={() => useDownloadsStore.getState().closeHub()} />}
+        {showDownloads && (
+          <DownloadsPanel onDismiss={() => useDownloadsStore.getState().closeHub()} />
+        )}
         <Toast />
       </>
     );
@@ -316,7 +318,12 @@ export default function App() {
           />
         }
       />
-      {isFocusMode && <FocusNowPlayingView onOpenEQ={() => setShowEQ(true)} />}
+      {isFocusMode && (
+        <FocusNowPlayingView
+          onOpenEQ={() => setShowEQ(true)}
+          onOpenSettings={() => setShowSettings(true)}
+        />
+      )}
       {showSearch && (
         <SearchOverlay
           initialQuery={searchInitial}
@@ -339,7 +346,9 @@ export default function App() {
           }}
         />
       )}
-      {showDownloads && <DownloadsPanel onDismiss={() => useDownloadsStore.getState().closeHub()} />}
+      {showDownloads && (
+        <DownloadsPanel onDismiss={() => useDownloadsStore.getState().closeHub()} />
+      )}
       <GenreInfoModal />
       <GenreHoverCard />
       <Toast />

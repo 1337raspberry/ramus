@@ -224,8 +224,10 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
     renamePlaylist(playlist.sourceId, trimmed)
       .then((updated) => {
         // The detail view renders from browsePlaylist; the hub refetches
-        // lazily on view, so patching the store is all the UI needs.
+        // lazily on view. The revision bump is for any list mounted
+        // alongside this one, which is the desktop sidebar's situation.
         useLibraryStore.setState({ browsePlaylist: updated });
+        useLibraryStore.getState().bumpPlaylistsRevision();
         setRenaming(false);
         setRenameBusy(false);
       })
@@ -239,6 +241,7 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
     deletePlaylist(playlist.sourceId)
       .then(() => {
         useToastStore.getState().show(`Deleted “${playlist.title}”`);
+        useLibraryStore.getState().bumpPlaylistsRevision();
         onBack();
       })
       .catch(() => useToastStore.getState().show("Couldn't delete playlist"));

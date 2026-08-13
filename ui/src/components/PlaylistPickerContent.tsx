@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Playlist } from "../lib/types";
 import { addTracksToPlaylist, createPlaylist, getPlaylists } from "../lib/commands";
 import { useToastStore } from "./Toast";
+import { useLibraryStore } from "../stores/libraryStore";
 
 interface Props {
   /** Resolved lazily so album flows can fetch their track list on demand. */
@@ -30,6 +31,11 @@ export default function PlaylistPickerContent({
   onNamingChange,
 }: Props) {
   const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
+  // Distinct from an empty list: a failed fetch coerced to [] would read as
+  // "you have no playlists", which is a different problem entirely. Creating
+  // stays available either way — it's the one action that doesn't need the
+  // existing list to have loaded.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [naming, setNamingState] = useState(!!createOnly);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -47,7 +53,9 @@ export default function PlaylistPickerContent({
         if (!cancelled) setPlaylists(list.filter((p) => !p.smart));
       })
       .catch(() => {
-        if (!cancelled) setPlaylists([]);
+        if (cancelled) return;
+        setPlaylists([]);
+        setLoadFailed(true);
       });
     return () => {
       cancelled = true;
@@ -77,6 +85,7 @@ export default function PlaylistPickerContent({
       .then((ids) => createPlaylist(trimmed, ids))
       .then((p) => {
         useToastStore.getState().show(`Created “${p.title}”`);
+        useLibraryStore.getState().bumpPlaylistsRevision();
         onDone();
       })
       .catch(() => {
@@ -116,6 +125,9 @@ export default function PlaylistPickerContent({
         <div className="mobile-collection-empty">Loading…</div>
       ) : (
         <>
+          {loadFailed && (
+            <div className="mobile-collection-empty">Couldn&rsquo;t load your playlists</div>
+          )}
           {playlists.map((p) => (
             <button key={p.sourceId} disabled={busy} onClick={() => addTo(p)}>
               <span className="mobile-collection-name">{p.title}</span>

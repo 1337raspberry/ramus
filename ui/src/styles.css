@@ -7888,6 +7888,11 @@ body.is-fullscreen .focus-body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+/* Must out-rank `.mobile-action-sheet-group button`, which forces
+   display:block/width:100% on every descendant button and would collapse
+   these rows. Equal specificity would leave that to source order, so the
+   ancestor is spelled out to win on specificity instead. */
+.mobile-action-sheet-group .mobile-collection-list button,
 .mobile-collection-list button {
   display: flex;
   align-items: center;

@@ -292,6 +292,9 @@ function AlbumRow({ album, onRemove }: { album: DownloadedAlbumSummary; onRemove
 function PlaylistDownloadSection({ onError }: { onError: (msg: string | null) => void }) {
   const startPlaylistDownload = useDownloadsStore((s) => s.startPlaylistDownload);
   const estimatePlaylist = useDownloadsStore((s) => s.estimatePlaylist);
+  // The backend sizes an estimate against the current download quality, so
+  // changing it while a row is open invalidates whatever is on screen.
+  const downloadQuality = useSettingsStore((s) => s.downloadQuality);
   const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<PlaylistDownloadEstimate | null>(null);
@@ -324,7 +327,7 @@ function PlaylistDownloadSection({ onError }: { onError: (msg: string | null) =>
     return () => {
       cancelled = true;
     };
-  }, [expandedId, estimatePlaylist]);
+  }, [expandedId, estimatePlaylist, downloadQuality]);
 
   const handleDownload = async (sourceId: string) => {
     try {
@@ -390,6 +393,7 @@ function BookmarkDownloadSection({ onError }: { onError: (msg: string | null) =>
   const bookmarks = useSettingsStore((s) => s.bookmarks);
   const startBookmarkDownload = useDownloadsStore((s) => s.startBookmarkDownload);
   const estimateBookmark = useDownloadsStore((s) => s.estimateBookmark);
+  const downloadQuality = useSettingsStore((s) => s.downloadQuality);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<BookmarkDownloadEstimate | null>(null);
   const [estimating, setEstimating] = useState(false);
@@ -420,7 +424,7 @@ function BookmarkDownloadSection({ onError }: { onError: (msg: string | null) =>
     // Key on the bookmark id — the underlying filter shape is stable per
     // bookmark, so we don't need a deep-compare here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded?.id, estimateBookmark]);
+  }, [expanded?.id, estimateBookmark, downloadQuality]);
 
   const handleDownload = useCallback(async () => {
     if (!expanded) return;

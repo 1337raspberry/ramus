@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 interface Options {
   count: number;
@@ -66,10 +66,7 @@ export function useListReorder({ count, rowHeight, onReorder }: Options) {
     }
   };
 
-  const end = (commit: boolean) => {
-    const d = dragRef.current;
-    dragRef.current = null;
-    if (!d) return;
+  const resetRows = () => {
     for (let i = 0; i < optsRef.current.count; i++) {
       const el = rowsRef.current[i];
       if (!el) continue;
@@ -79,8 +76,31 @@ export function useListReorder({ count, rowHeight, onReorder }: Options) {
       el.style.position = "";
       el.style.background = "";
     }
+  };
+
+  const end = (commit: boolean) => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (!d) return;
+    resetRows();
     if (commit && d.target !== d.from) optsRef.current.onReorder(d.from, d.target);
   };
+
+  // A drag holds indices into a list whose numbering can move underneath it:
+  // when the playing track advances, every upcoming row shifts one slot down
+  // and each per-index ref is re-bound to a different element, while the
+  // caller's onReorder closure picks up the new offset. The captured
+  // from/target pair then names the wrong track, so the move lands on a
+  // neighbour with no visible sign it went astray. The gesture cannot be
+  // rebased once its index space moves — drop it and let the user re-grab.
+  // Nulling the drag is enough to disarm the in-flight listeners: their
+  // move/end handlers both no-op on a null drag, and they detach themselves.
+  useEffect(() => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    resetRows();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [count]);
 
   const handleProps = (index: number) => ({
     onTouchStart: (e: React.TouchEvent) => {

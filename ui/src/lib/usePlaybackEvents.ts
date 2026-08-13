@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useConnectionStore } from "../stores/connectionStore";
+import { usePlaybackQualityStore } from "../stores/playbackQualityStore";
 import { applyAccent } from "./accent";
 import { bumpArtRetry } from "./useArtUrl";
 
@@ -133,7 +134,18 @@ export function usePlaybackEvents(authed: boolean): void {
     }, 250);
 
     store.loadVolume();
-    ready.current = Promise.all([u1, u2]);
+    // `foreground_resync` re-emits connection-status and playback-quality in
+    // the same call, and both listeners are installed from a different effect
+    // that nothing awaits — so they belong in the gate too. Dropping either
+    // emit is not self-correcting: the quality event fires on change only, so
+    // a launch onto an already-degraded link would show no notice until the
+    // link changed again. Both calls are idempotent.
+    ready.current = Promise.all([
+      u1,
+      u2,
+      useConnectionStore.getState().ensureListener(),
+      usePlaybackQualityStore.getState().ensureListener(),
+    ]);
 
     return () => {
       window.clearInterval(watchdog);
