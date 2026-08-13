@@ -55,15 +55,62 @@ const LIMIT_OPTIONS = [
   { value: "500", label: "500 tracks" },
 ];
 
-const SORT_OPTIONS = [
-  { value: "", label: "Default order" },
-  { value: "random", label: "Random" },
-  { value: "userRating:desc", label: "Highest rated" },
-  { value: "addedAt:desc", label: "Recently added" },
-  { value: "lastViewedAt:desc", label: "Recently played" },
-  { value: "viewCount:desc", label: "Most played" },
-  { value: "mediaBitrate:desc", label: "Highest bitrate" },
-  { value: "titleSort", label: "Title" },
+interface SortOption {
+  /** Stable select value, independent of direction. */
+  key: string;
+  label: string;
+  value: string;
+  /** Reversed direction; absent for direction-less sorts (default, random),
+   * which disable the invert toggle while selected. */
+  invLabel?: string;
+  invValue?: string;
+}
+
+const SORT_OPTIONS: SortOption[] = [
+  { key: "", label: "Default order", value: "" },
+  { key: "random", label: "Random", value: "random" },
+  {
+    key: "rating",
+    label: "Highest rated",
+    value: "userRating:desc",
+    invLabel: "Lowest rated",
+    invValue: "userRating:asc",
+  },
+  {
+    key: "added",
+    label: "Recently added",
+    value: "addedAt:desc",
+    invLabel: "Oldest added",
+    invValue: "addedAt:asc",
+  },
+  {
+    key: "played",
+    label: "Recently played",
+    value: "lastViewedAt:desc",
+    invLabel: "Least recently played",
+    invValue: "lastViewedAt:asc",
+  },
+  {
+    key: "plays",
+    label: "Most played",
+    value: "viewCount:desc",
+    invLabel: "Least played",
+    invValue: "viewCount:asc",
+  },
+  {
+    key: "bitrate",
+    label: "Highest bitrate",
+    value: "mediaBitrate:desc",
+    invLabel: "Lowest bitrate",
+    invValue: "mediaBitrate:asc",
+  },
+  {
+    key: "title",
+    label: "Title (A–Z)",
+    value: "titleSort",
+    invLabel: "Title (Z–A)",
+    invValue: "titleSort:desc",
+  },
 ];
 
 /**
@@ -86,7 +133,8 @@ export default function SmartPlaylistBuilder({ onCreated, onDismiss }: Props) {
   const [lastPlayed, setLastPlayed] = useState("");
   const [added, setAdded] = useState("");
   const [limit, setLimit] = useState("");
-  const [sort, setSort] = useState("");
+  const [sortKey, setSortKey] = useState("");
+  const [sortInverted, setSortInverted] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -172,9 +220,25 @@ export default function SmartPlaylistBuilder({ onCreated, onDismiss }: Props) {
       });
     }
     if (added) terms.push({ field: "track.addedAt", op: "gt", values: [`-${added}d`] });
+    const sortOption = SORT_OPTIONS.find((o) => o.key === sortKey);
+    const sort =
+      (sortInverted && sortOption?.invValue ? sortOption.invValue : sortOption?.value) ?? "";
     return { terms, sort: sort || null, limit: limit ? Number(limit) : null };
-  }, [genres, artist, rating, yearFrom, yearTo, plays, lastPlayed, added, sort, limit]);
+  }, [
+    genres,
+    artist,
+    rating,
+    yearFrom,
+    yearTo,
+    plays,
+    lastPlayed,
+    added,
+    sortKey,
+    sortInverted,
+    limit,
+  ]);
 
+  const selectedSort = SORT_OPTIONS.find((o) => o.key === sortKey);
   const needsRuleOrLimit = filter.terms.length === 0 && filter.limit == null;
   const canCreate = !!title.trim() && !needsRuleOrLimit && !busy;
 
@@ -392,15 +456,23 @@ export default function SmartPlaylistBuilder({ onCreated, onDismiss }: Props) {
               <span className="smartpl-row-label">Sort</span>
               <select
                 className="sort-select"
-                value={sort}
-                onChange={(e) => setSort(e.target.value)}
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value)}
               >
                 {SORT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
+                  <option key={o.key} value={o.key}>
+                    {sortInverted && o.invLabel ? o.invLabel : o.label}
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                className={`smartpl-invert${sortInverted && selectedSort?.invValue ? " active" : ""}`}
+                disabled={!selectedSort?.invValue}
+                onClick={() => setSortInverted((v) => !v)}
+              >
+                Invert
+              </button>
             </div>
           </div>
 

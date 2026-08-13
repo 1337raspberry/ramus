@@ -8385,6 +8385,29 @@ body.is-fullscreen .focus-body {
   color: var(--text-secondary);
 }
 
+.smartpl-invert {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.smartpl-invert.active {
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.25);
+  border-color: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.6);
+  color: var(--text-primary);
+}
+
+.smartpl-invert:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .smartpl-actions {
   display: flex;
   align-items: center;
