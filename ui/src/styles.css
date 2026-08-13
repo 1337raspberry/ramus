@@ -2293,6 +2293,9 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Fixed height — the virtualizer and reorder drag compute slots from
+     QUEUE_ROW_HEIGHT, so this must stay in lockstep with QueueView.tsx. */
+  height: 36px;
   padding: 4px 12px;
   cursor: pointer;
   transition: background 0.1s;
@@ -2371,19 +2374,25 @@ textarea {
   color: var(--text-primary);
 }
 
-.queue-show-more {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 10px;
-  cursor: pointer;
-  padding: 8px;
-  text-align: center;
-  width: 100%;
-  transition: color 0.15s;
+.queue-grab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 0.15s;
 }
 
-.queue-show-more:hover {
+.queue-row:hover .queue-grab {
+  opacity: 0.6;
+}
+
+.queue-grab:hover {
+  opacity: 1;
   color: var(--text-primary);
 }
 
@@ -4983,7 +4992,9 @@ body.is-fullscreen .focus-body {
 }
 
 .lists-panel-row {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   background: none;
   border: none;
@@ -5004,6 +5015,8 @@ body.is-fullscreen .focus-body {
 
 .lists-panel-row-name {
   display: block;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5298,10 +5311,69 @@ body.is-fullscreen .focus-body {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.playlist-view-btn.danger:hover,
-.playlist-view-btn.danger.confirm {
+.playlist-view-btn.icon {
+  padding: 5px 8px;
+}
+
+.playlist-view-btn.icon.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+
+/* Shared relative anchor for the playlist header/row dropdowns (the
+   outside-click closer keys on this class too). */
+.pl-menu-wrap,
+.np-menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+/* Wide enough that the longest label stays on one line. */
+.np-menu-dropdown {
+  min-width: 190px;
+}
+
+.np-menu-dropdown button {
+  white-space: nowrap;
+}
+
+.playlist-row-dots {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  width: 30px;
+  cursor: pointer;
+  opacity: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.playlist-row.desktop:hover .playlist-row-dots,
+.pl-menu-wrap:has(.adv-dropdown) .playlist-row-dots {
+  opacity: 1;
+}
+
+.playlist-row-dots:hover {
+  color: var(--text-primary);
+}
+
+/* Download confirm rendered in the header dropdown slot: estimate text
+   above Download/Cancel. */
+.playlist-dl-confirm {
+  min-width: 200px;
+}
+
+.playlist-dl-confirm-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 6px 10px 8px;
+  line-height: 1.4;
+}
+
+.adv-dropdown button.destructive {
   color: #ff6b6b;
-  border-color: rgba(255, 107, 107, 0.4);
 }
 
 /* Desktop rows are tighter than mobile — same class family, smaller box. */
@@ -6270,6 +6342,84 @@ body.is-fullscreen .focus-body {
 
 .bookmark-save-dialog .settings-body {
   gap: 12px;
+}
+
+/* Compact settings-chassis dialog used by the desktop pickers (collections,
+   playlists) and the playlist rename. */
+.settings-panel.picker-modal {
+  width: 380px;
+}
+
+.picker-modal .settings-body {
+  gap: 12px;
+}
+
+.picker-modal-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* The shared picker content reuses the mobile sheet's list markup, but the
+   sheet-group button reset doesn't apply inside the settings chassis —
+   restyle the rows at desktop scale. */
+.picker-modal .mobile-collection-list {
+  max-height: 50vh;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.picker-modal .mobile-collection-list button {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 9px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.picker-modal .mobile-collection-list button:last-child {
+  border-bottom: none;
+}
+
+.picker-modal .mobile-collection-list button:hover {
+  background: var(--bg-hover);
+}
+
+.picker-modal .mobile-collection-empty {
+  font-size: 13px;
+  padding: 14px;
+}
+
+.picker-modal .playlist-name-entry {
+  padding: 0;
+}
+
+.picker-modal .playlist-name-input {
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.picker-modal .playlist-name-create {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.6);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.picker-modal .playlist-name-create:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .bookmark-save-summary-label,

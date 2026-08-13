@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLibraryStore, hasActiveFilters } from "../stores/libraryStore";
 import type { Album } from "../lib/types";
-import { ART_SIZE } from "../lib/commands";
+import { ART_SIZE, getTracksForAlbum } from "../lib/commands";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useQueueAlbum } from "../lib/useQueueAlbum";
 import { IconPlay, IconStarFilled, IconStarEmpty, IconMusicNote, IconMoreDots } from "./Icons";
@@ -12,6 +12,8 @@ import SortDropdown from "./SortDropdown";
 import DownloadsHubButton from "./DownloadsHubButton";
 import QueueAllButton from "./QueueAllButton";
 import { AlbumDownloadMenuItem } from "./DownloadMenuItems";
+import CollectionPickerModal from "./CollectionPickerModal";
+import PlaylistPickerModal from "./PlaylistPickerModal";
 
 let savedGridScroll = 0;
 let savedGridKey = "";
@@ -29,6 +31,8 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
     setArtErr: setArtError,
   } = useArtUrl(album.thumb, ART_SIZE.MEDIUM);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [collectionsOpen, setCollectionsOpen] = useState(false);
+  const [playlistOpen, setPlaylistOpen] = useState(false);
   const openAlbumDetail = useLibraryStore((s) => s.openAlbumDetail);
   const playAlbum = useLibraryStore((s) => s.playAlbum);
   const toggleAlbumFav = useLibraryStore((s) => s.toggleAlbumFav);
@@ -47,82 +51,118 @@ const AlbumCard = memo(function AlbumCard({ album }: { album: Album }) {
   const queueTracks = useQueueAlbum(album.ratingKey);
 
   return (
-    <div className="album-card" onClick={() => openAlbumDetail(album)}>
-      <div className="album-art-wrap">
-        {artSrc && !artError ? (
-          <img
-            className="album-art"
-            src={artSrc}
-            alt={album.title}
-            loading="lazy"
-            onError={() => setArtError(true)}
-          />
-        ) : (
-          <div className="album-art-placeholder">
-            <IconMusicNote />
-          </div>
-        )}
-        <button
-          className="album-card-play-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            playAlbum(album);
-          }}
-          title="Play"
-        >
-          <IconPlay />
-        </button>
-      </div>
-      <div className="album-title">{album.title}</div>
-      <div className="album-artist">{album.artistName}</div>
-      <button
-        className={`album-fav${album.isFavourite ? " visible" : ""}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          toggleAlbumFav(album);
-        }}
-      >
-        {album.isFavourite ? <IconStarFilled size="1.5em" /> : <IconStarEmpty size="1.5em" />}
-      </button>
-      <div className="album-card-menu-wrap">
-        <button
-          className={`album-card-dots${menuOpen ? " visible" : ""}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            setMenuOpen((v) => !v);
-          }}
-          title="More actions"
-        >
-          <IconMoreDots />
-        </button>
-        {menuOpen && (
-          <div className="album-card-dropdown">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                queueTracks("next").catch(() => {});
-                setMenuOpen(false);
-              }}
-            >
-              Play Next
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                queueTracks("append").catch(() => {});
-                setMenuOpen(false);
-              }}
-            >
-              Add to Queue
-            </button>
-            <AlbumDownloadMenuItem
-              albumRatingKey={album.ratingKey}
-              onDone={() => setMenuOpen(false)}
+    <>
+      <div className="album-card" onClick={() => openAlbumDetail(album)}>
+        <div className="album-art-wrap">
+          {artSrc && !artError ? (
+            <img
+              className="album-art"
+              src={artSrc}
+              alt={album.title}
+              loading="lazy"
+              onError={() => setArtError(true)}
             />
-          </div>
-        )}
+          ) : (
+            <div className="album-art-placeholder">
+              <IconMusicNote />
+            </div>
+          )}
+          <button
+            className="album-card-play-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              playAlbum(album);
+            }}
+            title="Play"
+          >
+            <IconPlay />
+          </button>
+        </div>
+        <div className="album-title">{album.title}</div>
+        <div className="album-artist">{album.artistName}</div>
+        <button
+          className={`album-fav${album.isFavourite ? " visible" : ""}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleAlbumFav(album);
+          }}
+        >
+          {album.isFavourite ? <IconStarFilled size="1.5em" /> : <IconStarEmpty size="1.5em" />}
+        </button>
+        <div className="album-card-menu-wrap">
+          <button
+            className={`album-card-dots${menuOpen ? " visible" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((v) => !v);
+            }}
+            title="More actions"
+          >
+            <IconMoreDots />
+          </button>
+          {menuOpen && (
+            <div className="album-card-dropdown">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  queueTracks("next").catch(() => {});
+                  setMenuOpen(false);
+                }}
+              >
+                Play Next
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  queueTracks("append").catch(() => {});
+                  setMenuOpen(false);
+                }}
+              >
+                Add to Queue
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  setCollectionsOpen(true);
+                }}
+              >
+                Add to Collection…
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  setPlaylistOpen(true);
+                }}
+              >
+                Add to Playlist…
+              </button>
+              <AlbumDownloadMenuItem
+                albumRatingKey={album.ratingKey}
+                onDone={() => setMenuOpen(false)}
+              />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+      {/* React siblings of the card, not children: the pickers portal to
+        <body>, but synthetic clicks bubble through the REACT tree, so a
+        child dialog would fire the card's openAlbumDetail on every inner
+        tap (see the MobileFilterPanel save-dialog note). */}
+      {collectionsOpen && (
+        <CollectionPickerModal album={album} onDismiss={() => setCollectionsOpen(false)} />
+      )}
+      {playlistOpen && (
+        <PlaylistPickerModal
+          heading={album.title}
+          getTrackIds={() =>
+            getTracksForAlbum(album.ratingKey).then((ts) => ts.map((t) => t.ratingKey))
+          }
+          onDismiss={() => setPlaylistOpen(false)}
+        />
+      )}
+    </>
   );
 });
 
@@ -251,7 +291,7 @@ export default function AlbumGridView() {
         <BreadcrumbBar />
         <div className="breadcrumb-right">
           <QueueAllButton />
-            <DownloadsHubButton />
+          <DownloadsHubButton />
           <FilterDropdown />
           <SortDropdown />
         </div>

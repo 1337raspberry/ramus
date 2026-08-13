@@ -4,6 +4,7 @@ import { useLibraryStore, type SidebarMode } from "../stores/libraryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import GenreTreeView from "./GenreTreeView";
 import BookmarkEditor from "./BookmarkEditor";
+import SmartPlaylistBuilder from "../mobile/SmartPlaylistBuilder";
 import { filtersFromBookmark } from "../lib/bookmark";
 import { describeFilters } from "../lib/filterDescribe";
 import { getAllCollectionNames, getPlaylists } from "../lib/commands";
@@ -124,15 +125,20 @@ function ListsPanel({
   const activeBookmarkName = useLibraryStore((s) => s.activeBookmarkName);
   const [collections, setCollections] = useState<string[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
+  const [builderOpen, setBuilderOpen] = useState(false);
+
+  const refreshPlaylists = useCallback(() => {
+    getPlaylists()
+      .then(setPlaylists)
+      .catch(() => setPlaylists([]));
+  }, []);
 
   useEffect(() => {
     getAllCollectionNames()
       .then(setCollections)
       .catch(() => {});
-    getPlaylists()
-      .then(setPlaylists)
-      .catch(() => setPlaylists([]));
-  }, []);
+    refreshPlaylists();
+  }, [refreshPlaylists]);
 
   const summaries = useMemo(
     () => bookmarks.map((b) => describeFilters(filtersFromBookmark(b))),
@@ -155,13 +161,14 @@ function ListsPanel({
             className={`lists-panel-row${browsePlaylist?.sourceId === p.sourceId ? " selected" : ""}`}
             onClick={() => useLibraryStore.setState({ browsePlaylist: p, detailAlbum: null })}
           >
-            <span className="lists-panel-row-name">
-              {p.title}
-              {p.smart ? " (smart)" : ""}
-            </span>
+            <span className="lists-panel-row-name">{p.title}</span>
+            {p.smart && <span className="mobile-lists-smart-badge">SMART</span>}
           </button>
         ))
       )}
+      <button className="lists-panel-manage" onClick={() => setBuilderOpen(true)}>
+        New Smart Playlist…
+      </button>
 
       <div className="lists-panel-heading">Collections</div>
       {collections.length === 0 ? (
@@ -201,6 +208,17 @@ function ListsPanel({
         <button className="lists-panel-manage" onClick={onManage}>
           Manage Smart Filters…
         </button>
+      )}
+
+      {builderOpen && (
+        <SmartPlaylistBuilder
+          onDismiss={() => setBuilderOpen(false)}
+          onCreated={(p) => {
+            setBuilderOpen(false);
+            refreshPlaylists();
+            useLibraryStore.setState({ browsePlaylist: p, detailAlbum: null });
+          }}
+        />
       )}
     </div>
   );

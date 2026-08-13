@@ -11,6 +11,7 @@ import VolumeSlider from "./VolumeSlider";
 import FlowLayout from "./FlowLayout";
 import LyricsOverlay from "./LyricsOverlay";
 import PlaybackQualityNotice from "./PlaybackQualityNotice";
+import NowPlayingMenu from "./NowPlayingMenu";
 import QueueView from "./QueueView";
 import MarqueeText from "./MarqueeText";
 import { togglePlayPause, nextTrack, previousTrack } from "../lib/commands";
@@ -192,6 +193,7 @@ export default function NowPlayingView({
             >
               {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
             </button>
+            <NowPlayingMenu />
           </div>
 
           <WaveformSeekBar />

@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useLibraryStore } from "../stores/libraryStore";
+import { useDownloadsStore } from "../stores/downloadsStore";
 import { useToastStore } from "./Toast";
-import type { PlaylistItem } from "../lib/types";
+import type { PlaylistDownloadEstimate, PlaylistItem, Track } from "../lib/types";
 import {
   ART_SIZE,
   appendToQueue,
   deletePlaylist,
+  getAlbum,
   getPlaylistItems,
   movePlaylistItem,
   playTracks,
   removePlaylistItem,
+  renamePlaylist,
 } from "../lib/commands";
 import { useListReorder } from "../lib/useListReorder";
 import { useArtUrl } from "../lib/useArtUrl";
 import { shuffleTracks } from "../lib/shuffle";
-import { formatDuration, formatLongDuration } from "../lib/format";
-import { IconClose, IconMusicNote, IconPlay, IconShuffle } from "./Icons";
+import { formatBytes, formatDuration, formatLongDuration } from "../lib/format";
+import { IconClose, IconMoreDots, IconMusicNote, IconPlay, IconShuffle } from "./Icons";
 
 const ROW_HEIGHT = 44;
 
@@ -39,18 +43,31 @@ function RowArt({ thumb }: { thumb: string | null }) {
 /**
  * Desktop playlist detail (main content area, driven by
  * `libraryStore.browsePlaylist`). Row click plays the playlist from that
- * entry; the `::` handle drags to reorder (regular playlists only).
+ * entry; the `::` handle drags to reorder (regular playlists only). The
+ * header `…` menu carries Download / Rename / Delete; each row's `…` menu
+ * carries navigation and the track favourite.
  */
 export default function PlaylistDetailView() {
   const playlist = useLibraryStore((s) => s.browsePlaylist);
   const [items, setItems] = useState<PlaylistItem[] | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmDownload, setConfirmDownload] = useState(false);
+  const [dlEstimate, setDlEstimate] = useState<PlaylistDownloadEstimate | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [rowMenu, setRowMenu] = useState<number | null>(null);
   const confirmTimer = useRef<number | null>(null);
   const { artSrc, artErr, setArtErr } = useArtUrl(playlist?.thumb, ART_SIZE.MEDIUM);
 
   useEffect(() => {
     setItems(null);
+    setMenuOpen(false);
+    setConfirmDownload(false);
     setConfirmDelete(false);
+    setRenaming(false);
+    setRowMenu(null);
     if (!playlist) return;
     let cancelled = false;
     getPlaylistItems(playlist.sourceId)
@@ -71,6 +88,41 @@ export default function PlaylistDetailView() {
     },
     [],
   );
+
+  // Close any open dropdown on outside click (same pattern as
+  // AlbumDetailView's menus).
+  useEffect(() => {
+    if (!menuOpen && !confirmDownload && rowMenu === null) return;
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as Element).closest(".pl-menu-wrap")) {
+        setMenuOpen(false);
+        setConfirmDownload(false);
+        setConfirmDelete(false);
+        setRowMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen, confirmDownload, rowMenu]);
+
+  // Size estimate for the download confirm, fetched when it opens.
+  useEffect(() => {
+    if (!confirmDownload || !playlist) {
+      setDlEstimate(null);
+      return;
+    }
+    let cancelled = false;
+    useDownloadsStore
+      .getState()
+      .estimatePlaylist(playlist.sourceId)
+      .then((e) => {
+        if (!cancelled) setDlEstimate(e);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [confirmDownload, playlist]);
 
   const reorder = (from: number, to: number) => {
     if (!playlist || !items) return;
@@ -129,18 +181,80 @@ export default function PlaylistDetailView() {
       });
   };
 
+  const handleDownload = () => {
+    setMenuOpen(false);
+    setConfirmDownload(false);
+    useDownloadsStore
+      .getState()
+      .startPlaylistDownload(playlist.sourceId)
+      .then((n) => {
+        useToastStore
+          .getState()
+          .show(n === 0 ? "No downloadable tracks" : `Queued ${n} track${n === 1 ? "" : "s"}`);
+      })
+      .catch(() => {
+        useToastStore.getState().show("Couldn't start download");
+      });
+  };
+
   const handleDelete = () => {
     if (!confirmDelete) {
       setConfirmDelete(true);
       confirmTimer.current = window.setTimeout(() => setConfirmDelete(false), 3000);
       return;
     }
+    setMenuOpen(false);
     deletePlaylist(playlist.sourceId)
       .then(() => {
         useToastStore.getState().show(`Deleted “${playlist.title}”`);
         useLibraryStore.setState({ browsePlaylist: null });
       })
       .catch(() => useToastStore.getState().show("Couldn't delete playlist"));
+  };
+
+  const handleRename = () => {
+    const trimmed = renameValue.trim();
+    if (!trimmed || renameBusy) return;
+    if (trimmed === playlist.title) {
+      setRenaming(false);
+      return;
+    }
+    setRenameBusy(true);
+    renamePlaylist(playlist.sourceId, trimmed)
+      .then((updated) => {
+        // The detail view renders from browsePlaylist; the sidebar refetches
+        // lazily, so patching the store is all the UI needs.
+        useLibraryStore.setState({ browsePlaylist: updated });
+        setRenaming(false);
+        setRenameBusy(false);
+      })
+      .catch(() => {
+        useToastStore.getState().show("Couldn't rename playlist");
+        setRenameBusy(false);
+      });
+  };
+
+  const goToAlbum = (track: Track) => {
+    if (!track.albumKey) return;
+    getAlbum(track.albumKey)
+      .then((album) => {
+        if (album) void useLibraryStore.getState().openAlbumDetail(album);
+        else useToastStore.getState().show("Album isn't in the library");
+      })
+      .catch(() => {});
+  };
+
+  const toggleFav = (index: number) => {
+    if (!items) return;
+    const track = items[index].track;
+    // libraryStore owns the IPC + cross-store patches; mirror the flip into
+    // this view's local copy so the menu label stays honest.
+    void useLibraryStore.getState().toggleTrackFav(track);
+    setItems(
+      items.map((it, i) =>
+        i === index ? { ...it, track: { ...it.track, isFavourite: !track.isFavourite } } : it,
+      ),
+    );
   };
 
   const count = items?.length ?? playlist.trackCount;
@@ -174,12 +288,56 @@ export default function PlaylistDetailView() {
           <button className="playlist-view-btn" onClick={shuffle}>
             <IconShuffle size={12} /> Shuffle
           </button>
-          <button
-            className={`playlist-view-btn danger${confirmDelete ? " confirm" : ""}`}
-            onClick={handleDelete}
-          >
-            {confirmDelete ? "Confirm delete?" : "Delete"}
-          </button>
+          <div className="pl-menu-wrap">
+            <button
+              className={`playlist-view-btn icon${menuOpen || confirmDownload ? " active" : ""}`}
+              title="More actions"
+              onClick={() => {
+                setConfirmDownload(false);
+                setConfirmDelete(false);
+                setMenuOpen((v) => !v);
+              }}
+            >
+              <IconMoreDots size={14} />
+            </button>
+            {menuOpen && (
+              <div className="adv-dropdown">
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setConfirmDownload(true);
+                  }}
+                >
+                  Download Playlist
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setRenameValue(playlist.title);
+                    setRenaming(true);
+                  }}
+                >
+                  Rename Playlist
+                </button>
+                <button className="destructive" onClick={handleDelete}>
+                  {confirmDelete ? "Confirm delete?" : "Delete Playlist"}
+                </button>
+              </div>
+            )}
+            {confirmDownload && (
+              <div className="adv-dropdown playlist-dl-confirm">
+                <div className="playlist-dl-confirm-text">
+                  {dlEstimate
+                    ? `Download ${dlEstimate.trackCount} track${
+                        dlEstimate.trackCount === 1 ? "" : "s"
+                      } (~${formatBytes(dlEstimate.totalBytes)})?`
+                    : "Download this playlist?"}
+                </div>
+                <button onClick={handleDownload}>Download</button>
+                <button onClick={() => setConfirmDownload(false)}>Cancel</button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -189,55 +347,161 @@ export default function PlaylistDetailView() {
         <div className="empty-state">This playlist is empty</div>
       ) : (
         <div className="playlist-scroll">
-          {items.map((item, index) => (
-            <div
-              key={item.playlistItemId ?? index}
-              className="playlist-row desktop"
-              ref={(el) => setRowRef(index, el)}
-            >
-              <button className="playlist-row-body" onClick={() => play(index)}>
-                <span className="playlist-row-num">{index + 1}</span>
-                <RowArt thumb={item.track.thumb} />
-                <div className="playlist-row-info">
-                  <div className="playlist-row-title">{item.track.title}</div>
-                  <div className="playlist-row-artist">
-                    {item.track.trackArtist || item.track.artistName} — {item.track.albumTitle}
-                  </div>
-                </div>
-                <span className="playlist-row-duration">{formatDuration(item.track.duration)}</span>
-              </button>
-              <button
-                className="playlist-row-queue"
-                title="Add to queue"
-                onClick={() => appendToQueue([item.track]).catch(() => {})}
+          {items.map((item, index) => {
+            const isNearBottom = index >= items.length - 3 && items.length > 4;
+            return (
+              <div
+                key={item.playlistItemId ?? index}
+                className="playlist-row desktop"
+                ref={(el) => setRowRef(index, el)}
               >
-                +
-              </button>
-              {!playlist.smart && (
-                <>
-                  <button
-                    className="playlist-row-remove"
-                    title="Remove from playlist"
-                    onClick={() => removeRow(index)}
-                  >
-                    <IconClose size={12} />
-                  </button>
-                  <span className="playlist-grab" aria-label="Reorder" {...handleProps(index)}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                      <circle cx="9" cy="6" r="1.8" />
-                      <circle cx="15" cy="6" r="1.8" />
-                      <circle cx="9" cy="12" r="1.8" />
-                      <circle cx="15" cy="12" r="1.8" />
-                      <circle cx="9" cy="18" r="1.8" />
-                      <circle cx="15" cy="18" r="1.8" />
-                    </svg>
+                <button className="playlist-row-body" onClick={() => play(index)}>
+                  <span className="playlist-row-num">{index + 1}</span>
+                  <RowArt thumb={item.track.thumb} />
+                  <div className="playlist-row-info">
+                    <div className="playlist-row-title">{item.track.title}</div>
+                    <div className="playlist-row-artist">
+                      {item.track.trackArtist || item.track.artistName} — {item.track.albumTitle}
+                    </div>
+                  </div>
+                  <span className="playlist-row-duration">
+                    {formatDuration(item.track.duration)}
                   </span>
-                </>
-              )}
-            </div>
-          ))}
+                </button>
+                <button
+                  className="playlist-row-queue"
+                  title="Add to queue"
+                  onClick={() => appendToQueue([item.track]).catch(() => {})}
+                >
+                  +
+                </button>
+                <div className="pl-menu-wrap">
+                  <button
+                    className="playlist-row-dots"
+                    title="Track actions"
+                    onClick={() => setRowMenu((prev) => (prev === index ? null : index))}
+                  >
+                    <IconMoreDots size={14} />
+                  </button>
+                  {rowMenu === index && (
+                    <div className={`adv-dropdown${isNearBottom ? " up" : ""}`}>
+                      <button
+                        onClick={() => {
+                          setRowMenu(null);
+                          goToAlbum(item.track);
+                        }}
+                      >
+                        Go to Album
+                      </button>
+                      <button
+                        onClick={() => {
+                          setRowMenu(null);
+                          useLibraryStore.getState().loadAlbumsForArtistName(item.track.artistName);
+                        }}
+                      >
+                        Go to Artist
+                      </button>
+                      <button
+                        onClick={() => {
+                          setRowMenu(null);
+                          toggleFav(index);
+                        }}
+                      >
+                        {item.track.isFavourite ? "Unfavourite Track" : "Favourite Track"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {!playlist.smart && (
+                  <>
+                    <button
+                      className="playlist-row-remove"
+                      title="Remove from playlist"
+                      onClick={() => removeRow(index)}
+                    >
+                      <IconClose size={12} />
+                    </button>
+                    <span className="playlist-grab" aria-label="Reorder" {...handleProps(index)}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="9" cy="6" r="1.8" />
+                        <circle cx="15" cy="6" r="1.8" />
+                        <circle cx="9" cy="12" r="1.8" />
+                        <circle cx="15" cy="12" r="1.8" />
+                        <circle cx="9" cy="18" r="1.8" />
+                        <circle cx="15" cy="18" r="1.8" />
+                      </svg>
+                    </span>
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
+
+      {renaming &&
+        createPortal(
+          <div
+            className="settings-backdrop"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setRenaming(false);
+            }}
+          >
+            <div
+              className="settings-panel glass picker-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="playlist-rename-title"
+            >
+              <div className="settings-header">
+                <h2 id="playlist-rename-title">Rename Playlist</h2>
+                <button
+                  className="settings-close"
+                  onClick={() => setRenaming(false)}
+                  aria-label="Close"
+                >
+                  x
+                </button>
+              </div>
+              <form
+                className="settings-body"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleRename();
+                }}
+              >
+                <input
+                  className="bookmark-save-input"
+                  type="text"
+                  value={renameValue}
+                  autoFocus
+                  placeholder="Playlist name"
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setRenaming(false);
+                    }
+                  }}
+                />
+                <div className="bookmark-actions">
+                  <div style={{ flex: 1 }} />
+                  <button type="button" className="bookmark-btn" onClick={() => setRenaming(false)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="bookmark-btn bookmark-save"
+                    disabled={!renameValue.trim() || renameBusy}
+                  >
+                    {renameBusy ? "Renaming…" : "Rename"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

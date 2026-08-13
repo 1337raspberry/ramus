@@ -18,6 +18,7 @@ import WaveformSeekBar from "./WaveformSeekBar";
 import VolumeSlider from "./VolumeSlider";
 import FlowLayout from "./FlowLayout";
 import LyricsOverlay from "./LyricsOverlay";
+import NowPlayingMenu from "./NowPlayingMenu";
 import QueueView from "./QueueView";
 import FocusVisualizer from "./FocusVisualizer";
 import MarqueeText from "./MarqueeText";
@@ -394,6 +395,7 @@ export default function FocusNowPlayingView({ onOpenEQ }: Props) {
               >
                 {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
               </button>
+              <NowPlayingMenu />
               <button
                 className="focus-close-btn"
                 onClick={toggleFocusMode}

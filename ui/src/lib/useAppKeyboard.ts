@@ -32,6 +32,12 @@ export function useAppKeyboard({
       // BEHIND the modal's z-1100 backdrop or mutate playback invisibly.
       if (useGenreInfoStore.getState().target) return;
 
+      // Same yield for any settings-chassis overlay (settings panel, save
+      // and rename dialogs, the pickers): each owns its own Escape, and the
+      // remaining shortcuts would act invisibly behind the backdrop. Cmd+,
+      // stays live so it keeps working as a settings toggle.
+      if (document.querySelector(".settings-backdrop") && !(mod && e.key === ",")) return;
+
       // Esc exits focus mode before any other Esc-based dismissal.
       if (e.key === "Escape" && usePlaybackStore.getState().isFocusMode) {
         e.preventDefault();

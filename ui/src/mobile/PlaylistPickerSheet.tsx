@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Playlist } from "../lib/types";
-import { addTracksToPlaylist, createPlaylist, getPlaylists } from "../lib/commands";
-import { useToastStore } from "../components/Toast";
+import PlaylistPickerContent from "../components/PlaylistPickerContent";
 import { pushBackHandler } from "../lib/backHandler";
 
 interface Props {
@@ -19,9 +17,9 @@ interface Props {
 }
 
 /**
- * Action-sheet picker for adding tracks to a playlist. Lists the account's
- * regular playlists (smart ones are filter-driven and can't take items) plus
- * a "New Playlist…" row that flips the sheet into name entry.
+ * Mobile action-sheet shell around PlaylistPickerContent (the desktop
+ * counterpart is PlaylistPickerModal). The naming step tags the backdrop
+ * `text-entry` so the sheet rides above the software keyboard.
  */
 export default function PlaylistPickerSheet({
   getTrackIds,
@@ -30,25 +28,7 @@ export default function PlaylistPickerSheet({
   overSheet,
   onDismiss,
 }: Props) {
-  const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
   const [naming, setNaming] = useState(!!createOnly);
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (createOnly) return;
-    let cancelled = false;
-    getPlaylists()
-      .then((list) => {
-        if (!cancelled) setPlaylists(list.filter((p) => !p.smart));
-      })
-      .catch(() => {
-        if (!cancelled) setPlaylists([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [createOnly]);
 
   useEffect(
     () =>
@@ -58,37 +38,6 @@ export default function PlaylistPickerSheet({
       }),
     [onDismiss],
   );
-
-  const addTo = (playlist: Playlist) => {
-    if (busy) return;
-    setBusy(true);
-    getTrackIds()
-      .then((ids) => addTracksToPlaylist(playlist.sourceId, ids))
-      .then(() => {
-        useToastStore.getState().show(`Added to “${playlist.title}”`);
-        onDismiss();
-      })
-      .catch(() => {
-        useToastStore.getState().show("Couldn't add to playlist");
-        setBusy(false);
-      });
-  };
-
-  const createNew = () => {
-    const trimmed = name.trim();
-    if (!trimmed || busy) return;
-    setBusy(true);
-    getTrackIds()
-      .then((ids) => createPlaylist(trimmed, ids))
-      .then((p) => {
-        useToastStore.getState().show(`Created “${p.title}”`);
-        onDismiss();
-      })
-      .catch(() => {
-        useToastStore.getState().show("Couldn't create playlist");
-        setBusy(false);
-      });
-  };
 
   return createPortal(
     <div
@@ -102,48 +51,12 @@ export default function PlaylistPickerSheet({
           <div className="mobile-action-sheet-header">
             {naming ? "Name the new playlist" : `Add “${heading}” to a playlist`}
           </div>
-          {naming ? (
-            <div className="playlist-name-entry">
-              <input
-                className="playlist-name-input"
-                type="text"
-                value={name}
-                autoFocus
-                placeholder="Playlist name"
-                onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") createNew();
-                }}
-              />
-              <button
-                className="playlist-name-create"
-                disabled={!name.trim() || busy}
-                onClick={createNew}
-              >
-                Create
-              </button>
-            </div>
-          ) : (
-            <div className="mobile-collection-list">
-              {playlists === null ? (
-                <div className="mobile-collection-empty">Loading…</div>
-              ) : (
-                <>
-                  {playlists.map((p) => (
-                    <button key={p.sourceId} disabled={busy} onClick={() => addTo(p)}>
-                      <span className="mobile-collection-name">{p.title}</span>
-                      {p.trackCount != null && (
-                        <span className="mobile-lists-row-count">{p.trackCount}</span>
-                      )}
-                    </button>
-                  ))}
-                  <button disabled={busy} onClick={() => setNaming(true)}>
-                    <span className="mobile-collection-name">New Playlist…</span>
-                  </button>
-                </>
-              )}
-            </div>
-          )}
+          <PlaylistPickerContent
+            getTrackIds={getTrackIds}
+            createOnly={createOnly}
+            onDone={onDismiss}
+            onNamingChange={setNaming}
+          />
         </div>
         <button className="mobile-action-sheet-cancel" onClick={onDismiss}>
           Cancel

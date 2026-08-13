@@ -7,6 +7,8 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { useDownloadsStore } from "../stores/downloadsStore";
 import { useConnectionStatus } from "../lib/useConnectionStatus";
 import { AlbumDownloadMenuItem, TrackDownloadMenuItem } from "./DownloadMenuItems";
+import CollectionPickerModal from "./CollectionPickerModal";
+import PlaylistPickerModal from "./PlaylistPickerModal";
 import { formatDuration, formatCodec } from "../lib/format";
 import { countryToFlag } from "../lib/countryFlag";
 import {
@@ -43,6 +45,10 @@ export default function AlbumDetailView() {
 
   const { artSrc, artErr } = useArtUrl(album?.thumb, ART_SIZE.MEDIUM);
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
+  const [collectionsOpen, setCollectionsOpen] = useState(false);
+  const [playlistTarget, setPlaylistTarget] = useState<{ heading: string; ids: string[] } | null>(
+    null,
+  );
   const [genres, setGenres] = useState<string[]>([]);
 
   useEffect(() => {
@@ -212,6 +218,25 @@ export default function AlbumDetailView() {
               >
                 Add to Queue
               </button>
+              <button
+                onClick={() => {
+                  setOpenMenuKey(null);
+                  setCollectionsOpen(true);
+                }}
+              >
+                Add to Collection…
+              </button>
+              <button
+                onClick={() => {
+                  setOpenMenuKey(null);
+                  setPlaylistTarget({
+                    heading: album.title,
+                    ids: tracks.map((t) => t.ratingKey),
+                  });
+                }}
+              >
+                Add to Playlist…
+              </button>
               <AlbumDownloadMenuItem
                 albumRatingKey={album.ratingKey}
                 onDone={() => setOpenMenuKey(null)}
@@ -311,6 +336,15 @@ export default function AlbumDetailView() {
                       >
                         Add to Queue
                       </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuKey(null);
+                          setPlaylistTarget({ heading: track.title, ids: [track.ratingKey] });
+                        }}
+                      >
+                        Add to Playlist…
+                      </button>
                       <TrackDownloadMenuItem
                         ratingKey={track.ratingKey}
                         onDone={() => setOpenMenuKey(null)}
@@ -332,6 +366,17 @@ export default function AlbumDetailView() {
         </span>
         {codec && <span className="adv-footer-right">{codec}</span>}
       </div>
+
+      {collectionsOpen && (
+        <CollectionPickerModal album={album} onDismiss={() => setCollectionsOpen(false)} />
+      )}
+      {playlistTarget && (
+        <PlaylistPickerModal
+          heading={playlistTarget.heading}
+          getTrackIds={() => Promise.resolve(playlistTarget.ids)}
+          onDismiss={() => setPlaylistTarget(null)}
+        />
+      )}
     </div>
   );
 }
