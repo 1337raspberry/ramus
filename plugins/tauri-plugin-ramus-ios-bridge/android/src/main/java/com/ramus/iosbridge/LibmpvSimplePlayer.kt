@@ -129,8 +129,19 @@ class LibmpvSimplePlayer(
     // -----------------------------------------------------------------
 
     override fun getState(): State {
+        // Media3 requires every MediaItemData UID in a playlist to be unique, and
+        // throws IllegalArgumentException from the State builder otherwise — on the
+        // main thread, so it takes the process down. A queue may legitimately hold
+        // the same track more than once (queueing an album twice, "Play Next" on
+        // something already queued, or a server playlist that repeats a track), so
+        // the media id alone is not a safe UID. Suffix only the repeats, leaving the
+        // common case with stable ids that Media3 can diff across state updates.
+        val uidCounts = HashMap<String, Int>()
         val items = queue.map { item ->
-            MediaItemData.Builder(item.mediaId.ifEmpty { item.hashCode().toString() })
+            val base = item.mediaId.ifEmpty { item.hashCode().toString() }
+            val occurrence = uidCounts.merge(base, 1, Int::plus) ?: 1
+            val uid = if (occurrence == 1) base else "$base#$occurrence"
+            MediaItemData.Builder(uid)
                 .setMediaItem(item)
                 .setDurationUs(if (durationMs > 0) durationMs * 1000L else C.TIME_UNSET)
                 .build()

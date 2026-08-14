@@ -11,6 +11,7 @@ class MainActivity : TauriActivity() {
   private var webView: WebView? = null
   private var lastInsetTopCssPx: Int = 0
   private var lastInsetBottomCssPx: Int = 0
+  private var lastKeyboardInsetCssPx: Int = 0
   private var hasReceivedInsets: Boolean = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,12 +26,21 @@ class MainActivity : TauriActivity() {
     // when added as the activity's content, so the parent FrameLayout is more
     // reliable. The listener also fires on rotation, IME show/hide, and
     // nav-mode changes, keeping the variables live.
+    //
+    // The IME inset is published separately as --keyboard-inset. Because the
+    // activity is edge-to-edge, the framework no longer shrinks the window for
+    // the software keyboard, and nothing else tells the web layer it is there:
+    // bottom-anchored sheets that hold a text field would sit underneath it.
+    // Bottom-anchored surfaces lift by max(--safe-bottom, --keyboard-inset),
+    // so the raw IME height is the right value to publish.
     val content = findViewById<android.view.View>(android.R.id.content)
     ViewCompat.setOnApplyWindowInsetsListener(content) { _, insets ->
       val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+      val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
       val density = resources.displayMetrics.density.coerceAtLeast(0.1f)
       lastInsetTopCssPx = (bars.top / density).toInt()
       lastInsetBottomCssPx = (bars.bottom / density).toInt()
+      lastKeyboardInsetCssPx = (ime.bottom / density).toInt()
       hasReceivedInsets = true
       pushInsetsToWeb()
       insets
@@ -90,7 +100,8 @@ class MainActivity : TauriActivity() {
     if (!hasReceivedInsets) return
     val js =
       "document.documentElement.style.setProperty('--android-inset-top', '${lastInsetTopCssPx}px');" +
-        "document.documentElement.style.setProperty('--android-inset-bottom', '${lastInsetBottomCssPx}px');"
+        "document.documentElement.style.setProperty('--android-inset-bottom', '${lastInsetBottomCssPx}px');" +
+        "document.documentElement.style.setProperty('--keyboard-inset', '${lastKeyboardInsetCssPx}px');"
     wv.evaluateJavascript(js, null)
   }
 }

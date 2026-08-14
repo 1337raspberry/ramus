@@ -282,7 +282,10 @@ export default function MobileNowPlaying({
         <div className="mobile-miniplayer-bar" style={{ padding: "4px 14px 4px", gap: 0 }}>
           <div className="mobile-miniplayer-info">
             <MarqueeText className="mobile-miniplayer-title">{track.title}</MarqueeText>
-            <div className="mobile-miniplayer-artist">{track.artistName}</div>
+            {/* Prefer the track artist: on a compilation the album artist is
+                "Various Artists", which says nothing about what is playing. The
+                expanded sheet has room for both. */}
+            <div className="mobile-miniplayer-artist">{track.trackArtist || track.artistName}</div>
           </div>
           <div
             className="mobile-miniplayer-controls"
