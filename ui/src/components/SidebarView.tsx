@@ -197,7 +197,7 @@ function ListsPanel({
       <div className="lists-panel-heading">Smart Filters</div>
       {bookmarks.length === 0 ? (
         <div className="lists-panel-empty">
-          No Smart Filters yet. Set a filter, then tap Save in the filter panel.
+          No Smart Filters yet. Set a filter, then save it from the filter panel.
         </div>
       ) : (
         bookmarks.map((entry, i) => (

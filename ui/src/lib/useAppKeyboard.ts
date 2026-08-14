@@ -23,7 +23,12 @@ export function useAppKeyboard({
 }: UseAppKeyboardParams): void {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
+      // Either platform's accelerator, but never both at once: macOS reserves
+      // Ctrl+Cmd chords for system bindings (Ctrl+Cmd+F toggles fullscreen),
+      // and treating those as our own accelerator swallows them — the shortcut
+      // matched on the letter alone and then called preventDefault, so the OS
+      // never saw the key.
+      const mod = (e.metaKey || e.ctrlKey) && !(e.metaKey && e.ctrlKey);
 
       // While the genre-info modal/sheet is open, ALL shell shortcuts yield:
       // Escape belongs to the modal's own listener (this one registers

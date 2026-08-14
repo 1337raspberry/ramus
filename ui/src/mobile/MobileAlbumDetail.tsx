@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
-import { usePlaybackStore } from "../stores/playbackStore";
 import { useArtUrl } from "../lib/useArtUrl";
-import { ART_SIZE, getAlbumGenres, insertNext, appendToQueue, getQueue } from "../lib/commands";
+import { ART_SIZE, getAlbumGenres, insertNext, appendToQueue } from "../lib/commands";
+import { refreshQueue } from "../lib/refreshQueue";
 import { formatDuration, formatCodec } from "../lib/format";
 import { countryToFlag } from "../lib/countryFlag";
 import {
@@ -99,8 +99,7 @@ export default function MobileAlbumDetail() {
 
   const queueAction = useCallback((fn: typeof insertNext, items: typeof tracks) => {
     fn(items)
-      .then(() => getQueue())
-      .then((q) => usePlaybackStore.setState({ queue: q }))
+      .then(refreshQueue)
       .catch(() => {});
     setOpenMenuKey(null);
   }, []);

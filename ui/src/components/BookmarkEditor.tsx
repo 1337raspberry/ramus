@@ -117,7 +117,7 @@ export default function BookmarkEditor({ onDismiss }: Props) {
 
           {rows.length === 0 ? (
             <div className="downloads-empty">
-              No Smart Filters yet — set a filter and tap Save in the filter panel.
+              No Smart Filters yet — set a filter, then save it from the filter panel.
             </div>
           ) : (
             <ul className="bookmark-edit-list">
@@ -168,8 +168,8 @@ export default function BookmarkEditor({ onDismiss }: Props) {
           )}
 
           <div className="bookmark-hint">
-            To create or update a Smart Filter, set a filter and tap Save in the filter panel.
-            Bookmarks store the filter, not the results, so newly added matching albums show up
+            To create or update a Smart Filter, set a filter and save it from the filter panel.
+            Smart Filters store the filter, not the results, so newly added matching albums show up
             automatically.
           </div>
           {rows.length >= MAX_BOOKMARKS && (

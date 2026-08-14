@@ -15,6 +15,7 @@ import {
   removePlaylistItem,
   renamePlaylist,
 } from "../lib/commands";
+import { refreshQueue } from "../lib/refreshQueue";
 import { useListReorder } from "../lib/useListReorder";
 import { useArtUrl } from "../lib/useArtUrl";
 import { shuffleTracks } from "../lib/shuffle";
@@ -381,7 +382,11 @@ export default function PlaylistDetailView() {
                 <button
                   className="playlist-row-queue"
                   title="Add to queue"
-                  onClick={() => appendToQueue([item.track]).catch(() => {})}
+                  onClick={() =>
+                    void appendToQueue([item.track])
+                      .then(refreshQueue)
+                      .catch(() => {})
+                  }
                 >
                   +
                 </button>

@@ -12,6 +12,7 @@ import {
   renamePlaylist,
   appendToQueue,
 } from "../lib/commands";
+import { refreshQueue } from "../lib/refreshQueue";
 import { useListReorder } from "../lib/useListReorder";
 import { useLongPress } from "../lib/useLongPress";
 import { useSwipeToDelete } from "../lib/useSwipeToDelete";
@@ -559,7 +560,9 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
                   onClick={() => {
                     const track = items[rowSheet].track;
                     setRowSheet(null);
-                    appendToQueue([track]).catch(() => {});
+                    void appendToQueue([track])
+                      .then(refreshQueue)
+                      .catch(() => {});
                   }}
                 >
                   Add to Queue

@@ -7,11 +7,10 @@ import {
   getTracksForAlbum,
   getTrack,
   playTracks,
-  getQueue,
 } from "../lib/commands";
+import { refreshQueue } from "../lib/refreshQueue";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useLibraryStore } from "../stores/libraryStore";
-import { usePlaybackStore } from "../stores/playbackStore";
 import type {
   SearchAlbumResult,
   SearchArtistResult,
@@ -114,12 +113,6 @@ function SearchThumb({
 async function withFullTrack(sourceId: string, action: (track: Track) => void | Promise<void>) {
   const track = await getTrack(sourceId);
   if (track) await action(track);
-}
-
-function refreshQueue() {
-  getQueue()
-    .then((q) => usePlaybackStore.setState({ queue: q }))
-    .catch(() => {});
 }
 
 export default function SearchOverlay({ onDismiss, initialQuery }: Props) {

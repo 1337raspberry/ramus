@@ -402,7 +402,8 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
             <div className="mobile-action-sheet">
               <div className="mobile-action-sheet-group">
                 <div className="mobile-action-sheet-header">
-                  Add all albums to the now playing queue?
+                  Add {albums.length === 1 ? "this album" : `all ${albums.length} albums`} to the
+                  now playing queue?
                 </div>
                 <button
                   onClick={() => {

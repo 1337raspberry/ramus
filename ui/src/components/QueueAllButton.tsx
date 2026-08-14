@@ -38,7 +38,10 @@ export default function QueueAllButton() {
       </button>
       {confirming && (
         <div className="queue-all-confirm">
-          <span>Add all albums to the now playing queue?</span>
+          <span>
+            Add {albums.length === 1 ? "this album" : `all ${albums.length} albums`} to the now
+            playing queue?
+          </span>
           <div className="queue-all-actions">
             <button
               className="queue-all-yes"

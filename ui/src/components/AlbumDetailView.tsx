@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLibraryStore } from "../stores/libraryStore";
-import { ART_SIZE, getQueue, insertNext, appendToQueue, getAlbumGenres } from "../lib/commands";
+import { ART_SIZE, insertNext, appendToQueue, getAlbumGenres } from "../lib/commands";
+import { refreshQueue } from "../lib/refreshQueue";
 import { useArtUrl } from "../lib/useArtUrl";
-import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useDownloadsStore } from "../stores/downloadsStore";
 import { useConnectionStatus } from "../lib/useConnectionStatus";
@@ -199,8 +199,7 @@ export default function AlbumDetailView() {
               <button
                 onClick={() => {
                   insertNext(tracks)
-                    .then(() => getQueue())
-                    .then((q) => usePlaybackStore.setState({ queue: q }))
+                    .then(refreshQueue)
                     .catch(() => {});
                   setOpenMenuKey(null);
                 }}
@@ -210,8 +209,7 @@ export default function AlbumDetailView() {
               <button
                 onClick={() => {
                   appendToQueue(tracks)
-                    .then(() => getQueue())
-                    .then((q) => usePlaybackStore.setState({ queue: q }))
+                    .then(refreshQueue)
                     .catch(() => {});
                   setOpenMenuKey(null);
                 }}
@@ -316,8 +314,7 @@ export default function AlbumDetailView() {
                         onClick={(e) => {
                           e.stopPropagation();
                           insertNext([track])
-                            .then(() => getQueue())
-                            .then((q) => usePlaybackStore.setState({ queue: q }))
+                            .then(refreshQueue)
                             .catch(() => {});
                           setOpenMenuKey(null);
                         }}
@@ -328,8 +325,7 @@ export default function AlbumDetailView() {
                         onClick={(e) => {
                           e.stopPropagation();
                           appendToQueue([track])
-                            .then(() => getQueue())
-                            .then((q) => usePlaybackStore.setState({ queue: q }))
+                            .then(refreshQueue)
                             .catch(() => {});
                           setOpenMenuKey(null);
                         }}

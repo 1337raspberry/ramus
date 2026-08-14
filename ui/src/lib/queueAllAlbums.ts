@@ -1,4 +1,5 @@
 import { appendToQueue, getTracksForAlbum } from "./commands";
+import { refreshQueue } from "./refreshQueue";
 import { useConnectionStore } from "../stores/connectionStore";
 import { useDownloadsStore } from "../stores/downloadsStore";
 import { useToastStore } from "../components/Toast";
@@ -48,6 +49,7 @@ export async function appendAlbumsToQueue(albums: Album[]) {
 
   try {
     await appendToQueue(tracks);
+    await refreshQueue();
     const noun = tracks.length === 1 ? "track" : "tracks";
     const skipped = failed > 0 ? ` (${failed} ${failed === 1 ? "album" : "albums"} failed)` : "";
     useToastStore.getState().show(`Added ${tracks.length} ${noun} to queue${skipped}`);

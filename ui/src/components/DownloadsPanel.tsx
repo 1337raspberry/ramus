@@ -442,7 +442,7 @@ function BookmarkDownloadSection({ onError }: { onError: (msg: string | null) =>
       <h3 className="downloads-section-title">Smart Filters</h3>
       {bookmarks.length === 0 ? (
         <div className="downloads-empty">
-          No Smart Filters yet — set a filter and tap Save in the filter panel.
+          No Smart Filters yet — set a filter, then save it from the filter panel.
         </div>
       ) : (
         <ul className="downloads-list">
