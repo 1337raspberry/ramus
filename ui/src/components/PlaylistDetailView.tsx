@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useDownloadsStore } from "../stores/downloadsStore";
@@ -59,7 +59,6 @@ export default function PlaylistDetailView() {
   const [renameValue, setRenameValue] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
   const [rowMenu, setRowMenu] = useState<number | null>(null);
-  const confirmTimer = useRef<number | null>(null);
   const { artSrc, artErr, setArtErr } = useArtUrl(playlist?.thumb, ART_SIZE.MEDIUM);
 
   useEffect(() => {
@@ -69,13 +68,6 @@ export default function PlaylistDetailView() {
     setConfirmDelete(false);
     setRenaming(false);
     setRowMenu(null);
-    // The component survives a playlist switch, so an armed confirmation's
-    // timer would outlive the playlist it belongs to and disarm the NEXT
-    // one early — mid-countdown, from the user's point of view at random.
-    if (confirmTimer.current !== null) {
-      window.clearTimeout(confirmTimer.current);
-      confirmTimer.current = null;
-    }
     if (!playlist) return;
     let cancelled = false;
     getPlaylistItems(playlist.sourceId)
@@ -89,13 +81,6 @@ export default function PlaylistDetailView() {
       cancelled = true;
     };
   }, [playlist?.sourceId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(
-    () => () => {
-      if (confirmTimer.current !== null) window.clearTimeout(confirmTimer.current);
-    },
-    [],
-  );
 
   // Close any open dropdown on outside click (same pattern as
   // AlbumDetailView's menus).
@@ -206,12 +191,7 @@ export default function PlaylistDetailView() {
   };
 
   const handleDelete = () => {
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      confirmTimer.current = window.setTimeout(() => setConfirmDelete(false), 3000);
-      return;
-    }
-    setMenuOpen(false);
+    setConfirmDelete(false);
     deletePlaylist(playlist.sourceId)
       .then(() => {
         useToastStore.getState().show(`Deleted “${playlist.title}”`);
@@ -330,8 +310,14 @@ export default function PlaylistDetailView() {
                 >
                   Rename Playlist
                 </button>
-                <button className="destructive" onClick={handleDelete}>
-                  {confirmDelete ? "Confirm delete?" : "Delete Playlist"}
+                <button
+                  className="destructive"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setConfirmDelete(true);
+                  }}
+                >
+                  Delete Playlist
                 </button>
               </div>
             )}
@@ -513,6 +499,59 @@ export default function PlaylistDetailView() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {confirmDelete &&
+        createPortal(
+          <div
+            className="settings-backdrop"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setConfirmDelete(false);
+            }}
+          >
+            <div
+              className="settings-panel glass picker-modal"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="playlist-delete-title"
+            >
+              <div className="settings-header">
+                <h2 id="playlist-delete-title">Delete Playlist</h2>
+                <button
+                  className="settings-close"
+                  onClick={() => setConfirmDelete(false)}
+                  aria-label="Close"
+                >
+                  x
+                </button>
+              </div>
+              <div className="settings-body">
+                <p className="settings-helper">
+                  Delete “{playlist.title}” from Plex? This affects every app signed into this
+                  account.
+                </p>
+                <div className="bookmark-actions">
+                  <div style={{ flex: 1 }} />
+                  <button
+                    type="button"
+                    className="bookmark-btn"
+                    onClick={() => setConfirmDelete(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="bookmark-btn playlist-delete-confirm"
+                    autoFocus
+                    onClick={handleDelete}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
             </div>
           </div>,
           document.body,

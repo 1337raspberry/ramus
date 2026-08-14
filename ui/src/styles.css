@@ -6278,6 +6278,18 @@ body.is-fullscreen .focus-body {
   color: #fff;
 }
 
+/* Destructive confirm action. Deliberately not accent-tinted: the accent is
+   art-derived and can land anywhere on the wheel, so it carries no warning
+   weight of its own. Matches the red used by destructive menu items. */
+.playlist-delete-confirm {
+  background: rgba(255, 107, 107, 0.85);
+  color: #fff;
+}
+
+.playlist-delete-confirm:hover {
+  background: rgba(255, 107, 107, 1);
+}
+
 /* --- Bookmark editor (shared modal, list layout) --- */
 
 .bookmark-editor .settings-body {
