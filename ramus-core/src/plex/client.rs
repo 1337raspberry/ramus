@@ -1088,6 +1088,33 @@ impl PlexClient {
         self.put(&path, &[("title", title)]).await
     }
 
+    /// Set a playlist's description. Generated playlists keep their recipe
+    /// here so it rides the server object rather than per-device settings.
+    pub async fn set_playlist_summary(
+        &self,
+        rating_key: &str,
+        summary: &str,
+    ) -> Result<(), PlexClientError> {
+        let path = format!("playlists/{}", rating_key);
+        self.put(&path, &[("summary", summary)]).await
+    }
+
+    /// One playlist's metadata, including the fields the list endpoint omits.
+    pub async fn playlist_detail(
+        &self,
+        rating_key: &str,
+    ) -> Result<PlaylistMetadata, PlexClientError> {
+        let path = format!("playlists/{}", rating_key);
+        let body = self.get(&path, &[]).await?;
+        let container: PlaylistContainerResponse =
+            serde_json::from_slice(&body).map_err(|_| PlexClientError::InvalidResponse)?;
+        container
+            .media_container
+            .metadata
+            .and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) })
+            .ok_or(PlexClientError::InvalidResponse)
+    }
+
     /// Delete a whole playlist.
     pub async fn delete_playlist(&self, rating_key: &str) -> Result<(), PlexClientError> {
         let path = format!("playlists/{}", rating_key);

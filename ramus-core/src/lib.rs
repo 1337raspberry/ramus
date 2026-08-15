@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod genre;
+pub mod crates;
 pub mod models;
 pub mod playback;
 pub mod plex;

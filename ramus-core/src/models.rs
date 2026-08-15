@@ -316,6 +316,15 @@ pub struct Playlist {
     /// Total runtime in seconds.
     pub duration: Option<f64>,
     pub thumb: Option<String>,
+    /// Free-text description; also where a generated playlist keeps its
+    /// recipe. `None` for a playlist the mirror predates.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// Whether `summary` carries a readable crate recipe. Derived in Rust
+    /// rather than sniffed in the UI so the recipe format has exactly one
+    /// parser.
+    #[serde(default)]
+    pub is_crate: bool,
 }
 
 /// One entry of a playlist. `playlist_item_id` is Plex's per-entry id — the
@@ -356,10 +365,25 @@ pub struct Track {
     /// column was added; downstream size estimates fall back to
     /// `bitrate × duration` in that case.
     pub file_size_bytes: Option<i64>,
+    /// Crowd popularity supplied by Plex's music metadata, not a local
+    /// measure — it ranks a track against every other copy of it, which is
+    /// what makes it usable for picking an album's standout tracks.
     pub rating_count: Option<i64>,
+    /// Play state as of the last sync. Plays made in other clients only
+    /// land here on the next sync, so treat it as recent-but-not-live.
+    pub view_count: Option<i64>,
+    pub last_viewed_at: Option<i64>,
 }
 
 impl Track {
+    /// Whether the track has never been played, as far as the last sync
+    /// knows. A track synced before the play-state columns existed reports
+    /// `None`, which counts as unplayed — the same way a missing
+    /// `rating_count` counts as no popularity rather than zero.
+    pub fn is_unplayed(&self) -> bool {
+        self.view_count.unwrap_or(0) == 0
+    }
+
     pub fn id(&self) -> &str {
         &self.rating_key
     }
@@ -907,6 +931,8 @@ mod tests {
             disc_number: None,
             file_size_bytes: None,
             rating_count: None,
+            view_count: None,
+            last_viewed_at: None,
         }
     }
 

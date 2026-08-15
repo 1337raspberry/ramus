@@ -5570,6 +5570,9 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-lists-manage {
+  /* Block, not the button default of inline-block: the hub stacks these in
+     a plain block container, so two adjacent ones would share a line. */
+  display: block;
   margin: 10px 20px 0;
   background: none;
   border: none;
@@ -8604,4 +8607,70 @@ body.is-fullscreen .focus-body {
 
 .smartpl-year-sep {
   color: var(--text-secondary);
+}
+
+/* Selected-genre chips in the mix builder. Removal is the chip itself —
+   a separate x target would be under the 44px touch minimum at this size. */
+.crate-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.crate-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.5);
+  border-radius: 14px;
+  background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.14);
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* "Done" strip above the software keyboard. Sits at the keyboard's top edge
+   via --keyboard-inset (pushed in by the host; the keyboard overlays the
+   webview without resizing it, so the page can't measure it itself). Above
+   the settings chassis at z-1000, since it serves a field inside it. */
+.keyboard-done-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--keyboard-inset);
+  z-index: 1200;
+  /* A focused field does not imply an on-screen keyboard: with a hardware
+     keyboard attached the inset stays 0 and the bar would sit uselessly at
+     the bottom of the screen. Multiplying the inset collapses the box to
+     nothing at 0 and releases it for any positive value, so the bar tracks
+     what is actually covered rather than what is merely focused. Padding
+     and border live on the inner element — both would keep drawing at zero
+     height otherwise. */
+  max-height: calc(var(--keyboard-inset) * 999);
+  overflow: hidden;
+  /* Tracks the keyboard's own slide, matching the .text-entry sheet lift. */
+  transition: bottom 220ms ease-out;
+}
+
+.keyboard-done-inner {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 16px;
+  background: #1c1c22;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.keyboard-done-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 600;
+  /* Comfortably past the 44px touch minimum without a visible box. */
+  padding: 8px 12px;
+  min-height: 36px;
+  cursor: pointer;
 }

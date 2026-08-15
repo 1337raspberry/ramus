@@ -4,6 +4,7 @@ pub mod acknowledgements;
 pub mod auth;
 pub mod downloads;
 pub mod library;
+pub mod crates;
 pub mod platform;
 pub mod playback;
 pub mod playlists;

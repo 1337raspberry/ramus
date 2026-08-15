@@ -1,13 +1,21 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Playlist, PlaylistDownloadEstimate, PlaylistItem, Track } from "../lib/types";
+import type {
+  CrateRecipe,
+  Playlist,
+  PlaylistDownloadEstimate,
+  PlaylistItem,
+  Track,
+} from "../lib/types";
 import {
   ART_SIZE,
   deletePlaylist,
   getAlbum,
+  getCrateRecipe,
   getPlaylistItems,
   movePlaylistItem,
   playTracks,
+  regenerateCratePlaylist,
   removePlaylistItem,
   renamePlaylist,
   appendToQueue,
@@ -91,11 +99,27 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
   const [renameBusy, setRenameBusy] = useState(false);
   const [rowSheet, setRowSheet] = useState<number | null>(null);
   const [confirmDownload, setConfirmDownload] = useState(false);
+  // Non-null only for a generated playlist; drives the Regenerate action.
+  const [crateRecipe, setCrateRecipe] = useState<CrateRecipe | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
   const [dlEstimate, setDlEstimate] = useState<PlaylistDownloadEstimate | null>(null);
   const { artSrc, artErr, setArtErr } = useArtUrl(playlist.thumb, ART_SIZE.MEDIUM);
 
   useEffect(() => {
     let cancelled = false;
+    // Smart playlists are server-computed and can't be a crate, so don't spend
+    // a lookup on them.
+    if (playlist.smart) {
+      setCrateRecipe(null);
+    } else {
+      getCrateRecipe(playlist.sourceId)
+        .then((r) => {
+          if (!cancelled) setCrateRecipe(r);
+        })
+        .catch(() => {
+          if (!cancelled) setCrateRecipe(null);
+        });
+    }
     getPlaylistItems(playlist.sourceId)
       .then((list) => {
         if (!cancelled) setItems(list);
@@ -214,6 +238,21 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
       });
   };
 
+  const handleRegenerate = () => {
+    if (regenerating) return;
+    setRegenerating(true);
+    regenerateCratePlaylist(playlist.sourceId)
+      .then((next) => {
+        setItems(next);
+        setShowMenu(false);
+        useToastStore.getState().show(`Regenerated — ${next.length} tracks`);
+      })
+      .catch((e) => {
+        useToastStore.getState().show(String(e) || "Couldn't regenerate");
+      })
+      .finally(() => setRegenerating(false));
+  };
+
   const handleRename = () => {
     const trimmed = renameValue.trim();
     if (!trimmed || renameBusy) return;
@@ -276,9 +315,16 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
   };
 
   const subtitleBits: string[] = [];
+  // Both figures come from the loaded entries rather than the passed-in
+  // playlist, which is a snapshot from the list view: regenerating a crate or
+  // removing a track changes the contents without it, leaving the old
+  // runtime on screen next to a freshly correct count.
   const count = items?.length ?? playlist.trackCount;
+  const duration = items
+    ? items.reduce((total, item) => total + item.track.duration, 0)
+    : playlist.duration;
   if (count != null) subtitleBits.push(`${count} track${count === 1 ? "" : "s"}`);
-  if (playlist.duration) subtitleBits.push(formatLongDuration(playlist.duration));
+  if (duration) subtitleBits.push(formatLongDuration(duration));
   if (playlist.smart) subtitleBits.push("Smart Playlist");
 
   return (
@@ -402,6 +448,11 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
                 >
                   Download Playlist
                 </button>
+                {crateRecipe && (
+                  <button disabled={regenerating} onClick={handleRegenerate}>
+                    {regenerating ? "Regenerating…" : "Regenerate Crate"}
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setShowMenu(false);

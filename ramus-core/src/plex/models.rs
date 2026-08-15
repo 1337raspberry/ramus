@@ -140,6 +140,10 @@ pub struct PlaylistMetadata {
     #[serde(default, deserialize_with = "bool_from_int_or_bool")]
     pub smart: bool,
     pub playlist_type: Option<String>,
+    /// Free-text description. Carries a generated playlist's recipe (see
+    /// `crates::CrateRecipe`) — the server object is the only place a recipe can
+    /// live and still reach every device.
+    pub summary: Option<String>,
     /// Number of tracks.
     pub leaf_count: Option<i64>,
     /// Total runtime in milliseconds.

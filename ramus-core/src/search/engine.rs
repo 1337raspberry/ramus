@@ -834,6 +834,8 @@ mod tests {
                 updated_at: None,
                 file_size_bytes: None,
                 rating_count: None,
+                view_count: None,
+                last_viewed_at: None,
             },
             TrackUpsertRow {
                 title: "Karma Police".into(),
@@ -852,6 +854,8 @@ mod tests {
                 updated_at: None,
                 file_size_bytes: None,
                 rating_count: None,
+                view_count: None,
+                last_viewed_at: None,
             },
             TrackUpsertRow {
                 title: "Angel of Death".into(),
@@ -870,6 +874,8 @@ mod tests {
                 updated_at: None,
                 file_size_bytes: None,
                 rating_count: None,
+                view_count: None,
+                last_viewed_at: None,
             },
             TrackUpsertRow {
                 title: "Raining Blood".into(),
@@ -888,6 +894,8 @@ mod tests {
                 updated_at: None,
                 file_size_bytes: None,
                 rating_count: None,
+                view_count: None,
+                last_viewed_at: None,
             },
             TrackUpsertRow {
                 title: "Everything In Its Right Place".into(),
@@ -906,6 +914,8 @@ mod tests {
                 updated_at: None,
                 file_size_bytes: None,
                 rating_count: None,
+                view_count: None,
+                last_viewed_at: None,
             },
         ])
         .unwrap();
@@ -971,6 +981,8 @@ mod tests {
                 updated_at: None,
                 file_size_bytes: None,
                 rating_count: None,
+                view_count: None,
+                last_viewed_at: None,
             })
             .collect();
         if !rows.is_empty() {

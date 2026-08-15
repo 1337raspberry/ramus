@@ -167,7 +167,9 @@ impl CacheDatabase {
                 userRating DOUBLE,
                 bitrate INTEGER,
                 trackArtist TEXT,
-                fileSizeBytes INTEGER
+                fileSizeBytes INTEGER,
+                viewCount INTEGER,
+                lastViewedAt INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_tracks_albumId ON tracks(albumId);
             CREATE INDEX IF NOT EXISTS idx_tracks_userRating ON tracks(userRating);
@@ -220,7 +222,8 @@ impl CacheDatabase {
                 smart INTEGER NOT NULL DEFAULT 0,
                 trackCount INTEGER,
                 durationMs INTEGER,
-                thumb TEXT
+                thumb TEXT,
+                summary TEXT
             );
 
             CREATE TABLE IF NOT EXISTS playlist_items (
@@ -303,6 +306,28 @@ impl CacheDatabase {
             conn.execute("ALTER TABLE tracks ADD COLUMN ratingCount INTEGER", [])?;
         }
 
+        let has_playlist_summary: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('playlists') WHERE name = 'summary'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_playlist_summary == 0 {
+            conn.execute("ALTER TABLE playlists ADD COLUMN summary TEXT", [])?;
+        }
+
+        // Track-level play state. Both values already arrive on every synced
+        // track; before this they were parsed and dropped, leaving "has this
+        // been played" answerable only at album granularity.
+        let has_track_view_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name = 'viewCount'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_track_view_count == 0 {
+            conn.execute("ALTER TABLE tracks ADD COLUMN viewCount INTEGER", [])?;
+            conn.execute("ALTER TABLE tracks ADD COLUMN lastViewedAt INTEGER", [])?;
+        }
+
         Ok(())
     }
 
@@ -373,6 +398,63 @@ impl CacheDatabase {
             .map(|s| s as &dyn rusqlite::types::ToSql)
             .collect();
         Self::map_album_rows(&mut stmt, params.as_slice(), conn)
+    }
+
+    /// Every track on an album tagged with any of the given genre names,
+    /// deduplicated. Genres are album-level in Plex's model, so this reaches
+    /// tracks through their album's tags rather than a track-level one.
+    ///
+    /// Returns whole albums' worth of tracks on purpose: ranking a track
+    /// against its album siblings needs the siblings, even the ones a caller
+    /// will later discard.
+    pub fn tracks_for_genres(&self, genre_names: &[&str]) -> Result<Vec<Track>, CacheError> {
+        if genre_names.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock();
+
+        // SQLite's default SQLITE_MAX_VARIABLE_NUMBER is 999.
+        const CHUNK_SIZE: usize = 500;
+
+        // An album carrying two of the requested genres yields its tracks
+        // once per chunk it matches, so dedup spans chunks as well as rows.
+        let mut seen = std::collections::HashSet::new();
+        let mut all = Vec::new();
+        for chunk in genre_names.chunks(CHUNK_SIZE) {
+            for track in Self::tracks_for_genres_query(&conn, chunk)? {
+                if seen.insert(track.rating_key.clone()) {
+                    all.push(track);
+                }
+            }
+        }
+        Ok(all)
+    }
+
+    fn tracks_for_genres_query(
+        conn: &rusqlite::Connection,
+        genre_names: &[&str],
+    ) -> Result<Vec<Track>, CacheError> {
+        let placeholders: Vec<String> = (1..=genre_names.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "SELECT DISTINCT {TRACK_COLUMNS}
+             FROM tracks t
+             JOIN albums al ON al.id = t.albumId
+             JOIN artists ar ON ar.id = t.artistId
+             JOIN album_genres ag ON ag.albumId = al.id
+             JOIN genres g ON g.id = ag.genreId
+             WHERE g.name COLLATE NOCASE IN ({})
+             ORDER BY al.sourceId, t.discNumber, t.trackNumber",
+            placeholders.join(", ")
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::types::ToSql> = genre_names
+            .iter()
+            .map(|s| s as &dyn rusqlite::types::ToSql)
+            .collect();
+        let tracks = stmt
+            .query_map(params.as_slice(), Self::map_track_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(tracks)
     }
 
     /// Single album by source_id.
@@ -462,14 +544,13 @@ impl CacheDatabase {
     pub fn track_by_source_id(&self, source_id: &str) -> Result<Option<Track>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
-                    al.title, al.sourceId, t.trackNumber, t.durationMs,
-                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
-                    t.fileSizeBytes, t.ratingCount
+            &format!(
+                "SELECT {TRACK_COLUMNS}
              FROM tracks t
              JOIN albums al ON al.id = t.albumId
              JOIN artists ar ON ar.id = t.artistId
-             WHERE t.sourceId = ?1",
+             WHERE t.sourceId = ?1"
+            ),
         )?;
         let mut tracks = stmt
             .query_map(params![source_id], Self::map_track_row)?
@@ -481,15 +562,14 @@ impl CacheDatabase {
     pub fn tracks_for_album(&self, album_source_id: &str) -> Result<Vec<Track>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
-                    al.title, al.sourceId, t.trackNumber, t.durationMs,
-                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
-                    t.fileSizeBytes, t.ratingCount
+            &format!(
+                "SELECT {TRACK_COLUMNS}
              FROM tracks t
              JOIN albums al ON al.id = t.albumId
              JOIN artists ar ON ar.id = t.artistId
              WHERE al.sourceId = ?1
-             ORDER BY t.discNumber, t.trackNumber",
+             ORDER BY t.discNumber, t.trackNumber"
+            ),
         )?;
         let tracks = stmt
             .query_map(params![album_source_id], Self::map_track_row)?
@@ -501,15 +581,14 @@ impl CacheDatabase {
     pub fn favourite_tracks(&self) -> Result<Vec<Track>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
-                    al.title, al.sourceId, t.trackNumber, t.durationMs,
-                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
-                    t.fileSizeBytes, t.ratingCount
+            &format!(
+                "SELECT {TRACK_COLUMNS}
              FROM tracks t
              JOIN albums al ON al.id = t.albumId
              JOIN artists ar ON ar.id = t.artistId
              WHERE t.userRating >= 10.0
-             ORDER BY ar.name COLLATE NOCASE, al.year, t.discNumber, t.trackNumber",
+             ORDER BY ar.name COLLATE NOCASE, al.year, t.discNumber, t.trackNumber"
+            ),
         )?;
         let tracks = stmt
             .query_map(params![], Self::map_track_row)?
@@ -1094,7 +1173,8 @@ impl CacheDatabase {
         Ok(albums)
     }
 
-    /// Map a 16-column track row into a [`Track`].
+    /// Map a track row selected via [`TRACK_COLUMNS`] into a [`Track`].
+    /// Positional, so the two must be edited together.
     pub(super) fn map_track_row(row: &rusqlite::Row) -> rusqlite::Result<Track> {
         let rating: Option<f64> = row.get(11)?;
         Ok(Track {
@@ -1117,9 +1197,23 @@ impl CacheDatabase {
             disc_number: row.get(13)?,
             file_size_bytes: row.get(14)?,
             rating_count: row.get(15)?,
+            view_count: row.get(16)?,
+            last_viewed_at: row.get(17)?,
         })
     }
 }
+
+/// The column list every `Track` query selects, in exactly the order
+/// [`CacheDatabase::map_track_row`] reads them. Shared because the mapper
+/// indexes positionally: six hand-maintained copies of this list would only
+/// have to drift once to start silently mapping the wrong column.
+///
+/// Queries needing extra columns append them, so their own indices start
+/// after this list.
+pub(super) const TRACK_COLUMNS: &str = "t.sourceId, t.title, ar.name, t.trackArtist,
+     al.title, al.sourceId, t.trackNumber, t.durationMs,
+     t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
+     t.fileSizeBytes, t.ratingCount, t.viewCount, t.lastViewedAt";
 
 #[cfg(test)]
 mod tests {
@@ -1195,6 +1289,8 @@ mod tests {
             updated_at: Some(1000),
             file_size_bytes: None,
             rating_count: None,
+            view_count: None,
+            last_viewed_at: None,
         }])
         .unwrap();
     }
@@ -1405,6 +1501,100 @@ mod tests {
         assert!(r.is_empty());
         let r = db.albums_by_year_range(RangeOp::Equal, 1999).unwrap();
         assert!(r.is_empty());
+    }
+
+    #[test]
+    fn test_tracks_for_genres_returns_whole_albums() {
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Radiohead");
+        let ok = seed_album(&db, "al1", "OK Computer", artist_id, Some(1997));
+        let other = seed_album(&db, "al2", "Unrelated", artist_id, Some(2001));
+        seed_track(&db, "tr1", "Airbag", ok, artist_id);
+        seed_track(&db, "tr2", "Karma Police", ok, artist_id);
+        seed_track(&db, "tr3", "Elsewhere", other, artist_id);
+
+        let rock = db.upsert_genre("Rock").unwrap();
+        let jazz = db.upsert_genre("Jazz").unwrap();
+        db.set_album_genres(ok, &[rock]).unwrap();
+        db.set_album_genres(other, &[jazz]).unwrap();
+
+        let tracks = db.tracks_for_genres(&["Rock"]).unwrap();
+        let mut keys: Vec<&str> = tracks.iter().map(|t| t.rating_key.as_str()).collect();
+        keys.sort_unstable();
+        assert_eq!(keys, vec!["tr1", "tr2"]);
+    }
+
+    #[test]
+    fn test_tracks_for_genres_matches_case_insensitively() {
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Band");
+        let album_id = seed_album(&db, "al1", "Record", artist_id, Some(2010));
+        seed_track(&db, "tr1", "Song", album_id, artist_id);
+        let g = db.upsert_genre("Post-Hardcore").unwrap();
+        db.set_album_genres(album_id, &[g]).unwrap();
+
+        // The genre tree hands back lowercased names, so the query must not
+        // depend on the tag's stored casing.
+        assert_eq!(db.tracks_for_genres(&["post-hardcore"]).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_tracks_for_genres_yields_each_track_once_across_matching_genres() {
+        // An album tagged with two of the requested genres would otherwise
+        // contribute its tracks twice, inflating a mix with duplicates.
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Band");
+        let album_id = seed_album(&db, "al1", "Record", artist_id, Some(2010));
+        seed_track(&db, "tr1", "Song", album_id, artist_id);
+
+        let emo = db.upsert_genre("Emo").unwrap();
+        let screamo = db.upsert_genre("Screamo").unwrap();
+        db.set_album_genres(album_id, &[emo, screamo]).unwrap();
+
+        let tracks = db.tracks_for_genres(&["Emo", "Screamo"]).unwrap();
+        assert_eq!(tracks.len(), 1);
+    }
+
+    #[test]
+    fn test_tracks_for_genres_is_empty_for_no_genres() {
+        let db = setup();
+        assert!(db.tracks_for_genres(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_track_play_state_survives_a_round_trip() {
+        // The mix's unplayed rule reads these columns; a sync that dropped
+        // them would silently make every track look unplayed.
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Band");
+        let album_id = seed_album(&db, "al1", "Record", artist_id, Some(2010));
+        db.batch_upsert_tracks(&[TrackUpsertRow {
+            title: "Song".into(),
+            album_id,
+            artist_id,
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration_ms: Some(240000),
+            source_id: "tr1".into(),
+            codec: Some("flac".into()),
+            part_key: None,
+            stream_id: None,
+            user_rating: None,
+            bitrate: Some(1411),
+            track_artist: None,
+            updated_at: Some(1000),
+            file_size_bytes: None,
+            rating_count: Some(4200),
+            view_count: Some(3),
+            last_viewed_at: Some(1700000000),
+        }])
+        .unwrap();
+
+        let track = db.track_by_source_id("tr1").unwrap().unwrap();
+        assert_eq!(track.rating_count, Some(4200));
+        assert_eq!(track.view_count, Some(3));
+        assert_eq!(track.last_viewed_at, Some(1700000000));
+        assert!(!track.is_unplayed());
     }
 
     #[test]
@@ -2003,6 +2193,8 @@ mod tests {
             updated_at: Some(1000),
             file_size_bytes: None,
             rating_count: None,
+            view_count: None,
+            last_viewed_at: None,
         }])
         .unwrap();
     }

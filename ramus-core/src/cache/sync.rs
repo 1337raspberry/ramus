@@ -557,6 +557,8 @@ impl SyncEngine {
                 updated_at: item.updated_at,
                 file_size_bytes,
                 rating_count: item.rating_count,
+                view_count: item.view_count,
+                last_viewed_at: item.last_viewed_at,
             });
         }
 

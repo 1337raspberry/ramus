@@ -327,6 +327,8 @@ mod tests {
                 updated_at: Some(1000),
                 file_size_bytes: Some(42_000_000),
                 rating_count: None,
+                view_count: None,
+                last_viewed_at: None,
             },
             TrackUpsertRow {
                 title: "Karma Police".into(),
@@ -345,6 +347,8 @@ mod tests {
                 updated_at: Some(1000),
                 file_size_bytes: Some(30_000_000),
                 rating_count: None,
+                view_count: None,
+                last_viewed_at: None,
             },
         ])
         .unwrap();

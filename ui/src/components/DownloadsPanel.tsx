@@ -359,6 +359,7 @@ function PlaylistDownloadSection({ onError }: { onError: (msg: string | null) =>
                 >
                   <span className="downloads-source-name">{p.title}</span>
                   {p.smart && <span className="mobile-lists-smart-badge">SMART</span>}
+                  {p.isCrate && <span className="mobile-lists-smart-badge">CRATE</span>}
                   {p.trackCount != null && (
                     <span className="downloads-source-count">{p.trackCount}</span>
                   )}

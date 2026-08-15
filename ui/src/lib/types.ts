@@ -134,6 +134,38 @@ export interface Playlist {
   /** Total runtime in seconds. */
   duration: number | null;
   thumb: string | null;
+  /** Free-text description; also where a generated playlist keeps its recipe. */
+  summary: string | null;
+  /** Whether `summary` holds a readable crate recipe. Derived in Rust — the
+   * recipe format has one parser and the UI is not it. */
+  isCrate: boolean;
+}
+
+/** Rules for a generated playlist ("crate") — selection Plex's own smart-filter
+ * grammar can't express. Round-trips through the playlist's `summary`, so a
+ * crate can be regenerated from any device rather than only the one that made
+ * it. */
+export interface CrateRecipe {
+  genres: string[];
+  includeSubgenres: boolean;
+  /** Keep the top N tracks of each album by popularity; 0 disables the rule. */
+  hotPerAlbum: number;
+  unplayedOnly: boolean;
+  /** Tracks in the finished playlist; 0 means no limit. */
+  count: number;
+}
+
+/** What a recipe would produce, without creating anything. */
+export interface CrateEstimate {
+  genreTags: number;
+  /** Tracks in the matched genres, before any rule runs. */
+  candidateTracks: number;
+  candidateAlbums: number;
+  /** Tracks left after the rules — the pool the crate draws from. Unlike
+   * `candidateTracks`, this responds to the per-album and unplayed settings. */
+  eligibleTracks: number;
+  selected: number;
+  description: string;
 }
 
 /** One playlist entry. `playlistItemId` is Plex's per-entry id — the handle

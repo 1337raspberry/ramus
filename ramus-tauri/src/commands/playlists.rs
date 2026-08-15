@@ -19,13 +19,13 @@ use crate::state::AppState;
 use super::sync::get_library_key;
 use super::{with_cache, CmdResult};
 
-fn get_machine_identifier() -> CmdResult<String> {
+pub(super) fn get_machine_identifier() -> CmdResult<String> {
     let token_store = TokenStore::new().map_err(|e| e.to_string())?;
     let config = auth::stored_server_config(&token_store).ok_or("No server config")?;
     Ok(config.machine_identifier)
 }
 
-fn to_upsert_row(m: &PlaylistMetadata) -> PlaylistUpsertRow {
+pub(super) fn to_upsert_row(m: &PlaylistMetadata) -> PlaylistUpsertRow {
     PlaylistUpsertRow {
         source_id: m.rating_key.clone(),
         title: m.title.clone(),
@@ -33,6 +33,7 @@ fn to_upsert_row(m: &PlaylistMetadata) -> PlaylistUpsertRow {
         track_count: m.leaf_count,
         duration_ms: m.duration,
         thumb: m.composite.clone(),
+        summary: m.summary.clone(),
     }
 }
 
@@ -48,7 +49,7 @@ fn ensure_not_smart(state: &State<'_, AppState>, source_id: &str) -> CmdResult<(
 
 /// Fetch a playlist's entries from the server, mirror them, and return the
 /// mirrored (library-joined) view.
-async fn refresh_items(
+pub(super) async fn refresh_items(
     state: &State<'_, AppState>,
     source_id: &str,
 ) -> CmdResult<Vec<PlaylistItem>> {
@@ -140,6 +141,9 @@ pub async fn create_playlist(
         track_count: created.leaf_count,
         duration: created.duration.map(|ms| ms as f64 / 1000.0),
         thumb: created.composite.clone(),
+        summary: created.summary.clone(),
+        // A freshly created regular/smart playlist carries no recipe.
+        is_crate: false,
     })
 }
 
@@ -190,6 +194,9 @@ pub async fn create_smart_playlist(
         track_count: created.leaf_count,
         duration: created.duration.map(|ms| ms as f64 / 1000.0),
         thumb: created.composite.clone(),
+        summary: created.summary.clone(),
+        // A freshly created regular/smart playlist carries no recipe.
+        is_crate: false,
     })
 }
 

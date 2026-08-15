@@ -13,6 +13,8 @@ import type {
   GenreTreeResponse,
   LibrarySection,
   LyricsFetchResult,
+  CrateEstimate,
+  CrateRecipe,
   Playlist,
   PlaylistItem,
   PlexServer,
@@ -255,6 +257,24 @@ export const deletePlaylist = (sourceId: string) => invoke<void>("delete_playlis
 
 export const getGenreSuggestions = (query: string, limit = 200) =>
   invoke<string[]>("get_genre_suggestions", { query, limit });
+
+// --- Generated playlists (crates) ---
+
+/** Preview what a recipe would produce, without creating anything. */
+export const estimateCrate = (recipe: CrateRecipe) =>
+  invoke<CrateEstimate>("estimate_crate", { recipe });
+
+/** Build a crate and store it as an ordinary playlist carrying its recipe. */
+export const createCratePlaylist = (title: string, recipe: CrateRecipe) =>
+  invoke<Playlist>("create_crate_playlist", { title, recipe });
+
+/** A playlist's recipe, or null when it isn't a crate. */
+export const getCrateRecipe = (sourceId: string) =>
+  invoke<CrateRecipe | null>("get_crate_recipe", { sourceId });
+
+/** Re-run a crate's recipe and replace its tracks. */
+export const regenerateCratePlaylist = (sourceId: string) =>
+  invoke<PlaylistItem[]>("regenerate_crate_playlist", { sourceId });
 
 export const expandGenreToLibraryTags = (genre: string) =>
   invoke<string[]>("expand_genre_to_library_tags", { genre });

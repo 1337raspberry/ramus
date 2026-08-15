@@ -6,6 +6,7 @@ use rusqlite::params;
 
 use super::db::{CacheDatabase, CacheError};
 use crate::models::{Playlist, PlaylistItem};
+use super::db::TRACK_COLUMNS;
 
 /// One playlist row as fetched from the server, ready to mirror.
 #[derive(Debug, Clone)]
@@ -16,6 +17,7 @@ pub struct PlaylistUpsertRow {
     pub track_count: Option<i64>,
     pub duration_ms: Option<i64>,
     pub thumb: Option<String>,
+    pub summary: Option<String>,
 }
 
 /// One playlist entry as fetched from the server: Plex's per-item id plus
@@ -47,14 +49,19 @@ impl CacheDatabase {
                 }
             }
             let mut stmt = tx.prepare_cached(
-                "INSERT INTO playlists (sourceId, title, smart, trackCount, durationMs, thumb)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO playlists (sourceId, title, smart, trackCount, durationMs, thumb, summary)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(sourceId) DO UPDATE SET
                      title = excluded.title,
                      smart = excluded.smart,
                      trackCount = excluded.trackCount,
                      durationMs = excluded.durationMs,
-                     thumb = excluded.thumb",
+                     thumb = excluded.thumb,
+                     -- The playlist listing doesn't carry `summary`, so a
+                     -- refresh must not blank a description already learned
+                     -- from a detail fetch: that's where a crate keeps its
+                     -- recipe, and losing it re-fetches on every open.
+                     summary = COALESCE(excluded.summary, playlists.summary)",
             )?;
             for row in rows {
                 stmt.execute(params![
@@ -64,6 +71,7 @@ impl CacheDatabase {
                     row.track_count,
                     row.duration_ms,
                     row.thumb,
+                    row.summary,
                 ])?;
             }
         }
@@ -76,14 +84,15 @@ impl CacheDatabase {
     pub fn upsert_playlist(&self, row: &PlaylistUpsertRow) -> Result<(), CacheError> {
         let conn = self.conn.lock();
         conn.execute(
-            "INSERT INTO playlists (sourceId, title, smart, trackCount, durationMs, thumb)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO playlists (sourceId, title, smart, trackCount, durationMs, thumb, summary)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(sourceId) DO UPDATE SET
                  title = excluded.title,
                  smart = excluded.smart,
                  trackCount = excluded.trackCount,
                  durationMs = excluded.durationMs,
-                 thumb = excluded.thumb",
+                 thumb = excluded.thumb,
+                 summary = COALESCE(excluded.summary, playlists.summary)",
             params![
                 row.source_id,
                 row.title,
@@ -91,6 +100,7 @@ impl CacheDatabase {
                 row.track_count,
                 row.duration_ms,
                 row.thumb,
+                row.summary,
             ],
         )?;
         Ok(())
@@ -135,12 +145,13 @@ impl CacheDatabase {
     pub fn all_playlists(&self) -> Result<Vec<Playlist>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT sourceId, title, smart, trackCount, durationMs, thumb
+            "SELECT sourceId, title, smart, trackCount, durationMs, thumb, summary
              FROM playlists
              ORDER BY title COLLATE NOCASE",
         )?;
         let playlists = stmt
             .query_map([], |row| {
+                let summary: Option<String> = row.get(6)?;
                 Ok(Playlist {
                     source_id: row.get(0)?,
                     title: row.get(1)?,
@@ -148,6 +159,11 @@ impl CacheDatabase {
                     track_count: row.get(3)?,
                     duration: row.get::<_, Option<i64>>(4)?.map(|ms| ms as f64 / 1000.0),
                     thumb: row.get(5)?,
+                    is_crate: summary
+                        .as_deref()
+                        .and_then(crate::crates::CrateRecipe::from_summary)
+                        .is_some(),
+                    summary,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -162,22 +178,21 @@ impl CacheDatabase {
     pub fn playlist_items(&self, playlist_source_id: &str) -> Result<Vec<PlaylistItem>, CacheError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
-                    al.title, al.sourceId, t.trackNumber, t.durationMs,
-                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
-                    t.fileSizeBytes, t.ratingCount, pi.plexItemId
+            &format!(
+                "SELECT {TRACK_COLUMNS}, pi.plexItemId
              FROM playlist_items pi
              JOIN playlists p ON p.id = pi.playlistId
              JOIN tracks t ON t.sourceId = pi.trackSourceId
              JOIN albums al ON al.id = t.albumId
              JOIN artists ar ON ar.id = t.artistId
              WHERE p.sourceId = ?1
-             ORDER BY pi.position",
+             ORDER BY pi.position"
+            ),
         )?;
         let items = stmt
             .query_map(params![playlist_source_id], |row| {
                 let track = Self::map_track_row(row)?;
-                let playlist_item_id: Option<i64> = row.get(16)?;
+                let playlist_item_id: Option<i64> = row.get(18)?;
                 Ok(PlaylistItem {
                     playlist_item_id,
                     track,
@@ -260,6 +275,7 @@ mod tests {
             track_count: Some(2),
             duration_ms: Some(360_000),
             thumb: None,
+            summary: None,
         }
     }
 
@@ -284,7 +300,7 @@ mod tests {
         let db = setup();
         seed_track(&db, "t1", "One");
         seed_track(&db, "t2", "Two");
-        db.replace_playlists(&[row("p1", "Mix", false)]).unwrap();
+        db.replace_playlists(&[row("p1", "Crate", false)]).unwrap();
         db.replace_playlist_items(
             "p1",
             &[
@@ -338,7 +354,7 @@ mod tests {
     fn test_replace_playlist_items_replaces_wholesale() {
         let db = setup();
         seed_track(&db, "t1", "One");
-        db.replace_playlists(&[row("p1", "Mix", false)]).unwrap();
+        db.replace_playlists(&[row("p1", "Crate", false)]).unwrap();
         db.replace_playlist_items(
             "p1",
             &[PlaylistItemRow { plex_item_id: Some(1), track_source_id: "t1".into() }],
@@ -358,7 +374,7 @@ mod tests {
     fn test_rename_playlist_updates_title_and_keeps_items() {
         let db = setup();
         seed_track(&db, "t1", "One");
-        db.replace_playlists(&[row("p1", "Mix", false)]).unwrap();
+        db.replace_playlists(&[row("p1", "Crate", false)]).unwrap();
         db.replace_playlist_items(
             "p1",
             &[PlaylistItemRow { plex_item_id: Some(1), track_source_id: "t1".into() }],
@@ -379,7 +395,7 @@ mod tests {
     fn test_remove_playlist_drops_items() {
         let db = setup();
         seed_track(&db, "t1", "One");
-        db.replace_playlists(&[row("p1", "Mix", false)]).unwrap();
+        db.replace_playlists(&[row("p1", "Crate", false)]).unwrap();
         db.replace_playlist_items(
             "p1",
             &[PlaylistItemRow { plex_item_id: Some(1), track_source_id: "t1".into() }],

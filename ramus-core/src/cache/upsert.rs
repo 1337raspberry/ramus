@@ -60,6 +60,8 @@ pub struct TrackUpsertRow {
     pub updated_at: Option<i64>,
     pub file_size_bytes: Option<i64>,
     pub rating_count: Option<i64>,
+    pub view_count: Option<i64>,
+    pub last_viewed_at: Option<i64>,
 }
 
 impl CacheDatabase {
@@ -161,8 +163,8 @@ impl CacheDatabase {
 
         {
             let mut stmt = tx.prepare_cached(
-                "INSERT INTO tracks (title, albumId, artistId, trackNumber, discNumber, durationMs, sourceId, codec, partKey, streamId, userRating, bitrate, trackArtist, updatedAt, fileSizeBytes, ratingCount)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                "INSERT INTO tracks (title, albumId, artistId, trackNumber, discNumber, durationMs, sourceId, codec, partKey, streamId, userRating, bitrate, trackArtist, updatedAt, fileSizeBytes, ratingCount, viewCount, lastViewedAt)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
                  ON CONFLICT(sourceId) DO UPDATE SET
                      title = excluded.title,
                      albumId = excluded.albumId,
@@ -178,7 +180,9 @@ impl CacheDatabase {
                      trackArtist = excluded.trackArtist,
                      updatedAt = excluded.updatedAt,
                      fileSizeBytes = COALESCE(excluded.fileSizeBytes, tracks.fileSizeBytes),
-                     ratingCount = excluded.ratingCount
+                     ratingCount = excluded.ratingCount,
+                     viewCount = excluded.viewCount,
+                     lastViewedAt = excluded.lastViewedAt
                  RETURNING id",
             )?;
 
@@ -205,6 +209,8 @@ impl CacheDatabase {
                         row.updated_at,
                         row.file_size_bytes,
                         row.rating_count,
+                        row.view_count,
+                        row.last_viewed_at,
                     ],
                     |r| r.get(0),
                 )?;

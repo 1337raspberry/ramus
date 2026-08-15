@@ -7,6 +7,7 @@ use crate::util::{escape_fts5, escape_like};
 
 use super::db::{
     AlbumSearchRow, ArtistSearchRow, CacheDatabase, CacheError, GenreSearchRow, TrackSearchRow,
+    TRACK_COLUMNS,
 };
 
 /// (codec, bitrate) per album source id, for quality badges.
@@ -81,16 +82,15 @@ impl CacheDatabase {
             return Ok(Vec::new());
         }
         let mut stmt = conn.prepare(
-            "SELECT t.sourceId, t.title, ar.name, t.trackArtist,
-                    al.title, al.sourceId, t.trackNumber, t.durationMs,
-                    t.codec, t.partKey, al.artUrl, t.userRating, t.bitrate, t.discNumber,
-                    t.fileSizeBytes, t.ratingCount
+            &format!(
+                "SELECT {TRACK_COLUMNS}
              FROM tracks_fts fts
              JOIN tracks t ON t.id = fts.rowid
              JOIN albums al ON al.id = t.albumId
              JOIN artists ar ON ar.id = t.artistId
              WHERE tracks_fts MATCH ?1
-             ORDER BY rank",
+             ORDER BY rank"
+            ),
         )?;
         let tracks = stmt
             .query_map(params![fts_query], Self::map_track_row)?

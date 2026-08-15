@@ -170,6 +170,7 @@ function ListsPanel({
           >
             <span className="lists-panel-row-name">{p.title}</span>
             {p.smart && <span className="mobile-lists-smart-badge">SMART</span>}
+            {p.isCrate && <span className="mobile-lists-smart-badge">CRATE</span>}
           </button>
         ))
       )}

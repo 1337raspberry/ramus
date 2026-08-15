@@ -9,6 +9,7 @@ import { filtersFromBookmark } from "../lib/bookmark";
 import { useArtUrl } from "../lib/useArtUrl";
 import { IconChevronRight, IconMusicNote } from "../components/Icons";
 import BookmarkEditor from "../components/BookmarkEditor";
+import CrateBuilder from "./CrateBuilder";
 import SmartPlaylistBuilder from "./SmartPlaylistBuilder";
 import type { Bookmark, Playlist } from "../lib/types";
 
@@ -47,6 +48,7 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
   const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [showSmartBuilder, setShowSmartBuilder] = useState(false);
+  const [showCrateBuilder, setShowCrateBuilder] = useState(false);
 
   useEffect(() => {
     getAllCollectionNames()
@@ -138,6 +140,7 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
             <HubThumb thumb={p.thumb} />
             <span className="mobile-lists-row-name">{p.title}</span>
             {p.smart && <span className="mobile-lists-smart-badge">SMART</span>}
+            {p.isCrate && <span className="mobile-lists-smart-badge">CRATE</span>}
             {p.trackCount != null && <span className="mobile-lists-row-count">{p.trackCount}</span>}
             <IconChevronRight size={18} className="mobile-lists-chevron" />
           </button>
@@ -145,6 +148,9 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
       )}
       <button className="mobile-lists-manage" onClick={() => setShowSmartBuilder(true)}>
         New Smart Playlist…
+      </button>
+      <button className="mobile-lists-manage" onClick={() => setShowCrateBuilder(true)}>
+        New Crate…
       </button>
 
       <div className="mobile-lists-section-title">Collections</div>
@@ -191,6 +197,18 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
       )}
 
       {showEditor && <BookmarkEditor onDismiss={() => setShowEditor(false)} />}
+      {showCrateBuilder && (
+        <CrateBuilder
+          onDismiss={() => setShowCrateBuilder(false)}
+          onCreated={(p) => {
+            setShowCrateBuilder(false);
+            getPlaylists()
+              .then(setPlaylists)
+              .catch(() => {});
+            useLibraryStore.setState({ browsePlaylist: p });
+          }}
+        />
+      )}
       {showSmartBuilder && (
         <SmartPlaylistBuilder
           onDismiss={() => setShowSmartBuilder(false)}

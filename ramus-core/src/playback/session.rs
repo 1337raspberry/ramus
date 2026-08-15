@@ -236,6 +236,8 @@ mod tests {
             disc_number: None,
             file_size_bytes: None,
             rating_count: None,
+            view_count: None,
+            last_viewed_at: None,
         }
     }
 
