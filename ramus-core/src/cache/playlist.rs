@@ -213,6 +213,23 @@ impl CacheDatabase {
         Ok(())
     }
 
+    /// Overwrite one playlist's summary in the mirror. Crate edits use this
+    /// to keep the mirrored recipe in lockstep with the server's the moment
+    /// it's accepted — the recipe loader trusts a mirrored summary without
+    /// refetching, so a stale one would regenerate under the old rules.
+    pub fn set_playlist_summary(
+        &self,
+        playlist_source_id: &str,
+        summary: &str,
+    ) -> Result<(), CacheError> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE playlists SET summary = ?2 WHERE sourceId = ?1",
+            params![playlist_source_id, summary],
+        )?;
+        Ok(())
+    }
+
     /// Drop one playlist (and its entries) from the mirror.
     pub fn remove_playlist(&self, playlist_source_id: &str) -> Result<(), CacheError> {
         let conn = self.conn.lock();

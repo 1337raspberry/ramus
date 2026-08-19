@@ -1,18 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { createCratePlaylist, estimateCrate, getGenreSuggestions } from "../lib/commands";
+import {
+  createCratePlaylist,
+  estimateCrate,
+  getGenreSuggestions,
+  updateCratePlaylist,
+} from "../lib/commands";
 import { pushBackHandler } from "../lib/backHandler";
 import { useToastStore } from "../components/Toast";
 import KeyboardDoneBar from "./KeyboardDoneBar";
-import type { CrateEstimate, CrateRecipe, Playlist } from "../lib/types";
+import type { CrateEstimate, CrateRecipe, CrateUpdate, Playlist } from "../lib/types";
 
 interface Props {
-  onCreated: (playlist: Playlist) => void;
+  /** Present when editing an existing crate; absent when creating one. */
+  existing?: { sourceId: string; recipe: CrateRecipe };
+  onCreated?: (playlist: Playlist) => void;
+  onSaved?: (update: CrateUpdate, recipe: CrateRecipe) => void;
   onDismiss: () => void;
 }
 
 const HOT_OPTIONS = [
-  { value: "0", label: "Every track" },
   { value: "1", label: "Best track per album" },
   { value: "2", label: "Best 2 per album" },
   { value: "3", label: "Best 3 per album" },
@@ -23,32 +30,46 @@ const COUNT_OPTIONS = [
   { value: "25", label: "25 tracks" },
   { value: "50", label: "50 tracks" },
   { value: "100", label: "100 tracks" },
-  { value: "0", label: "No limit" },
 ];
 
 const GENRE_SUGGESTION_LIMIT = 40;
 
+/** Snap a stored value onto the options the control offers, so a legacy
+ * recipe (uncapped, or with the per-album rule off) still loads for editing
+ * rather than rendering a select with no matching option. */
+const clampOption = (value: number, options: { value: string }[], fallback: string) =>
+  options.some((o) => o.value === String(value)) ? String(value) : fallback;
+
 /**
- * Editor for a generated playlist. Unlike a smart playlist, the rules run
- * here rather than on the server — popularity ranking and genre-tree
- * expansion have no equivalent in Plex's filter grammar — so the result is
- * a fixed track list that a Regenerate action re-rolls on demand.
+ * Editor for a discovery crate. Unlike a smart playlist, the rules run here
+ * rather than on the server — popularity ranking and genre-tree expansion
+ * have no equivalent in Plex's filter grammar — so the result is a fixed
+ * track list that a Regenerate action re-rolls on demand.
+ *
+ * The playlist's name is derived from the rules (in Rust, alongside the
+ * recipe parser), never typed: editing a crate renames it to match, so the
+ * title always states what's inside.
  */
-export default function CrateBuilder({ onCreated, onDismiss }: Props) {
-  const [title, setTitle] = useState("");
+export default function CrateBuilder({ existing, onCreated, onSaved, onDismiss }: Props) {
+  const [genre, setGenre] = useState<string | null>(existing?.recipe.genres[0] ?? null);
   const [genreQuery, setGenreQuery] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [genres, setGenres] = useState<string[]>([]);
-  const [includeSubgenres, setIncludeSubgenres] = useState(true);
-  const [hotPerAlbum, setHotPerAlbum] = useState("2");
-  const [unplayedOnly, setUnplayedOnly] = useState(true);
-  const [count, setCount] = useState("25");
+  const [includeSubgenres, setIncludeSubgenres] = useState(
+    existing?.recipe.includeSubgenres ?? true,
+  );
+  const [hotPerAlbum, setHotPerAlbum] = useState(
+    existing ? clampOption(existing.recipe.hotPerAlbum, HOT_OPTIONS, "2") : "2",
+  );
+  const [unplayedOnly, setUnplayedOnly] = useState(existing?.recipe.unplayedOnly ?? true);
+  const [count, setCount] = useState(
+    existing ? clampOption(existing.recipe.count, COUNT_OPTIONS, "25") : "25",
+  );
   const [estimate, setEstimate] = useState<CrateEstimate | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [fieldFocused, setFieldFocused] = useState(false);
 
-  // Moving between the two fields fires blur then focus, so reacting to blur
+  // Moving between fields fires blur then focus, so reacting to blur
   // directly would flash the Done bar out and back. Defer it by a tick and
   // let an arriving focus cancel it.
   const blurTimer = useRef<number | null>(null);
@@ -71,13 +92,13 @@ export default function CrateBuilder({ onCreated, onDismiss }: Props) {
 
   const recipe = useMemo<CrateRecipe>(
     () => ({
-      genres,
+      genres: genre ? [genre] : [],
       includeSubgenres,
       hotPerAlbum: Number(hotPerAlbum),
       unplayedOnly,
       count: Number(count),
     }),
-    [genres, includeSubgenres, hotPerAlbum, unplayedOnly, count],
+    [genre, includeSubgenres, hotPerAlbum, unplayedOnly, count],
   );
 
   useEffect(
@@ -104,7 +125,7 @@ export default function CrateBuilder({ onCreated, onDismiss }: Props) {
   // first N tags alphabetically, which is too few of ~600 to browse and only
   // ever showed the A's — so it read as the whole genre list while costing a
   // large chunk of the form's height.
-  const searching = genreQuery.trim().length > 0;
+  const searching = genre === null && genreQuery.trim().length > 0;
 
   useEffect(() => {
     const query = genreQuery.trim();
@@ -130,7 +151,7 @@ export default function CrateBuilder({ onCreated, onDismiss }: Props) {
 
   // The estimate is a whole-library query, so it trails the controls rather
   // than firing per keystroke. A stale reply must never land on top of a
-  // newer one — the counts drive the Create button's copy.
+  // newer one — the counts drive the action button's copy.
   const estimateSeq = useRef(0);
   useEffect(() => {
     if (recipe.genres.length === 0) {
@@ -156,25 +177,48 @@ export default function CrateBuilder({ onCreated, onDismiss }: Props) {
     return () => clearTimeout(id);
   }, [recipe]);
 
-  const toggleGenre = (name: string) => {
-    setGenres((prev) => (prev.includes(name) ? prev.filter((g) => g !== name) : [...prev, name]));
+  const pickGenre = (name: string) => {
+    setGenre(name);
+    setGenreQuery("");
+    setSuggestions([]);
   };
 
-  const canCreate = !!title.trim() && genres.length > 0 && !busy && (estimate?.selected ?? 0) > 0;
+  const clearGenre = () => {
+    setGenre(null);
+    setEstimate(null);
+  };
+
+  const canSubmit = genre !== null && !busy && (estimate?.selected ?? 0) > 0;
 
   const handleCreate = () => {
-    if (!canCreate) return;
+    if (!canSubmit) return;
     setBusy(true);
-    createCratePlaylist(title.trim(), recipe)
+    createCratePlaylist(recipe)
       .then((p) => {
         useToastStore.getState().show(`Created “${p.title}”`);
-        onCreated(p);
+        onCreated?.(p);
       })
       .catch((e) => {
         useToastStore.getState().show(String(e) || "Couldn't create the crate");
         setBusy(false);
       });
   };
+
+  const handleSave = () => {
+    if (!canSubmit || !existing) return;
+    setBusy(true);
+    updateCratePlaylist(existing.sourceId, recipe)
+      .then((update) => {
+        useToastStore.getState().show(`Updated — ${update.items.length} tracks`);
+        onSaved?.(update, recipe);
+      })
+      .catch((e) => {
+        useToastStore.getState().show(String(e) || "Couldn't update the crate");
+        setBusy(false);
+      });
+  };
+
+  const heading = existing ? "Edit Crate" : "New Discovery Crate";
 
   // Portaled to <body>: the hub's ancestors carry transforms/filters that
   // turn `position: fixed` into "fixed within that ancestor".
@@ -192,66 +236,63 @@ export default function CrateBuilder({ onCreated, onDismiss }: Props) {
         aria-labelledby="crate-heading"
       >
         <div className="settings-header">
-          <h2 id="crate-heading">New Crate</h2>
+          <h2 id="crate-heading">{heading}</h2>
           <button className="settings-close" onClick={onDismiss} aria-label="Close">
             x
           </button>
         </div>
 
         <div className="settings-body">
-          <input
-            className="smartpl-input smartpl-name"
-            type="text"
-            value={title}
-            placeholder="Playlist name"
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-            onFocus={onFieldFocus}
-            onBlur={onFieldBlur}
-            onChange={(e) => setTitle(e.target.value)}
-          />
+          <div className={`crate-title-preview${estimating ? " pending" : ""}`}>
+            {genre === null
+              ? "Pick a genre to name your crate"
+              : (estimate?.derivedTitle ?? "…")}
+          </div>
 
           <div className="smartpl-rows">
-            {genres.length > 0 && (
-              <div className="crate-chips">
-                {genres.map((g) => (
-                  <button key={g} className="crate-chip" onClick={() => toggleGenre(g)}>
-                    {g}
-                    <span aria-hidden="true"> x</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
             <div className="smartpl-genre-pane">
-              <input
-                className="smartpl-input"
-                type="text"
-                value={genreQuery}
-                placeholder="Search genres"
-                autoComplete="off"
-                autoCorrect="off"
-                spellCheck={false}
-                onFocus={onFieldFocus}
-                onBlur={onFieldBlur}
-                onChange={(e) => setGenreQuery(e.target.value)}
-              />
-              {searching && (
-                <div className="smartpl-genre-list">
-                  {suggestions.length === 0 ? (
-                    <div className="smartpl-genre-empty">No matches</div>
-                  ) : (
-                    suggestions.map((name) => (
-                      <button
-                        key={name}
-                        className={`smartpl-genre-row${genres.includes(name) ? " selected" : ""}`}
-                        onClick={() => toggleGenre(name)}
-                      >
-                        {name}
-                      </button>
-                    ))
+              {genre === null ? (
+                <>
+                  <input
+                    className="smartpl-input"
+                    type="text"
+                    value={genreQuery}
+                    placeholder="Search genres"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    onFocus={onFieldFocus}
+                    onBlur={onFieldBlur}
+                    onChange={(e) => setGenreQuery(e.target.value)}
+                  />
+                  {searching && (
+                    <div className="smartpl-genre-list">
+                      {suggestions.length === 0 ? (
+                        <div className="smartpl-genre-empty">No matches</div>
+                      ) : (
+                        suggestions.map((name) => (
+                          <button
+                            key={name}
+                            className="smartpl-genre-row"
+                            onClick={() => pickGenre(name)}
+                          >
+                            {name}
+                          </button>
+                        ))
+                      )}
+                    </div>
                   )}
+                </>
+              ) : (
+                <div className="crate-genre-selected">
+                  <span className="crate-genre-name">{genre}</span>
+                  <button
+                    className="crate-genre-clear"
+                    onClick={clearGenre}
+                    aria-label="Change genre"
+                  >
+                    ×
+                  </button>
                 </div>
               )}
             </div>
@@ -290,7 +331,7 @@ export default function CrateBuilder({ onCreated, onDismiss }: Props) {
             </label>
 
             <div className="smartpl-row">
-              <span className="smartpl-row-label">Length</span>
+              <span className="smartpl-row-label">Crate Size</span>
               <select
                 className="sort-select"
                 value={count}
@@ -306,8 +347,8 @@ export default function CrateBuilder({ onCreated, onDismiss }: Props) {
           </div>
 
           <div className="settings-helper">
-            {genres.length === 0
-              ? "Pick at least one genre."
+            {genre === null
+              ? "Pick a genre."
               : estimating
                 ? "Working out what matches…"
                 : estimate
@@ -331,10 +372,10 @@ export default function CrateBuilder({ onCreated, onDismiss }: Props) {
             <button
               type="button"
               className="smartpl-btn smartpl-create"
-              onClick={handleCreate}
-              disabled={!canCreate}
+              onClick={existing ? handleSave : handleCreate}
+              disabled={!canSubmit}
             >
-              {busy ? "Creating…" : "Create"}
+              {existing ? (busy ? "Saving…" : "Save") : busy ? "Creating…" : "Create"}
             </button>
           </div>
         </div>

@@ -1023,8 +1023,16 @@ pub fn run() {
             );
             *prefetch_handle_ref.lock() = Some(prefetch_handle.clone());
 
-            let session_reporter =
-                crate::session_reporter::SessionReporter::new(client.clone(), player.clone());
+            // Created here rather than inline in AppState so the session
+            // reporter can share it: a scrobble records the play locally too.
+            let cache_arc: Arc<parking_lot::Mutex<Option<ramus_core::cache::db::CacheDatabase>>> =
+                Arc::new(parking_lot::Mutex::new(None));
+
+            let session_reporter = crate::session_reporter::SessionReporter::new(
+                client.clone(),
+                player.clone(),
+                cache_arc.clone(),
+            );
             *reporter_ref.lock() = Some(session_reporter.clone());
 
             // Load saved settings and apply playback config (defaults to Never).
@@ -1052,7 +1060,7 @@ pub fn run() {
 
             let state = AppState {
                 client: client.clone(),
-                cache: Arc::new(parking_lot::Mutex::new(None)),
+                cache: cache_arc,
                 player: player.clone(),
                 genre_mapper: Arc::new(RwLock::new(None)),
                 search_engine: Arc::new(RwLock::new(None)),
@@ -1627,6 +1635,7 @@ pub fn run() {
             commands::crates::create_crate_playlist,
             commands::crates::get_crate_recipe,
             commands::crates::regenerate_crate_playlist,
+            commands::crates::update_crate_playlist,
             commands::playlists::get_smart_filter_choices,
             commands::playlists::add_tracks_to_playlist,
             commands::playlists::remove_playlist_item,

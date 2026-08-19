@@ -400,6 +400,27 @@ impl CacheDatabase {
         Self::map_album_rows(&mut stmt, params.as_slice(), conn)
     }
 
+    /// Record that a track was played, without waiting for a sync.
+    ///
+    /// Play state otherwise only arrives via the sync upsert, and an
+    /// incremental sync skips any track whose `updatedAt` is unchanged —
+    /// which a play does not bump. Local play state would therefore sit
+    /// frozen at the last *full* sync, so a rule filtering on "unplayed"
+    /// could never see what the user just listened to. Mirrors what the
+    /// server records on a scrobble; a later full sync overwrites this with
+    /// the authoritative count.
+    pub fn mark_track_played(&self, source_id: &str, played_at: i64) -> Result<(), CacheError> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE tracks
+                SET viewCount = COALESCE(viewCount, 0) + 1,
+                    lastViewedAt = ?2
+              WHERE sourceId = ?1",
+            params![source_id, played_at],
+        )?;
+        Ok(())
+    }
+
     /// Every track on an album tagged with any of the given genre names,
     /// deduplicated. Genres are album-level in Plex's model, so this reaches
     /// tracks through their album's tags rather than a track-level one.
@@ -1559,6 +1580,40 @@ mod tests {
     fn test_tracks_for_genres_is_empty_for_no_genres() {
         let db = setup();
         assert!(db.tracks_for_genres(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_mark_track_played_updates_local_state_without_a_sync() {
+        // Play state otherwise only lands via the sync upsert, and an
+        // incremental sync skips tracks whose updatedAt hasn't moved — which
+        // a play doesn't change. Without this, "unplayed" rules can never see
+        // what was just listened to.
+        let db = setup();
+        let artist_id = seed_artist(&db, "ar1", "Band");
+        let album_id = seed_album(&db, "al1", "Record", artist_id, Some(2010));
+        seed_track(&db, "tr1", "Song", album_id, artist_id);
+
+        let before = db.track_by_source_id("tr1").unwrap().unwrap();
+        assert!(before.is_unplayed());
+
+        db.mark_track_played("tr1", 1_700_000_000).unwrap();
+        let after = db.track_by_source_id("tr1").unwrap().unwrap();
+        assert_eq!(after.view_count, Some(1));
+        assert_eq!(after.last_viewed_at, Some(1_700_000_000));
+        assert!(!after.is_unplayed());
+
+        // Repeat plays accumulate rather than overwrite.
+        db.mark_track_played("tr1", 1_700_000_100).unwrap();
+        assert_eq!(
+            db.track_by_source_id("tr1").unwrap().unwrap().view_count,
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn test_mark_track_played_is_a_no_op_for_an_unknown_track() {
+        let db = setup();
+        assert!(db.mark_track_played("nope", 1).is_ok());
     }
 
     #[test]

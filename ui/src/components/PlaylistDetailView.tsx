@@ -301,15 +301,20 @@ export default function PlaylistDetailView() {
                 >
                   Download Playlist
                 </button>
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setRenameValue(playlist.title);
-                    setRenaming(true);
-                  }}
-                >
-                  Rename Playlist
-                </button>
+                {/* A crate's title is derived from its recipe, so a manual
+                    rename would be overwritten by the next edit — and would
+                    misdescribe the contents until then. */}
+                {!playlist.isCrate && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setRenameValue(playlist.title);
+                      setRenaming(true);
+                    }}
+                  >
+                    Rename Playlist
+                  </button>
+                )}
                 <button
                   className="destructive"
                   onClick={() => {

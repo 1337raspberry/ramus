@@ -103,6 +103,33 @@ impl CrateRecipe {
         format!("{} — {}{}", parts.join(" "), genres, subs)
     }
 
+    /// The playlist title a recipe derives, e.g. "Top 25 Unplayed Screamo
+    /// (With Sub-Genres)". Crate titles are generated, never typed: editing a
+    /// crate's rules renames the playlist to match, so the name always states
+    /// what is inside it.
+    pub fn derived_title(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        if self.count > 0 {
+            parts.push(format!("Top {}", self.count));
+        } else {
+            // Legacy recipes could store an uncapped crate; the builder no
+            // longer offers one, but a stored recipe must still derive a name.
+            parts.push("All".to_string());
+        }
+        if self.unplayed_only {
+            parts.push("Unplayed".to_string());
+        }
+        if self.genres.is_empty() {
+            parts.push("Everything".to_string());
+        } else {
+            parts.push(self.genres.join(", "));
+        }
+        if self.include_subgenres && !self.genres.is_empty() {
+            parts.push("(With Sub-Genres)".to_string());
+        }
+        parts.join(" ")
+    }
+
     /// The machine-readable line. Values are percent-encoded individually so
     /// a genre containing a comma, space or `=` can't corrupt the parse.
     fn encode_line(&self) -> String {
@@ -211,15 +238,22 @@ pub fn select_crate_tracks<R: Rng>(
 /// Split out from [`select_crate_tracks`] so a preview can size that pool
 /// without paying for a shuffle, and so the figure it shows actually
 /// responds to the rules rather than reporting the raw genre match.
+///
+/// The hot rule runs BEFORE the unplayed filter, so "top N" always means the
+/// album's top N — not the top N of whatever happens to be unplayed. Filtering
+/// first inverts the rule on a played-out album: with only the bottom of the
+/// tracklist left unplayed, ranking the leftovers serves the album's least
+/// popular track as its "top" pick. Ranked album-wide, an album whose top N
+/// are all played contributes nothing, which is the honest outcome.
 pub fn eligible_tracks(candidates: Vec<Track>, recipe: &CrateRecipe) -> Vec<Track> {
-    let pool: Vec<Track> = if recipe.unplayed_only {
-        candidates.into_iter().filter(Track::is_unplayed).collect()
+    let pool: Vec<Track> = if recipe.hot_per_album > 0 {
+        keep_hottest_per_album(candidates, recipe.hot_per_album as usize)
     } else {
         candidates
     };
 
-    if recipe.hot_per_album > 0 {
-        keep_hottest_per_album(pool, recipe.hot_per_album as usize)
+    if recipe.unplayed_only {
+        pool.into_iter().filter(Track::is_unplayed).collect()
     } else {
         pool
     }
@@ -586,16 +620,40 @@ mod tests {
     }
 
     #[test]
-    fn test_unplayed_is_applied_before_hot_so_an_album_survives_on_its_deeper_cuts() {
-        // The album's most popular track is already played. The rule should
-        // still offer its next-best unplayed track rather than dropping the
-        // album for having no unplayed hit.
+    fn test_hot_ranks_the_whole_album_so_a_played_out_album_drops_instead_of_serving_filler() {
+        // Tracks 1-5 played, only the album's two least popular left unplayed.
+        // Ranking after the unplayed filter would crown the bottom of the
+        // tracklist as the "top" pick; ranked album-wide, none of the top N
+        // survive the unplayed filter and the album contributes nothing.
         let candidates = vec![
-            track("1", "album", "Band", Some(900), 5),
-            track("2", "album", "Band", Some(400), 0),
+            track("1", "album", "Band", Some(271_058), 2),
+            track("2", "album", "Band", Some(218_895), 1),
+            track("3", "album", "Band", Some(197_518), 1),
+            track("4", "album", "Band", Some(154_017), 1),
+            track("5", "album", "Band", Some(151_705), 1),
+            track("6", "album", "Band", Some(129_648), 0),
+            track("7", "album", "Band", Some(129_170), 0),
         ];
         let recipe = CrateRecipe {
-            hot_per_album: 1,
+            hot_per_album: 3,
+            unplayed_only: true,
+            count: 0,
+            ..Default::default()
+        };
+        assert!(select_crate_tracks(candidates, &recipe, &mut rng()).is_empty());
+    }
+
+    #[test]
+    fn test_an_unplayed_track_inside_the_album_top_n_still_comes_through() {
+        // The biggest track is played but the second biggest is not: it sits
+        // inside the album-wide top 2, so the album still offers it.
+        let candidates = vec![
+            track("1", "album", "Band", Some(900), 5),
+            track("2", "album", "Band", Some(700), 0),
+            track("3", "album", "Band", Some(100), 0),
+        ];
+        let recipe = CrateRecipe {
+            hot_per_album: 2,
             unplayed_only: true,
             count: 0,
             ..Default::default()
@@ -671,4 +729,40 @@ mod tests {
         let recipe = CrateRecipe::default();
         assert!(select_crate_tracks(Vec::new(), &recipe, &mut rng()).is_empty());
     }
+    #[test]
+    fn test_derived_title_states_the_full_recipe() {
+        let recipe = CrateRecipe {
+            genres: vec!["Screamo".to_string()],
+            include_subgenres: true,
+            hot_per_album: 2,
+            unplayed_only: true,
+            count: 25,
+        };
+        assert_eq!(recipe.derived_title(), "Top 25 Unplayed Screamo (With Sub-Genres)");
+    }
+
+    #[test]
+    fn test_derived_title_omits_the_flags_that_are_off() {
+        let recipe = CrateRecipe {
+            genres: vec!["Metal".to_string()],
+            include_subgenres: false,
+            hot_per_album: 1,
+            unplayed_only: false,
+            count: 50,
+        };
+        assert_eq!(recipe.derived_title(), "Top 50 Metal");
+    }
+
+    #[test]
+    fn test_derived_title_survives_a_legacy_uncapped_recipe() {
+        let recipe = CrateRecipe {
+            genres: vec!["Post-Hardcore".to_string()],
+            include_subgenres: true,
+            hot_per_album: 2,
+            unplayed_only: true,
+            count: 0,
+        };
+        assert_eq!(recipe.derived_title(), "All Unplayed Post-Hardcore (With Sub-Genres)");
+    }
+
 }

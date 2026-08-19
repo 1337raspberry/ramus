@@ -9,6 +9,7 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use tokio::sync::Notify;
 
+use ramus_core::cache::db::CacheDatabase;
 use ramus_core::models::Track;
 use ramus_core::playback::player::AudioPlayer;
 use ramus_core::playback::session::{SessionTracker, TimelineState, REPORT_INTERVAL_SECS};
@@ -34,10 +35,17 @@ pub struct SessionReporter {
     /// a permanent play-count mutation, so it shouldn't be lost to the very
     /// outage that interrupted the track it belongs to.
     failed_scrobbles: Arc<Mutex<Vec<String>>>,
+    /// Library cache, so a scrobble can also record the play locally. `None`
+    /// until onboarding/session-restore opens the database.
+    cache: Arc<Mutex<Option<CacheDatabase>>>,
 }
 
 impl SessionReporter {
-    pub fn new(client: Arc<PlexClient>, player: Arc<AudioPlayer>) -> Arc<Self> {
+    pub fn new(
+        client: Arc<PlexClient>,
+        player: Arc<AudioPlayer>,
+        cache: Arc<Mutex<Option<CacheDatabase>>>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             tracker: Mutex::new(SessionTracker::new()),
             client,
@@ -47,6 +55,7 @@ impl SessionReporter {
             loop_spawned: Mutex::new(false),
             last_started_key: Mutex::new(None),
             failed_scrobbles: Arc::new(Mutex::new(Vec::new())),
+            cache,
         })
     }
 
@@ -188,6 +197,13 @@ impl SessionReporter {
     /// re-yield the key while an earlier attempt may still land server-side,
     /// double-counting the play.
     pub fn send_scrobble(&self, rating_key: String) {
+        // Record the play locally too. Deliberately not conditional on the
+        // send succeeding: the user did listen to the track, and a filter
+        // like a crate's "unplayed only" reads this table, not the server.
+        // Every scrobble funnels through here, so this is the one place that
+        // has to do it.
+        self.mark_played_locally(&rating_key);
+
         let client = self.client.clone();
         let failed = self.failed_scrobbles.clone();
         tauri::async_runtime::spawn(async move {
@@ -205,6 +221,21 @@ impl SessionReporter {
                 queue.push(rating_key);
             }
         });
+    }
+
+    /// Bump the local play count for a track that just scrobbled. Best
+    /// effort — a cache that isn't open yet, or a track outside the synced
+    /// library, simply has nothing to update.
+    fn mark_played_locally(&self, rating_key: &str) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        if let Some(db) = self.cache.lock().as_ref() {
+            if let Err(e) = db.mark_track_played(rating_key, now) {
+                log::warn!("could not record local play state: {e}");
+            }
+        }
     }
 
     /// Re-attempt every scrobble stranded by past send failures. Keys that

@@ -8611,23 +8611,49 @@ body.is-fullscreen .focus-body {
 
 /* Selected-genre chips in the mix builder. Removal is the chip itself —
    a separate x target would be under the 44px touch minimum at this size. */
-.crate-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 0;
+/* Derived crate name, shown live as the rules change. Styled like a title,
+   not an input — it isn't editable. */
+.crate-title-preview {
+  padding: 4px 2px 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.crate-chip {
-  display: inline-flex;
+.crate-title-preview.pending {
+  color: var(--text-secondary);
+}
+
+/* The picked genre, rendered in the search input's place — a filled
+   single-entry dropdown with an x to clear and search again. */
+.crate-genre-selected {
+  display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
   border: 1px solid rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.5);
-  border-radius: 14px;
   background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.14);
-  color: inherit;
+}
+
+.crate-genre-name {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crate-genre-clear {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 14px;
   line-height: 1;
   cursor: pointer;
 }

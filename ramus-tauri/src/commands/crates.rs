@@ -44,6 +44,9 @@ pub struct CrateEstimate {
     pub selected: usize,
     /// The human-readable sentence that will head the playlist summary.
     pub description: String,
+    /// The name the playlist will take. Crate titles are derived from the
+    /// recipe rather than typed, so the preview shows the name live.
+    pub derived_title: String,
 }
 
 /// Expand a recipe's genres through the genre tree and keep only tags the
@@ -130,6 +133,7 @@ pub async fn estimate_crate(state: State<'_, AppState>, recipe: CrateRecipe) -> 
         eligible_tracks: eligible,
         selected,
         description: recipe.describe(),
+        derived_title: recipe.derived_title(),
     })
 }
 
@@ -138,16 +142,12 @@ pub async fn estimate_crate(state: State<'_, AppState>, recipe: CrateRecipe) -> 
 #[tauri::command]
 pub async fn create_crate_playlist(
     state: State<'_, AppState>,
-    title: String,
     recipe: CrateRecipe,
 ) -> CmdResult<Playlist> {
-    let title = title.trim().to_string();
-    if title.is_empty() {
-        return Err("Playlist name is empty".into());
-    }
     if recipe.genres.is_empty() {
-        return Err("Pick at least one genre".into());
+        return Err("Pick a genre".into());
     }
+    let title = recipe.derived_title();
 
     let (_, candidates) = resolve_candidates(&state, &recipe)?;
     let picked = recipe.select(candidates);
@@ -240,8 +240,81 @@ pub async fn regenerate_crate_playlist(
     let recipe = load_recipe(&state, &source_id)
         .await
         .ok_or("This playlist has no ramus recipe to regenerate from")?;
+    rebuild_playlist(&state, &source_id, &recipe).await
+}
 
-    let (_, candidates) = resolve_candidates(&state, &recipe)?;
+/// A saved edit's result: the renamed/re-summarised playlist plus its fresh
+/// tracks, so the open detail view can repaint without a refetch.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrateUpdate {
+    pub playlist: Playlist,
+    pub items: Vec<PlaylistItem>,
+}
+
+/// Change a crate's recipe in place: store the new recipe, regenerate the
+/// tracks under it, and rename the playlist to the new derived title. The
+/// title is derived rather than kept, so an edit that changes the rules
+/// renames the crate to keep the name honest.
+#[tauri::command]
+pub async fn update_crate_playlist(
+    state: State<'_, AppState>,
+    source_id: String,
+    recipe: CrateRecipe,
+) -> CmdResult<CrateUpdate> {
+    if recipe.genres.is_empty() {
+        return Err("Pick a genre".into());
+    }
+
+    // Write the recipe first: if anything later fails, the stored recipe
+    // already matches what the user asked for, and a plain Regenerate
+    // finishes the job.
+    let summary = recipe.to_summary();
+    state
+        .client
+        .set_playlist_summary(&source_id, &summary)
+        .await
+        .map_err(|e| format!("Couldn't save the new recipe: {e}"))?;
+    // Mirror it immediately: the recipe loader trusts the mirror without
+    // refetching, so if the rebuild below fails part-way, a plain Regenerate
+    // must already see the new rules.
+    with_cache(&state, |db| db.set_playlist_summary(&source_id, &summary))?;
+
+    let items = rebuild_playlist(&state, &source_id, &recipe).await?;
+
+    let title = recipe.derived_title();
+    state
+        .client
+        .rename_playlist(&source_id, &title)
+        .await
+        .map_err(|e| format!("The crate was rebuilt but couldn't be renamed: {e}"))?;
+
+    // Refresh the mirror row from the server so title, summary, count and
+    // duration all land together; the detail fetch carries the summary the
+    // listing endpoint omits.
+    if let Ok(detail) = state.client.playlist_detail(&source_id).await {
+        let mut row = to_upsert_row(&detail);
+        row.summary = Some(detail.summary.clone().unwrap_or_else(|| summary.clone()));
+        with_cache(&state, |db| db.upsert_playlist(&row))?;
+    } else {
+        with_cache(&state, |db| db.rename_playlist(&source_id, &title))?;
+    }
+
+    let playlist = with_cache(&state, |db| db.all_playlists())?
+        .into_iter()
+        .find(|p| p.source_id == source_id)
+        .ok_or_else(|| "Playlist not found".to_string())?;
+
+    Ok(CrateUpdate { playlist, items })
+}
+
+/// Select tracks for a recipe and replace the playlist's contents with them.
+async fn rebuild_playlist(
+    state: &State<'_, AppState>,
+    source_id: &str,
+    recipe: &CrateRecipe,
+) -> CmdResult<Vec<PlaylistItem>> {
+    let (_, candidates) = resolve_candidates(state, recipe)?;
     let picked = recipe.select(candidates);
     if picked.is_empty() {
         return Err("Nothing matched those rules — the playlist was left alone".into());
@@ -249,7 +322,7 @@ pub async fn regenerate_crate_playlist(
 
     let existing = state
         .client
-        .playlist_items(&source_id)
+        .playlist_items(source_id)
         .await
         .map_err(|e| e.to_string())?;
     let stale_ids: Vec<i64> = existing.iter().filter_map(|m| m.playlist_item_id).collect();
@@ -266,7 +339,7 @@ pub async fn regenerate_crate_playlist(
     for item_id in stale_ids {
         state
             .client
-            .remove_playlist_item(&source_id, item_id)
+            .remove_playlist_item(source_id, item_id)
             .await
             .map_err(|e| e.to_string())?;
     }
@@ -276,11 +349,11 @@ pub async fn regenerate_crate_playlist(
     let uri = build_library_uri(&machine_id, &track_ids);
     state
         .client
-        .add_playlist_items(&source_id, &uri)
+        .add_playlist_items(source_id, &uri)
         .await
         .map_err(|e| {
             format!("The playlist was cleared but the new tracks couldn't be added ({e}) — regenerate again to retry")
         })?;
 
-    refresh_items(&state, &source_id).await
+    refresh_items(state, source_id).await
 }

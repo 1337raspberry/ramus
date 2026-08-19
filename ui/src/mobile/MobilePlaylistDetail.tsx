@@ -21,6 +21,7 @@ import {
   appendToQueue,
 } from "../lib/commands";
 import { refreshQueue } from "../lib/refreshQueue";
+import CrateBuilder from "./CrateBuilder";
 import { useListReorder } from "../lib/useListReorder";
 import { useLongPress } from "../lib/useLongPress";
 import { useSwipeToDelete } from "../lib/useSwipeToDelete";
@@ -99,9 +100,12 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
   const [renameBusy, setRenameBusy] = useState(false);
   const [rowSheet, setRowSheet] = useState<number | null>(null);
   const [confirmDownload, setConfirmDownload] = useState(false);
-  // Non-null only for a generated playlist; drives the Regenerate action.
+  // Non-null only for a generated playlist; drives the Regenerate and Edit
+  // actions (crates take Edit in place of Rename — the title is derived from
+  // the recipe, so it's changed by changing the rules).
   const [crateRecipe, setCrateRecipe] = useState<CrateRecipe | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  const [editingCrate, setEditingCrate] = useState(false);
   const [dlEstimate, setDlEstimate] = useState<PlaylistDownloadEstimate | null>(null);
   const { artSrc, artErr, setArtErr } = useArtUrl(playlist.thumb, ART_SIZE.MEDIUM);
 
@@ -430,6 +434,23 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
         </div>
       )}
 
+      {editingCrate && crateRecipe && (
+        <CrateBuilder
+          existing={{ sourceId: playlist.sourceId, recipe: crateRecipe }}
+          onDismiss={() => setEditingCrate(false)}
+          onSaved={(update, recipe) => {
+            setEditingCrate(false);
+            setItems(update.items);
+            setCrateRecipe(recipe);
+            // Same write-back as a rename: the detail view renders from
+            // browsePlaylist, and the revision bump reaches any list mounted
+            // alongside (the desktop sidebar's situation).
+            useLibraryStore.setState({ browsePlaylist: update.playlist });
+            useLibraryStore.getState().bumpPlaylistsRevision();
+          }}
+        />
+      )}
+
       {showMenu &&
         createPortal(
           <div
@@ -453,15 +474,26 @@ export default function MobilePlaylistDetail({ playlist, onBack, onGoToArtist }:
                     {regenerating ? "Regenerating…" : "Regenerate Crate"}
                   </button>
                 )}
-                <button
-                  onClick={() => {
-                    setShowMenu(false);
-                    setRenameValue(playlist.title);
-                    setRenaming(true);
-                  }}
-                >
-                  Rename Playlist
-                </button>
+                {crateRecipe ? (
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      setEditingCrate(true);
+                    }}
+                  >
+                    Edit Crate
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      setRenameValue(playlist.title);
+                      setRenaming(true);
+                    }}
+                  >
+                    Rename Playlist
+                  </button>
+                )}
                 <button
                   className="destructive"
                   onClick={() => {

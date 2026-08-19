@@ -166,6 +166,15 @@ export interface CrateEstimate {
   eligibleTracks: number;
   selected: number;
   description: string;
+  /** The name the playlist will take — crate titles are derived from the
+   * recipe in Rust (single parser, same rule as `isCrate`), never typed. */
+  derivedTitle: string;
+}
+
+/** A saved crate edit: the renamed playlist plus its regenerated tracks. */
+export interface CrateUpdate {
+  playlist: Playlist;
+  items: PlaylistItem[];
 }
 
 /** One playlist entry. `playlistItemId` is Plex's per-entry id — the handle
