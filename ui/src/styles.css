@@ -4425,6 +4425,7 @@ body.is-fullscreen .focus-body {
 }
 
 .mobile-toolbar-btn {
+  position: relative;
   width: 44px;
   height: 44px;
   display: inline-flex;
@@ -4438,6 +4439,24 @@ body.is-fullscreen .focus-body {
   transition:
     background 0.12s ease,
     color 0.12s ease;
+}
+
+/* Hold-to-activate progress ring (Lists button's shuffle-favourites
+ * shortcut). The circle's stroke-dashoffset animates from the full
+ * circumference (passed via --hold-circ) to 0 over the hold duration. */
+.toolbar-hold-ring {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+@keyframes toolbar-hold-fill {
+  from {
+    stroke-dashoffset: var(--hold-circ);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 .mobile-toolbar-btn.active {

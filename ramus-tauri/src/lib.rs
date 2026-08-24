@@ -1611,6 +1611,7 @@ pub fn run() {
             commands::library::get_filtered_genre_tree,
             commands::library::toggle_album_favourite,
             commands::library::toggle_track_favourite,
+            commands::library::get_favourite_tracks,
             commands::library::get_album_genres,
             commands::library::get_album,
             commands::library::get_random_album,

@@ -110,6 +110,8 @@ export const toggleAlbumFavourite = (sourceId: string, favourite: boolean) =>
 export const toggleTrackFavourite = (sourceId: string, favourite: boolean) =>
   invoke<void>("toggle_track_favourite", { sourceId, favourite });
 
+export const getFavouriteTracks = () => invoke<Track[]>("get_favourite_tracks");
+
 export const getAlbumGenres = (sourceId: string) =>
   invoke<string[]>("get_album_genres", { sourceId });
 

@@ -1,9 +1,44 @@
-import { useRef, useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useLibraryStore, hasActiveFilters } from "../stores/libraryStore";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useDownloadsStore } from "../stores/downloadsStore";
 import { IconDownload } from "../components/Icons";
+import { useLongPress } from "../lib/useLongPress";
+import { playFavouritesShuffled } from "../lib/playFavouritesShuffled";
 import MobileFilterPanel from "./MobileFilterPanel";
+
+/** Hold duration for the toolbar's long-press shortcuts (settings on the
+ * genre button, shuffle-favourites on the Lists button). */
+const TOOLBAR_HOLD_MS = 1500;
+
+/** Accent ring that fills clockwise over the hold duration — pure CSS
+ * animation, so no per-frame JS while the user holds. */
+function HoldProgressRing({ ms }: { ms: number }) {
+  const radius = 19;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <svg className="toolbar-hold-ring" width="44" height="44" viewBox="0 0 44 44">
+      <circle
+        cx="22"
+        cy="22"
+        r={radius}
+        fill="none"
+        stroke="rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.9)"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference}
+        transform="rotate(-90 22 22)"
+        style={
+          {
+            "--hold-circ": circumference,
+            animation: `toolbar-hold-fill ${ms}ms linear forwards`,
+          } as CSSProperties
+        }
+      />
+    </svg>
+  );
+}
 
 export type MobileView = "genres" | "artists" | "suggestion" | "search" | "lists";
 
@@ -127,30 +162,9 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
   const openDownloadsHub = useDownloadsStore((s) => s.openHub);
   const downloadsHubOpen = useDownloadsStore((s) => s.hubOpen);
   const [showFilter, setShowFilter] = useState(false);
+  const [favHolding, setFavHolding] = useState(false);
+  const [settingsHolding, setSettingsHolding] = useState(false);
   const filterActive = hasActiveFilters(albumFilters);
-
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressTriggered = useRef(false);
-
-  const makeLongPress = (onTap: () => void, onLongPressAction?: () => void) => ({
-    onPointerDown: () => {
-      longPressTriggered.current = false;
-      longPressTimer.current = setTimeout(() => {
-        longPressTriggered.current = true;
-        (onLongPressAction ?? onOpenSettings)();
-      }, 600);
-    },
-    onPointerUp: () => {
-      if (longPressTimer.current) clearTimeout(longPressTimer.current);
-      if (!longPressTriggered.current) onTap();
-    },
-    onPointerLeave: () => {
-      if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    },
-    onPointerCancel: () => {
-      if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    },
-  });
 
   const pick = (v: MobileView) => {
     useLibraryStore.setState({
@@ -181,15 +195,34 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
     onSelect(v);
   };
 
+  // Toolbar hold shortcuts. The generous move threshold keeps natural finger
+  // drift over the hold from cancelling it; the toolbar doesn't scroll,
+  // so there's no gesture to disambiguate from.
+  const genresPress = useLongPress({
+    ms: TOOLBAR_HOLD_MS,
+    moveCancelSq: 576,
+    onLongPress: onOpenSettings,
+    onClick: () => pick("genres"),
+    onHoldChange: setSettingsHolding,
+  });
+  const listsPress = useLongPress({
+    ms: TOOLBAR_HOLD_MS,
+    moveCancelSq: 576,
+    onLongPress: () => void playFavouritesShuffled(),
+    onClick: () => pick("lists"),
+    onHoldChange: setFavHolding,
+  });
+
   return (
     <>
       <nav className="mobile-toolbar" aria-label="Primary">
         <button
           className={`mobile-toolbar-btn${view === "genres" ? " active" : ""}`}
-          aria-label="Genres (long-press for settings)"
-          {...makeLongPress(() => pick("genres"))}
+          aria-label="Genres (hold for settings)"
+          {...genresPress}
         >
           <IconList />
+          {settingsHolding && <HoldProgressRing ms={TOOLBAR_HOLD_MS} />}
         </button>
         <button
           className={`mobile-toolbar-btn${view === "artists" ? " active" : ""}`}
@@ -207,10 +240,11 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
         </button>
         <button
           className={`mobile-toolbar-btn${view === "lists" ? " active" : ""}`}
-          aria-label="Lists"
-          onClick={() => pick("lists")}
+          aria-label="Lists (hold to shuffle favourites)"
+          {...listsPress}
         >
           <IconStack />
+          {favHolding && <HoldProgressRing ms={TOOLBAR_HOLD_MS} />}
         </button>
         <button
           className={`mobile-toolbar-btn${filterActive ? " active" : ""}`}

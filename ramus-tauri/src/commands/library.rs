@@ -364,6 +364,14 @@ pub async fn toggle_track_favourite(
     Ok(())
 }
 
+/// All favourite tracks (userRating >= 10), read from the local mirror —
+/// feeds the favourites quick-play shortcut, so it must stay cheap and work
+/// offline.
+#[tauri::command]
+pub async fn get_favourite_tracks(state: State<'_, AppState>) -> CmdResult<Vec<Track>> {
+    with_cache(&state, |db| db.favourite_tracks())
+}
+
 #[tauri::command]
 pub async fn get_album_collections(
     state: State<'_, AppState>,

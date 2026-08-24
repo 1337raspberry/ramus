@@ -11,6 +11,10 @@ interface Options {
   /** Squared pixel distance past which a touch is treated as a scroll and the
    * pending long-press is cancelled. */
   moveCancelSq?: number;
+  /** Observes the pending hold's lifecycle: `true` when a hold timer arms,
+   * `false` when it fires or is cancelled. Lets callers render hold progress
+   * (e.g. a fill ring) for long `ms` values. */
+  onHoldChange?: (holding: boolean) => void;
 }
 
 /**
@@ -22,7 +26,13 @@ interface Options {
  *   const lp = useLongPress({ onLongPress, onClick });
  *   <button {...lp}>…</button>
  */
-export function useLongPress({ onLongPress, onClick, ms = 500, moveCancelSq = 100 }: Options) {
+export function useLongPress({
+  onLongPress,
+  onClick,
+  ms = 500,
+  moveCancelSq = 100,
+  onHoldChange,
+}: Options) {
   const timerRef = useRef<number | null>(null);
   const longPressedRef = useRef(false);
   const startRef = useRef<{ x: number; y: number } | null>(null);
@@ -31,8 +41,9 @@ export function useLongPress({ onLongPress, onClick, ms = 500, moveCancelSq = 10
     if (timerRef.current !== null) {
       window.clearTimeout(timerRef.current);
       timerRef.current = null;
+      onHoldChange?.(false);
     }
-  }, []);
+  }, [onHoldChange]);
 
   useEffect(() => () => clear(), [clear]);
 
@@ -44,11 +55,14 @@ export function useLongPress({ onLongPress, onClick, ms = 500, moveCancelSq = 10
       clear();
       if (!onLongPress) return;
       timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
         longPressedRef.current = true;
+        onHoldChange?.(false);
         onLongPress();
       }, ms);
+      onHoldChange?.(true);
     },
-    [clear, ms, onLongPress],
+    [clear, ms, onLongPress, onHoldChange],
   );
 
   const onTouchMove = useCallback(
