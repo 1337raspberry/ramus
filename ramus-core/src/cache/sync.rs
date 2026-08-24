@@ -156,19 +156,15 @@ impl SyncEngine {
         incremental: bool,
         on_progress: Arc<dyn Fn(SyncProgress) + Send + Sync>,
     ) -> Result<(HashMap<String, i64>, HashSet<String>), SyncError> {
-        let cached_artists;
-        let cached_albums;
-        let cached_tracks;
-
-        if incremental {
-            cached_artists = self.cache.all_artist_timestamps().unwrap_or_default();
-            cached_albums = self.cache.all_album_timestamps().unwrap_or_default();
-            cached_tracks = self.cache.all_track_timestamps().unwrap_or_default();
+        let (cached_artists, cached_albums, cached_tracks) = if incremental {
+            (
+                self.cache.all_artist_timestamps().unwrap_or_default(),
+                self.cache.all_album_timestamps().unwrap_or_default(),
+                self.cache.all_track_timestamps().unwrap_or_default(),
+            )
         } else {
-            cached_artists = HashMap::new();
-            cached_albums = HashMap::new();
-            cached_tracks = HashMap::new();
-        }
+            (HashMap::new(), HashMap::new(), HashMap::new())
+        };
 
         let p = on_progress.clone();
         let artist_items = self
