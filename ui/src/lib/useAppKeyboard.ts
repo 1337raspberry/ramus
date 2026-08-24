@@ -43,10 +43,17 @@ export function useAppKeyboard({
       // stays live so it keeps working as a settings toggle.
       if (document.querySelector(".settings-backdrop") && !(mod && e.key === ",")) return;
 
-      // Esc exits focus mode before any other Esc-based dismissal.
+      // Esc exits focus mode before any other Esc-based dismissal — but
+      // the lyrics takeover closes first, so backing out of lyrics
+      // doesn't dump the user all the way out of focus mode.
       if (e.key === "Escape" && usePlaybackStore.getState().isFocusMode) {
         e.preventDefault();
-        toggleFocusMode();
+        const pb = usePlaybackStore.getState();
+        if (pb.showLyrics) {
+          pb.toggleLyrics();
+        } else {
+          toggleFocusMode();
+        }
         return;
       }
 

@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { LyricsResult } from "../lib/types";
 import { usePlaybackStore, activeLineIndex } from "../stores/playbackStore";
-import { IconClose } from "./Icons";
 
 interface Props {
   lyrics: LyricsResult;
   onSeek: (seconds: number) => void;
-  onDismiss: () => void;
 }
 
-export default function LyricsView({ lyrics, onSeek, onDismiss }: Props) {
+export default function LyricsView({ lyrics, onSeek }: Props) {
   const position = usePlaybackStore((s) => s.position);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [flashId, setFlashId] = useState<number | null>(null);
@@ -56,9 +54,6 @@ export default function LyricsView({ lyrics, onSeek, onDismiss }: Props) {
       className={`lyrics-overlay${anySynced ? "" : " unsynced"}`}
       onClick={(e) => e.stopPropagation()}
     >
-      <button className="lyrics-close" onClick={onDismiss}>
-        <IconClose size={14} />
-      </button>
       <div className="lyrics-scroll" ref={scrollRef}>
         {lyrics.lines.map((line, i) => {
           const isActive = active === i;

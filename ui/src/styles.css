@@ -2110,71 +2110,115 @@ textarea {
   font-family: var(--font-mono);
 }
 
-/* --- Lyrics View --- */
+/* --- Lyrics View ---
+   Base styles serve the compact panel's in-art overlay and are shared by
+   the focus-mode and mobile takeovers, which re-scale type and swap the
+   backdrop per surface. One type treatment everywhere: left-aligned bold
+   lines, dim upcoming / brighter past / accent active. */
 
 .lyrics-overlay {
   position: relative;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(36px) saturate(140%);
+  -webkit-backdrop-filter: blur(36px) saturate(140%);
   display: flex;
   flex-direction: column;
 }
 
+/* WebView2/WebKitGTK blur too weakly to hide the art behind the scrim —
+   raise the tint so text stays readable (same policy as .glass). */
+:root[data-platform="windows"] .lyrics-overlay,
+:root[data-platform="linux"] .lyrics-overlay,
+:root[data-platform="windows"] .lyrics-loading,
+:root[data-platform="linux"] .lyrics-loading,
+:root[data-platform="windows"] .lyrics-empty,
+:root[data-platform="linux"] .lyrics-empty {
+  background: rgba(12, 12, 16, 0.92);
+}
+
 .lyrics-close {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 8px;
+  right: 8px;
   z-index: 2;
-  background: none;
+  width: 28px;
+  height: 28px;
   border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
-  padding: 8px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  transition: color 0.15s;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .lyrics-close:hover {
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
 }
 
 .lyrics-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 32px 12px 16px;
+  overscroll-behavior: contain;
+  padding: 24px 18px 28px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 24px,
+    #000 calc(100% - 24px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 24px,
+    #000 calc(100% - 24px),
+    transparent 100%
+  );
 }
 
 .lyrics-line {
-  text-align: center;
-  font-size: 13px;
-  color: var(--text-secondary);
-  padding: 2px 4px;
+  text-align: left;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 2px 0;
   border-radius: 4px;
-  transition:
-    color 0.3s,
-    font-weight 0.3s;
-  line-height: 1.5;
+  transition: color 0.3s;
 }
 
 .lyrics-line.synced {
   cursor: pointer;
 }
 
-.lyrics-line.synced:hover {
-  color: var(--text-primary);
+.lyrics-line.synced:not(.active):hover {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.lyrics-line.past {
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .lyrics-line.active {
   color: var(--accent);
-  font-weight: 700;
+}
+
+/* Unsynced lyrics have no active line — keep every line readable
+   instead of dimming them all as "upcoming". */
+.lyrics-overlay.unsynced .lyrics-line {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .lyrics-line.flash {
@@ -2182,10 +2226,10 @@ textarea {
 }
 
 .lyrics-source {
-  text-align: center;
+  text-align: left;
   font-size: 10px;
-  color: var(--text-muted);
-  padding-top: 8px;
+  color: rgba(255, 255, 255, 0.45);
+  padding-top: 14px;
 }
 
 .lyrics-loading,
@@ -2197,9 +2241,9 @@ textarea {
   width: 100%;
   color: var(--text-secondary);
   font-size: 13px;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(36px) saturate(140%);
+  -webkit-backdrop-filter: blur(36px) saturate(140%);
 }
 
 /* --- Flow Layout (Genre Pills) --- */
@@ -3867,6 +3911,109 @@ body.is-fullscreen .focus-body {
   font-size: 14px;
   opacity: 0.55;
   flex-shrink: 0;
+}
+
+/* --- Focus lyrics mode ---
+   With lyrics open the left panel regrids: the art collapses to a header
+   thumbnail with artist/album beside it, and the lyrics overlay takes
+   the whole remaining height over the UltraBlur backdrop — the same
+   takeover the mobile sheet does. Pure CSS re-layout so the art <img>
+   (palette source) never re-mounts. */
+
+.focus-art-panel.lyrics-mode {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "art meta"
+    "lyrics lyrics";
+  column-gap: 16px;
+  row-gap: 0;
+  align-items: center;
+}
+
+/* Grid layout, so the base rule's flex sizing no longer applies — pin
+   the thumbnail explicitly. Container sizing still resolves the inner
+   art square to the wrapper's box. */
+.focus-art-panel.lyrics-mode .focus-art-wrapper {
+  grid-area: art;
+  width: 72px;
+  height: 72px;
+}
+
+.focus-art-panel.lyrics-mode .focus-art-container {
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.focus-art-panel.lyrics-mode .focus-art-meta {
+  grid-area: meta;
+  min-width: 0;
+  gap: 2px;
+}
+
+.focus-art-panel.lyrics-mode .focus-artist {
+  font-size: 18px;
+}
+
+.focus-art-panel.lyrics-mode .focus-album-title {
+  font-size: 14px;
+}
+
+.focus-art-panel.lyrics-mode .np-lyrics-overlay {
+  grid-area: lyrics;
+  position: relative;
+  inset: auto;
+  height: 100%;
+  min-height: 0;
+  border-radius: 0;
+  margin-top: 4px;
+}
+
+/* Transparent over the UltraBlur backdrop — no scrim, and no
+   backdrop-filter, so the takeover renders identically on
+   WebView2/WebKitGTK (which blur unconvincingly). */
+.focus-art-panel.lyrics-mode .lyrics-overlay,
+.focus-art-panel.lyrics-mode .lyrics-loading,
+.focus-art-panel.lyrics-mode .lyrics-empty {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.focus-art-panel.lyrics-mode .lyrics-scroll {
+  padding: 28px 6px 44px;
+  gap: 10px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 28px,
+    #000 calc(100% - 28px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 28px,
+    #000 calc(100% - 28px),
+    transparent 100%
+  );
+}
+
+.focus-art-panel.lyrics-mode .lyrics-line {
+  font-size: clamp(21px, 1.9vw, 30px);
+  line-height: 1.32;
+  padding: 3px 0;
+}
+
+.focus-art-panel.lyrics-mode .lyrics-source {
+  font-size: 11px;
+  padding: 18px 0 0;
+}
+
+.focus-art-panel.lyrics-mode .lyrics-loading,
+.focus-art-panel.lyrics-mode .lyrics-empty {
+  font-size: 15px;
 }
 
 /* --- Right panel: controls + expandable queue --- */

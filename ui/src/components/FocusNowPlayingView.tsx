@@ -61,6 +61,7 @@ interface Props {
 export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props) {
   const status = usePlaybackStore((s) => s.status);
   const toggleLyrics = usePlaybackStore((s) => s.toggleLyrics);
+  const showLyrics = usePlaybackStore((s) => s.showLyrics);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
   const volume = usePlaybackStore((s) => s.volume);
   const changeVolume = usePlaybackStore((s) => s.changeVolume);
@@ -311,7 +312,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
       {visualizerMode !== "off" && <FocusVisualizer />}
 
       <div className="focus-body">
-        <div className="focus-art-panel">
+        <div className={`focus-art-panel${showLyrics ? " lyrics-mode" : ""}`}>
           <div className="focus-art-wrapper">
             <div className="focus-art-container" onClick={toggleLyrics}>
               {artSrc && !artErr ? (
@@ -326,7 +327,6 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
                   <IconMusicNote />
                 </div>
               )}
-              <LyricsOverlay />
             </div>
           </div>
 
@@ -352,6 +352,13 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
               </button>
             </div>
           </div>
+
+          {/* Sibling of the art wrapper, not a child of the art container:
+              lyrics mode regrids this panel so the art shrinks to a header
+              thumbnail and the overlay takes the whole remaining height
+              (same pattern as the mobile sheet). Renders nothing while
+              lyrics are closed. */}
+          <LyricsOverlay />
         </div>
 
         <div
