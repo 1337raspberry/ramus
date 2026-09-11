@@ -72,6 +72,8 @@ targets:
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         # Substituted by xcodegen at generate-time from the RAMUS_VERSION
         # env var, which scripts/regen-ios-project.sh reads out of the
         # workspace Cargo.toml so iOS tracks the single-source-of-truth

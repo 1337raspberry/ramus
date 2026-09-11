@@ -8866,3 +8866,198 @@ body.is-fullscreen .focus-body {
   min-height: 36px;
   cursor: pointer;
 }
+
+/* ===== Tablet-class touch viewports (iPad) =====
+   Breakpoints mirror lib/useMediaQuery.ts. From 700px the phone layouts
+   simply get room; from 900px MobileApp browses in two panes
+   (`.mobile-root.split`). Keep the two in sync. */
+
+@media (pointer: coarse) and (min-width: 700px) {
+  /* Seven icons spread across a tablet read as unrelated controls; keep
+     them in a phone-width cluster. The split layout's pane is narrow
+     enough already. */
+  .mobile-root:not(.split) .mobile-toolbar {
+    width: 100%;
+    max-width: 560px;
+    margin: 0 auto;
+  }
+
+  .mobile-detail-art {
+    width: min(30vw, 240px);
+    height: min(30vw, 240px);
+  }
+
+  /* Now-playing page 1: a capped, centred column, so the transport isn't
+     a 200px cluster in the middle of a 700px void. Percentages in padding
+     resolve against the containing block's width, which is what centres
+     the column. */
+  .mobile-sheet-body {
+    padding-left: max(24px, calc((100% - 640px) / 2));
+    padding-right: max(24px, calc((100% - 640px) / 2));
+  }
+
+  .mobile-sheet-art {
+    --_art-size: clamp(
+      160px,
+      calc(100dvh - var(--safe-top) - var(--safe-bottom) - 460px),
+      min(78vw, 560px)
+    );
+    max-width: min(78vw, 560px);
+  }
+
+  .mobile-sheet-transport {
+    gap: 30px;
+    margin-top: 14px;
+  }
+
+  .mobile-sheet-transport-btn {
+    width: 56px;
+    height: 56px;
+  }
+
+  .mobile-sheet-transport-btn svg {
+    width: 40px;
+    height: 40px;
+  }
+
+  .mobile-sheet-transport-btn.primary svg {
+    width: 66px;
+    height: 66px;
+  }
+
+  .mobile-sheet-transport-btn.secondary svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  /* The queue sits inside the centred column rather than bleeding to the
+     screen edges. */
+  .mobile-upnext {
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
+/* --- Two-pane browsing --- */
+
+@media (pointer: coarse) and (min-width: 900px) {
+  .mobile-root.split {
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .mobile-root.split .mobile-nav-pane {
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .mobile-root.split .mobile-content-pane {
+    min-width: 0;
+  }
+}
+
+/* --- Now-playing sheet in landscape: art left, everything else right ---
+   The page-1 container swaps from a flex column to a grid whose first
+   column is the art spanning every row. Up Next stays below page 1 in the
+   same scroller, exactly as in portrait, so the drag-to-close rule
+   (body scrolled to top) and the peek chevron are untouched. */
+
+@media (pointer: coarse) and (min-width: 900px) and (orientation: landscape) {
+  .mobile-sheet-body {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+
+  .mobile-sheet-main:not(.lyrics-mode) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: 1fr auto auto auto auto auto auto auto 1fr;
+    grid-template-areas:
+      "art top"
+      "art notice"
+      "art title"
+      "art artist"
+      "art album"
+      "art wave"
+      "art transport"
+      "art bottom"
+      "art end";
+    column-gap: 48px;
+    row-gap: 2px;
+    align-items: center;
+    justify-items: center;
+    padding: 0;
+  }
+
+  .mobile-sheet-main:not(.lyrics-mode) .quality-notice {
+    grid-area: notice;
+  }
+
+  .mobile-sheet-main:not(.lyrics-mode) .mobile-sheet-art {
+    grid-area: art;
+    --_art-size: min(calc(100dvh - var(--safe-top) - var(--safe-bottom) - 150px), 44vw);
+    flex: none;
+    width: var(--_art-size);
+    height: var(--_art-size);
+    max-width: none;
+    max-height: none;
+    min-height: 0;
+    margin: 0;
+    justify-self: end;
+    align-self: center;
+  }
+
+  .mobile-sheet-main:not(.lyrics-mode) .mobile-sheet-title {
+    grid-area: title;
+  }
+
+  .mobile-sheet-main:not(.lyrics-mode) .mobile-sheet-artist {
+    grid-area: artist;
+  }
+
+  .mobile-sheet-main:not(.lyrics-mode) .mobile-sheet-album {
+    grid-area: album;
+  }
+
+  .mobile-sheet-main:not(.lyrics-mode) .mobile-sheet-wave {
+    grid-area: wave;
+    width: 100%;
+  }
+
+  .mobile-sheet-main:not(.lyrics-mode) .mobile-sheet-transport {
+    grid-area: transport;
+  }
+
+  .mobile-sheet-main:not(.lyrics-mode) .mobile-sheet-bottom {
+    grid-area: bottom;
+    margin: 0;
+  }
+
+  /* Lyrics mode keeps the art full size on the left; the lyrics take the
+     right column instead of the whole middle. */
+  .mobile-sheet-main.lyrics-mode {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) 40px;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "art title close"
+      "art artist close"
+      "art lyrics lyrics"
+      "art wave wave"
+      "art transport transport";
+    column-gap: 32px;
+  }
+
+  .mobile-sheet-main.lyrics-mode .mobile-sheet-art {
+    --_art-size: min(calc(100dvh - var(--safe-top) - var(--safe-bottom) - 170px), 38vw);
+    width: var(--_art-size);
+    height: var(--_art-size);
+    border-radius: 14px;
+    align-self: center;
+    justify-self: end;
+  }
+
+  .mobile-sheet-main.lyrics-mode .np-lyrics-overlay {
+    margin: 8px 0 0;
+    width: 100%;
+  }
+}

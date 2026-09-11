@@ -98,9 +98,22 @@ function SortIcon({ mode }: { mode: string }) {
   }
 }
 
-const COLS = 3;
+/** The phone layout's column count, and the floor on wider viewports. */
+const MIN_COLS = 3;
+/** Card width the column count is derived from once the grid is wider than a phone. */
+const TARGET_CARD_WIDTH = 160;
+/** `.mobile-album-grid-scroll` side padding (16px each side) and the row's column gap — keep in sync with the CSS. */
+const GRID_SIDE_PADDING = 32;
+const GRID_GAP = 14;
 /** Initial row-height estimate, replaced by a one-time measurement of a real row. */
 const ROW_HEIGHT = 210;
+
+/** Columns that fit `width` at roughly TARGET_CARD_WIDTH per card, never fewer than the phone layout. */
+function columnsForWidth(width: number): number {
+  if (width <= 0) return MIN_COLS;
+  const fit = Math.floor((width - GRID_SIDE_PADDING + GRID_GAP) / (TARGET_CARD_WIDTH + GRID_GAP));
+  return Math.max(MIN_COLS, fit);
+}
 
 function findNode(nodes: GenreNode[], id: string): GenreNode | null {
   for (const n of nodes) {
@@ -116,6 +129,9 @@ interface Props {
   contextLabel: string;
   /** Override internal back navigation (used by saved search view). */
   onBack?: () => void;
+  /** Keep the header's back slot but render nothing in it — for a grid that
+   * is the root of its pane and has nowhere to go back to. */
+  hideBack?: boolean;
 }
 
 type Crumb = { label: string; depth: number; node: GenreNode | null };
@@ -158,7 +174,7 @@ function BreadcrumbItem({
  * 3-column album grid with back + title + shuffle header. Title is the
  * current genre name (or artist, year, search query, "Favourites", "All").
  */
-export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }: Props) {
+export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride, hideBack }: Props) {
   const albums = useLibraryStore((s) => s.albums);
   const sidebarMode = useLibraryStore((s) => s.sidebarMode);
   const selectedGenreId = useLibraryStore((s) => s.selectedGenreId);
@@ -325,7 +341,13 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
   return (
     <div className="mobile-screen">
       <header className="mobile-header mobile-header-grid5">
-        <button className="mobile-header-circle" onClick={handleBack} aria-label="Back">
+        <button
+          className="mobile-header-circle"
+          onClick={handleBack}
+          aria-label="Back"
+          disabled={hideBack}
+          style={hideBack ? { visibility: "hidden" } : undefined}
+        >
           <IconChevronLeft size={22} />
         </button>
         <div className="mobile-header-title-wrap">
@@ -435,7 +457,8 @@ export default function MobileAlbumGrid({ contextLabel, onBack: onBackOverride }
 }
 
 /**
- * Row-virtualized 3-column grid. Only visible rows mount their
+ * Row-virtualized grid — three columns on a phone, more as the viewport
+ * widens (see `columnsForWidth`). Only visible rows mount their
  * MobileAlbumCard children, which means only visible cards fire
  * `getArtUrl` IPC calls. Without this, a 2,255-album library fires
  * 2,255 parallel IPC + Plex fetches at mount, swamps the bridge,
@@ -445,7 +468,8 @@ const VirtualizedAlbumGrid = memo(function VirtualizedAlbumGrid({ albums }: { al
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = useState(false);
   const [rowHeight, setRowHeight] = useState(ROW_HEIGHT);
-  const rowCount = Math.ceil(albums.length / COLS);
+  const [cols, setCols] = useState(MIN_COLS);
+  const rowCount = Math.ceil(albums.length / cols);
   const estimate = useCallback(() => rowHeight, [rowHeight]);
 
   const gridKey = `${albums.length}:${albums[0]?.ratingKey ?? ""}`;
@@ -488,7 +512,30 @@ const VirtualizedAlbumGrid = memo(function VirtualizedAlbumGrid({ albums }: { al
       const h = row.offsetHeight;
       if (h > 0 && h !== rowHeight) setRowHeight(h);
     }
-  }, [rowHeight, albums]);
+  }, [rowHeight, albums, cols]);
+
+  // The column count follows the scroller's width: a tablet, a rotation, or
+  // a side pane all change how many cards fit a row.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const apply = () => setCols(columnsForWidth(el.clientWidth));
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // The virtualizer only consults `estimateSize` when it (re)builds its
+  // measurement cache, so a new estimate on its own changes nothing: every
+  // row keeps the size computed from the previous one. That is how the
+  // measured height above silently failed to apply — on a wide screen the
+  // real row is far taller than the initial guess, and rows were laid out
+  // at the guess and drawn over each other. Flush the cache whenever the
+  // height or the column count changes so the layout picks the new size up.
+  useLayoutEffect(() => {
+    virtualizer.measure();
+  }, [virtualizer, rowHeight, cols]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -515,13 +562,16 @@ const VirtualizedAlbumGrid = memo(function VirtualizedAlbumGrid({ albums }: { al
         }}
       >
         {virtualizer.getVirtualItems().map((row) => {
-          const start = row.index * COLS;
-          const rowAlbums = albums.slice(start, start + COLS);
+          const start = row.index * cols;
+          const rowAlbums = albums.slice(start, start + cols);
           return (
             <div
               key={row.key}
               className="mobile-album-grid-row"
-              style={{ transform: `translateY(${row.start}px)` }}
+              style={{
+                transform: `translateY(${row.start}px)`,
+                gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+              }}
               data-index={row.index}
             >
               {rowAlbums.map((album) => (
