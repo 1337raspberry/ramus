@@ -144,6 +144,11 @@ pub struct ExcludeBackupArgs {
 #[serde(rename_all = "camelCase")]
 pub struct ShowSearchBarArgs {
     pub initial_query: String,
+    /// Top of the page's search view in points from the window's top edge;
+    /// 0 anchors the bar at the safe area instead.
+    pub top: f64,
+    /// Width of the page's search view in points; 0 spans the window.
+    pub width: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]

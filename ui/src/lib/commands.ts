@@ -476,10 +476,46 @@ export const openExternalUrl = (url: string) => invoke<void>("open_external_url"
 
 export const dismissKeyboard = () => invoke<void>("dismiss_keyboard");
 
-export const showNativeSearchBar = (initialQuery: string) =>
-  invoke<void>("show_native_search_bar", { initialQuery });
+// The native search bar's show/hide commands are serialised. Each is an
+// async command handled on its own runtime task, so a show issued straight
+// after a hide (a remount of the search view) could otherwise be processed
+// first and the hide would tear down the bar that was just presented.
+let nativeSearchBarChain: Promise<unknown> = Promise.resolve();
+const chainNativeSearchBar = (op: () => Promise<void>) => {
+  const next = nativeSearchBarChain.then(op, op);
+  nativeSearchBarChain = next.catch(() => {});
+  return next;
+};
 
-export const hideNativeSearchBar = () => invoke<void>("hide_native_search_bar");
+// A hide is held for one microtask. React remounts the search view within a
+// single synchronous commit (StrictMode's double mount in dev, a rotation
+// across the two-pane breakpoint in production), which runs the old
+// instance's hide and the new instance's show back to back; sent as-is,
+// the bar and keyboard visibly drop and come back a frame later. The show
+// cancels the held hide instead, and the native side re-places the bar it
+// already has.
+let hidePending = false;
+
+/** `top`/`width` place the bar over the page's search view: its top edge in
+ * CSS px from the top of the window (0 = the safe area) and its width (0 =
+ * the full window). */
+export const showNativeSearchBar = (initialQuery: string, top: number, width: number) => {
+  hidePending = false;
+  return chainNativeSearchBar(() =>
+    invoke<void>("show_native_search_bar", { initialQuery, top, width }),
+  );
+};
+
+export const hideNativeSearchBar = () => {
+  hidePending = true;
+  return new Promise<void>((resolve, reject) => {
+    queueMicrotask(() => {
+      if (!hidePending) return resolve();
+      hidePending = false;
+      chainNativeSearchBar(() => invoke<void>("hide_native_search_bar")).then(resolve, reject);
+    });
+  });
+};
 
 // --- Downloads ---
 

@@ -6248,7 +6248,11 @@ body.is-fullscreen .focus-body {
   flex: 1 1 auto;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 24px;
+  /* The software keyboard overlays the page without resizing it (see
+     --keyboard-inset); reserving its height keeps the last rows reachable
+     while it is up. The transition tracks the keyboard's own slide. */
+  padding-bottom: calc(24px + var(--keyboard-inset));
+  transition: padding-bottom 220ms ease-out;
 }
 
 .mobile-search-section {

@@ -275,6 +275,14 @@ export default function MobileApp({ onOpenSettings }: Props) {
     useLibraryStore.setState({ selectedArtistId: null, albums: [] });
   }, [split]);
 
+  // Cancelling a search from its own bar. The store write is what unmounts
+  // the search view (and lets it forget the query); the hardware back path
+  // below does the same.
+  const closeSearch = useCallback(() => {
+    useLibraryStore.setState({ searchQuery: null });
+    setView("genres");
+  }, []);
+
   // Unified back navigation — pops one level of the view hierarchy
   const handleBack = useCallback(() => {
     const s = useLibraryStore.getState();
@@ -397,7 +405,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
     if (detailAlbum) return <MobileAlbumDetail />;
 
     if (view === "search" && searchQuery !== null)
-      return <MobileSearch onBack={() => setView("genres")} />;
+      return <MobileSearch onBack={closeSearch} />;
     if (view === "suggestion")
       return (
         <MobileSuggestion
@@ -454,7 +462,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
   // Two-pane: the tab surface for the navigation pane…
   const renderNav = () => {
     if (view === "search" && searchQuery !== null)
-      return <MobileSearch onBack={() => setView("genres")} />;
+      return <MobileSearch onBack={closeSearch} />;
     if (view === "artists") return <MobileArtistList onOpenSettings={onOpenSettings} />;
     if (view === "lists") return <MobileListsHub onOpenGrid={() => {}} />;
     return <MobileGenreTree onOpenSettings={onOpenSettings} />;

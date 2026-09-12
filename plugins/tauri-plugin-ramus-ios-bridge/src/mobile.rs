@@ -159,11 +159,18 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
 
-    pub fn show_native_search_bar(&self, initial_query: &str) -> crate::Result<()> {
+    pub fn show_native_search_bar(
+        &self,
+        initial_query: &str,
+        top: f64,
+        width: f64,
+    ) -> crate::Result<()> {
         self.0.run_mobile_plugin::<Empty>(
             "showNativeSearchBar",
             ShowSearchBarArgs {
                 initial_query: initial_query.to_string(),
+                top,
+                width,
             },
         )?;
         Ok(())

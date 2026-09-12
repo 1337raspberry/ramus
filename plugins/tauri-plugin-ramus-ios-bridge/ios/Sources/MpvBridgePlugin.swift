@@ -23,6 +23,12 @@ class MpvBridgePlugin: Plugin {
     private var nowPlaying: NowPlayingBridge?
     private weak var webView: WKWebView?
     private var searchBar: UISearchBar?
+    /// Row holding the search bar and its Cancel button — the view that is
+    /// actually added to the hierarchy.
+    private var searchStrip: UIView?
+    /// The strip's placement constraints, replaced when the page re-reports
+    /// its slot without the bar being torn down.
+    private var searchStripPlacement: [NSLayoutConstraint] = []
     private var interruptionObserver: NSObjectProtocol?
     private var pathMonitor: NWPathMonitor?
     private let pathMonitorQueue = DispatchQueue(label: "com.raspsoft.ramus.path-monitor")
@@ -421,6 +427,9 @@ class MpvBridgePlugin: Plugin {
 
     @objc public func dismissKeyboard(_ invoke: Invoke) throws {
         DispatchQueue.main.async { [weak self] in
+            // The search bar sits beside the webview, not inside it, so
+            // endEditing on the webview alone would never reach it.
+            self?.searchBar?.resignFirstResponder()
             self?.webView?.endEditing(true)
         }
         invoke.resolve([:])
@@ -431,7 +440,10 @@ class MpvBridgePlugin: Plugin {
     @objc public func showNativeSearchBar(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(ShowSearchBarArgs.self)
         DispatchQueue.main.async { [weak self] in
-            self?.presentSearchBar(initialText: args.initialQuery)
+            self?.presentSearchBar(
+                initialText: args.initialQuery,
+                top: args.top.map { CGFloat($0) },
+                width: args.width.map { CGFloat($0) })
         }
         invoke.resolve([:])
     }
@@ -443,32 +455,111 @@ class MpvBridgePlugin: Plugin {
         invoke.resolve([:])
     }
 
-    private func presentSearchBar(initialText: String) {
-        guard searchBar == nil, let webView = webView, let parent = webView.superview else { return }
+    private func presentSearchBar(initialText: String, top: CGFloat?, width: CGFloat?) {
+        guard let webView = webView, let parent = webView.superview else { return }
+        if let strip = searchStrip {
+            // Already up: the page remounted its search view (a rotation
+            // across the two-pane breakpoint) and is re-reporting the slot.
+            // Re-place the existing strip; its text and keyboard stay as
+            // they are rather than being torn down and rebuilt.
+            placeSearchStrip(strip, in: parent, top: top, width: width)
+            return
+        }
 
         let bar = UISearchBar()
         bar.delegate = self
         bar.text = initialText.isEmpty ? nil : initialText
         bar.placeholder = "Search"
-        bar.showsCancelButton = true
         bar.searchBarStyle = .minimal
         bar.overrideUserInterfaceStyle = .dark
         bar.tintColor = .white
-        bar.translatesAutoresizingMaskIntoConstraints = false
+        // UIKit's own cancel button is unusable here: iPadOS never draws it
+        // (documented), and on iPhone it is disabled the moment the bar
+        // resigns first responder — which any tap into the page causes.
+        // A separate button beside the bar stays tappable on both.
+        bar.showsCancelButton = false
+        bar.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        parent.addSubview(bar)
-        NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: parent.safeAreaLayoutGuide.topAnchor),
-            bar.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: parent.trailingAnchor),
-        ])
+        let strip = UIStackView(arrangedSubviews: [bar, makeSearchCancelButton()])
+        strip.axis = .horizontal
+        strip.alignment = .center
+        strip.spacing = 4
+        strip.isLayoutMarginsRelativeArrangement = true
+        strip.directionalLayoutMargins = NSDirectionalEdgeInsets(
+            top: 0, leading: 0, bottom: 0, trailing: 10)
+        strip.overrideUserInterfaceStyle = .dark
+        strip.translatesAutoresizingMaskIntoConstraints = false
+
+        parent.addSubview(strip)
+        placeSearchStrip(strip, in: parent, top: top, width: width)
 
         searchBar = bar
+        searchStrip = strip
         bar.becomeFirstResponder()
     }
 
+    /// The page reserves a slot for the bar at the top of its search view
+    /// and reports where that slot is. On a phone it starts at the safe
+    /// area; in the two-pane tablet layout the view sits below the
+    /// navigation pane's toolbar and spans only that pane, so the bar
+    /// must not cover the toolbar or the content pane's header.
+    private func placeSearchStrip(_ strip: UIView, in parent: UIView, top: CGFloat?, width: CGFloat?) {
+        NSLayoutConstraint.deactivate(searchStripPlacement)
+        var constraints = [strip.leadingAnchor.constraint(equalTo: parent.leadingAnchor)]
+        if let top, top > 0 {
+            constraints.append(strip.topAnchor.constraint(equalTo: parent.topAnchor, constant: top))
+        } else {
+            constraints.append(
+                strip.topAnchor.constraint(equalTo: parent.safeAreaLayoutGuide.topAnchor))
+        }
+        if let width, width > 0, width < parent.bounds.width - 1 {
+            constraints.append(strip.widthAnchor.constraint(equalToConstant: width))
+        } else {
+            constraints.append(strip.trailingAnchor.constraint(equalTo: parent.trailingAnchor))
+        }
+        NSLayoutConstraint.activate(constraints)
+        searchStripPlacement = constraints
+    }
+
+    private func makeSearchCancelButton() -> UIButton {
+        let button: UIButton
+        if #available(iOS 26.0, *) {
+            // Matches the system search bar's own round glass close button.
+            var config = UIButton.Configuration.glass()
+            config.image = UIImage(
+                systemName: "xmark",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium))
+            config.cornerStyle = .capsule
+            config.contentInsets = .zero
+            button = UIButton(configuration: config)
+            NSLayoutConstraint.activate([
+                button.widthAnchor.constraint(equalToConstant: 40),
+                button.heightAnchor.constraint(equalToConstant: 40),
+            ])
+        } else {
+            button = UIButton(type: .system)
+            button.setTitle("Cancel", for: .normal)
+            button.titleLabel?.font = .systemFont(ofSize: 17)
+            button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 6, bottom: 8, right: 6)
+        }
+        button.tintColor = .white
+        button.accessibilityLabel = "Cancel"
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.addTarget(self, action: #selector(searchCancelTapped), for: .touchUpInside)
+        return button
+    }
+
+    @objc private func searchCancelTapped() {
+        removeSearchBar()
+        dispatchSearchEvent("nativeSearchCancel", detail: nil)
+    }
+
     private func removeSearchBar() {
-        searchBar?.removeFromSuperview()
+        searchBar?.resignFirstResponder()
+        searchStrip?.removeFromSuperview()
+        searchStripPlacement = []
+        searchStrip = nil
         searchBar = nil
         webView?.endEditing(true)
     }
@@ -581,6 +672,11 @@ class ExcludeBackupArgs: Decodable {
 
 class ShowSearchBarArgs: Decodable {
     let initialQuery: String
+    /// Top of the page's search view in points from the window's top edge;
+    /// nil or 0 anchors the bar at the safe area instead.
+    let top: Double?
+    /// Width of the page's search view in points; nil or 0 spans the window.
+    let width: Double?
 }
 
 class NowPlayingMetadata: Decodable {
@@ -609,11 +705,6 @@ extension MpvBridgePlugin: UISearchBarDelegate {
 
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
         searchBar.resignFirstResponder()
-    }
-
-    func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
-        removeSearchBar()
-        dispatchSearchEvent("nativeSearchCancel", detail: nil)
     }
 }
 

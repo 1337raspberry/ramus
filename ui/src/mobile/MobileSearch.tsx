@@ -8,6 +8,7 @@ import {
   getAlbum,
   showNativeSearchBar,
   hideNativeSearchBar,
+  dismissKeyboard,
 } from "../lib/commands";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useLibraryStore } from "../stores/libraryStore";
@@ -93,6 +94,8 @@ export default function MobileSearch({ onBack }: Props) {
   const openAlbumDetail = useLibraryStore((s) => s.openAlbumDetail);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const dismissIssuedRef = useRef(false);
   const onBackRef = useRef(onBack);
   onBackRef.current = onBack;
 
@@ -101,7 +104,12 @@ export default function MobileSearch({ onBack }: Props) {
       inputRef.current?.focus();
       return;
     }
-    showNativeSearchBar(lastQuery);
+    // The native bar is placed over this view's reserved slot: the full
+    // width from the safe area on a phone; in the two-pane tablet layout
+    // the view sits below the navigation pane's toolbar and spans only
+    // that pane.
+    const rect = rootRef.current?.getBoundingClientRect();
+    showNativeSearchBar(lastQuery, Math.round(rect?.top ?? 0), Math.round(rect?.width ?? 0));
 
     const onText = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -354,11 +362,26 @@ export default function MobileSearch({ onBack }: Props) {
     </div>
   );
 
+  // Dragging the results hides the keyboard, as native lists do. The host
+  // publishes the keyboard's on-screen height as --keyboard-inset, so an
+  // attached hardware keyboard (inset 0) never triggers a round trip, and
+  // the flag stops the scroll frames between the request and the inset
+  // dropping to 0 from repeating it.
+  const onResultsScroll = () => {
+    if (dismissIssuedRef.current) return;
+    const inset = parseFloat(document.documentElement.style.getPropertyValue("--keyboard-inset"));
+    if (!(inset > 0)) return;
+    dismissIssuedRef.current = true;
+    setTimeout(() => (dismissIssuedRef.current = false), 500);
+    if (IS_IOS) dismissKeyboard().catch(() => {});
+    else inputRef.current?.blur();
+  };
+
   const trimmed = query.trim();
   const sections = response?.sections ?? [];
 
   return (
-    <div className="mobile-screen mobile-search">
+    <div className="mobile-screen mobile-search" ref={rootRef}>
       {IS_IOS ? (
         <div style={{ height: 56, flexShrink: 0 }} />
       ) : (
@@ -389,7 +412,7 @@ export default function MobileSearch({ onBack }: Props) {
         </header>
       )}
 
-      <div className="mobile-search-results">
+      <div className="mobile-search-results" onScroll={onResultsScroll}>
         {!trimmed && recents.length > 0 && (
           <>
             <div className="mobile-search-section">

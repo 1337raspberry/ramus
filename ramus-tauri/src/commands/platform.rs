@@ -14,16 +14,23 @@ pub async fn dismiss_keyboard(app: tauri::AppHandle) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub async fn show_native_search_bar(app: tauri::AppHandle, initial_query: String) -> CmdResult<()> {
+pub async fn show_native_search_bar(
+    app: tauri::AppHandle,
+    initial_query: String,
+    top: f64,
+    width: f64,
+) -> CmdResult<()> {
     #[cfg(target_os = "ios")]
     {
         use tauri_plugin_ramus_ios_bridge::RamusIosBridgeExt;
         app.ramus_ios_bridge()
-            .show_native_search_bar(&initial_query)
+            .show_native_search_bar(&initial_query, top, width)
             .map_err(|e| e.to_string())?;
     }
     let _ = app;
     let _ = initial_query;
+    let _ = top;
+    let _ = width;
     Ok(())
 }
 

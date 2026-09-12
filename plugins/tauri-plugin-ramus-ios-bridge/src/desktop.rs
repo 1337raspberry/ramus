@@ -70,7 +70,12 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn dismiss_keyboard(&self) -> crate::Result<()> {
         Ok(())
     }
-    pub fn show_native_search_bar(&self, _initial_query: &str) -> crate::Result<()> {
+    pub fn show_native_search_bar(
+        &self,
+        _initial_query: &str,
+        _top: f64,
+        _width: f64,
+    ) -> crate::Result<()> {
         Ok(())
     }
     pub fn hide_native_search_bar(&self) -> crate::Result<()> {
