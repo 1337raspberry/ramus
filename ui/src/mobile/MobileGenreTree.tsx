@@ -151,7 +151,14 @@ export default function MobileGenreTree({ onOpenSettings }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastSelectedGenreId = useLibraryStore((s) => s.lastSelectedGenreId);
 
+  // Restores the scroll position on mount only. One pane remounts the tree
+  // on every visit, so that covers every case there; in two-pane mode the
+  // tree stays mounted while genres are tapped, and re-centring the tapped
+  // row on each tap would yank the pane under the finger.
+  const restoredRef = useRef(false);
   useLayoutEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
     const el = scrollRef.current;
     if (!el) return;
     if (lastSelectedGenreId) {

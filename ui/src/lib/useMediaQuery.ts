@@ -28,6 +28,8 @@ export function useMediaQuery(query: string): boolean {
  * under this (the widest is ~440px), so it never fires there.
  *
  * Keep in sync with the `(min-width: 700px)` media blocks in styles.css.
+ * Nothing consults it from TypeScript yet: the tablet tier is CSS-only,
+ * and this is the documented anchor for that breakpoint.
  */
 export const TABLET_QUERY = "(pointer: coarse) and (min-width: 700px)";
 

@@ -75,12 +75,18 @@ function Stars({ rating }: { rating: number | null }) {
   );
 }
 
+/** The query survives a remount. Rotating an iPad across the two-pane
+ * breakpoint re-parents this view, and React mounts a fresh instance; the
+ * native search bar would come back empty otherwise. Cleared when the
+ * search itself is dismissed (the store's `searchQuery` goes null). */
+let lastQuery = "";
+
 function albumCountLabel(n: number) {
   return n === 1 ? "1 album" : `${n} albums`;
 }
 
 export default function MobileSearch({ onBack }: Props) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(lastQuery);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [recents, setRecents] = useState<RecentSearch[]>(loadRecents);
@@ -95,7 +101,7 @@ export default function MobileSearch({ onBack }: Props) {
       inputRef.current?.focus();
       return;
     }
-    showNativeSearchBar("");
+    showNativeSearchBar(lastQuery);
 
     const onText = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -112,6 +118,20 @@ export default function MobileSearch({ onBack }: Props) {
       hideNativeSearchBar();
       window.removeEventListener("nativeSearchText", onText);
       window.removeEventListener("nativeSearchCancel", onCancel);
+    };
+  }, []);
+
+  useEffect(() => {
+    lastQuery = query;
+  }, [query]);
+
+  // A remount with the search still open (rotation) keeps the query; an
+  // unmount because the search was dismissed forgets it. The store is
+  // written synchronously by every dismissal path, so it already reads null
+  // here in that case.
+  useEffect(() => {
+    return () => {
+      if (useLibraryStore.getState().searchQuery === null) lastQuery = "";
     };
   }, []);
 

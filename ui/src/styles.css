@@ -8905,6 +8905,21 @@ body.is-fullscreen .focus-body {
     max-width: min(78vw, 560px);
   }
 
+  /* The queue sits inside the centred column rather than bleeding to the
+     screen edges. */
+  .mobile-upnext {
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
+/* The larger transport is gated on height as well: the short-viewport
+   compaction block above (`max-height: 680px`) is neither pointer- nor
+   width-gated, and a wide-but-short touch screen (a 16:10 tablet in
+   landscape) matches both. Without the height guard the two interleave —
+   this block's buttons with that block's glyphs — exactly where vertical
+   room is scarcest. */
+@media (pointer: coarse) and (min-width: 700px) and (min-height: 681px) {
   .mobile-sheet-transport {
     gap: 30px;
     margin-top: 14px;
@@ -8928,13 +8943,6 @@ body.is-fullscreen .focus-body {
   .mobile-sheet-transport-btn.secondary svg {
     width: 26px;
     height: 26px;
-  }
-
-  /* The queue sits inside the centred column rather than bleeding to the
-     screen edges. */
-  .mobile-upnext {
-    margin-left: 0;
-    margin-right: 0;
   }
 }
 
@@ -9051,6 +9059,10 @@ body.is-fullscreen .focus-body {
     --_art-size: min(calc(100dvh - var(--safe-top) - var(--safe-bottom) - 170px), 38vw);
     width: var(--_art-size);
     height: var(--_art-size);
+    /* Both dimensions are explicit, so the aspect ratio no longer holds the
+       square; the tablet tier's max-width would squash it on a wide screen. */
+    max-width: none;
+    max-height: none;
     border-radius: 14px;
     align-self: center;
     justify-self: end;

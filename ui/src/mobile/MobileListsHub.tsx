@@ -121,6 +121,9 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
     onOpenGrid();
   };
 
+  // Opening a playlist also closes any album detail: in two-pane mode the
+  // detail sits in the content pane beside this hub and takes precedence
+  // over the playlist, so without this the tap would do nothing visible.
   return (
     <div className="mobile-lists-hub">
       <div className="mobile-lists-section-title">Playlists</div>
@@ -135,7 +138,9 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
           <button
             key={p.sourceId}
             className="mobile-artist-row"
-            onClick={() => useLibraryStore.setState({ browsePlaylist: p })}
+            onClick={() =>
+              useLibraryStore.setState({ browsePlaylist: p, detailAlbum: null, detailTracks: [] })
+            }
           >
             <HubThumb thumb={p.thumb} />
             <span className="mobile-lists-row-name">{p.title}</span>
@@ -205,7 +210,7 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
             getPlaylists()
               .then(setPlaylists)
               .catch(() => {});
-            useLibraryStore.setState({ browsePlaylist: p });
+            useLibraryStore.setState({ browsePlaylist: p, detailAlbum: null, detailTracks: [] });
           }}
         />
       )}
@@ -219,7 +224,7 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
             getPlaylists()
               .then(setPlaylists)
               .catch(() => {});
-            useLibraryStore.setState({ browsePlaylist: p });
+            useLibraryStore.setState({ browsePlaylist: p, detailAlbum: null, detailTracks: [] });
           }}
         />
       )}

@@ -485,6 +485,10 @@ const VirtualizedAlbumGrid = memo(function VirtualizedAlbumGrid({ albums }: { al
     initialOffset: restoreOffset,
   });
 
+  const restoreRef = useRef(restoreOffset);
+  /** Row height last read off the DOM; `rowHeight` catches up to it one render later. */
+  const measuredHeightRef = useRef<number | null>(null);
+
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el && restoreOffset > 0) {
@@ -510,7 +514,10 @@ const VirtualizedAlbumGrid = memo(function VirtualizedAlbumGrid({ albums }: { al
     const row = scrollRef.current?.querySelector<HTMLElement>(".mobile-album-grid-row");
     if (row) {
       const h = row.offsetHeight;
-      if (h > 0 && h !== rowHeight) setRowHeight(h);
+      if (h > 0) {
+        measuredHeightRef.current = h;
+        if (h !== rowHeight) setRowHeight(h);
+      }
     }
   }, [rowHeight, albums, cols]);
 
@@ -536,6 +543,20 @@ const VirtualizedAlbumGrid = memo(function VirtualizedAlbumGrid({ albums }: { al
   useLayoutEffect(() => {
     virtualizer.measure();
   }, [virtualizer, rowHeight, cols]);
+
+  // The restore above runs against the initial estimate, and when the real
+  // rows are taller the list is still too short for a deep offset, so the
+  // browser clamps it. Re-apply once the measured height is in force and the
+  // sizer rendered with it — `totalSize` is read during render, so this
+  // effect sees the same value the DOM has.
+  const totalSize = virtualizer.getTotalSize();
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || restoreRef.current <= 0) return;
+    if (measuredHeightRef.current !== rowHeight) return;
+    el.scrollTop = restoreRef.current;
+    restoreRef.current = 0;
+  }, [totalSize, rowHeight]);
 
   useEffect(() => {
     const el = scrollRef.current;

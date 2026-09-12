@@ -5,6 +5,7 @@ import { useDownloadsStore } from "../stores/downloadsStore";
 import { IconDownload } from "../components/Icons";
 import { useLongPress } from "../lib/useLongPress";
 import { playFavouritesShuffled } from "../lib/playFavouritesShuffled";
+import { useMediaQuery, SPLIT_QUERY } from "../lib/useMediaQuery";
 import MobileFilterPanel from "./MobileFilterPanel";
 
 /** Hold duration for the toolbar's long-press shortcuts (settings on the
@@ -165,6 +166,7 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
   const [favHolding, setFavHolding] = useState(false);
   const [settingsHolding, setSettingsHolding] = useState(false);
   const filterActive = hasActiveFilters(albumFilters);
+  const split = useMediaQuery(SPLIT_QUERY);
 
   const pick = (v: MobileView) => {
     useLibraryStore.setState({
@@ -184,7 +186,11 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
 
     if (v === "genres") {
       setSidebarMode("genres");
-      useLibraryStore.setState({ selectedGenreId: null });
+      // One pane shows the tree in place of the grid, so the "All" that
+      // setSidebarMode selects is undone. Two panes show both, and that
+      // "All" is exactly the content pane's resting state — leaving it
+      // spares the promotion effect a second full-library load.
+      if (!split) useLibraryStore.setState({ selectedGenreId: null });
     } else if (v === "artists") {
       setSidebarMode("artists");
     } else if (v === "suggestion") {

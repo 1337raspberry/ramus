@@ -118,9 +118,15 @@ export default function MobileApp({ onOpenSettings }: Props) {
   // a toolbar-less Lists hub (selectedGenreId counts toward `inGrid`).
   const viewRef = useRef(view);
   viewRef.current = view;
+  // "All" is excluded: nothing selects it while the Lists tab is up without
+  // also switching the view (`applyBookmark` does both in one handler), and
+  // the two-pane promotion below sets it precisely to keep the Lists tab
+  // usable — re-evaluating on a rotation back to one pane must not read
+  // that as a genre landing on the hub.
   useEffect(() => {
     if (split) return;
-    if (selectedGenreId && viewRef.current === "lists") setView("genres");
+    if (selectedGenreId && selectedGenreId !== "__all__" && viewRef.current === "lists")
+      setView("genres");
   }, [selectedGenreId, split]);
 
   // Expanding the player sheet dismisses an active search. The search
@@ -153,6 +159,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
   // state is the whole library, so promote an empty selection to "All".
   // Single-pane keeps `null` — there it means "show the tree in place of
   // the grid". Every back step in two-pane mode lands here.
+  const promotedRef = useRef(false);
   useEffect(() => {
     if (!split) return;
     const hasContext =
@@ -164,12 +171,60 @@ export default function MobileApp({ onOpenSettings }: Props) {
       (view === "artists" && !!selectedArtistId) ||
       !!selectedGenreId;
     if (hasContext) return;
+    promotedRef.current = true;
     useLibraryStore.setState({ selectedGenreId: "__all__" });
     useLibraryStore.getState().loadAllAlbums();
   }, [
     split,
     view,
     detailAlbum,
+    browsePlaylist,
+    browseCollectionName,
+    browseArtistName,
+    browseYear,
+    selectedArtistId,
+    selectedGenreId,
+  ]);
+
+  // The promotion is a two-pane convenience, not a choice the user made, so
+  // it must not survive a rotation back to one pane: there "All" means the
+  // grid, and the user was on the tree. A real selection clears the marker.
+  // `null` does not: a tab tap clears the selection and the promotion
+  // refills it in the same effects pass, and this effect sees the cleared
+  // value on that pass — treating it as a clear would drop the marker the
+  // moment it was set. (An "All" the user then picks from the tree keeps
+  // the marker; the cost is landing on the tree after a rotation.)
+  useEffect(() => {
+    if (selectedGenreId && selectedGenreId !== "__all__") promotedRef.current = false;
+  }, [selectedGenreId]);
+  useEffect(() => {
+    if (split || !promotedRef.current) return;
+    promotedRef.current = false;
+    useLibraryStore.setState({ selectedGenreId: null });
+  }, [split]);
+
+  // The suggestion view is a tab, but every navigation surface writes its
+  // selection straight into the store without knowing which tab is up: the
+  // genre tree beside it in two-pane mode, and the now-playing sheet's genre
+  // and artist pills on any layout. Left alone, the view stays on a
+  // suggestion the store has already cleared ("Loading suggestion…" with
+  // nothing loading). Keyed on the selection changing, with the view read
+  // through a ref, so opening the tab — which clears every selection —
+  // cannot trip it; album detail is excluded because it overlays the
+  // suggestion rather than leaving it.
+  useEffect(() => {
+    if (viewRef.current !== "suggestion") return;
+    const navigated =
+      !!browsePlaylist ||
+      !!browseCollectionName ||
+      !!browseArtistName ||
+      !!browseYear ||
+      !!selectedArtistId ||
+      (!!selectedGenreId && selectedGenreId !== "__all__");
+    if (!navigated) return;
+    useLibraryStore.setState({ suggestion: null, suggestionMissed: false });
+    setView("genres");
+  }, [
     browsePlaylist,
     browseCollectionName,
     browseArtistName,
@@ -206,6 +261,19 @@ export default function MobileApp({ onOpenSettings }: Props) {
       setReturnPlaylist(null);
     }
   }, [browseArtistName, returnPlaylist]);
+
+  // Leaving an artist's albums. One pane swaps the grid for the artist list,
+  // so the album list is simply dropped; two panes keep showing a grid, and
+  // the promotion effect cannot refill it (the selection is already "All"),
+  // so the full library is reloaded here instead.
+  const leaveArtistGrid = useCallback(() => {
+    if (split) {
+      useLibraryStore.setState({ selectedArtistId: null });
+      void useLibraryStore.getState().loadAllAlbums();
+      return;
+    }
+    useLibraryStore.setState({ selectedArtistId: null, albums: [] });
+  }, [split]);
 
   // Unified back navigation — pops one level of the view hierarchy
   const handleBack = useCallback(() => {
@@ -264,7 +332,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
     }
 
     if (view === "artists" && s.selectedArtistId) {
-      useLibraryStore.setState({ selectedArtistId: null, albums: [] });
+      leaveArtistGrid();
       return;
     }
 
@@ -285,7 +353,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
       useLibraryStore.setState({ selectedGenreId: null });
       return;
     }
-  }, [view, returnPlaylist, restorePlaylistFromCrumb, split]);
+  }, [view, returnPlaylist, restorePlaylistFromCrumb, split, leaveArtistGrid]);
 
   const canGoBack =
     !!detailAlbum ||
@@ -313,7 +381,12 @@ export default function MobileApp({ onOpenSettings }: Props) {
     });
   }, [sheetExpanded, canGoBack, handleBack]);
 
-  const { containerRef, swipeX } = useEdgeSwipeBack(handleBack, canGoBack && !sheetExpanded);
+  // No edge gesture in two-pane mode: the left edge belongs to the
+  // navigation pane, and the pane the gesture would pop is the other one.
+  const { containerRef, swipeX } = useEdgeSwipeBack(
+    handleBack,
+    canGoBack && !sheetExpanded && !split,
+  );
 
   const bodyStyle =
     swipeX > 0
@@ -383,7 +456,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
     if (view === "search" && searchQuery !== null)
       return <MobileSearch onBack={() => setView("genres")} />;
     if (view === "artists") return <MobileArtistList onOpenSettings={onOpenSettings} />;
-    if (view === "lists") return <MobileListsHub onOpenGrid={() => setView("genres")} />;
+    if (view === "lists") return <MobileListsHub onOpenGrid={() => {}} />;
     return <MobileGenreTree onOpenSettings={onOpenSettings} />;
   };
 
@@ -414,7 +487,8 @@ export default function MobileApp({ onOpenSettings }: Props) {
         />
       );
     if (browseCollectionName) return <MobileAlbumGrid contextLabel="" />;
-    if (view === "artists" && selectedArtistId) return <MobileAlbumGrid contextLabel="Artist" />;
+    if (view === "artists" && selectedArtistId)
+      return <MobileAlbumGrid contextLabel="Artist" onBack={leaveArtistGrid} />;
     if (browseArtistName || browseYear) {
       const crumbActive = returnPlaylist !== null && browseArtistName === returnPlaylist.artistName;
       return (
