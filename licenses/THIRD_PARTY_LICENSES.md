@@ -14,7 +14,7 @@ The following Rust crates are bundled in ramus binaries. Each section lists the 
 
 Used by:
 - `dpi` 0.1.2 — https://github.com/rust-windowing/winit
-- `tao` 0.34.8 — https://github.com/tauri-apps/tao
+- `tao` 0.35.3 — https://github.com/tauri-apps/tao
 
 ```
 Apache License
@@ -1009,7 +1009,7 @@ CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ### ISC License (ISC) (variant 3)
 
 Used by:
-- `rustls-webpki` 0.103.13 — https://github.com/rustls/webpki
+- `rustls-webpki` 0.103.15 — https://github.com/rustls/webpki
 
 ```
 Except as otherwise noted, this project is licensed under the following
@@ -1690,17 +1690,22 @@ Used by:
 - `malloc_buf` 0.0.6 — https://github.com/SSheldon/malloc_buf
 - `match_token` 0.1.0 — https://github.com/servo/html5ever
 - `ndk` 0.9.0 — https://github.com/rust-mobile/ndk
-- `ndk-context` 0.1.1 — https://github.com/rust-windowing/android-ndk-rs
 - `ndk-sys` 0.6.0+11769913 — https://github.com/rust-mobile/ndk
 - `objc2` 0.6.4 — https://github.com/madsmtm/objc2
 - `objc2-app-kit` 0.3.2 — https://github.com/madsmtm/objc2
+- `objc2-cloud-kit` 0.3.2 — https://github.com/madsmtm/objc2
+- `objc2-core-data` 0.3.2 — https://github.com/madsmtm/objc2
 - `objc2-core-foundation` 0.3.2 — https://github.com/madsmtm/objc2
 - `objc2-core-graphics` 0.3.2 — https://github.com/madsmtm/objc2
+- `objc2-core-image` 0.3.2 — https://github.com/madsmtm/objc2
+- `objc2-core-location` 0.3.2 — https://github.com/madsmtm/objc2
+- `objc2-core-text` 0.3.2 — https://github.com/madsmtm/objc2
 - `objc2-encode` 4.1.0 — https://github.com/madsmtm/objc2
 - `objc2-exception-helper` 0.1.1 — https://github.com/madsmtm/objc2
 - `objc2-foundation` 0.3.2 — https://github.com/madsmtm/objc2
 - `objc2-quartz-core` 0.3.2 — https://github.com/madsmtm/objc2
 - `objc2-ui-kit` 0.3.2 — https://github.com/madsmtm/objc2
+- `objc2-user-notifications` 0.3.2 — https://github.com/madsmtm/objc2
 - `objc2-web-kit` 0.3.2 — https://github.com/madsmtm/objc2
 - `phf` 0.10.1 — https://github.com/sfackler/rust-phf
 - `phf` 0.8.0 — https://github.com/sfackler/rust-phf
@@ -1718,17 +1723,17 @@ Used by:
 - `siphasher` 0.3.11 — https://github.com/jedisct1/rust-siphash
 - `siphasher` 1.0.2 — https://github.com/jedisct1/rust-siphash
 - `tao-macros` 0.1.3 — https://github.com/tauri-apps/tao
-- `tauri` 2.10.3 — https://github.com/tauri-apps/tauri
-- `tauri-build` 2.5.6 — https://github.com/tauri-apps/tauri
-- `tauri-codegen` 2.5.5 — https://github.com/tauri-apps/tauri
-- `tauri-macros` 2.5.5 — https://github.com/tauri-apps/tauri
+- `tauri` 2.11.5 — https://github.com/tauri-apps/tauri
+- `tauri-build` 2.6.3 — https://github.com/tauri-apps/tauri
+- `tauri-codegen` 2.6.3 — https://github.com/tauri-apps/tauri
+- `tauri-macros` 2.6.3 — https://github.com/tauri-apps/tauri
 - `tauri-plugin` 2.5.4 — https://github.com/tauri-apps/tauri
 - `tauri-plugin-opener` 2.5.3 — https://github.com/tauri-apps/plugins-workspace
 - `tauri-plugin-ramus-ios-bridge` 0.1.0
 - `tauri-plugin-window-state` 2.4.1 — https://github.com/tauri-apps/plugins-workspace
-- `tauri-runtime` 2.10.1 — https://github.com/tauri-apps/tauri
-- `tauri-runtime-wry` 2.10.1 — https://github.com/tauri-apps/tauri
-- `tauri-utils` 2.8.3 — https://github.com/tauri-apps/tauri
+- `tauri-runtime` 2.11.3 — https://github.com/tauri-apps/tauri
+- `tauri-runtime-wry` 2.11.4 — https://github.com/tauri-apps/tauri
+- `tauri-utils` 2.9.3 — https://github.com/tauri-apps/tauri
 - `unic-char-property` 0.9.0 — https://github.com/open-i18n/rust-unic/
 - `unic-char-range` 0.9.0 — https://github.com/open-i18n/rust-unic/
 - `unic-common` 0.9.0 — https://github.com/open-i18n/rust-unic/
@@ -2394,7 +2399,8 @@ DEALINGS IN THE SOFTWARE.
 ### MIT License (MIT) (variant 36)
 
 Used by:
-- `ctor` 0.2.9 — https://github.com/mmastrac/rust-ctor
+- `ctor` 0.8.0 — https://github.com/mmastrac/rust-ctor
+- `ctor-proc-macro` 0.0.7 — https://github.com/mmastrac/rust-ctor
 
 ```
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
@@ -3519,7 +3525,7 @@ DEALINGS IN THE SOFTWARE.
 ### MIT License (MIT) (variant 72)
 
 Used by:
-- `h2` 0.4.13 — https://github.com/hyperium/h2
+- `h2` 0.4.18 — https://github.com/hyperium/h2
 
 ```
 Copyright (c) 2017 h2 authors
@@ -3998,7 +4004,7 @@ THE SOFTWARE.
 
 Used by:
 - `hyper-rustls` 0.27.7 — https://github.com/rustls/hyper-rustls
-- `rustls` 0.23.37 — https://github.com/rustls/rustls
+- `rustls` 0.23.45 — https://github.com/rustls/rustls
 
 ```
 Copyright (c) 2016 Joseph Birr-Pixton <jpixton@gmail.com>
@@ -4866,7 +4872,7 @@ THE SOFTWARE.
 ### MIT License (MIT) (variant 116)
 
 Used by:
-- `muda` 0.17.2 — https://github.com/tauri-apps/muda
+- `muda` 0.19.3 — https://github.com/tauri-apps/muda
 
 ```
 MIT License
@@ -5089,7 +5095,6 @@ Used by:
 - `phf_codegen` 0.13.1 — https://github.com/rust-phf/rust-phf
 - `phf_generator` 0.11.3 — https://github.com/rust-phf/rust-phf
 - `phf_generator` 0.13.1 — https://github.com/rust-phf/rust-phf
-- `phf_macros` 0.11.3 — https://github.com/rust-phf/rust-phf
 - `phf_macros` 0.13.1 — https://github.com/rust-phf/rust-phf
 - `phf_shared` 0.11.3 — https://github.com/rust-phf/rust-phf
 - `phf_shared` 0.13.1 — https://github.com/rust-phf/rust-phf
@@ -5148,6 +5153,7 @@ SOFTWARE.
 
 Used by:
 - `png` 0.17.16 — https://github.com/image-rs/image-png
+- `png` 0.18.1 — https://github.com/image-rs/image-png
 
 ```
 Copyright (c) 2015 nwin
@@ -7186,7 +7192,7 @@ THE SOFTWARE.
 ### MIT License (MIT) (variant 192)
 
 Used by:
-- `wry` 0.54.4 — https://github.com/tauri-apps/wry
+- `wry` 0.55.1 — https://github.com/tauri-apps/wry
 
 ```
 MIT License
