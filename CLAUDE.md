@@ -42,6 +42,7 @@ cargo tauri android dev
 - **Tauri version mismatch** fails `build` (warns in `dev`): raise Rust to the npm minor with `cargo update -p tauri --precise <ver>` (`--precise` required; bare update moves nothing). Re-run cargo-deny after.
 - **Frontend supply chain** (`ui/.npmrc`): `ignore-scripts=true`, `minimum-release-age=2880`, `engine-strict=true`. Don't add `pnpm.onlyBuiltDependencies` or `npx --yes`. `fsevents` won't build → vite uses `fs.watch`, fine. CI: `pnpm/action-setup` before `actions/setup-node`.
 - **Build deps:** `cmake` + `ninja` (bundled libopus via `opusic-sys`).
+- **Version bump** = `Cargo.toml` `[workspace.package]` → `cargo update -w --offline` (lock) → `scripts/generate-third-party-licenses.py` (both `THIRD_PARTY_LICENSES.md` copies list `ramus-*`, CI diffs them) → `.github/sidestore/source.json` (top-level fields + prepend `versions[]`) → `regen-ios-project.sh`. `tauri.conf.json`/`package.json` carry no version.
 - **Before committing:** check whether this file needs a new invariant; don't bloat it.
 
 ## Conventions

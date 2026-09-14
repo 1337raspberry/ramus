@@ -18,12 +18,20 @@
       "tintColor": "A405FA",
       "category": "music",
       "screenshotURLs": [],
-      "version": "1.1.0",
-      "versionDate": "2026-08-03T00:00:00Z",
-      "versionDescription": "overhauled mobile now playing view, made art colour scheme sourcing better, added an oled black display option, overhauled search, added a duration filter for suggested albums (doing a 45 minute commute? find 45 minute albums. nice), overhauled a lot of logic for connections and resiliency specifically when on weak cellular or spotty connections or jumping between wifi and cell service. inspired by a few very annoying train journeys, added a system to import rich genre metadata should you have some of that for some reason (maybe eventually i'll be in a position to ship with that courtesy of a kind benefactor source) overhauled lyrics on mobile, fixed plex local sidecar .lrc lyric file logic so it actually works, fixed numerous misc little bugs",
+      "version": "2.0.0",
+      "versionDate": "2026-09-14T00:00:00Z",
+      "versionDescription": "see the v2.0.0 GitHub release for full patch notes",
       "size": 20988703,
-      "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v1.1.0/ramus_1.1.0_ios-adhoc.ipa",
+      "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v2.0.0/ramus_2.0.0_ios-adhoc.ipa",
       "versions": [
+        {
+          "version": "2.0.0",
+          "date": "2026-09-14T00:00:00Z",
+          "localizedDescription": "see the v2.0.0 GitHub release for full patch notes",
+          "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v2.0.0/ramus_2.0.0_ios-adhoc.ipa",
+          "size": 20988703,
+          "minOSVersion": "17.5"
+        },
         {
           "version": "1.1.0",
           "date": "2026-08-03T00:00:00Z",
