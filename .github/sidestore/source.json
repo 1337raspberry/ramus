@@ -20,16 +20,16 @@
       "screenshotURLs": [],
       "version": "2.0.0",
       "versionDate": "2026-09-14T00:00:00Z",
-      "versionDescription": "see the v2.0.0 GitHub release for full patch notes",
-      "size": 20988703,
+      "versionDescription": "big update, too much to mention here, check https://github.com/1337raspberry/ramus/releases/tag/v2.0.0",
+      "size": 21320466,
       "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v2.0.0/ramus_2.0.0_ios-adhoc.ipa",
       "versions": [
         {
           "version": "2.0.0",
           "date": "2026-09-14T00:00:00Z",
-          "localizedDescription": "see the v2.0.0 GitHub release for full patch notes",
+          "localizedDescription": "big update, too much to mention here, check https://github.com/1337raspberry/ramus/releases/tag/v2.0.0",
           "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v2.0.0/ramus_2.0.0_ios-adhoc.ipa",
-          "size": 20988703,
+          "size": 21320466,
           "minOSVersion": "17.5"
         },
         {
