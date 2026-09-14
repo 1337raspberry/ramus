@@ -38,7 +38,7 @@ cargo tauri android dev
 ./scripts/build-ios-ipa-local.sh [--stable-only|--dev-only]
 ```
 
-- **CI:** clippy `-D warnings` on both crates, all targets (`#[cfg(test)]` lints fail CI but not `test`). CI's toolchain can be newer than local — a local pass isn't a guarantee. `cargo-deny`'s license list mirrors `config/about.toml` — keep in sync; `[advisories].ignore` holds triaged RUSTSEC ids, review on `tauri`/`wry` bumps. `tauri-cli` pinned exact in `release.yml` (`--version '=2.11.1'`).
+- **CI:** clippy `-D warnings` on both crates, all targets (`#[cfg(test)]` lints fail CI but not `test`). CI's toolchain can be newer than local — a local pass isn't a guarantee. `cargo-deny`'s license list mirrors `config/about.toml` — keep in sync; `[advisories].ignore` holds triaged RUSTSEC ids, review on `tauri`/`wry` bumps. `tauri-cli` pinned exact in `release.yml` (`--version '=2.11.1'`). **Windows libmpv pin (`MPV_RELEASE_TAG`/`MPV_ASSET`/`MPV_ASSET_SHA256`) rots: zhongfly keeps ~30 days of releases — re-pin all three before every release run.**
 - **Tauri version mismatch** fails `build` (warns in `dev`): raise Rust to the npm minor with `cargo update -p tauri --precise <ver>` (`--precise` required; bare update moves nothing). Re-run cargo-deny after.
 - **Frontend supply chain** (`ui/.npmrc`): `ignore-scripts=true`, `minimum-release-age=2880`, `engine-strict=true`. Don't add `pnpm.onlyBuiltDependencies` or `npx --yes`. `fsevents` won't build → vite uses `fs.watch`, fine. CI: `pnpm/action-setup` before `actions/setup-node`.
 - **Build deps:** `cmake` + `ninja` (bundled libopus via `opusic-sys`).
@@ -135,7 +135,7 @@ cargo tauri android dev
 
 ### iOS
 
-- **`mpv_ios.rs` bridges to Swift `MpvBridgePlugin`** (MPVKit). Gate implementations `#[cfg(not(target_os="ios"))]`, not AppState fields. `run()` lives in `lib.rs`. `IPHONEOS_DEPLOYMENT_TARGET` set in `.cargo/config.toml` `[env]` (17.5, overridable). UIKit API newer than the deployment target needs `#available` guards in the plugin. Swift 6 `@Sendable` closures can't capture `self`.
+- **`mpv_ios.rs` bridges to Swift `MpvBridgePlugin`** (MPVKit). Gate implementations `#[cfg(not(target_os="ios"))]`, not AppState fields. `run()` lives in `lib.rs`. `IPHONEOS_DEPLOYMENT_TARGET` set in `.cargo/config.toml` `[env]` (17.5, overridable). UIKit API newer than the deployment target needs `#available` guards in the plugin — and that's runtime-only: the SDK must still know the symbol, so `release.yml` pins Xcode via `xcode-select` (bump it when local Xcode moves; runner default is older). Swift 6 `@Sendable` closures can't capture `self`.
 - **Order:** keychain registration first in `setup()`; `mpv_init` BEFORE `init_audio` (else ~8.8% fast). `tauri-plugin-opener`, not `open`. `crate-type` keeps `cdylib` (Android) — iOS links via `-undefined dynamic_lookup` (`.cargo/config.toml` rustflags).
 - **Any raw `cargo build` for a mobile target needs `--features tauri/custom-protocol`** (`release.yml`, `build-ios-ipa-local.sh`). Xcode configs are lowercase `debug`/`release` — pass `-configuration release` exactly. Don't add `inputFiles` to the Rust build phase.
 - **Flavours** (`ios-flavor.sh`): `stable` (`com.ramus.app`) and `dev` (`com.ramus.app.dev`, distinct `PRODUCT_NAME`, `AppIconDev` via `gen-dev-appicon.sh`). `regen-ios-project.sh` asserts the substitutions landed. `cargo tauri ios dev` on a device must be the DEV flavour (`RAMUS_FLAVOR=dev` regen first). `project.yml` carries no `DEVELOPMENT_TEAM` — never add one.

@@ -354,13 +354,19 @@ jobs:
       #   gh api /repos/zhongfly/mpv-winbuild/releases/tags/<tag> \
       #     --jq '.assets[] | select(.name=="<asset>") | .digest'
       # which returns "sha256:<hex>").
+      #
+      # RETENTION: zhongfly prunes old releases — only roughly the last
+      # month survives, so a pin older than ~30 days 404s at download
+      # time. Expect to re-pin (tag + asset + sha256 together) as part of
+      # cutting any release; the SHA-256 check above still guards the
+      # bytes once the new pin is chosen.
       - name: Download libmpv DLL
         if: matrix.id == 'windows'
         shell: pwsh
         env:
-          MPV_RELEASE_TAG: 2026-05-11-8674222927
-          MPV_ASSET: mpv-dev-lgpl-x86_64-20260511-git-8674222927.7z
-          MPV_ASSET_SHA256: 6b915ea370d2db68fae70d59970d544afd6bb736520d2dade8721853385a9254
+          MPV_RELEASE_TAG: 2026-09-14-0b7ed670f7
+          MPV_ASSET: mpv-dev-lgpl-x86_64-20260914-git-0b7ed670f7.7z
+          MPV_ASSET_SHA256: d6df1a133b7d60d30b49efac593fd58ff183c48a6d94bb78cd401430acd96dad
         run: |
           $url = "https://github.com/zhongfly/mpv-winbuild/releases/download/$env:MPV_RELEASE_TAG/$env:MPV_ASSET"
           Write-Host "Downloading $url"
@@ -498,11 +504,27 @@ jobs:
       # not used — the plugin's Swift sources are wired in via SPM (see
       # plugins/tauri-plugin-ramus-ios-bridge/ios/Package.swift) and
       # MPVKit is declared as an SPM package in gen/apple/project.yml.
-      # macos-14 runners ship Xcode + the iOS SDK; only xcodegen needs
-      # installing.
+      # macos-15 runners ship several Xcodes + the iOS SDK; only xcodegen
+      # needs installing.
       - name: Install xcodegen
         if: matrix.id == 'ios'
         run: brew install xcodegen
+
+      # The runner image's DEFAULT Xcode (16.4, iOS 18 SDK) is older than
+      # the SDK the Swift plugin is written against: `#available(iOS 26,
+      # *)` is only a runtime check, the compiler still has to know the
+      # symbol, so UIKit API from the iOS 26 SDK (e.g.
+      # UIButton.Configuration.glass) fails to compile under Xcode 16.
+      # Pin the same Xcode the local IPA script is run with so CI and
+      # local builds link the same SDK. The image's installed versions
+      # are listed at
+      # https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
+      # — bump this path when moving to a newer Xcode locally.
+      - name: Select Xcode 26.3
+        if: matrix.id == 'ios'
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          xcodebuild -version
 
       # ramus-tauri/gen/apple/project.yml declares a preBuildScript that
       # calls `cargo tauri ios xcode-script`. That subcommand expects to
