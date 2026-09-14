@@ -1,0 +1,153 @@
+# CLAUDE.md
+
+**ramus** — cross-platform music player for Plex. **Rust + Tauri 2 + React (TypeScript)**. macOS, Windows, Linux, iOS, Android. The rules below are the *invariants*; the reasoning behind most of them is in a comment at the site named, so read that before changing it.
+
+## Architecture
+
+```
+ramus-core/   # Rust — all business logic (+ unit tests)
+  src/        # models.rs, settings.rs, util.rs, crates.rs
+              # plex/ (client, OAuth, token store, connection monitor, smart.rs)
+              # playback/ (lyrics, transcode, waveform, spectrum, session reporting, queue_store)
+              #   player/ (mod=shared state; queue, transport, events, recovery,
+              #            resolve, starvation, adaptive, diagnostics, cache, eq)
+              # cache/ (rusqlite WAL+FTS5, sync engine, image cache, playlist mirror)
+              # search/ (engine + operator parser), genre/ (tree, mapper, markup)
+ramus-tauri/  # Tauri 2 shell: commands/ (IPC), events.rs, state.rs, lib.rs (run())
+              # mpv_ffi.rs + mpv_controller.rs (desktop), mpv_ios.rs, mpv_android.rs, mpv_mobile.rs
+              # media_controls{,_ios,_android}.rs, now_playing_keeper.rs, stall_watchdog.rs,
+              # prefetch.rs, spectrum_analyzer.rs, session_reporter.rs, queue_persist.rs, auto_sync.rs
+  gen/apple/  # xcodegen input (project.yml, Package.resolved, assets, Podfile, entitlements); the .xcodeproj is regenerated, not committed. gen/android/ scaffold
+plugins/tauri-plugin-ramus-ios-bridge/   # ios/ (Swift MpvController, MPVKit) AND android/ (Kotlin — misleading name)
+ui/           # React — Vite + TS + Zustand (src/lib, src/components, src/mobile, src/stores)
+scripts/      # bundle-{macos,linux}-libmpv.py, codesign-macos-main-binary.sh, regen-ios-project.sh,
+              # ios-flavor.sh, gen-dev-appicon.sh, build-ios-ipa-local.sh
+```
+
+## Commands
+
+```sh
+cargo test -p ramus-core [-- test_name]
+cargo tauri dev | build
+cargo clippy --workspace --all-targets -- -D warnings          # what CI runs — ALWAYS this form
+cargo deny --manifest-path Cargo.toml check --config config/deny.toml   # bare `cargo deny check` misses the config
+cd ui && pnpm install && pnpm run dev                          # pnpm, NOT npm. build: pnpm run build; typecheck: pnpm exec tsc --noEmit
+cargo tauri ios dev "<simulator name>"                        # pin a simulator or it grabs a tethered device
+cargo tauri android dev
+./scripts/regen-ios-project.sh                                 # after clone / project.yml or version change (not automatic)
+./scripts/build-ios-ipa-local.sh [--stable-only|--dev-only]
+```
+
+- **CI:** clippy `-D warnings` on both crates, all targets (`#[cfg(test)]` lints fail CI but not `test`). CI's toolchain can be newer than local — a local pass isn't a guarantee. `cargo-deny`'s license list mirrors `config/about.toml` — keep in sync; `[advisories].ignore` holds triaged RUSTSEC ids, review on `tauri`/`wry` bumps. `tauri-cli` pinned exact in `release.yml` (`--version '=2.11.1'`).
+- **Tauri version mismatch** fails `build` (warns in `dev`): raise Rust to the npm minor with `cargo update -p tauri --precise <ver>` (`--precise` required; bare update moves nothing). Re-run cargo-deny after.
+- **Frontend supply chain** (`ui/.npmrc`): `ignore-scripts=true`, `minimum-release-age=2880`, `engine-strict=true`. Don't add `pnpm.onlyBuiltDependencies` or `npx --yes`. `fsevents` won't build → vite uses `fs.watch`, fine. CI: `pnpm/action-setup` before `actions/setup-node`.
+- **Build deps:** `cmake` + `ninja` (bundled libopus via `opusic-sys`).
+- **Before committing:** check whether this file needs a new invariant; don't bloat it.
+
+## Conventions
+
+- **All business logic in ramus-core, with tests** — never proceed with failing tests.
+- **`playback/player/` is one type split across files.** `mod.rs` owns `AudioPlayer`/`PlayerInner`; each file is an `impl AudioPlayer` block. Cross-file helpers are `pub(super)`. `mod.rs` glob-re-exports every submodule that has freestanding `pub` items (`pub use x::*;`; `events`/`queue`/`transport` are methods-only and need none) — **a new submodule with free items needs its glob or `tests.rs` stops seeing them**; test-only names go in the `#[cfg(test)]` re-export block.
+- **Rust helpers → `ramus-core/src/util.rs`**; frontend → `ui/src/lib/`. `is_lossless_codec()` always (never inline codec arrays). `escape_fts5` for FTS input. `percent_encode` for anything in a Plex query.
+- **DB reads** via `with_cache(state, |db| …)`. Components call typed wrappers in `commands.ts`, never `invoke()`. `TRACK_COLUMNS` in `cache/db.rs` is the single SELECT list for `Track` (positional mapping — append extra columns after it).
+- **Naming:** SQLite columns camelCase (Plex compat). Tauri events kebab-case (`events.rs` ↔ store listeners). `PlexID = String`. Plex durations are **milliseconds** → seconds at the boundary (DB stores `durationMs`).
+- **Settings enums: no serde aliases; old values default-out.** The one exception is `PlaybackMode` (aliases for shipped variants), because `settings::load` `unwrap_or_default()`s the WHOLE struct — an unmapped variant wipes every setting. `eq_bands.len() != 10` → reset to zeros on load.
+- **Tokens leak via URLs and via `reqwest::Error` Display.** Never log a track URL; use `prefetch.rs::redact_reqwest_err()` for download-path errors; frontend `redactUrl()`; Kotlin `redactTokens` before `Log.*`; Swift command logger likewise.
+- **Comments describe features by their technical behaviour**, never by comparison to other players ("the server sets Content-Disposition: attachment", not "matches X").
+- **Sync:** Artists → Albums → Tracks (DB upserts in batches of 500) → deep genre fetch (semaphore 8, one album per permit). Incremental diffs `updatedAt` + first genre tag. `SyncPhase::Error` is emitted by callers, never the engine. Auto-sync emits real `sync-progress`.
+- **Schema:** `artists`, `albums`, `tracks`, `tracks_fts`, `genres`/`album_genres`, `collections`/`album_collections` (`genres.name` and `collections.name` are NOCASE), `playlists`/`playlist_items`, `downloads`. Album upserts `COALESCE` deep-metadata columns. Album-returning fns must `drop(conn)` before `populate_album_collections`.
+
+## Plex
+
+- **Direct-play URLs append `download=1`** (PMS then sends `Content-Disposition: attachment`); does NOT lift Plex's one-concurrent-download cap — keep the serial worker.
+- **One transcode endpoint for live + prefetch + downloads:** `build_transcode_download_url` → `/audio/:/transcode/universal/start` (chunked Opus, `X-Plex-Platform=Generic` load-bearing, `path` = metadata key). **Don't reintroduce HLS** — Plex's ~1-transcode cap kills a long-lived session when prefetch opens a second. Session id `<client-id>-<rating-key>` everywhere; `offset=` only works with its companion params (resume path only).
+- **`PlexClient` has NO total timeout** (big sync fetches), only connect/read. `state.http_client` (art/LRCLIB) has all three. Don't remove either — cellular handoffs black-hole TCP silently. Probes ride a pool-free client (`PlexClient.probe`).
+- **Lyrics:** Plex once, then LRCLIB ×2. LRCLIB is routinely 6–12 s per request — keep `LRCLIB_TIMEOUT_SECS=15` generous and the command's outer timeout above one full attempt. Plex lyric stream keys are extensionless — content-sniff the payload (JSON → LRC → plain). `.lyrics` sidecar mirrors `.wave` but is warmed on download/view ONLY (never idle — don't add `WarmUnit::Lyrics`); only Found is cached.
+- **`tracks.viewCount`/`lastViewedAt`**: a play doesn't bump `updatedAt`, so `send_scrobble` → `mark_track_played` keeps the local copy current (unconditional on send success). Scrobbles ≥90%, once per track; `scrobbled_key` marked BEFORE the send; failed keys parked + flushed on start/resume/connection events.
+- **Collections:** `PUT …?type=9&id=&collection.locked=1`, add `collection[0].tag.tag=`, remove `collection[].tag.tag-=` (comma list, percent-encode the name first). Mirror SQLite only after 2xx.
+- **Playlists are per-user server objects, not library items.** Items addressed by `playlistItemID` (explicit serde rename; a track can repeat). Mirror written after 2xx; reads are lazy fetch-on-view with mirror fallback, NOT a sync phase. Smart-playlist items carry no `playlistItemID` — keep NULL rows. Mutations guarded by `ensure_not_smart` except rename. Both playlist upserts `COALESCE(excluded.summary, playlists.summary)`.
+- **Plex silently dedupes an add the playlist already holds** → replacing contents must remove first, then add (`commands/crates.rs`).
+- **Smart playlists (`plex/smart.rs`):** constrained grammar (flat AND of terms, comma = OR). **PMS silently ignores unknown filter fields** (returns the whole library) — never pass raw field names through; `get_smart_filter_choices` is a curated allowlist and the `smart.rs` round-trip tests are the safety net. Operators ride the key (`>>=`, `<<=`, `!=`, `==`, `<=`, `>=`), strict → builder sends ±1. Scope fields (`album.year`, not `year`). Create `POST /playlists?smart=1&uri=`; force `smart: true` on the mirror. `/playlists` listing lacks `content`; detail fetch has it. `album.genre` terms take 600+ tag ids fine.
+- **Crates (`crates.rs`, plural — keyword):** recipe lives in the playlist `summary` (`ramus-crate:1 …`, values percent-encoded) so any device can regenerate. `Playlist.is_crate` derived in Rust via `CrateRecipe::from_summary`, never sniffed in UI. Selection applies hot-before-unplayed; albums without popularity data skipped. Genres resolve against the local cache and the playlist is materialised from explicit rating keys, not a smart filter.
+- **Connections:** `discover_servers` filters loopback unless all are loopback (Tailscale exit nodes). Startup probe chain local → stored → cached → plex.tv; **every success must `return`**. Manual-URL onboarding derives `is_remote` from the address (diagnostic only).
+
+## Playback engine
+
+- **libmpv via runtime FFI** (`mpv_ffi.rs`, `libloading`); `_lib` must be the LAST field of `MpvLib`. `MPV_LIB_PATH` bypasses lookup; `RAMUS_MPV_LOG_LEVEL`.
+- **`loadfile` grew an index slot in 0.38** — `MpvController` probes `mpv-version` → `loadfile_has_index_slot`; version parse strips leading non-digits. iOS passes `-1` in the slot for plain loads. **Android ignores per-file options** (Media3 `MediaItem`s) — carry resume as `startPositionMs`, don't thread the option string.
+- **`loadfile replace` implicitly stops** — no `mpv.stop()` before `load_queue`. `prefetch-playlist=no` required with stream-record. `network-timeout=15` + `stream-lavf-o` reconnect chain required for the retry/watchdog paths. EQ `af` built via `build_af_string` under POSIX locale, never seeded in defaults.
+- **Tasks from mpv callbacks use `tauri::async_runtime::spawn`, not `tokio::spawn`** (no reactor on the event-loop thread; panic is swallowed).
+- **`should_transcode` is the pure baseline policy**; the only connection input is `is_cellular` (mobile network listeners; desktop false). `is_remote` is diagnostic only. `PlaybackMode` is a monotonic ladder (`Never < WhenSlow < WhenSlowOrCellular < Always`, pinned by test).
+- **Adaptive degrade is ONE field (`bandwidth_degrade`) applied by `effective_stream_policy`, which all resolve sites must call** (live, prefetch target, expected bytes, stream-record option, debug snapshot). Never auto-restores; cleared on path flips/connection events/settings change — and **before** any reload in the same handler. Prefetch inherits it (cache is quality-blind, accepted).
+- **Starvation = rebuffer episodes, not throughput** (`StarvationTracker`, `is_starving()` pure fn). Every fresh-stream site goes through `PlayerInner::begin_load()`. Watchdog reload gated on `is_starving() && source_still_arriving()` (both healthy-verdict paths: watchdog AND `foreground_resync`). Adaptive check runs OUTSIDE the recovery gate; `playback-quality` emits on change only; `connection-status` stays binary.
+- **Lock order: `persistent_cache.read()` → `inner.lock()`, never reversed** (task-fair RwLock deadlock). Hoist the read and pass the guard.
+- **`demuxer-cache-time` is an absolute timestamp** — `source_fully_buffered` compares to whole duration, never subtracts position.
+- **Failover resumes at position** (`ResumePlan`: direct-play `start=`, transcode server `offset=` + `position_base` remap). Reload takes `expected_idx`. Refused resume → hold at position, never reset to 0 or skip. **Recovery hold pins mpv paused, suppresses pos-changes, declines idle** (`keep-open=no`/`idle=yes` would otherwise auto-walk the queue); deliberate navigation releases the hold before commanding mpv. `reload_current_track` owns the hold exit and restores `user_paused`. `jump_to_index` always plays.
+- **Reload settle WINDOW, not single-shot** (`RELOAD_SETTLE_WINDOW`): mobile emits several pos-changes per reload. Skips and `load_queue` close it; the playlist resweep arms it. A degrade reload arms it too (bites in tests).
+- **Cache-landed-mid-play vs played-from-cache is told by `inserted_at` vs `load_started_at`** (`try_recover_current_track`) — don't collapse to a presence check. Prefetch writes `.part` then renames; never register `.part`.
+- **Connection monitor:** callbacks installed by `lib.rs::install_connection_callbacks` from BOTH monitor-start paths (session restore + `finalize_onboarding`) — never register at one site. "Back online" is `on_connection_recovered` (same URI before/after, so `Changed` can't fire). `evaluate_connection` holds its guard through callbacks and queues re-evals (`pending_reeval`). A relay never wins the fast path. Recovery kicks: prefetch after 2 failures, stall watchdog, mobile path monitor, foreground resync.
+- **Policy resweep = `rewrite_stale_playlist_urls()`** on connection change, real cellular flips, and mode/bitrate settings change. A dead path does NOT clear `is_cellular`. `force_reload_current_track` skips a fully-drained source.
+- **OS media controls:** souvlaki desktop, shared `MediaKeyHandler` surface. Pushes carry REAL status, never hardcoded playing. `now_playing_keeper.rs` (500 ms poll) freezes the OS scrubber on stall and re-asserts each tick — the event-driven freeze alone was insufficient. Remote commands carry the same side-effects as UI commands (prefetch `notify_skip`, reporter seek). Android `mpvPlaylistPlayIndex` never force-plays.
+- **Session reporting:** `state=stopped` for the previous track before a new one. Boundaries report via `pending_transition` snapshot taken under the lock BEFORE mutation (`take_pending_transition` in lib.rs) — never live reads. `clear_queue` closes out the session itself (idle callback can't). Reporter closes with `next=None` on `play_tracks`.
+- **Restored queue (`queue_store`)**: whole `Track` records, `queue.json` + `queue-position.json` split (structure vs ~60 B position tick). `restore_queue` sends NOTHING to mpv and carries `Paused`+`user_paused`. Every transport path calls `ensure_materialized_at(target)`; the four mutators skip their mpv half while `pending_materialize`. **`events.rs::ignores_mpv_events` gates every mpv event until materialised; verdicts are `bool`s the lib.rs callbacks must honour** — derive emits from the verdict, not the raw arg. `just_materialized` + `report_if_materialised` open the Plex session.
+- **Prefetch:** single serial worker (Plex kills concurrent remote downloads). `wait_for_source_drain` polls; `LIVE_DRAIN_CEILING=30s` is soft (extends while cache-time advances, bounded by track duration or `HARD_LIVE_DRAIN_CEILING=600s`; fires the partial spectrum ingest). Bytes prongs only when `stream_record_dir()` is set. Backs off (never stops) while live stream starves; user downloads not gated. No pause gate — by design. Idle tier warms `.wave` + 1200 px art (unpinned) via the same worker; every warm emits `metadata-warmed`. `.wave`/`.spec`/`.lyrics` cleared at all eviction/remove sites.
+- **Downloads:** `audio_cache/` (LRU, usage-ordered) + `downloads/` (permanent). `resolve_url`: persistent → LRU → network. Rehydration needs the DB (from `finalize_onboarding`/session restore). Downloaded art pinned (`insert_pinned`, `recompute_image_pins`). `downloadQuality` gates transcoded downloads (`<rk>.ogg`, lossy sources always direct).
+- **Stream-record (FFT source):** per-file `stream-record=` captures source bytes for the analyser. Drain = 3 steady ticks; 85% bytes prong (don't raise). Track-end re-ingest on ≥64 KiB growth; stability poll before growth check; `swap_playlist_entry_to_cached` after ingest. `BoundedFileSource` clamps at the last complete Ogg page. Windows: size via `seek(End)`. Don't throttle `demuxer-readahead-secs`/`demuxer-max-bytes`. Opus decoded via `symphonia-adapter-libopus` in a custom `CodecRegistry`. Spectrum force-disabled on mobile (measured: the analyser pins two cores for ~5 s per track on iOS).
+- **`DebugInfo.phase`** is the truth for "audio flowing" — `PlaybackStatus::Playing` flips optimistically. `emit_playback_buffering` fires from reload paths so the frontend sees the reconnect gap.
+- **Foreground resync** (`visibilitychange`, 3 s debounce) re-emits playback/connection/quality snapshots; frontend stores are pure event replay. **The restore's snapshot pull awaits the `listen()` promises** (`usePlaybackEvents` + `ensureListener` promises on connection/quality stores) — never fire it from a bare effect.
+- **Deliberately NOT implemented:** prefetch pause gate; degrade auto-restore / lossless re-test; any response to a starving *lossy* source; `Never` mode buffering forever is by design.
+
+## Search / genres
+
+- **Sectioned search** = `search_sectioned` (`search/engine.rs`), `SearchResponse { sections }`. Score ladder exact 0 / prefix .02 / word-prefix .04 / contains .05 / token-AND .07 / fuzzy .5+. Diacritic-folded (`util::fold_diacritics`). Exact artist match fills tracks; prefix must NOT. Genres +0.10, never fuzzy. Free-text fuzzy tracks on title only. Operator syntax (`/ @ ! % # fav: col: year: rating:`, `" AND "` case-sensitive) still parsed.
+- **Mobile search taps** navigate via `loadAlbumsForArtistName` / `selectGenreByName` (they clear `searchQuery`; `selectArtist` doesn't render from search).
+- **Genre tree** from `open.json` (beets-derived, extended). AKAs live in the `aka` field of `open.json`. Match: exact canonical → AKA → fuzzy. `expand_genre` can fuzz the wrong family — callers check the result contains the original name, else raw lookup. Genre chips AND-intersected in the command layer, not the DB fn. Country chips tokenise comma-joined values.
+- **Genre metadata (summaries, descriptions, `cosmetic_aka`) is user-imported JSON — the app ships none.** It shares the `custom_genres.json` slot with the `.txt` tree import; one Import button dispatches by extension/sniff. `cosmetic_aka` is display-only, never fed to matching. Metadata not on `GenreNode`.
+- **Description markup** `**Genre**` / `{{Artist}}` → `genre/markup.rs` pure tokenizer, no fuzzy. Artist lookup keyed by `normalize_artist`; navigate by `nav_name`. Genre links always drill in-place; artist links navigate only when owned; title navigates only when `in_library`.
+- **Genre-info surfaces:** `lib/genreMetadataCache.ts` (clear at every metadata mutation), `useGenreInfoStack` (never `open()` while open), `GenreInfoContent` + mobile sheet (long-press via `useLongPress`) / desktop modal (right-click) + `GenreHoverCard` via `genreSurfaceHandlers()` (plain fn, usable in virtualized rows). `useAppKeyboard` Escape yields while `genreInfoStore.target` set.
+
+## Frontend
+
+- **Stores:** Zustand. `connectionStore`/`downloadsStore` readable from non-React code, wired once via `ensureListener()`. Post-auth effects key on `authed === true`, not mount. `currentTrack` identity thrashes — select primitives. Favourite toggles go through `libraryStore.toggleAlbumFav/toggleTrackFav`.
+- **`playbackStore.queue` refreshes only on track change — every IPC queue mutation calls `lib/refreshQueue.ts`.**
+- **Art:** always `lib/useArtUrl.ts` (owns cancel + retry epoch); `getArtUrl` is globally limited to 6 in flight — no per-component throttles. Vibrant/corner extraction needs off-DOM images. `UltraBlurBackground`: 4 radial layers, no CSS `filter:`, order TL→TR→BR→BL, eased stops. Corner colours from `lib/blurArt.ts::extractCornerColors` (chroma-weighted, hue-gated, tone rails tuned with the 1.3 saturation boost as a pair).
+- **Filters:** `unfilteredAlbums` + `albums`; `genreExpansions` caches completed expansions only (absence = in flight = non-restrictive); legacy `{country}` migration stays. Bookmarks (UI: "Smart Filters") are filter snapshots in `settings.json`.
+- **Sort:** `lib/albumSort.ts` `{field, direction}`; direction flips primary key only. `.sort-select` is still used by settings/smart builder.
+- **Shuffle:** every queue-feeding shuffle uses `lib/shuffle.ts` (artist-balanced). Grid "+" appends in displayed order (`lib/queueAllAlbums.ts`), never shuffles/plays.
+- **Lists hub** (Playlists / Collections / Smart Filters). `browseCollectionName`/`browsePlaylist`/`browseArtistName` are browse contexts every nav path must clear. Desktop `ListsPanel` refetches on `libraryStore.playlistsRevision` — every playlist mutation site bumps it. MobileApp's Lists-tab heal effects: artist/year key on presence, genre on *change* (see the effect comments).
+- **Pickers from now-playing surfaces snapshot their target at menu-tap time** (an advance mid-sheet would otherwise retarget).
+- **Gesture hooks** `useListReorder` / `useSwipeToDelete` / `useSheetDrag` / `useLongPress`: imperative transforms (never setState per move), non-passive document touch listeners, `touch-action` on the handle. Index-keyed DOM caches must drop a live gesture when the list renumbers. No `will-change: transform` on rows; swipe action layer created lazily. Sheet transform inline, transition suppressed during drag, `visibility` pinned inline; `touchcancel` settles, never commits.
+- **Virtualized lists** (`@tanstack/react-virtual`): Up Next (`mobile/UpNextList.tsx`, memo child, rows in flow between spacers, `scrollMargin`) and desktop `QueueView.tsx` (`QUEUE_ROW_HEIGHT` = CSS 36 px). `MobileAlbumGrid` rows are fixed height — **don't re-add `measureElement`** (kills iOS momentum scroll); call `virtualizer.measure()` when rowHeight/cols change; the desktop `AlbumGridView` uses the same pattern.
+- **Overlays:** portal chassis surfaces to `document.body`; never mount a portaled dialog as a React child of a bare `onClick={onDismiss}` backdrop (render as sibling). Nested Escape: guard the outer handler on an inner-open flag; `useAppKeyboard` yields while any `.settings-backdrop` is mounted. `mod` excludes Ctrl+Cmd chords. Mobile full-screen surfaces hide the mini player via `body:has(.settings-backdrop)` + `visibility` (WKWebView paints promoted layers over a non-promoted scrim regardless of z-index). Never write CSS via unquoted heredocs (`\!important` is silently dropped).
+- **Mobile now-playing page 1** is a self-balancing single screen (art is the only flexible item; body has zero vertical padding; genre block centred via auto margins with deliberately asymmetric fixed margin). Landscape/lyrics are CSS regrids — a new page-1 child needs a `grid-area`. Dock is a sibling of the scroller. **Never `scrollIntoView` inside the sheet** — use container-scoped `scrollTo`.
+- **Lyrics:** base `.lyrics-*` styles are the shared treatment; `LyricsOverlay` is a sibling of the art wrapper in the focus view (nested in `.np-art-container` in the compact panel), its close × stops propagation. Panel always pinned; `showLyrics` is the source of truth; `lyricsGen` guards stale landings.
+- **Glyphs:** app font lacks `⋯` and `✕` — use `…` and `×`. `.mobile-action-sheet-group button` forces block/100% — out-rank it for custom controls.
+- **Keyboard inset:** `--keyboard-inset` pushed from iOS (`installKeyboardInsetObserver`) and Android (`MainActivity`, `Type.ime()`); sheets with inputs take `.text-entry`. iOS `scrollPin` KVO holds the outer scrollView at 0. `--safe-top/--safe-bottom` = `max(env(), var(--android-inset-*))`, never `env()` directly. `-webkit-touch-callout: none` global (iOS long-press sheets). `useIsMobile` = `(pointer: coarse)`.
+- **Platform CSS:** `backdrop-filter` only convincing on macOS WKWebView (+ Android) — `.glass` goes opaque on WebView2/WebKitGTK via `data-platform`. SDR fallback via `isHDR` / `@media not (dynamic-range: high)`. Scroll containers clip `box-shadow` — use downward-only shadows.
+- **Tablet:** `lib/useMediaQuery.ts` `TABLET_QUERY` (coarse ≥700) / `SPLIT_QUERY` (coarse ≥900), matching blocks at the END of `styles.css`. Split = 360 px nav pane + content pane that promotes an empty selection to `__all__` (`promotedRef` cleared only by a real selection). Lists-tab heals gated on `!split`; leaving suggestion view keys on a selection becoming set. Grid scroll restore re-applies after re-measure.
+
+## Platform / packaging
+
+- **macOS:** `decorations: false` needs the `NSWindowCollectionBehaviorFullScreenPrimary` flip in `lib.rs` `setup()` (`main.rs` is a stub). macOS 26 kills ad-hoc-signed processes on `dlopen` — `.cargo/macos-linker-wrapper.sh` + `codesign-macos-main-binary.sh` strip the `linker-signed` flag from the binary and `bundle-macos-libmpv.py` re-signs the dylibs; don't drop any of the three. Screen-capturing or automating the dev app needs a `.app` wrapper with its own bundle id (bare Mach-O is invisible to screen capture); `codesign` breaks the hardlink, re-copy after Rust rebuilds; carry `MPV_LIB_PATH` in `LSEnvironment`.
+- **Keep `[[bin]] name = "ramus"`** (Linux bundler + codesign script). Windows asset-protocol scope targets `raspsoft\ramus\`, not `$APPDATA`. Use `bundle.license`, not `licenseFile`.
+- **`cfg(desktop)` works in `.rs`, not Cargo.toml** — spell out `not(any(ios, android))`. Desktop-only permissions in `capabilities/desktop.json`.
+
+### iOS
+
+- **`mpv_ios.rs` bridges to Swift `MpvBridgePlugin`** (MPVKit). Gate implementations `#[cfg(not(target_os="ios"))]`, not AppState fields. `run()` lives in `lib.rs`. `IPHONEOS_DEPLOYMENT_TARGET` set in `.cargo/config.toml` `[env]` (17.5, overridable). UIKit API newer than the deployment target needs `#available` guards in the plugin. Swift 6 `@Sendable` closures can't capture `self`.
+- **Order:** keychain registration first in `setup()`; `mpv_init` BEFORE `init_audio` (else ~8.8% fast). `tauri-plugin-opener`, not `open`. `crate-type` keeps `cdylib` (Android) — iOS links via `-undefined dynamic_lookup` (`.cargo/config.toml` rustflags).
+- **Any raw `cargo build` for a mobile target needs `--features tauri/custom-protocol`** (`release.yml`, `build-ios-ipa-local.sh`). Xcode configs are lowercase `debug`/`release` — pass `-configuration release` exactly. Don't add `inputFiles` to the Rust build phase.
+- **Flavours** (`ios-flavor.sh`): `stable` (`com.ramus.app`) and `dev` (`com.ramus.app.dev`, distinct `PRODUCT_NAME`, `AppIconDev` via `gen-dev-appicon.sh`). `regen-ios-project.sh` asserts the substitutions landed. `cargo tauri ios dev` on a device must be the DEV flavour (`RAMUS_FLAVOR=dev` regen first). `project.yml` carries no `DEVELOPMENT_TEAM` — never add one.
+- **WKWebView purges JS state on Safari OAuth resume** — onboarding persists to `localStorage` (`sessionStorage` dies with the content process); `is_authenticated` requires token AND server URL.
+- **Native `UISearchBar`** (`presentSearchBar`): our own Cancel button (UIKit's disables on resign), placed from the page's `getBoundingClientRect` (fits the split nav pane), lives for the whole search view; show/hide promise-chained with a one-microtask hold on hide; `dismissKeyboard` resigns the bar too. Cancel nulls `searchQuery`.
+- **iOS recovery grace** = `set_recovery_grace` bridge (UIBackgroundTask ~30 s) opened at every silent-reload entry, closed on first position tick. Android arm is a Kotlin no-op.
+- **Testing:** simulator screenshots are always the portrait framebuffer; `simctl io recordVideo` + ffmpeg tiles for one-frame issues; synthetic long-presses from automation tools need repeated ≤500 ms touch segments; hardware-keyboard toggle is per simulator window. Swift plugin edits need a dev-server restart.
+
+### Android
+
+- **Audio = libmpv (`dev.jdtech.mpv:libmpv`) in `LibmpvSimplePlayer` (Media3 `SimpleBasePlayer`)**, `MpvForegroundService` hosts the session. minSdk 26. `mpv*` IPC names are the contract. Gradle: `JAVA_HOME` = Android Studio JBR, `ANDROID_HOME`; module dir is the misnamed ios-bridge plugin.
+- **Toolchain:** `tauri-cli` picks the LAST entry in `$ANDROID_HOME/ndk` and overwrites `NDK_HOME` — never keep a beta NDK installed. `opusic-sys` needs `ANDROID_NDK_ROOT` set; wipe its `CMakeCache.txt` under `target/<triple>` after toolchain changes.
+- **Main-thread rules:** libmpv observers marshal to main before `invalidateState()`; `@Command` can arrive on a background IPC thread — always post player work to the main looper (`mainHandler`/`runOnMain`), blocking IO (art reads) to `ioHandler`; **never call `bridge.*` from a Rust event callback** (deadlock — use `spawn_blocking`, see `media_controls_android.rs`).
+- **Media3:** pinned ≥1.6.0 (notification survives errors — the locked-phone fix); don't bump to 1.10 blindly (`MediaNotification.Provider` contract change). Playlist UIDs must be unique — `getState()` suffixes repeats (`<id>#2`) or the process dies. END_FILE reason reconstructed from log latches + interrupt sequence + position-short check; error ⇒ IDLE, `mpvIdleActive` suppressed while errored. `mpvPauseChange` from `onPlayWhenReadyChanged`. `startForegroundService` from `onIsPlayingChanged(true)`. `setArtworkData(bytes)`, not file URIs. POST_NOTIFICATIONS grant required. Tear session down before player.
+- **ProGuard keeps** (`@InvokeArg`, `androidx.media3.**`, `dev.jdtech.mpv.**`) are load-bearing. `directories::ProjectDirs` is `None` — `set_config_dir()` first. `hardware_uuid()` file write is atomic tmp+rename (torn file rotates the key). Cleartext HTTP permitted for LAN Plex. Inner-class listeners stored as fields, removed before `release()`. Diag props: `debug.ramus.media_session` / `debug.ramus.media_controls`.
+- **Chromium WebView ignores the nav bar in `safe-area-inset-bottom`** — `MainActivity` pushes `--android-inset-*`. Edge-to-edge means the IME never resizes the window — the inset listener publishes `--keyboard-inset`. Test with `hw.keyboard=no`.

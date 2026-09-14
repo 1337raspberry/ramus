@@ -26,9 +26,6 @@ ramus-tauri/tauri.linux.conf.json
 # Personal code-review scratch notes (area*-pass*.md, review-pass*.md)
 *-pass*.md
 
-# Keep CLAUDE.md local only — not tracked in the repo
-CLAUDE.md
-
 # Local-only notes, scratch pads, debug docs, draft issue bodies, and
 # anything else that's useful for working on the project but not part of
 # it. Anything dropped in here is invisible to git.
