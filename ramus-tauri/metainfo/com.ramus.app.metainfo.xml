@@ -59,19 +59,19 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/1337raspberry/ramus/main/docs/screenshots/hero.png</image>
+      <image>https://raw.githubusercontent.com/1337raspberry/ramus/main/docs/screenshots/hero.webp</image>
       <caption>Main library view</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/1337raspberry/ramus/main/docs/screenshots/search.png</image>
+      <image>https://raw.githubusercontent.com/1337raspberry/ramus/main/docs/screenshots/search.webp</image>
       <caption>Operator-driven search</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/1337raspberry/ramus/main/docs/screenshots/focus.png</image>
+      <image>https://raw.githubusercontent.com/1337raspberry/ramus/main/docs/screenshots/focus.webp</image>
       <caption>Focus mode with per-track spectrum visualisation</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/1337raspberry/ramus/main/docs/screenshots/artist.png</image>
+      <image>https://raw.githubusercontent.com/1337raspberry/ramus/main/docs/screenshots/artist.webp</image>
       <caption>Artist listing</caption>
     </screenshot>
   </screenshots>

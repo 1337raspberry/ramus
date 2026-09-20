@@ -14,7 +14,7 @@
 </div>
 
 <p align="center">
-  <img src="docs/screenshots/hero.png" alt="ramus main view" width="800" />
+  <img src="docs/screenshots/hero.webp" alt="ramus main view" width="800" />
 </p>
 
 ## About
@@ -38,16 +38,16 @@
 <summary>Click for some mobile and desktop screenies of the key ramus features</summary>
 <table>
   <tr>
-    <td><img src="docs/screenshots/search.png" alt="Search with operators" width="450" /><br><p align ="center">Desktop Search View</p></td>
-    <td><img src="docs/screenshots/focus.png" alt="Focus / spectrum view" width="450"/><br><p align ="center">Focus/Visualiser Mode</p></td>
+    <td><img src="docs/screenshots/search.webp" alt="Search with operators" width="450" /><br><p align ="center">Desktop Search View</p></td>
+    <td><img src="docs/screenshots/focus.webp" alt="Focus / spectrum view" width="450"/><br><p align ="center">Focus/Visualiser Mode</p></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/artist.png" alt="Artist view" width="450"/><br><p align ="center">Artist List</p></td>
-    <td><img src="docs/screenshots/mobile-np-lyrics.png" alt="Mobile Now Playing" width="450"/><br><p align ="center">Mobile Now Playing (With Lyrics)</p></td>
+    <td><img src="docs/screenshots/artist.webp" alt="Artist view" width="450"/><br><p align ="center">Artist List</p></td>
+    <td><img src="docs/screenshots/mobile-np-lyrics.webp" alt="Mobile Now Playing" width="450"/><br><p align ="center">Mobile Now Playing (With Lyrics)</p></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/popular.png" alt="Popularity Charts view" width="450"/><br><p align ="center">Popularity Charts on Album Details</p></td>
-    <td><img src="docs/screenshots/filters.png" alt="filters" width="450"/><br><p align ="center">Library Filters</p></td>
+    <td><img src="docs/screenshots/popular.webp" alt="Popularity Charts view" width="450"/><br><p align ="center">Popularity Charts on Album Details</p></td>
+    <td><img src="docs/screenshots/filters.webp" alt="filters" width="450"/><br><p align ="center">Library Filters</p></td>
   </tr>
 </table>
 </details>
