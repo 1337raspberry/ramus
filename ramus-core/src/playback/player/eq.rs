@@ -125,21 +125,19 @@ impl AudioPlayer {
         self.inner.lock().spectrum_tap_enabled
     }
 
-    /// Map a raw tap timestamp onto the track's timeline.
-    ///
-    /// `pts_time` is mpv's own timeline for the current stream, which is
-    /// exactly what the `time-pos` observer reports raw. After a transcode
-    /// `offset=` resume that stream is 0-based and `position_base` holds
-    /// the shift; the frontend's position is the shifted value, so frames
-    /// must be shifted the same way or the visualiser drifts for the rest
-    /// of that stream.
-    pub fn tap_frame_position(&self, raw_pts: f64) -> f64 {
-        raw_pts + self.inner.lock().position_base
-    }
-
     /// Turn a batch of parsed tap frames into IPC-ready frames: timeline
     /// remap plus dB → bar-height quantisation through the running-peak
     /// mapper. One lock for the whole batch.
+    ///
+    /// A frame's `pts` is mpv's own timeline for the current stream, the
+    /// value the `time-pos` observer reports raw. After a transcode
+    /// `offset=` resume that stream is 0-based and `position_base` holds
+    /// the shift; the frontend's position is the shifted value, so frames
+    /// shift the same way or the visualiser drifts for the rest of that
+    /// stream. Across a gapless boundary the next file's first frames (up
+    /// to `audio-buffer` ahead of the audible switch) arrive before the
+    /// playlist position moves and so still carry the outgoing track's
+    /// base; the frontend clears its ring on the track change.
     pub fn map_tap_frames(&self, frames: Vec<TapFrame>) -> Vec<SpectrumFrame> {
         let mut inner = self.inner.lock();
         if inner.tap_awaiting_first_batch {

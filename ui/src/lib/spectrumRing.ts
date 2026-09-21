@@ -25,22 +25,30 @@ export interface SpectrumRingFrame {
 
 const RING_CAPACITY = 96;
 
-const ring: (SpectrumRingFrame | null)[] = new Array<SpectrumRingFrame | null>(RING_CAPACITY).fill(
-  null,
-);
+// Slots are allocated once and overwritten in place: a burst lands every
+// few frames, and a fresh object plus typed array per frame would just be
+// garbage for the collector.
+const ring: SpectrumRingFrame[] = Array.from({ length: RING_CAPACITY }, () => ({
+  pos: 0,
+  bands: new Uint8Array(0),
+}));
+// Slots `0..count` are the filled ones: `head` starts at 0 and a clear
+// resets it to 0, so the filled region is always a prefix of the array.
 let head = 0;
 let count = 0;
-let bandCount = 0;
 let lastPushAt = 0;
 
 /** Append a burst of frames (oldest first) from the `spectrum-frames` event. */
 export function pushSpectrumFrames(payload: SpectrumFramesPayload): void {
-  bandCount = payload.bandCount;
+  // The backend states the shape; a frame that disagrees with it (a band
+  // count change mid-flight) is dropped rather than drawn as noise.
+  const width = payload.bandCount * payload.channels;
   for (const f of payload.frames) {
-    ring[head] = {
-      pos: f.pos,
-      bands: f.bands instanceof Uint8Array ? f.bands : Uint8Array.from(f.bands),
-    };
+    if (f.bands.length !== width) continue;
+    const slot = ring[head];
+    slot.pos = f.pos;
+    if (slot.bands.length !== width) slot.bands = new Uint8Array(width);
+    slot.bands.set(f.bands);
     head = (head + 1) % RING_CAPACITY;
     if (count < RING_CAPACITY) count += 1;
   }
@@ -49,14 +57,8 @@ export function pushSpectrumFrames(payload: SpectrumFramesPayload): void {
 
 /** Drop every frame (track change, queue cleared). */
 export function clearSpectrumRing(): void {
-  ring.fill(null);
   head = 0;
   count = 0;
-}
-
-/** Bands per channel of the most recent burst; 0 until the first one lands. */
-export function spectrumBandCount(): number {
-  return bandCount;
 }
 
 /** `performance.now()` of the most recent push; 0 if none yet. */
@@ -68,6 +70,8 @@ export function spectrumLastPushAt(): number {
  * The frame closest to `target` (seconds) within the window
  * `[target - lagSec, target + leadSec]`, or null when nothing is that
  * close. Linear scan: the ring is small and this runs once per paint.
+ * The result is a ring slot the next burst may overwrite, so read it
+ * within the same task.
  */
 export function pickSpectrumFrame(
   target: number,
@@ -78,7 +82,6 @@ export function pickSpectrumFrame(
   let bestDist = Infinity;
   for (let i = 0; i < count; i++) {
     const f = ring[i];
-    if (!f) continue;
     const d = f.pos - target;
     if (d < -lagSec || d > leadSec) continue;
     const dist = Math.abs(d);

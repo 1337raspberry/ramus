@@ -3945,6 +3945,9 @@ body.is-fullscreen .focus-body {
 }
 
 .focus-art-panel.lyrics-mode .focus-art-container {
+  /* The thumbnail fills its 72 px box; the focus view's art inset does
+     not apply here. */
+  --art-scale: 1;
   border-radius: 10px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }

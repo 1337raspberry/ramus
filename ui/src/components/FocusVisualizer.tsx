@@ -98,6 +98,12 @@ function readBandsInto(bands: Uint8Array, out: Uint8Array): void {
  * opposite order and leave the tap off while the visualiser is mounted.
  */
 let tapRequests: Promise<void> = Promise.resolve();
+/**
+ * `performance.now()` when the document last became visible. The paint
+ * loop's no-frames hint must not count a hidden stretch, when the tap was
+ * deliberately removed.
+ */
+let tapVisibleSince = 0;
 function requestTap(enabled: boolean): void {
   tapRequests = tapRequests
     .then(() => setSpectrumTap(enabled))
@@ -108,13 +114,25 @@ export default function FocusVisualizer() {
   const disabled = useSettingsStore((s) => s.disableSpectrum);
 
   // The tap is installed for exactly as long as this component is mounted
-  // with the visualiser enabled. Disabling it in settings while mounted
-  // runs the cleanup, which removes the tap; the backend applies the same
-  // veto on its side, so a stale install request can't slip through.
+  // with the visualiser enabled AND the document is visible: the paint
+  // loop stops while the window is hidden, so frames measured then would
+  // cost the tap's CPU for nothing. Disabling it in settings while
+  // mounted runs the cleanup, which removes the tap; the backend applies
+  // the same veto on its side, so a stale install request can't slip
+  // through. Every request goes through the chain, so a hide/show pair
+  // lands in order like any other toggle.
   useEffect(() => {
     if (disabled) return;
-    requestTap(true);
-    return () => requestTap(false);
+    const sync = () => {
+      if (!document.hidden) tapVisibleSince = performance.now();
+      requestTap(!document.hidden);
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      requestTap(false);
+    };
   }, [disabled]);
 
   if (disabled) return null;
@@ -269,7 +287,7 @@ function CanvasLayer() {
       const starvedNow =
         isPlaying &&
         !playback.isBuffering &&
-        now - Math.max(spectrumLastPushAt(), mountedAt) > NO_FRAMES_HINT_MS;
+        now - Math.max(spectrumLastPushAt(), mountedAt, tapVisibleSince) > NO_FRAMES_HINT_MS;
       if (starvedNow !== starvedRef.current) {
         starvedRef.current = starvedNow;
         setStarved(starvedNow);

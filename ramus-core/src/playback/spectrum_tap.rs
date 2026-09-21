@@ -56,6 +56,10 @@ pub const TAP_CHANNELS: usize = 2;
 /// rate, so it is also the rate the printer runs at.
 pub const DEFAULT_TAP_FPS: u32 = 60;
 
+/// Upper bound on the frame rate the graph is asked for: past this the
+/// envelope resampler and the log transport only cost more.
+pub const MAX_TAP_FPS: u32 = 120;
+
 /// Sample rate the side branch is forced to. The main path is never
 /// resampled; hi-res sources are analysed at 48 kHz, which is plenty for
 /// bands that top out at 16 kHz.
@@ -173,8 +177,8 @@ pub const PEAK_FLOOR_DB: f32 = -40.0;
 pub struct TapConfig {
     /// Number of analysis bands per channel (`MIN_TAP_BANDS..=MAX_TAP_BANDS`).
     pub bands: usize,
-    /// Frames per second (must divide `TAP_SAMPLE_RATE` evenly for the
-    /// frame size to be exact; 30 and 60 both do).
+    /// Frames per second (`1..=MAX_TAP_FPS`): the envelope is resampled
+    /// to exactly this rate.
     pub fps: u32,
 }
 
@@ -193,7 +197,7 @@ impl TapConfig {
     pub fn normalised(self) -> Self {
         Self {
             bands: self.bands.clamp(MIN_TAP_BANDS, MAX_TAP_BANDS),
-            fps: self.fps.clamp(1, TAP_SAMPLE_RATE),
+            fps: self.fps.clamp(1, MAX_TAP_FPS),
         }
     }
 
@@ -234,6 +238,46 @@ pub fn channel_layout_spec(n: usize) -> String {
     }
     let mask: u64 = if n >= 64 { u64::MAX } else { (1u64 << n) - 1 };
     format!("0x{mask:x}")
+}
+
+/// FFmpeg's name for the channel at mask bit `bit`. The first eighteen
+/// are named in every FFmpeg release; the rest are spelled `USR<bit>`,
+/// which the channel parser accepts from FFmpeg 5.1 on.
+fn channel_name(bit: usize) -> String {
+    const NAMED: [&str; 18] = [
+        "FL", "FR", "FC", "LFE", "BL", "BR", "FLC", "FRC", "BC", "SL", "SR", "TC", "TFL", "TFC",
+        "TFR", "TBL", "TBC", "TBR",
+    ];
+    NAMED
+        .get(bit)
+        .map_or_else(|| format!("USR{bit}"), |name| name.to_string())
+}
+
+/// The output channels of `channel_layout_spec(n)`, in channel order.
+fn layout_channels(n: usize) -> Vec<String> {
+    let n = n.clamp(1, MAX_TAP_BANDS);
+    if n == 24 {
+        // `22.2` is the first eighteen mask bits plus these six.
+        let tail = ["LFE2", "TSL", "TSR", "BFC", "BFL", "BFR"].map(String::from);
+        return (0..18).map(channel_name).chain(tail).collect();
+    }
+    (0..n).map(channel_name).collect()
+}
+
+/// `join`'s `map` option: input `k`'s only channel onto output channel
+/// `k`. Left implicit, `join` guesses the mapping from the inputs'
+/// channel names, and the guess depends on which named channels they
+/// carry: the right bank's inputs are all `FR`, which lands input 0 on
+/// output channel 1 (`FR`) and input 1 on channel 0, so that bank's two
+/// lowest bands come out swapped while the left bank (all `FL`) happens
+/// to be identity.
+fn join_map(n: usize) -> String {
+    layout_channels(n)
+        .iter()
+        .enumerate()
+        .map(|(k, name)| format!("{k}.0-{name}"))
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 /// Generate the tap filter graph for `cfg`. The result is the inner graph
@@ -294,12 +338,13 @@ fn push_bank(g: &mut String, tag: &str, cfg: &TapConfig, w: f32, freqs: &[f32]) 
         g.push_str(&format!("[{tag}b{k}]"));
     }
     g.push_str(&format!(
-        "join=inputs={n}:channel_layout={layout},\
+        "join=inputs={n}:channel_layout={layout}:map={map},\
          asplit=2[{tag}p][{tag}q];[{tag}p][{tag}q]amultiply,lowpass=f={lp},\
          aresample={fps}:filter_size={taps},\
          aeval=exprs='{db_per_neper:.10}*log(max(val(ch)\\,{floor}))/{scale}':channel_layout=same,\
          aformat=sample_fmts=s16p,asetnsamples=n=1:p=0,ashowinfo,anullsink;",
         layout = channel_layout_spec(n),
+        map = join_map(n),
         lp = ENVELOPE_LOWPASS_HZ,
         fps = cfg.fps,
         taps = ENVELOPE_RESAMPLE_FILTER_SIZE,
@@ -359,8 +404,12 @@ struct HalfFrame {
 /// delivers the line whole, with the filter-name prefix at its start:
 ///
 /// ```text
-/// Parsed_ashowinfo_75: n:59 pts:1853 pts_time:30.883333 fmt:s16p channels:64 chlayout:… rate:60 nb_samples:1 checksum:97BA516D plane_checksums: [ 01BA014A 01C5014C … ]⏎
+/// Parsed_ashowinfo_76: n:30 pts:31 pts_time:0.516667 fmt:s16p channels:64 chlayout:64 channels (FL+FR+FC+…+USR rate:60 nb_samples:1 checksum:97BA516D plane_checksums: [ 020C0158 00D400BC … ]⏎
 /// ```
+///
+/// The `chlayout` field is the layout description cut at a fixed width,
+/// so it carries spaces and an unclosed parenthesis; fields are found by
+/// name, never by position.
 ///
 /// Should a build deliver the pieces separately instead, they are held
 /// until the one carrying the newline arrives.
@@ -393,23 +442,32 @@ impl TapLineParser {
         }
     }
 
-    /// Band count per channel this parser completes frames at.
-    pub fn bands(&self) -> usize {
-        self.bands
+    /// Forget a half-stitched line and any halves still waiting for a
+    /// partner. Called when the filter chain is rebuilt: the new graph's
+    /// printers start over, and a leftover half must not pair with one
+    /// of theirs.
+    pub fn reset(&mut self) {
+        self.held.clear();
+        self.pending.clear();
     }
 
     /// Feed one mpv log message from the `ffmpeg` prefix, newline and all.
     pub fn feed(&mut self, fragment: &str) -> TapFeed {
         if !self.held.is_empty() {
-            self.held.push_str(fragment);
-            if fragment.ends_with('\n') {
-                let line = std::mem::take(&mut self.held);
-                return self.decode(&line);
-            }
-            if self.held.len() > MAX_TAP_LINE {
+            if fragment.starts_with(TAP_LOG_PREFIX) {
+                // A new line has begun: the rest of the held one is lost.
                 self.held.clear();
+            } else {
+                self.held.push_str(fragment);
+                if fragment.ends_with('\n') {
+                    let line = std::mem::take(&mut self.held);
+                    return self.decode(&line);
+                }
+                if self.held.len() > MAX_TAP_LINE {
+                    self.held.clear();
+                }
+                return TapFeed::Consumed;
             }
-            return TapFeed::Consumed;
         }
         if !fragment.starts_with(TAP_LOG_PREFIX) {
             return TapFeed::Ignored;
@@ -558,7 +616,7 @@ fn sanitise_db(db: f32) -> f32 {
 /// Values at or below `floor` map to 0; values at or above `ceiling` map
 /// to 255; in between renormalises to 0..1 and applies `QUANT_COMPRESSION`
 /// so quiet passages aren't flatlined. Degenerate ranges return 0.
-pub(crate) fn quantise_db_range(db: f32, floor: f32, ceiling: f32) -> u8 {
+fn quantise_db_range(db: f32, floor: f32, ceiling: f32) -> u8 {
     if !db.is_finite() || ceiling <= floor || db <= floor {
         return 0;
     }
@@ -632,6 +690,8 @@ impl Default for LevelMapper {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn quantise_db_range_edges_and_midpoint() {
         let floor = -65.0;
@@ -649,8 +709,6 @@ mod tests {
         let mid = quantise_db_range(-35.0, floor, ceiling);
         assert!(mid > 0 && mid < 255);
     }
-
-    use super::*;
 
     fn cfg(bands: usize) -> TapConfig {
         TapConfig { bands, fps: 60 }
@@ -718,7 +776,7 @@ mod tests {
                 "[{t}]asplit=2[{t}s0][{t}s1];\
                  [{t}s0]bandpass=f=50.0:width_type=o:w=8.322[{t}b0];\
                  [{t}s1]bandpass=f=16000.0:width_type=o:w=8.322[{t}b1];\
-                 [{t}b0][{t}b1]join=inputs=2:channel_layout=0x3,\
+                 [{t}b0][{t}b1]join=inputs=2:channel_layout=0x3:map=0.0-FL|1.0-FR,\
                  asplit=2[{t}p][{t}q];[{t}p][{t}q]amultiply,lowpass=f=20,\
                  aresample=60:filter_size=2,\
                  aeval=exprs='4.3429448190*log(max(val(ch)\\,1e-10))/100':channel_layout=same,\
@@ -773,10 +831,45 @@ mod tests {
     }
 
     #[test]
-    fn graph_uses_decimal_points_only() {
+    fn join_maps_every_input_to_its_own_output_channel() {
+        // Without a map, `join` guesses from the inputs' channel names:
+        // the right bank's inputs each carry `FR`, which the guess puts on
+        // output channel 1 first, so that bank's two lowest bands swap.
+        let g = tap_graph(&cfg(4));
+        assert_eq!(g.matches(":map=0.0-FL|1.0-FR|2.0-FC|3.0-LFE,").count(), 2);
+
+        // 24 bands ride the named `22.2` layout, whose channels past the
+        // first eighteen are LFE2, TSL, TSR, BFC, BFL, BFR in that order.
+        let g = tap_graph(&cfg(24));
+        assert!(g.contains("|17.0-TBR|18.0-LFE2|19.0-TSL|20.0-TSR|21.0-BFC|22.0-BFL|23.0-BFR,"));
+
         let g = tap_graph(&TapConfig::default());
-        assert!(!g.contains(",w="));
-        assert!(g.contains("w=0."));
+        let map = g.split(":map=").nth(1).unwrap().split(',').next().unwrap();
+        let entries: Vec<&str> = map.split('|').collect();
+        assert_eq!(entries.len(), DEFAULT_TAP_BANDS);
+        assert_eq!(entries[17], "17.0-TBR");
+        assert_eq!(entries[18], "18.0-USR18");
+        assert_eq!(entries[63], "63.0-USR63");
+        for (k, e) in entries.iter().enumerate() {
+            assert!(e.starts_with(&format!("{k}.0-")), "entry {k}: {e}");
+        }
+    }
+
+    #[test]
+    fn graph_uses_decimal_points_only() {
+        // A comma decimal separator (a non-POSIX locale) would still leave
+        // the text "w=0" in place, so parse every width back instead.
+        let g = tap_graph(&TapConfig::default());
+        let mut seen = 0;
+        for (i, _) in g.match_indices(":w=") {
+            let value = g[i + 3..].split('[').next().unwrap();
+            assert!(
+                value.parse::<f32>().is_ok(),
+                "width is not a plain decimal: {value}"
+            );
+            seen += 1;
+        }
+        assert_eq!(seen, 2 * DEFAULT_TAP_BANDS);
     }
 
     #[test]
@@ -790,9 +883,63 @@ mod tests {
         let c = TapConfig { bands: 0, fps: 0 }.normalised();
         assert_eq!(c.bands, MIN_TAP_BANDS);
         assert_eq!(c.fps, 1);
-        let c = TapConfig { bands: 500, fps: 1_000_000 }.normalised();
+        let c = TapConfig {
+            bands: 500,
+            fps: 1_000_000,
+        }
+        .normalised();
         assert_eq!(c.bands, MAX_TAP_BANDS);
-        assert_eq!(c.fps, TAP_SAMPLE_RATE);
+        assert_eq!(c.fps, MAX_TAP_FPS);
+    }
+
+    // --- a line exactly as mpv delivers it ---
+
+    /// Captured from mpv 0.41 / FFmpeg 9.0.1 running the default graph on
+    /// a 440 Hz tone: the text of one `ffmpeg`-prefixed client-API
+    /// message, newline included, for each bank's printer at the same
+    /// frame. Every other parser test builds its input from `fragments`,
+    /// which is this module's own model of the format; this one pins the
+    /// model to the real thing.
+    const CAPTURED_LEFT: &str = "Parsed_ashowinfo_76: n:30 pts:31 pts_time:0.516667 fmt:s16p channels:64 chlayout:64 channels (FL+FR+FC+LFE+BL+BR+FLC+FRC+BC+SL+SR+TC+TFL+TFC+TFR+TBL+TBC+TBR+USR18+USR19+USR20+USR21+USR22+USR23+USR24+USR25+USR rate:60 nb_samples:1 checksum:48864DF9 plane_checksums: [ 01C20138 01DB0145 01F20151 02170164 023A0176 0263018B 029601A5 00CE00C2 011100E4 0160010C 01BB013A 022C0173 02AF01B5 01530108 021A016C 010C00E6 023F0180 01BD0140 01AF013A 0237017F 01AA013A 029B01B4 024C018F 01FE016C 02BF01CF 011C00F9 010400EA 00EE00DD 00D500CF 01E20154 01AE0139 01FA015E 02A601B3 0197012B 00BE00BE 020C0164 017B011B 010400DF 02A201AD 02530185 02100163 01D90147 01AC0130 0189011E 016C010F 01570104 014800FC 014100F8 013E00F6 014500F9 015200FF 01670109 01840117 01AD012B 01E40146 02290168 027C0191 00E800C7 016B0108 020C0158 00D400BC 01C70135 00F300CB 02620182 ]\n";
+    const CAPTURED_RIGHT: &str = "Parsed_ashowinfo_151: n:30 pts:31 pts_time:0.516667 fmt:s16p channels:64 chlayout:64 channels (FL+FR+FC+LFE+BL+BR+FLC+FRC+BC+SL+SR+TC+TFL+TFC+TFR+TBL+TBC+TBR+USR18+USR19+USR20+USR21+USR22+USR23+USR24+USR25+USR rate:60 nb_samples:1 checksum:48864DF9 plane_checksums: [ 01C20138 01DB0145 01F20151 02170164 023A0176 0263018B 029601A5 00CE00C2 011100E4 0160010C 01BB013A 022C0173 02AF01B5 01530108 021A016C 010C00E6 023F0180 01BD0140 01AF013A 0237017F 01AA013A 029B01B4 024C018F 01FE016C 02BF01CF 011C00F9 010400EA 00EE00DD 00D500CF 01E20154 01AE0139 01FA015E 02A601B3 0197012B 00BE00BE 020C0164 017B011B 010400DF 02A201AD 02530185 02100163 01D90147 01AC0130 0189011E 016C010F 01570104 014800FC 014100F8 013E00F6 014500F9 015200FF 01670109 01840117 01AD012B 01E40146 02290168 027C0191 00E800C7 016B0108 020C0158 00D400BC 01C70135 00F300CB 02620182 ]\n";
+
+    #[test]
+    fn a_captured_line_decodes_to_the_bands_in_order() {
+        let half = parse_showinfo_line(CAPTURED_LEFT, 64).expect("captured line decodes");
+        assert_eq!(half.printer, 76);
+        assert!((half.pts - 0.516667).abs() < 1e-9);
+        assert_eq!(half.db.len(), 64);
+        // The last plane's checksum, worked by hand: A = 0x0182 = b0 + b1,
+        // B = 0x0262 = 2·b0 + b1, so the bytes are 224, 162 and the little-
+        // endian sample is 0xA2E0 = -23840.
+        assert_eq!(adler32_to_s16(0x0262_0182), Some(-23840));
+        assert!((half.db[63] - sample_to_db(-23840)).abs() < 1e-6);
+        assert!(half.db[63] < -70.0 && half.db[63] > -75.0);
+        // Plane k is band k: the tone's energy peaks in the band nearest 440 Hz.
+        let freqs = band_frequencies(&TapConfig::default());
+        let loudest = (0..64)
+            .max_by(|&a, &b| half.db[a].partial_cmp(&half.db[b]).unwrap())
+            .unwrap();
+        assert!(
+            ((freqs[loudest] - 440.0) / 440.0).abs() < 0.15,
+            "loudest band {loudest} at {:.0} Hz",
+            freqs[loudest]
+        );
+    }
+
+    #[test]
+    fn captured_lines_from_both_printers_pair_into_one_frame() {
+        let mut p = TapLineParser::new(64);
+        assert_eq!(p.feed(CAPTURED_LEFT), TapFeed::Consumed);
+        match p.feed(CAPTURED_RIGHT) {
+            TapFeed::Frame(f) => {
+                assert!((f.pts - 0.516667).abs() < 1e-9);
+                assert_eq!(f.db.len(), 128);
+                let left = parse_showinfo_line(CAPTURED_LEFT, 64).unwrap();
+                assert_eq!(&f.db[..64], &left.db[..]);
+            }
+            other => panic!("expected a frame, got {other:?}"),
+        }
     }
 
     // --- checksum decoding ---
@@ -1058,6 +1205,38 @@ mod tests {
         assert_eq!(p.feed(&line(RIGHT_PRINTER, 0, 0.0, &[-1.0, -2.0])), TapFeed::Consumed);
         let next = frame_lines(1, 0.0166667, &[-20.0, -30.0], &[-1.0, -2.0]);
         assert_eq!(feed_all(&mut p, &next).len(), 1);
+    }
+
+    #[test]
+    fn reset_drops_a_held_fragment_and_pending_halves() {
+        let mut p = TapLineParser::new(2);
+        assert_eq!(
+            p.feed(&line(LEFT_PRINTER, 0, 0.0, &[-1.0, -2.0])),
+            TapFeed::Consumed
+        );
+        p.feed("Parsed_ashowinfo_9: n:1 ");
+        assert!(!p.pending.is_empty() && !p.held.is_empty());
+        p.reset();
+        assert!(p.pending.is_empty() && p.held.is_empty());
+        // The old left half is gone: a right half at the same pts waits alone.
+        assert_eq!(
+            p.feed(&line(RIGHT_PRINTER, 0, 0.0, &[-1.0, -2.0])),
+            TapFeed::Consumed
+        );
+        assert_eq!(p.pending.len(), 1);
+    }
+
+    #[test]
+    fn a_new_tap_line_mid_stitch_restarts_the_stitch() {
+        let mut p = TapLineParser::new(2);
+        let frags = fragments(LEFT_PRINTER, 0, 0.0, &[-20.0, -30.0]);
+        p.feed(&frags[0]);
+        // The rest of that line never arrives; a whole new line does.
+        let whole = line(LEFT_PRINTER, 1, 0.0166667, &[-20.0, -30.0]);
+        assert_eq!(p.feed(&whole), TapFeed::Consumed);
+        assert!(p.held.is_empty());
+        assert_eq!(p.pending.len(), 1);
+        assert!((p.pending[0].pts - 0.0166667).abs() < 1e-5);
     }
 
     #[test]

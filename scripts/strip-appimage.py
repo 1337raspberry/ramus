@@ -11,8 +11,9 @@ GTK wayland input-method modules). The plugin overrides the standard
 AppImage excludelist for this — its policy is "bundle everything GTK
 needs, even libs the excludelist says are host-provided".
 
-That policy breaks webkit2gtk's EGL init on distros that moved past
-Ubuntu 22.04's lib versions. The loader honours each bundled lib's
+That policy breaks webkit2gtk's EGL init on distros whose lib versions
+have moved past the build host's (first seen from an Ubuntu 22.04 host
+on Fedora 42). The loader honours each bundled lib's
 RPATH=$ORIGIN and caches our copies before the host webkit/GDK init
 runs; webkit's `eglGetDisplay(EGL_DEFAULT_DISPLAY)` then trips on a
 mismatched libwayland-client / libxkbcommon ABI and aborts with

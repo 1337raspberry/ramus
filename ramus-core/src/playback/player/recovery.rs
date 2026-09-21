@@ -119,7 +119,7 @@ impl AudioPlayer {
     /// current `server_url` and `token`. Called after connection failover
     /// so stale URLs don't cascade-fail when playback reaches them.
     pub fn rewrite_stale_playlist_urls(&self) {
-        let rewrites: Vec<(usize, String, Option<String>)> = {
+        let rewrites: Vec<(usize, String)> = {
             let persistent = self.persistent_cache.read();
             let inner = self.inner.lock();
             let current_idx = inner.state.queue_index;
@@ -143,7 +143,7 @@ impl AudioPlayer {
                     if url.starts_with("file://") {
                         return None;
                     }
-                    Some((idx, url, None))
+                    Some((idx, url))
                 })
                 .collect()
         };
@@ -169,15 +169,15 @@ impl AudioPlayer {
         {
             let mut inner = self.inner.lock();
             let current_idx = inner.state.queue_index;
-            if rewrites.iter().any(|(idx, _, _)| *idx < current_idx) {
+            if rewrites.iter().any(|(idx, _)| *idx < current_idx) {
                 inner.reloading_pos = Some(current_idx);
                 inner.reload_started_at = Some(Instant::now());
             }
         }
 
-        for (idx, new_url, opts) in rewrites.iter().rev() {
+        for (idx, new_url) in rewrites.iter().rev() {
             self.mpv.playlist_remove(*idx as i64);
-            self.mpv.load_file_at(new_url, *idx as i64, opts.as_deref());
+            self.mpv.load_file_at(new_url, *idx as i64, None);
         }
     }
 

@@ -10,7 +10,7 @@ import { clearSpectrumRing } from "../lib/spectrumRing";
  * - `"off"`  — viz is unmounted, RAF loop stops
  * - `"bars"` — one bar per tap band, mirrored: bass centred, treble at edges
  *
- * Toggled via `cycleVisualizerMode`.
+ * Toggled via `toggleVisualizer`.
  */
 export type VisualizerMode = "off" | "bars";
 import {
@@ -74,10 +74,12 @@ interface PlaybackState {
   // Session-only; resets to `"bars"` on reload. Toggled bars ↔ off.
   visualizerMode: VisualizerMode;
 
-  // `performance.now()` when `position` was last written (a position tick
-  // or a seek). Lets the focus visualiser extrapolate the playhead between
-  // ticks: `position + (now - positionAt) / 1000` while playing. The live
-  // spectrum frames themselves live in `lib/spectrumRing.ts`, not here.
+  // `performance.now()` when `position` was last known good: a position
+  // tick, a seek, or a playback-state change (no ticks arrive while paused,
+  // so a resume must re-anchor it). Lets the focus visualiser extrapolate
+  // the playhead between ticks: `position + (now - positionAt) / 1000`
+  // while playing. The live spectrum frames themselves live in
+  // `lib/spectrumRing.ts`, not here.
   positionAt: number;
 
   // --- Event Handlers ---
@@ -103,7 +105,7 @@ interface PlaybackState {
   toggleLyrics: () => void;
   toggleQueue: () => void;
   toggleFocusMode: () => void;
-  cycleVisualizerMode: () => void;
+  toggleVisualizer: () => void;
   removeQueueItem: (index: number) => void;
   /// Drag reorder: move the entry at `from` to position `to` (absolute
   /// queue indices). Optimistic, like removeQueueItem.
@@ -233,11 +235,12 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       status: status as PlaybackState["status"],
       currentTrack: track,
       queueIndex,
+      // Re-anchor the playhead estimate on every state change: `position`
+      // is only as fresh as this stamp, and a paused stream sends no ticks.
+      positionAt: performance.now(),
       // Seed duration from Plex metadata so the waveform and seek bar are
       // functional before mpv's first time-pos tick.
-      ...(trackChanged
-        ? { position: 0, duration: track?.duration ?? 0, positionAt: performance.now() }
-        : {}),
+      ...(trackChanged ? { position: 0, duration: track?.duration ?? 0 } : {}),
     });
 
     if (trackChanged && track) {
@@ -419,7 +422,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   toggleFocusMode: () => set((s) => ({ isFocusMode: !s.isFocusMode })),
 
-  cycleVisualizerMode: () =>
+  toggleVisualizer: () =>
     set((s) => {
       const next: VisualizerMode = s.visualizerMode === "bars" ? "off" : "bars";
       return { visualizerMode: next };

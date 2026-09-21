@@ -956,11 +956,13 @@ fn test_tap_toggle_preserves_eq_and_eq_toggle_preserves_tap() {
 }
 
 #[test]
-fn test_tap_frame_position_applies_position_base() {
+fn test_map_tap_frames_applies_position_base() {
+    use crate::playback::spectrum_tap::TapFrame;
     let (player, _mpv) = make_player();
-    assert_eq!(player.tap_frame_position(12.5), 12.5);
+    let batch = || vec![TapFrame { pts: 12.5, db: vec![-20.0; 128] }];
+    assert_eq!(player.map_tap_frames(batch())[0].pos, 12.5);
     player.inner.lock().position_base = 100.0;
-    assert_eq!(player.tap_frame_position(12.5), 112.5);
+    assert_eq!(player.map_tap_frames(batch())[0].pos, 112.5);
 }
 
 #[test]

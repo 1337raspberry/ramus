@@ -133,6 +133,89 @@ jobs:
       - name: cargo clippy (workspace)
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  # The spectrum tap is a libavfilter graph inside libmpv, and whether it
+  # runs is decided by the FFmpeg build behind that libmpv, not by our
+  # code: the graph's `join` map needs the channel-layout API of FFmpeg
+  # 5.1+, and the AppImage bundles this runner's libmpv. The probes are
+  # `#[ignore]` tests that dlopen the host's libmpv and play a synthetic
+  # tone through mpv's real audio output; mpv only runs the filter chain
+  # when an output pulls audio, so a PulseAudio null sink stands in for a
+  # sound card on the headless runner. One probe per invocation: two
+  # libmpv instances in one process starve each other of frames.
+  tap-probe:
+    name: Spectrum tap probes (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      # PulseAudio and its clients (pactl, and libmpv inside the test
+      # binary) all resolve the daemon socket under this directory; the
+      # runner has no login session, so it is not set for us.
+      XDG_RUNTIME_DIR: /tmp/xdg-runtime
+      RUST_LOG: info
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        with:
+          workspaces: '. -> target'
+          key: ci-tap-probe-ubuntu-24.04
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-bin: false
+
+      # Same build deps as the Rust job, plus the runtime libmpv the
+      # probes dlopen and the sound server they play into.
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            libmpv-dev \
+            pulseaudio \
+            pulseaudio-utils
+          dpkg-query -W -f='${binary:Package} ${Version}\n' libmpv2 libavfilter9 libavutil58 2>/dev/null || true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@739bfe42ca9233c5e6aca07c1a25a9d34aca49b0  # v6.0.7
+        with:
+          version: 11
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      # tauri-build needs `frontendDist` to exist before ramus-tauri
+      # compiles, test binary included.
+      - name: Build frontend
+        working-directory: ui
+        run: pnpm install --frozen-lockfile && pnpm run build
+
+      - name: Start a PulseAudio null sink
+        run: |
+          mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+          pulseaudio --daemonize=yes --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=probe
+          pactl set-default-sink probe
+          pactl info
+
+      - name: Run the tap probes
+        run: |
+          for probe in tap_probe_produces_frames tap_probe_lowest_band tap_probe_recovers; do
+            cargo test -p ramus-tauri --lib -- --ignored "$probe" --nocapture --test-threads=1
+          done
+
   frontend:
     name: Frontend
     runs-on: ubuntu-22.04
