@@ -38,8 +38,8 @@ pub struct BandwidthDegrade {
 /// [`transcode::should_transcode`] is the baseline — a pure function of the
 /// user's mode and the connection type. This applies the adaptive override on
 /// top, and is what every resolve site must call so the live stream, the
-/// prefetch worker, the byte-size estimate, the stream-record extension and
-/// the debug readout can never disagree about what is being fetched.
+/// prefetch worker and the debug readout can never disagree about what is
+/// being fetched.
 ///
 /// The override only ever re-encodes something the baseline would have been
 /// willing to: a lossy source has nowhere better to go, and `Never` opted out

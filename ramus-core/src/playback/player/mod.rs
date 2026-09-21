@@ -107,13 +107,6 @@ struct PlayerInner {
     /// Most recent unrecoverable mpv `END_FILE` error message (URL-redacted).
     /// Cleared on `file-loaded`.
     last_load_error: Option<String>,
-    /// Directory mpv writes `stream-record` output to (per-track files
-    /// named `<rating_key>.<ext>`). Set once at startup by the Tauri
-    /// layer; left `None` makes `stream_record_option_for` return `None`
-    /// so loadfile carries no per-track options. Captures the source
-    /// bytes mpv pulls during playback so the spectrum analyser can
-    /// process them without a second HTTP fetch.
-    stream_record_dir: Option<PathBuf>,
     /// Seconds the current mpv stream is shifted from the track's true
     /// timeline. Non-zero only after a transcode `offset=` resume, where
     /// mpv sees a fresh 0-based stream that is really the track's tail;
@@ -211,10 +204,9 @@ struct PlayerInner {
     ///
     /// The queue, index and position are real — they drive the UI, the seek
     /// bar and the now-playing card — but no stream has been opened. That is
-    /// deliberate: opening one at launch would cost network on every start,
-    /// begin a `stream-record` capture nobody asked for, and race the
-    /// background probe that corrects a stale server URL seconds after
-    /// `setup()` picked it.
+    /// deliberate: opening one at launch would cost network on every start
+    /// and race the background probe that corrects a stale server URL
+    /// seconds after `setup()` picked it.
     ///
     /// **Every path that would command mpv about the queue must consult
     /// this.** Transport paths materialise first (see
@@ -346,7 +338,6 @@ impl AudioPlayer {
                 last_position_update: None,
                 load_started_at: None,
                 last_load_error: None,
-                stream_record_dir: None,
                 position_base: 0.0,
                 eq_enabled: false,
                 eq_bands: Vec::new(),
@@ -416,23 +407,6 @@ impl AudioPlayer {
         let changed = inner.is_cellular != is_cellular;
         inner.is_cellular = is_cellular;
         changed
-    }
-
-    /// Configure the directory mpv writes its `stream-record` output to.
-    /// Called once at startup by the Tauri layer with the audio cache
-    /// path; the core can't compute this itself because it doesn't know
-    /// the app's config directory layout. While set, every direct-play
-    /// `loadfile` carries a `stream-record=<dir>/<rating_key>.<ext>`
-    /// per-file option, so the symphonia analyser can run against the
-    /// captured file without a second HTTP fetch.
-    pub fn set_stream_record_dir(&self, dir: PathBuf) {
-        self.inner.lock().stream_record_dir = Some(dir);
-    }
-
-    /// Read back the configured stream-record directory. Used by the
-    /// prefetch worker to compute the on-disk path for an ingest pass.
-    pub fn stream_record_dir(&self) -> Option<PathBuf> {
-        self.inner.lock().stream_record_dir.clone()
     }
 
     /// Update playback configuration.

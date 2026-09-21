@@ -360,14 +360,6 @@ impl AudioPlayer {
     /// returns true. The DB duration breaks that coupling. 0.25s slack
     /// covers float jitter.
     ///
-    /// Note: this is a "demuxer is at-or-near end" check, not a "file
-    /// on disk is structurally complete" check. The recorder's
-    /// libavformat may still hold tail packets in its internal page
-    /// buffer even after the demuxer reports drained — callers needing
-    /// a structurally valid file should clamp reads at the last
-    /// complete Ogg page boundary (see `bounded_ogg_source` in the
-    /// spectrum analyser) rather than relying on this predicate alone.
-    ///
     /// Returns `false` if the queue is empty, the track has no DB
     /// duration, or the bridge doesn't expose `demuxer-cache-time`.
     pub fn current_source_fully_drained(&self) -> bool {
@@ -387,36 +379,5 @@ impl AudioPlayer {
     /// that haven't grown the call yet) or mpv has nothing buffered.
     pub fn demuxer_cache_time(&self) -> Option<f64> {
         self.mpv.demuxer_cache_time()
-    }
-
-    /// Approximate expected on-disk size for the currently-playing
-    /// track's source body, in bytes. Drain detection compares this
-    /// against the actual stream-record file size to decide whether
-    /// Plex has finished sending the body.
-    ///
-    /// For transcoded tracks: `duration × transcode_bitrate / 8`. The
-    /// Opus encoder is VBR so this is approximate (callers should use a
-    /// 95% threshold). For direct-play: prefers the exact
-    /// `Track.file_size_bytes` populated at sync time, falling back to
-    /// `duration × Track.bitrate / 8` if the column wasn't populated.
-    ///
-    /// Returns `None` when the queue is empty, the track has no
-    /// duration, or no usable bitrate / size hint is available.
-    pub fn expected_source_bytes_for_current(&self) -> Option<u64> {
-        let inner = self.inner.lock();
-        let track = inner.state.queue.get(inner.state.queue_index)?;
-        if track.duration <= 0.0 {
-            return None;
-        }
-        let (needs_transcode, bitrate) = effective_stream_policy(track, &inner);
-        if needs_transcode {
-            let kbps = bitrate.as_kbps() as f64;
-            Some((track.duration * kbps * 1000.0 / 8.0) as u64)
-        } else if let Some(sz) = track.file_size_bytes.filter(|s| *s > 0) {
-            Some(sz as u64)
-        } else {
-            let kbps = track.bitrate.filter(|b| *b > 0)? as f64;
-            Some((track.duration * kbps * 1000.0 / 8.0) as u64)
-        }
     }
 }

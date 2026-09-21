@@ -4,9 +4,7 @@
 use crate::models::{PlaybackStatus, Track};
 use crate::playback::mpv::LoadMode;
 
-use super::resolve::{
-    resolve_url, resolve_url_with_resume, stream_record_option_for, ResumePlan,
-};
+use super::resolve::{resolve_url, resolve_url_with_resume, ResumePlan};
 use super::AudioPlayer;
 
 /// Threshold in seconds: if position > this, `previous()` restarts instead of going back.
@@ -36,8 +34,8 @@ impl AudioPlayer {
             return;
         }
 
-        // Snapshot the per-track (url, stream-record options) pairs under
-        // the lock, then release before touching mpv (FFI calls may block
+        // Snapshot the per-track (url, per-file options) pairs under the
+        // lock, then release before touching mpv (FFI calls may block
         // briefly).
         let loads: Vec<Option<(String, Option<String>)>> = {
             let persistent = self.persistent_cache.read();
@@ -93,14 +91,9 @@ impl AudioPlayer {
             let start_load = resolve_url_with_resume(&start_track, &inner, &persistent, resume)
                 .map(|(url, plan)| {
                     let opts = match plan {
-                        // Not a resume: an ordinary from-the-top load, so
-                        // capture the source for the spectrum analyser.
-                        ResumePlan::None => stream_record_option_for(&start_track, &url, &inner),
-                        // Resuming mid-track deliberately carries no
-                        // stream-record. The capture would begin partway
-                        // through the source, and the analyser would render a
-                        // spectrum offset from the audio. Same call
-                        // `reload_current_track` makes on its resume paths.
+                        ResumePlan::None => None,
+                        // Same option `reload_current_track` passes on its
+                        // resume paths.
                         ResumePlan::MpvSeek(secs) => Some(format!("start={secs:.3}")),
                         ResumePlan::StreamOffset(secs) => {
                             base = secs;
@@ -131,10 +124,7 @@ impl AudioPlayer {
                     if i == start_at {
                         return None;
                     }
-                    resolve_url(t, &inner, &persistent).map(|url| {
-                        let opts = stream_record_option_for(t, &url, &inner);
-                        (url, opts)
-                    })
+                    resolve_url(t, &inner, &persistent).map(|url| (url, None))
                 })
                 .collect();
             loads[start_at] = start_load;
@@ -150,8 +140,8 @@ impl AudioPlayer {
                 };
                 // Track URLs contain `X-Plex-Token` in the query string —
                 // log only enough to correlate with mpv events, never the
-                // URL itself. Stream-record paths are token-free.
-                log::debug!("load_queue[{i}]: mode={mode:?} stream_record={}", opts.is_some());
+                // URL itself.
+                log::debug!("load_queue[{i}]: mode={mode:?} opts={}", opts.is_some());
                 self.mpv.load_file(url, mode, opts.as_deref());
             }
         }
@@ -277,12 +267,7 @@ impl AudioPlayer {
             } else {
                 let loads: Vec<Option<(String, Option<String>)>> = tracks
                     .iter()
-                    .map(|t| {
-                        resolve_url(t, &inner, &persistent).map(|url| {
-                            let opts = stream_record_option_for(t, &url, &inner);
-                            (url, opts)
-                        })
-                    })
+                    .map(|t| resolve_url(t, &inner, &persistent).map(|url| (url, None)))
                     .collect();
                 (false, loads)
             }
@@ -334,12 +319,7 @@ impl AudioPlayer {
             } else {
                 tracks
                     .iter()
-                    .map(|t| {
-                        resolve_url(t, &inner, &persistent).map(|url| {
-                            let opts = stream_record_option_for(t, &url, &inner);
-                            (url, opts)
-                        })
-                    })
+                    .map(|t| resolve_url(t, &inner, &persistent).map(|url| (url, None)))
                     .collect()
             };
             (insert_base, loads)

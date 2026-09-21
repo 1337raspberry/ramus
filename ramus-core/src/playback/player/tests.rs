@@ -2866,37 +2866,6 @@ fn test_materialising_a_transcode_resume_sets_the_position_base() {
 }
 
 #[test]
-fn test_materialising_a_resume_carries_no_stream_record() {
-    let (player, mpv) = make_player();
-    player.set_stream_record_dir(PathBuf::from("/tmp/ramus-test-record"));
-    player.restore_queue(vec![make_test_track("1"), make_test_track("2")], 0, 90.0);
-
-    player.resume();
-
-    let loads: Vec<_> = mpv
-        .calls()
-        .into_iter()
-        .filter_map(|c| match c {
-            MockCall::LoadFile { mode, options, .. } => Some((mode, options)),
-            _ => None,
-        })
-        .collect();
-    // The resumed entry would record from partway through the source, and
-    // the analyser would render a spectrum offset from the audio.
-    assert!(
-        !loads[0].1.as_deref().unwrap_or("").contains("stream-record"),
-        "a resumed entry must not be captured, got {:?}",
-        loads[0].1
-    );
-    // Entries loading from the top still capture normally.
-    assert!(
-        loads[1].1.as_deref().unwrap_or("").contains("stream-record"),
-        "a from-the-top entry must still capture, got {:?}",
-        loads[1].1
-    );
-}
-
-#[test]
 fn test_next_on_a_restored_queue_materialises_at_the_next_track() {
     let (player, mpv) = restored_player();
 

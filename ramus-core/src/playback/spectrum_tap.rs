@@ -37,10 +37,6 @@
 
 use serde::Serialize;
 
-use super::spectrum::{
-    quantise_db_range, DB_FLOOR, DYNAMIC_RANGE_DB, PEAK_HEADROOM_DB,
-};
-
 /// Number of log-spaced analysis bands per channel the desktop tap runs
 /// by default.
 ///
@@ -136,6 +132,26 @@ const MAX_PENDING_HALVES: usize = 32;
 /// newer than everything that follows and age out through
 /// `MAX_PENDING_HALVES` instead.
 const PENDING_MAX_SPREAD_S: f64 = 1.0;
+
+/// Absolute floor for every dBFS value the mapper handles. Levels the tap
+/// reports at or below this (silence, a band with no energy) clamp here
+/// so the arithmetic downstream stays finite.
+pub const DB_FLOOR: f32 = -90.0;
+
+/// Width of the visible dynamic range window, in dB. Each frame maps
+/// `[peak - DYNAMIC_RANGE_DB, peak + PEAK_HEADROOM_DB]` onto 0..255. 55 dB
+/// covers a pop song's peak-to-quiet span comfortably and gives classical
+/// music room to show dynamics.
+pub const DYNAMIC_RANGE_DB: f32 = 55.0;
+
+/// Headroom added above the running peak before it becomes the window's
+/// ceiling, so the loudest frame doesn't saturate the top of the visual
+/// range and accents still have somewhere to reach.
+pub const PEAK_HEADROOM_DB: f32 = 2.0;
+
+/// Compression curve exponent applied after dB → 0..1 normalisation.
+/// Values below 1 lift quiet passages so they stay visually readable.
+pub const QUANT_COMPRESSION: f32 = 0.6;
 
 /// Running-peak seed for a freshly started level mapper, in dBFS. Chosen
 /// so a track's quiet intro renders at a sensible height before the first
@@ -536,13 +552,30 @@ fn sanitise_db(db: f32) -> f32 {
     }
 }
 
+/// Quantise a dBFS value to 0..255 against an explicit `[floor, ceiling]`
+/// window.
+///
+/// Values at or below `floor` map to 0; values at or above `ceiling` map
+/// to 255; in between renormalises to 0..1 and applies `QUANT_COMPRESSION`
+/// so quiet passages aren't flatlined. Degenerate ranges return 0.
+pub(crate) fn quantise_db_range(db: f32, floor: f32, ceiling: f32) -> u8 {
+    if !db.is_finite() || ceiling <= floor || db <= floor {
+        return 0;
+    }
+    let clamped = db.clamp(floor, ceiling);
+    let t = (clamped - floor) / (ceiling - floor);
+    let curved = t.powf(QUANT_COMPRESSION);
+    (curved * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
 /// Maps per-band dBFS levels to bar heights against a running peak.
 ///
-/// The precomputed visualiser found each track's peak up front and
-/// quantised `[peak - DYNAMIC_RANGE_DB, peak + PEAK_HEADROOM_DB]` onto
-/// 0..255. Live, the peak is tracked instead: it jumps up instantly to
+/// A whole-track analysis could find each track's peak up front; a live
+/// feed cannot, so the peak is tracked instead: it jumps up instantly to
 /// any louder frame and relaxes downward at `PEAK_DECAY_DB_PER_SEC`
-/// toward the current frame's maximum, never below `PEAK_FLOOR_DB`.
+/// toward the current frame's maximum, never below `PEAK_FLOOR_DB`. Each
+/// frame then quantises `[peak - DYNAMIC_RANGE_DB, peak + PEAK_HEADROOM_DB]`
+/// onto 0..255.
 #[derive(Debug, Clone)]
 pub struct LevelMapper {
     peak_db: f32,
@@ -599,6 +632,24 @@ impl Default for LevelMapper {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn quantise_db_range_edges_and_midpoint() {
+        let floor = -65.0;
+        let ceiling = -10.0;
+
+        assert_eq!(quantise_db_range(floor, floor, ceiling), 0);
+        assert_eq!(quantise_db_range(floor - 10.0, floor, ceiling), 0);
+
+        assert_eq!(quantise_db_range(ceiling, floor, ceiling), 255);
+
+        assert_eq!(quantise_db_range(f32::NEG_INFINITY, floor, ceiling), 0);
+        assert_eq!(quantise_db_range(f32::NAN, floor, ceiling), 0);
+        assert_eq!(quantise_db_range(-20.0, ceiling, floor), 0);
+
+        let mid = quantise_db_range(-35.0, floor, ceiling);
+        assert!(mid > 0 && mid < 255);
+    }
+
     use super::*;
 
     fn cfg(bands: usize) -> TapConfig {

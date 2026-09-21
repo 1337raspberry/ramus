@@ -1,5 +1,5 @@
-//! Track URL resolution: local cache vs direct play vs transcode, the
-//! resume mechanics for each, and the per-file `stream-record` option.
+//! Track URL resolution: local cache vs direct play vs transcode, and the
+//! resume mechanics for each.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -117,52 +117,4 @@ pub(super) fn resolve_url_with_resume(
         let plan = resume.map_or(ResumePlan::None, ResumePlan::MpvSeek);
         Some((url.to_string(), plan))
     }
-}
-
-/// Build the per-file mpv `stream-record=<path>` option for a track being
-/// loaded into the playlist, or `None` if recording isn't applicable.
-///
-/// Returns `None` for:
-/// - Tracks without a configured `stream_record_dir` (feature off).
-/// - URLs already pointing at a local file (no point recording a copy).
-///
-/// Forward slashes in the path are required because mpv's options parser
-/// treats `\` as an escape character. The destination filename uses
-/// `<rating_key>.<ext>` so the spectrum analyser's symphonia probe gets
-/// a useful extension hint, and the file is unique per track.
-pub(super) fn stream_record_option_for(
-    track: &Track,
-    url: &str,
-    inner: &PlayerInner,
-) -> Option<String> {
-    let dir = inner.stream_record_dir.as_ref()?;
-    if url.starts_with("file://") {
-        return None;
-    }
-    let is_transcode = effective_stream_policy(track, inner).0;
-
-    // Transcoded sources always come back as Ogg/Opus from Plex's
-    // `/audio/:/transcode/universal/start` endpoint. For direct-play,
-    // try the URL extension and fall back to the codec field — either
-    // is good enough for symphonia's `Hint::with_extension`.
-    let ext = if is_transcode {
-        "ogg".to_string()
-    } else {
-        // Strip the query string before grabbing the extension —
-        // rsplit was returning the query (everything after `?`) and
-        // the codec field was always the de-facto fallback.
-        url.split('?')
-            .next()
-            .and_then(|p| p.rsplit('.').next())
-            .filter(|e| {
-                !e.is_empty() && e.len() <= 5 && e.chars().all(|c| c.is_ascii_alphanumeric())
-            })
-            .map(|s| s.to_ascii_lowercase())
-            .or_else(|| track.codec.as_ref().map(|c| c.to_ascii_lowercase()))
-            .unwrap_or_else(|| "audio".to_string())
-    };
-
-    let path = dir.join(format!("{}.{}", track.rating_key, ext));
-    let path_str = path.to_string_lossy().replace('\\', "/");
-    Some(format!("stream-record=\"{path_str}\""))
 }

@@ -53,39 +53,16 @@ parking_lot = "0.12"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 uuid = { version = "1", features = ["v4"] }
 rand = "0.8"
-postcard = { version = "1", features = ["alloc"] }
+# Pure-Rust serde-native binary format for the `.wave` / `.lyrics`
+# sidecar files (commands/downloads.rs). Used instead of bincode because
+# bincode is unmaintained (see https://docs.rs/bincode).
+postcard = { version = "1", features = ["use-std"] }
 # Cross-platform URL / file opener. On iOS routes through
 # `UIApplication.open(_:options:completionHandler:)`; on desktop
 # it delegates to `open`/`xdg-open`/`cmd start`. The standalone `open`
 # crate doesn't ship an iOS backend and silently no-ops there, which
 # broke the OAuth sign-in flow on the simulator.
 tauri-plugin-opener = "2"
-# Pure-Rust audio decoder. Feeds decoded f32 samples into ramus-core's
-# spectrum analyser so the focus visualiser gets real per-track FFT
-# data. No libav linkage — cross-platform without native deps.
-symphonia = { version = "0.5", default-features = false, features = [
-    "flac",
-    "mp3",
-    "aac",
-    "alac",
-    "isomp4",
-    "vorbis",
-    "ogg",
-    "wav",
-    "pcm",
-] }
-# Opus decoder for symphonia. symphonia 0.5 itself doesn't ship one —
-# this community adapter wraps libopus and registers an `OpusDecoder`
-# we plug into a custom `CodecRegistry`. Required for the focus
-# visualiser to analyse transcoded `.ogg` files (Plex's transcode
-# endpoint serves Ogg/Opus). Pre-skip / encoder-delay handling is
-# built into the adapter — no manual sample trimming needed downstream.
-#
-# Default `bundled` feature compiles libopus from vendored C source
-# via cmake — produces a self-contained build with no runtime libopus
-# dep, so the binary is portable across machines that don't happen to
-# have a system libopus. Requires `cmake` + `ninja` on the build host.
-symphonia-adapter-libopus = "0.2"
 
 # NB: cargo target-spec cfgs only understand standard `target_*` keys —
 # Tauri's `cfg(desktop)` / `cfg(mobile)` are set at Rust compile time by

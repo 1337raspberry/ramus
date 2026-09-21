@@ -58,16 +58,20 @@ impl AudioPlayer {
         f(&mut inner.cache)
     }
 
-    /// Returns `(rating_key, url)` for the first uncached track within
-    /// `lookahead_depth` of the current queue position — a direct-play URL
+    /// Returns `(rating_key, url)` for the first uncached track after the
+    /// current queue position, within `lookahead_depth` — a direct-play URL
     /// or a single-file transcode-download URL depending on the current
     /// `should_transcode` policy. Walks forward past already-cached
     /// entries. Returns `None` when every slot in the window is cached or
     /// out of bounds.
     ///
+    /// The current track is never a target: it is either already local or
+    /// streaming live, and a second fetch of it would compete with that
+    /// stream while delaying the next track's download.
+    ///
     /// Called fresh on every iteration of the prefetch worker's serial
     /// loop, so it auto-reflects queue advancement.
-    pub fn next_uncached_target_in_lookahead(&self, include_current: bool) -> Option<(String, String)> {
+    pub fn next_uncached_target_in_lookahead(&self) -> Option<(String, String)> {
         let persistent = self.persistent_cache.read();
         let inner = self.inner.lock();
         let depth = inner.config.lookahead_depth as usize;
@@ -75,8 +79,7 @@ impl AudioPlayer {
         let server_url = inner.server_url.as_ref()?;
         let token = inner.token.as_ref()?;
 
-        let start_offset = if include_current { 0 } else { 1 };
-        for offset in start_offset..=depth {
+        for offset in 1..=depth {
             let idx = pos + offset;
             let track = inner.state.queue.get(idx)?;
 
@@ -148,38 +151,6 @@ impl AudioPlayer {
             .current_track
             .as_ref()
             .map(|t| t.rating_key.clone())
-    }
-
-    /// Returns `(rating_key, local_path)` for every track in the current
-    /// playback queue's lookahead window that is already available on
-    /// disk — either in the LRU prefetch cache or as a permanent download.
-    /// Used by the download worker to drive spectrum analysis for
-    /// already-cached tracks, which no longer trigger the prefetch
-    /// success path that historically queued analysis.
-    pub fn cached_paths_in_lookahead(
-        &self,
-        include_current: bool,
-    ) -> Vec<(String, PathBuf)> {
-        let persistent = self.persistent_cache.read();
-        let inner = self.inner.lock();
-        let depth = inner.config.lookahead_depth as usize;
-        let pos = inner.state.queue_index;
-        let start_offset = if include_current { 0 } else { 1 };
-        let mut out = Vec::new();
-        for offset in start_offset..=depth {
-            let idx = pos + offset;
-            let Some(track) = inner.state.queue.get(idx) else {
-                break;
-            };
-            if let Some(path) = persistent.get(&track.rating_key) {
-                out.push((track.rating_key.clone(), path.clone()));
-                continue;
-            }
-            if let Some(path) = inner.cache.get(&track.rating_key) {
-                out.push((track.rating_key.clone(), path.to_path_buf()));
-            }
-        }
-        out
     }
 
     /// Returns a `WarmTarget` for every lookahead-window track whose audio

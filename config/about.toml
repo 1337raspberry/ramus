@@ -8,9 +8,9 @@
 # copyleft/proprietary license.
 #
 # Baseline: every license spelled SPDX-style that is permissive for
-# redistribution. MPL-2.0 is in because symphonia (+ a handful of
-# Servo-heritage crates) are MPL-licensed; we ship their texts in
-# licenses/LICENSE.MPL-2.0.
+# redistribution. MPL-2.0 is in because a handful of Servo-heritage
+# crates (cssparser, selectors) pulled in by Tauri are MPL-licensed; we
+# ship the text in licenses/LICENSE.MPL-2.0.
 accepted = [
     "MIT",
     "Apache-2.0",
