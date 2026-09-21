@@ -1,5 +1,6 @@
 use super::*;
 use crate::playback::mpv::MpvPlayer;
+use crate::playback::spectrum_tap::TapConfig;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -24,6 +25,7 @@ enum MockCall {
     SetPause(bool),
     SetVolume(f64),
     SetAudioFilters(String),
+    SetVerboseLog(bool),
     Stop,
 }
 
@@ -89,6 +91,10 @@ impl MpvPlayer for MockMpv {
         *self.volume.lock()
     }
     fn set_audio_filters(&self, value: &str) {
+        // Rebuilding the chain takes mpv milliseconds while the log-level
+        // call is instant; a delay here keeps that asymmetry so overlapping
+        // toggles can interleave the way they do against libmpv.
+        std::thread::sleep(Duration::from_micros(200));
         self.calls
             .lock()
             .push(MockCall::SetAudioFilters(value.to_string()));
@@ -98,6 +104,9 @@ impl MpvPlayer for MockMpv {
     }
     fn is_shutdown(&self) -> bool {
         self.shutdown.load(Ordering::Acquire)
+    }
+    fn set_verbose_log(&self, enabled: bool) {
+        self.calls.lock().push(MockCall::SetVerboseLog(enabled));
     }
 }
 
@@ -764,18 +773,220 @@ fn test_audio_player_new_does_not_touch_filters() {
 
 #[test]
 fn test_build_af_string_disabled() {
-    let s = build_af_string(false, &[0.0; 10]);
+    let s = build_af_string(false, &[0.0; 10], None);
     assert_eq!(s, "");
 }
 
 #[test]
 fn test_build_af_string_enabled() {
     let bands = [1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-    let s = build_af_string(true, &bands);
+    let s = build_af_string(true, &bands, None);
     assert!(s.starts_with("lavfi=[equalizer="));
+    assert!(s.ends_with(']'));
     assert!(s.contains("g=1.0"));
     assert!(s.contains("g=2.0"));
     assert!(s.contains("g=3.0"));
+    // EQ alone is a single chain entry.
+    assert_eq!(s.matches("lavfi=[").count(), 1);
+}
+
+#[test]
+fn test_build_af_string_tap_only() {
+    let tap = TapConfig::default();
+    let s = build_af_string(false, &[0.0; 10], Some(&tap));
+    assert!(s.starts_with("lavfi=[[in]asplit=2[main][side];"));
+    assert!(s.ends_with("[main]anull[out]]"));
+    assert!(!s.contains("equalizer="));
+    assert_eq!(s.matches("lavfi=[").count(), 1);
+}
+
+#[test]
+fn test_build_af_string_eq_then_tap() {
+    let tap = TapConfig::default();
+    let bands = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    let s = build_af_string(true, &bands, Some(&tap));
+    // Two entries, EQ first so the tap measures what the listener hears.
+    assert_eq!(s.matches("lavfi=[").count(), 2);
+    let eq_at = s.find("equalizer=").unwrap();
+    let tap_at = s.find("[in]asplit").unwrap();
+    assert!(eq_at < tap_at);
+    // The join between entries is exactly `],lavfi=[`.
+    assert!(s.contains("],lavfi=[[in]asplit"));
+}
+
+#[test]
+fn test_compose_af_skips_empty_graphs() {
+    assert_eq!(compose_af(None, None), "");
+    assert_eq!(compose_af(Some(""), None), "");
+    assert_eq!(compose_af(Some("anull"), None), "lavfi=[anull]");
+    assert_eq!(compose_af(None, Some("anull")), "lavfi=[anull]");
+    assert_eq!(compose_af(Some("a"), Some("b")), "lavfi=[a],lavfi=[b]");
+}
+
+fn last_af(mpv: &MockMpv) -> Option<String> {
+    mpv.calls().iter().rev().find_map(|c| match c {
+        MockCall::SetAudioFilters(s) => Some(s.clone()),
+        _ => None,
+    })
+}
+
+/// Calls made since `from`, with their payloads reduced to a tag so
+/// ordering assertions read cleanly.
+fn call_tags_since(mpv: &MockMpv, from: usize) -> Vec<&'static str> {
+    mpv.calls()[from..]
+        .iter()
+        .map(|c| match c {
+            MockCall::SetVerboseLog(true) => "verbose-on",
+            MockCall::SetVerboseLog(false) => "verbose-off",
+            MockCall::SetAudioFilters(_) => "af",
+            _ => "other",
+        })
+        .collect()
+}
+
+#[test]
+fn test_set_spectrum_tap_installs_and_removes_the_graph() {
+    let (player, mpv) = make_player();
+    assert!(!player.spectrum_tap_enabled());
+
+    let mark = mpv.call_count();
+    assert!(player.set_spectrum_tap(true));
+    assert!(player.spectrum_tap_enabled());
+    let af = last_af(&mpv).expect("tap install sets af");
+    assert!(af.contains("[in]asplit=2[main][side]"));
+    assert!(af.contains("ashowinfo,anullsink"));
+    // The log level is raised before the graph goes in.
+    assert_eq!(call_tags_since(&mpv, mark), vec!["verbose-on", "af"]);
+
+    // Repeated enable is a no-op that doesn't touch mpv again.
+    let before = mpv.call_count();
+    assert!(!player.set_spectrum_tap(true));
+    assert_eq!(mpv.call_count(), before);
+
+    let mark = mpv.call_count();
+    assert!(player.set_spectrum_tap(false));
+    assert!(!player.spectrum_tap_enabled());
+    assert_eq!(last_af(&mpv).unwrap(), "");
+    // Graph out first, then the log level restored.
+    assert_eq!(call_tags_since(&mpv, mark), vec!["af", "verbose-off"]);
+}
+
+/// Overlapping toggles must never interleave their mpv calls. A remount
+/// issues remove-then-install with no gap and each request runs on its
+/// own task; an install raises the log level before setting the chain
+/// while a remove lowers it after, so interleaved calls end with the
+/// chain installed and the level lowered: a silent tap. Every toggle's
+/// mpv calls must therefore be one atomic step, and the last call must
+/// agree with the player's state.
+#[test]
+fn test_concurrent_tap_toggles_never_interleave_their_mpv_calls() {
+    let (player, mpv) = make_player();
+    let player = &player;
+    let bands = &[2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    for _ in 0..300 {
+        let mark = mpv.call_count();
+        std::thread::scope(|s| {
+            for enabled in [true, false, true] {
+                s.spawn(move || {
+                    player.set_spectrum_tap(enabled);
+                });
+            }
+            s.spawn(move || player.apply_equalizer(true, bands));
+        });
+        // Whole steps only: an install is verbose-on then af, a remove is
+        // af then verbose-off, an EQ apply is a lone af.
+        let tags = call_tags_since(&mpv, mark);
+        let mut i = 0;
+        while i < tags.len() {
+            match tags[i] {
+                "verbose-on" => {
+                    assert_eq!(tags.get(i + 1), Some(&"af"), "{tags:?}");
+                    i += 2;
+                }
+                "af" => {
+                    i += if tags.get(i + 1) == Some(&"verbose-off") {
+                        2
+                    } else {
+                        1
+                    };
+                }
+                other => panic!("unexpected {other} in {tags:?}"),
+            }
+        }
+        // The last word to mpv matches the state.
+        let tapped = player.spectrum_tap_enabled();
+        assert_eq!(last_af(&mpv).unwrap().contains("ashowinfo"), tapped);
+        let last_level = mpv.calls().iter().rev().find_map(|c| match c {
+            MockCall::SetVerboseLog(v) => Some(*v),
+            _ => None,
+        });
+        assert_eq!(last_level, Some(tapped), "{tags:?}");
+        player.set_spectrum_tap(false);
+    }
+}
+
+#[test]
+fn test_tap_toggle_preserves_eq_and_eq_toggle_preserves_tap() {
+    let (player, mpv) = make_player();
+    let bands = [4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    player.apply_equalizer(true, &bands);
+    player.set_spectrum_tap(true);
+    let af = last_af(&mpv).unwrap();
+    assert!(af.contains("g=4.0"));
+    assert!(af.contains("[in]asplit"));
+    assert_eq!(af.matches("lavfi=[").count(), 2);
+
+    // Turning the EQ off keeps the tap.
+    player.apply_equalizer(false, &bands);
+    let af = last_af(&mpv).unwrap();
+    assert!(!af.contains("equalizer="));
+    assert!(af.contains("[in]asplit"));
+
+    // Turning the EQ back on keeps the tap and orders EQ first.
+    player.apply_equalizer(true, &bands);
+    let af = last_af(&mpv).unwrap();
+    assert!(af.find("equalizer=").unwrap() < af.find("[in]asplit").unwrap());
+
+    // Removing the tap leaves the EQ alone.
+    player.set_spectrum_tap(false);
+    let af = last_af(&mpv).unwrap();
+    assert!(af.contains("g=4.0"));
+    assert!(!af.contains("[in]asplit"));
+    assert_eq!(af.matches("lavfi=[").count(), 1);
+}
+
+#[test]
+fn test_tap_frame_position_applies_position_base() {
+    let (player, _mpv) = make_player();
+    assert_eq!(player.tap_frame_position(12.5), 12.5);
+    player.inner.lock().position_base = 100.0;
+    assert_eq!(player.tap_frame_position(12.5), 112.5);
+}
+
+#[test]
+fn test_map_tap_frames_remaps_and_quantises() {
+    use crate::playback::spectrum_tap::TapFrame;
+    let (player, _mpv) = make_player();
+    player.inner.lock().position_base = 30.0;
+    let frames = vec![
+        TapFrame {
+            pts: 0.0,
+            db: vec![-10.0, -90.0],
+        },
+        TapFrame {
+            pts: 1.0 / 60.0,
+            db: vec![-90.0, -10.0],
+        },
+    ];
+    let out = player.map_tap_frames(frames);
+    assert_eq!(out.len(), 2);
+    assert_eq!(out[0].pos, 30.0);
+    assert!((out[1].pos - (30.0 + 1.0 / 60.0)).abs() < 1e-9);
+    assert_eq!(out[0].bands.len(), 2);
+    assert!(out[0].bands[0] > 200);
+    assert_eq!(out[0].bands[1], 0);
+    assert_eq!(out[1].bands[0], 0);
+    assert!(out[1].bands[1] > 200);
 }
 
 #[test]

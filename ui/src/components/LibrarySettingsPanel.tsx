@@ -443,8 +443,8 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
                     />
                   </label>
                   <HelperText>
-                    Renders a graphic visualiser behind the album art in focus mode. calculated once
-                    per track at play time.
+                    Renders a graphic visualiser behind the album art in focus mode. Measured live
+                    from the audio as it plays, so it uses a little CPU while focus mode is open.
                   </HelperText>
                 </>
               )}
@@ -731,7 +731,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
       )}
       {showSpectrumConfirm && (
         <ConfirmDialog
-          message="The visualiser uses a small amount of cpu to analyse your music. Are you sure?"
+          message="The visualiser uses a small amount of CPU while focus mode is open. Are you sure?"
           onConfirm={() => {
             save({ disableSpectrum: false });
             setShowSpectrumConfirm(false);

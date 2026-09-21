@@ -72,6 +72,12 @@ pub async fn update_settings(
         .player
         .apply_equalizer(settings.eq_enabled, &settings.eq_bands);
 
+    // Disabling the visualiser while focus mode has the tap installed
+    // must tear the tap down now, not on the next unmount.
+    if settings.disable_spectrum && state.player.set_spectrum_tap(false) {
+        log::info!("spectrum tap removed (visualiser disabled in settings)");
+    }
+
     state
         .connection_monitor
         .set_allow_http(!settings.refuse_http);

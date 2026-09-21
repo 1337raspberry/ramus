@@ -122,6 +122,20 @@ struct PlayerInner {
     /// load. Always 0 for direct-play, whose mpv `start=` keeps the
     /// timeline absolute.
     position_base: f64,
+    /// Remembered equalizer state, so the `af` chain can be recomposed
+    /// around it when the spectrum tap is toggled (and vice versa).
+    eq_enabled: bool,
+    eq_bands: Vec<f32>,
+    /// Whether the live spectrum tap is part of the `af` chain. Driven by
+    /// the focus-mode visualiser mounting and unmounting.
+    spectrum_tap_enabled: bool,
+    /// Running-peak level mapper for tap frames; reset every time the
+    /// tap is enabled.
+    tap_mapper: crate::playback::spectrum_tap::LevelMapper,
+    /// Set by each tap install and cleared by the first batch of frames,
+    /// which is logged once so the log alone shows the graph configured
+    /// and is producing.
+    tap_awaiting_first_batch: bool,
     /// Wall-clock of the last *automatic* current-track reload (failover or
     /// file-ended recovery). Enforces `RELOAD_COOLDOWN` so a burst of triggers
     /// can't stack multiple reloads onto one hiccup. `None` until the first.
@@ -297,12 +311,22 @@ pub struct AudioPlayer {
     /// the local file, online or offline. Populated at startup from the
     /// `downloads` DB table and on every successful user download.
     persistent_cache: RwLock<HashMap<String, PathBuf>>,
+    /// Serialises every rewrite of mpv's `af` chain (`eq.rs`). The chain
+    /// is composed from `inner` and pushed to mpv after that lock is
+    /// released, and the tap toggle also moves the mpv log level around
+    /// the push. Two overlapping toggles (a remount is remove-then-install
+    /// with no gap, each on its own task) would otherwise interleave those
+    /// calls and leave mpv disagreeing with the state: the tap graph
+    /// installed but the log level lowered, so its frames never arrive.
+    /// Taken before `inner`, never inside it.
+    af_chain: Mutex<()>,
 }
 
 impl AudioPlayer {
     pub fn new(mpv: Arc<dyn MpvPlayer>) -> Self {
         Self {
             mpv,
+            af_chain: Mutex::new(()),
             inner: Mutex::new(PlayerInner {
                 state: PlayerState::default(),
                 position: 0.0,
@@ -324,6 +348,11 @@ impl AudioPlayer {
                 last_load_error: None,
                 stream_record_dir: None,
                 position_base: 0.0,
+                eq_enabled: false,
+                eq_bands: Vec::new(),
+                spectrum_tap_enabled: false,
+                tap_mapper: eq::new_tap_mapper(),
+                tap_awaiting_first_batch: false,
                 last_auto_reload_at: None,
                 held_for_recovery: false,
                 user_paused: false,

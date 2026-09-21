@@ -385,44 +385,27 @@ export interface AccentColorPayload {
   b: number;
 }
 
-// --- Focus-mode FFT spectrogram ---
+// --- Focus-mode live spectrum ---
 //
-// Shape mirrors ramus-core's `SpectrumFrames` (serde externally-tagged).
-// `SpectrumState` is returned from the `get_spectrum` command and drives
-// FocusVisualizer's bar heights.
+// Payload of the `spectrum-frames` event: a burst of frames from the
+// libavfilter tap in mpv's `--af` chain, each stamped with its position on
+// the track timeline (seconds) and carrying one quantised bar height
+// (0..255) per band. Mirrors `SpectrumFramesPayload` in
+// ramus-tauri/src/events.rs; band heights come through JSON as a plain
+// number array.
 
-export interface SpectrumFrames {
-  /// Milliseconds between adjacent frames. Index as
-  /// `floor(positionMs / hopMs)` against mpv's `time-pos`.
-  hopMs: number;
-  /// Number of bands per frame (128 with current defaults).
+export interface SpectrumFrame {
+  pos: number;
+  /** `bandCount` heights per channel, channels in order (left, right). */
+  bands: number[];
+}
+
+export interface SpectrumFramesPayload {
+  /** Bands per channel. */
   bandCount: number;
-  /// FFT window size in samples; diagnostics only.
-  fftSize: number;
-  /// Source sample rate; diagnostics only.
-  sampleRate: number;
-  /// `bandCount * totalFrames` bytes, row-major, u8 quantised 0..255.
-  /// JSON IPC delivers `Vec<u8>` as a plain number array; convert to
-  /// `Uint8Array` on receive.
-  frames: number[] | Uint8Array;
-}
-
-/// Mirrors ramus-core's `SpectrumState` enum (externally tagged).
-/// Keep in sync with `ramus-core/src/playback/spectrum.rs`.
-export type SpectrumState =
-  | "analysing"
-  | { ready: SpectrumFrames }
-  | { unavailable: { reason: string } };
-
-/// Exhaustive-match narrowing helper for `SpectrumState`.
-export function spectrumKind(state: SpectrumState): "analysing" | "ready" | "unavailable" {
-  if (state === "analysing") return "analysing";
-  if ("ready" in state) return "ready";
-  return "unavailable";
-}
-
-export interface SpectrumReadyPayload {
-  ratingKey: string;
+  /** Channels per frame; 2 for the stereo tap. */
+  channels: number;
+  frames: SpectrumFrame[];
 }
 
 /// A background warm landed a metadata artefact on disk — waveform sidecar

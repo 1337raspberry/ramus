@@ -24,7 +24,6 @@ import type {
   SearchResponse,
   Settings,
   SmartFilter,
-  SpectrumState,
   Track,
   UltraBlurColors,
 } from "./types";
@@ -345,11 +344,11 @@ export const getWaveform = (ratingKey: string) =>
 export const setMediaAccent = (r: number, g: number, b: number) =>
   invoke<void>("set_media_accent", { r, g, b });
 
-// Focus-mode spectrogram. Returns "analysing", { ready: … }, or
-// { unavailable: { reason } }. The backend never blocks on analysis;
-// callers should listen for `spectrum-ready` before re-invoking.
-export const getSpectrum = (ratingKey: string) =>
-  invoke<SpectrumState>("get_spectrum", { ratingKey });
+// Focus-mode live visualiser: install (true) or remove (false) the
+// spectrum tap in mpv's audio filter chain. Frames then stream over the
+// `spectrum-frames` event. A no-op on mobile and while the visualiser is
+// disabled in settings; the backend applies that veto itself.
+export const setSpectrumTap = (enabled: boolean) => invoke<void>("set_spectrum_tap", { enabled });
 
 // --- Search ---
 

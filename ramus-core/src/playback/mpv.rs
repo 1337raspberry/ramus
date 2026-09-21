@@ -6,6 +6,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use crate::playback::spectrum_tap::TapFrame;
+
 /// Reason a file ended playback.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileEndReason {
@@ -57,6 +59,12 @@ pub struct MpvCallbacks {
     pub on_idle_active: Option<Box<dyn Fn() + Send + Sync>>,
     pub on_file_loaded: Option<Box<dyn Fn() + Send + Sync>>,
     pub on_file_ended: Option<Box<dyn Fn(FileEndReason) + Send + Sync>>,
+    /// A batch of live spectrum tap frames parsed out of mpv's log stream.
+    /// Frames arrive in bursts (mpv runs the filter chain when the audio
+    /// output needs data), so the event loop hands over everything it
+    /// collected in one drain rather than one frame at a time. Invoked on
+    /// the mpv event-loop thread.
+    pub on_spectrum_frames: Option<Box<dyn Fn(Vec<TapFrame>) + Send + Sync>>,
 }
 
 /// Default mpv initialization options for audio-only playback.
@@ -191,6 +199,15 @@ pub trait MpvPlayer: Send + Sync {
     fn demuxer_cache_time(&self) -> Option<f64> {
         None
     }
+
+    /// Raise mpv's client log level to verbose while the spectrum tap is
+    /// installed (its frames are FFmpeg INFO messages, which mpv forwards
+    /// at `v`), or restore the configured level afterwards.
+    ///
+    /// Default no-op for backends that don't host the tap (the mobile
+    /// bridges — their libmpv builds lack the analysis filters) and for
+    /// test doubles.
+    fn set_verbose_log(&self, _enabled: bool) {}
 }
 
 /// Thread-safe shutdown flag shared between controller and event loop.
@@ -322,5 +339,6 @@ mod tests {
         assert!(cb.on_idle_active.is_none());
         assert!(cb.on_file_loaded.is_none());
         assert!(cb.on_file_ended.is_none());
+        assert!(cb.on_spectrum_frames.is_none());
     }
 }
