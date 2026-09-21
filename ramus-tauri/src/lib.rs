@@ -1497,6 +1497,19 @@ pub fn run() {
                             }
                         }
                     }
+
+                    // Drop the window shadow. A borderless window has no
+                    // titlebar geometry for AppKit to derive a cached shadow
+                    // from, so the window server computes it from the
+                    // window's alpha instead — and on macOS 26 it re-runs
+                    // that full-window blur on every display refresh, not
+                    // just when the content changes. Measured idle on the
+                    // library view: ~45% GPU with the shadow, ~0% without
+                    // (and ~0% with the shadow on a titled window, which is
+                    // the alternative if the drop shadow is ever wanted
+                    // back). macOS only: on Windows the shadow flag also
+                    // controls the undecorated window's border.
+                    let _ = window.set_shadow(false);
                 }
             }
 
