@@ -468,7 +468,7 @@ fn amp_to_db(amp: f32) -> f32 {
 /// Values at or below `floor` map to 0; values at or above `ceiling` map
 /// to 255; in between renormalises to 0..1 and applies `QUANT_COMPRESSION`
 /// so quiet passages aren't flatlined. Degenerate ranges return 0.
-fn quantise_db_range(db: f32, floor: f32, ceiling: f32) -> u8 {
+pub(crate) fn quantise_db_range(db: f32, floor: f32, ceiling: f32) -> u8 {
     if !db.is_finite() || ceiling <= floor || db <= floor {
         return 0;
     }

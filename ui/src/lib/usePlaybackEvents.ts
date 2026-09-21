@@ -6,10 +6,11 @@ import type {
   PlaybackStatePayload,
   PlaybackPositionPayload,
   PlaybackBufferingPayload,
-  SpectrumReadyPayload,
+  SpectrumFramesPayload,
   MetadataWarmedPayload,
 } from "./types";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { pushSpectrumFrames } from "./spectrumRing";
 import { useConnectionStore } from "../stores/connectionStore";
 import { usePlaybackQualityStore } from "../stores/playbackQualityStore";
 import { applyAccent } from "./accent";
@@ -17,7 +18,7 @@ import { bumpArtRetry } from "./useArtUrl";
 
 /**
  * Subscribe to Tauri playback events (accent-color, playback-state,
- * playback-position, spectrum-ready) and load the saved volume on mount.
+ * playback-position, spectrum-frames) and load the saved volume on mount.
  *
  * Once authenticated it also pulls the authoritative playback snapshot, so a
  * queue restored during Rust `setup()` — before the webview existed — shows
@@ -72,11 +73,11 @@ export function usePlaybackEvents(authed: boolean): void {
       store.setBuffering(false);
       store.onPlaybackPosition(position, duration);
     });
-    // Emitted when a prefetched or current track finishes analysis.
-    // Re-pull the spectrum only when the ratingKey matches the playing
-    // track.
-    const u3 = listen<SpectrumReadyPayload>("spectrum-ready", (event) => {
-      store.refreshSpectrum(event.payload.ratingKey);
+    // Live visualiser frames from the audio-filter tap, in bursts, only
+    // while the focus visualiser is mounted. They bypass the store: the
+    // visualiser's paint loop reads the ring directly.
+    const u3 = listen<SpectrumFramesPayload>("spectrum-frames", (event) => {
+      pushSpectrumFrames(event.payload);
     });
     // Backend-driven buffering signal for the reconnect/reload gap (a
     // connection failover or file-ended resume). The frontend can't infer

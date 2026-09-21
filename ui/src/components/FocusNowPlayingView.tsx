@@ -306,9 +306,8 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
       {/* Visualiser is a full-window background layer behind art and
        * controls, draping from the top edge. Gated on
        * `visualizerMode !== "off"` and unmounted (not CSS-hidden) so
-       * the RAF loop stops in "off" mode. The viz reads its own mode
-       * via `usePlaybackStore.getState()` inside the RAF loop, so
-       * cycling bars ↔ line does not remount the canvas. */}
+       * the RAF loop stops (and the audio tap is removed) in "off"
+       * mode. */}
       {visualizerMode !== "off" && <FocusVisualizer />}
 
       <div className="focus-body">
@@ -383,18 +382,14 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
                 className={`np-viz-btn${visualizerMode !== "off" ? " active" : ""}`}
                 onClick={cycleVisualizerMode}
                 title={
-                  visualizerMode === "bars"
-                    ? "Visualiser: bars — click for line mode"
-                    : visualizerMode === "line"
-                      ? "Visualiser: line — click to hide"
-                      : "Visualiser: off — click to show bars"
+                  visualizerMode === "off"
+                    ? "Visualiser: off — click to show"
+                    : "Visualiser: on — click to hide"
                 }
                 aria-label={
-                  visualizerMode === "bars"
-                    ? "Visualiser: bars, click for line mode"
-                    : visualizerMode === "line"
-                      ? "Visualiser: line, click to hide"
-                      : "Visualiser: off, click to show bars"
+                  visualizerMode === "off"
+                    ? "Visualiser: off, click to show"
+                    : "Visualiser: on, click to hide"
                 }
               >
                 <IconWave />

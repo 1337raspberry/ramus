@@ -3747,8 +3747,8 @@ body.is-fullscreen .focus-body {
 /* Full-window visualiser background layer. Sits behind the art and
  * controls and paints up to the top edge; the transparent drag region
  * at z 9999 sits on top and still intercepts drags. Canvas spans the
- * whole window; below BAR_MAX_HEIGHT_PCT (see FocusVisualizer.tsx) is
- * left transparent. */
+ * whole window; below the bars' maximum height (`barMaxHeight` in
+ * lib/visualizerParams.ts) is left transparent. */
 .focus-visualizer {
   position: absolute;
   inset: 0;
@@ -3762,11 +3762,11 @@ body.is-fullscreen .focus-body {
   height: 100%;
 }
 
-/* Placeholder shown while the spectrogram is Analysing or Unavailable
- * (transcoded, unsupported codec, etc.). Centred in the same top strip
- * the bars will occupy, so the focus layout stays stable across state
- * transitions. `.is-muted` drops opacity for terminal states so they
- * feel informational rather than in-progress. */
+/* Hint layered over the canvas when audio is flowing but the live tap
+ * produces no frames (the libmpv build lacks the analysis filters, or the
+ * graph failed to configure). Centred in the same top strip the bars
+ * occupy. `.is-muted` drops opacity so it reads as informational rather
+ * than in-progress. */
 .focus-visualizer-placeholder {
   display: flex;
   align-items: flex-start;
@@ -3835,7 +3835,10 @@ body.is-fullscreen .focus-body {
 }
 
 .focus-art-container {
-  --art-size: min(100cqw, 100cqh);
+  /* Edge of the art as a fraction of the largest square that fits the
+   * wrapper; the remainder is breathing room around it. */
+  --art-scale: 0.93;
+  --art-size: calc(min(100cqw, 100cqh) * var(--art-scale));
   width: var(--art-size);
   height: var(--art-size);
   aspect-ratio: 1;

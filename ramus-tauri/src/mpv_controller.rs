@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::thread;
 
 use ramus_core::playback::mpv::{FileEndReason, LoadMode, MpvCallbacks, MpvPlayer, ObserverID};
+use ramus_core::playback::spectrum_tap::{TapConfig, TapFeed, TapFrame, TapLineParser};
 use ramus_core::util::redact_urls;
 
 use crate::mpv_ffi::*;
@@ -34,8 +35,30 @@ pub struct MpvController {
     /// `insert-next` flag values. Older libmpv (Ubuntu 24.04 LTS ships
     /// 0.35.1) rejects both. Probed once at init from `mpv-version`.
     loadfile_has_index_slot: bool,
+    /// Log level requested at init (`RAMUS_MPV_LOG_LEVEL` or `info`).
+    /// `set_verbose_log` raises to `v` above it while the spectrum tap is
+    /// installed and restores it afterwards.
+    base_log_level: String,
     _event_thread: Option<thread::JoinHandle<()>>,
 }
+
+/// mpv log level names in increasing verbosity, as accepted by
+/// `mpv_request_log_messages`.
+const MPV_LOG_LEVELS: [&str; 8] = ["no", "fatal", "error", "warn", "info", "v", "debug", "trace"];
+
+fn log_level_rank(level: &str) -> usize {
+    MPV_LOG_LEVELS
+        .iter()
+        .position(|l| *l == level)
+        .unwrap_or(4)
+}
+
+/// Upper bound on frames held back before a batch is handed to the
+/// callback regardless of what event follows. Bursts are normally ~5
+/// frames and are flushed by the next non-log event (a position tick or
+/// the wait timeout); this only bites on unusually long bursts such as
+/// the catch-up after a seek.
+const TAP_FLUSH_BATCH: usize = 16;
 
 impl MpvController {
     /// Create and initialize a new mpv instance with a background event loop
@@ -95,9 +118,9 @@ impl MpvController {
             // connection transcode bail is invisible. Override via
             // `RAMUS_MPV_LOG_LEVEL` env var if more / less is needed
             // (valid values: no, fatal, error, warn, info, v, debug, trace).
-            let level_str = std::env::var("RAMUS_MPV_LOG_LEVEL")
+            let base_log_level = std::env::var("RAMUS_MPV_LOG_LEVEL")
                 .unwrap_or_else(|_| "info".into());
-            let level = CString::new(level_str).unwrap();
+            let level = CString::new(base_log_level.clone()).unwrap();
             lib.request_log_messages(ctx, level.as_ptr());
 
             // 100 = unity gain.
@@ -170,6 +193,7 @@ impl MpvController {
                 handle,
                 shutdown,
                 loadfile_has_index_slot,
+                base_log_level,
                 _event_thread: Some(event_thread),
             })
         }
@@ -428,10 +452,17 @@ impl MpvPlayer for MpvController {
                 return;
             }
         };
-        unsafe {
+        let rc = unsafe {
             let name = CString::new("af").unwrap();
             self.lib
-                .set_property_string(self.handle.ptr(), name.as_ptr(), val.as_ptr());
+                .set_property_string(self.handle.ptr(), name.as_ptr(), val.as_ptr())
+        };
+        if rc < 0 {
+            // A rejected chain leaves the previous one running, so a missing
+            // EQ or a blank visualiser is otherwise silent. The chain string
+            // carries no URLs or tokens.
+            let reason = unsafe { CStr::from_ptr(self.lib.error_string(rc)) }.to_string_lossy();
+            log::error!("mpv rejected af chain ({reason}): {value}");
         }
     }
 
@@ -445,6 +476,21 @@ impl MpvPlayer for MpvController {
 
     fn demuxer_cache_time(&self) -> Option<f64> {
         self.get_property_double("demuxer-cache-time")
+    }
+
+    fn set_verbose_log(&self, enabled: bool) {
+        // Only ever raise: a `RAMUS_MPV_LOG_LEVEL=debug` session keeps its
+        // debug stream through tap toggles.
+        let level = if enabled && log_level_rank(&self.base_log_level) < log_level_rank("v") {
+            "v"
+        } else {
+            self.base_log_level.as_str()
+        };
+        let c = CString::new(level).unwrap();
+        unsafe {
+            self.lib.request_log_messages(self.handle.ptr(), c.as_ptr());
+        }
+        log::debug!("mpv log level -> {level}");
     }
 }
 
@@ -472,12 +518,31 @@ fn safe_invoke(label: &str, f: impl FnOnce()) {
     }
 }
 
+/// Hand the collected tap frames to the callback and empty the buffer.
+fn flush_tap_frames(callbacks: &MpvCallbacks, frames: &mut Vec<TapFrame>) {
+    if frames.is_empty() {
+        return;
+    }
+    let batch = std::mem::take(frames);
+    if let Some(ref cb) = callbacks.on_spectrum_frames {
+        safe_invoke("on_spectrum_frames", || cb(batch));
+    }
+}
+
 fn event_loop(
     lib: Arc<MpvLib>,
     handle: Arc<MpvHandle>,
     shutdown: Arc<AtomicBool>,
     callbacks: Arc<MpvCallbacks>,
 ) {
+    // Live spectrum tap transport. The tap's `ashowinfo` printer writes
+    // one line per frame into FFmpeg's log, which mpv forwards here as an
+    // `ffmpeg`-prefixed message at level `v` (mpv buffers the printer's
+    // partial writes into whole lines). The parser decodes it, and it is
+    // swallowed before the generic log forwarding below.
+    let mut tap_parser = TapLineParser::new(TapConfig::default().normalised().bands);
+    let mut tap_frames: Vec<TapFrame> = Vec::new();
+
     loop {
         if shutdown.load(Ordering::Acquire) {
             break;
@@ -487,6 +552,13 @@ fn event_loop(
 
         if shutdown.load(Ordering::Acquire) {
             break;
+        }
+
+        // mpv runs the filter chain when the audio output needs data, so
+        // frames arrive in bursts. Anything that is not another log line
+        // (a position tick, the wait timeout) marks the end of a burst.
+        if event.event_id != MPV_EVENT_LOG_MESSAGE {
+            flush_tap_frames(&callbacks, &mut tap_frames);
         }
 
         match event.event_id {
@@ -567,9 +639,46 @@ fn event_loop(
                     // and on transfer errors; redact_urls strips any
                     // ?X-Plex-Token= / X-Plex-Headers= query that would
                     // otherwise land in our log sinks.
+                    // The tap parser needs the untrimmed text: the newline
+                    // is how it tells a complete line from a fragment.
+                    if prefix.starts_with("ffmpeg") {
+                        match tap_parser.feed(&text) {
+                            TapFeed::Frame(frame) => {
+                                tap_frames.push(frame);
+                                if tap_frames.len() >= TAP_FLUSH_BATCH {
+                                    flush_tap_frames(&callbacks, &mut tap_frames);
+                                }
+                                continue;
+                            }
+                            TapFeed::Consumed => {
+                                // A complete tap line that did not decode
+                                // is worth seeing when chasing frame loss.
+                                if text.ends_with('\n') {
+                                    log::trace!(
+                                        "spectrum tap: undecodable line ({} bytes): {}",
+                                        text.len(),
+                                        text.trim_end()
+                                    );
+                                }
+                                continue;
+                            }
+                            TapFeed::Ignored => {}
+                        }
+                    }
                     let trimmed = text.trim_end_matches('\n');
                     if !trimmed.is_empty() {
                         let safe = redact_urls(trimmed);
+                        // A graph that fails to configure makes mpv drop
+                        // that `af` entry and carry on without it, so a
+                        // missing EQ or a blank visualiser is otherwise
+                        // silent. Call it out explicitly.
+                        if safe.contains("failed to configure the filter graph")
+                            || safe.contains("Disabling filter")
+                        {
+                            log::warn!(
+                                "mpv af chain rejected — the EQ or the spectrum tap is absent: {safe}"
+                            );
+                        }
                         // mpv log_level constants (from client.h):
                         // 10=FATAL, 20=ERROR, 30=WARN, 40=INFO, 50=V, 60=DEBUG, 70=TRACE.
                         match msg.log_level {
@@ -648,5 +757,321 @@ mod tests {
         assert!(!mpv_version_at_least("", 0, 38));
         assert!(!mpv_version_at_least("0.38.0", 0, 38)); // missing "mpv " prefix
         assert!(!mpv_version_at_least("mpv 0", 0, 38)); // no minor
+    }
+}
+
+/// Live probes of the spectrum tap against the libmpv on this machine.
+///
+/// Ignored by default: they dlopen libmpv, open the audio output (muted)
+/// and play audio. Run them on any platform whose libmpv build is in
+/// doubt (the Linux AppImage's FFmpeg 4.4 in particular):
+///
+/// ```text
+/// RUST_LOG=info cargo test -p ramus-tauri --lib -- --ignored tap_probe --nocapture
+/// ```
+///
+/// `tap_probe_produces_frames_from_a_tone` proves the graph parses on
+/// that FFmpeg, `join`'s channel layout is accepted, both banks'
+/// `ashowinfo` lines reach the client log at level `v` and pair up into
+/// frames of the expected shape, the checksums decode to levels, the tone
+/// lands in the right band on both channels, frames lead `time-pos`, and
+/// removing the tap stops the flow.
+///
+/// `tap_probe_cost` plays a local file through the controller with and
+/// without the tap and prints this process's CPU share for each:
+///
+/// ```text
+/// RAMUS_TAP_PROBE_TRACK=/path/to/track.flac RAMUS_TAP_PROBE_SECS=20 \
+///   RUST_LOG=info cargo test --release -p ramus-tauri --lib -- --ignored tap_probe_cost --nocapture
+/// ```
+#[cfg(test)]
+mod tap_probe {
+    use std::time::{Duration, Instant};
+
+    use parking_lot::Mutex;
+
+    use ramus_core::playback::player::build_af_string;
+    use ramus_core::playback::spectrum_tap::{band_frequencies, TapConfig, TapFrame};
+
+    use super::*;
+
+    struct Harness {
+        mpv: MpvController,
+        frames: Arc<Mutex<Vec<TapFrame>>>,
+        positions: Arc<Mutex<Vec<f64>>>,
+    }
+
+    fn harness() -> Harness {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let lib = Arc::new(MpvLib::load().expect("libmpv must be loadable"));
+        let frames: Arc<Mutex<Vec<TapFrame>>> = Arc::new(Mutex::new(Vec::new()));
+        let positions: Arc<Mutex<Vec<f64>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = frames.clone();
+        let pos_sink = positions.clone();
+        let callbacks = Arc::new(MpvCallbacks {
+            on_spectrum_frames: Some(Box::new(move |batch| sink.lock().extend(batch))),
+            on_position_change: Some(Box::new(move |p| pos_sink.lock().push(p))),
+            ..Default::default()
+        });
+        let mpv = MpvController::new(lib, callbacks).expect("mpv controller");
+        mpv.set_volume(0.0);
+        Harness {
+            mpv,
+            frames,
+            positions,
+        }
+    }
+
+    /// Install the tap the way `AudioPlayer::set_spectrum_tap` does: raise
+    /// the log level, then compose EQ + tap.
+    fn install_tap(mpv: &MpvController) -> TapConfig {
+        let cfg = TapConfig::default().normalised();
+        mpv.set_verbose_log(true);
+        mpv.set_audio_filters(&build_af_string(true, &[0.0; 10], Some(&cfg)));
+        cfg
+    }
+
+    fn remove_tap(mpv: &MpvController) {
+        mpv.set_audio_filters(&build_af_string(true, &[0.0; 10], None));
+        mpv.set_verbose_log(false);
+    }
+
+    fn wait_for_frames(frames: &Mutex<Vec<TapFrame>>, want: usize, timeout: Duration) -> usize {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline && frames.lock().len() < want {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        frames.lock().len()
+    }
+
+    #[test]
+    #[ignore]
+    fn tap_probe_produces_frames_from_a_tone() {
+        let h = harness();
+        let cfg = install_tap(&h.mpv);
+        h.mpv.load_file(
+            "av://lavfi:sine=frequency=440:sample_rate=44100:duration=4",
+            LoadMode::Replace,
+            None,
+        );
+
+        let want = 2 * cfg.fps as usize;
+        let n = wait_for_frames(&h.frames, want, Duration::from_secs(10));
+        assert!(n >= want, "expected at least {want} frames within 10 s, got {n}");
+        let got = h.frames.lock().clone();
+
+        // Shape: every band of both channels.
+        assert!(got.iter().all(|f| f.db.len() == cfg.frame_width()));
+        // Monotonic pts, one frame period apart.
+        let period = 1.0 / cfg.fps as f64;
+        for w in got.windows(2) {
+            let dt = w[1].pts - w[0].pts;
+            assert!(
+                (dt - period).abs() < period * 0.25,
+                "frame spacing {dt:.4}s, expected {period:.4}s"
+            );
+        }
+        // The mono tone is duplicated into both channels, so each half
+        // peaks in the band nearest 440 Hz.
+        let freqs = band_frequencies(&cfg);
+        let mid = &got[got.len() / 2];
+        let mut loudest = 0;
+        let mut f = 0.0;
+        for (channel, half) in mid.db.chunks(cfg.bands).enumerate() {
+            loudest = (0..cfg.bands)
+                .max_by(|&a, &b| half[a].partial_cmp(&half[b]).unwrap())
+                .unwrap();
+            f = freqs[loudest];
+            assert!(
+                ((f - 440.0) / 440.0).abs() < 0.15,
+                "channel {channel}: loudest band {loudest} at {f:.0} Hz, expected ~440 Hz; {half:?}"
+            );
+            // Levels are sane: the tone's band is well above the floor
+            // and a far-away band is well below it.
+            assert!(half[loudest] > -30.0, "channel {channel}: tone band {} dB", half[loudest]);
+            assert!(half[cfg.bands - 1] < half[loudest] - 20.0, "channel {channel}: {half:?}");
+        }
+        // Both halves carry the same signal, so they agree closely.
+        let (l, r) = mid.db.split_at(cfg.bands);
+        assert!(
+            l.iter().zip(r).all(|(a, b)| (a - b).abs() < 1.0),
+            "left/right disagree: {l:?} vs {r:?}"
+        );
+        // Frames lead (or at worst match) the reported position.
+        let last_pos = h.positions.lock().last().copied().unwrap_or(0.0);
+        let last_pts = got.last().unwrap().pts;
+        assert!(
+            last_pts + 0.1 >= last_pos,
+            "frames should lead time-pos: last pts {last_pts:.3} vs pos {last_pos:.3}"
+        );
+        log::info!(
+            "tap_probe: {} frames, loudest band {loudest} ({f:.0} Hz) at {:.1} dB, lead {:.3}s",
+            got.len(),
+            mid.db[loudest],
+            last_pts - last_pos
+        );
+
+        // Removing the tap stops the flow.
+        remove_tap(&h.mpv);
+        std::thread::sleep(Duration::from_millis(400));
+        let settled = h.frames.lock().len();
+        std::thread::sleep(Duration::from_millis(600));
+        assert_eq!(h.frames.lock().len(), settled, "frames kept arriving after removal");
+    }
+
+    /// Cumulative CPU time of this process in seconds, via `ps` (portable
+    /// across the Unix desktops without a libc dependency). `None` where
+    /// `ps` is unavailable.
+    fn process_cpu_seconds() -> Option<f64> {
+        let out = std::process::Command::new("ps")
+            .args(["-o", "cputime=", "-p", &std::process::id().to_string()])
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        // `M:SS.ss` (macOS) or `HH:MM:SS` (Linux): fold the fields as base 60.
+        text.trim()
+            .split(':')
+            .try_fold(0.0, |acc, part| part.trim().parse::<f64>().ok().map(|v| acc * 60.0 + v))
+    }
+
+    #[test]
+    #[ignore]
+    fn tap_probe_cost() {
+        let Ok(track) = std::env::var("RAMUS_TAP_PROBE_TRACK") else {
+            eprintln!("set RAMUS_TAP_PROBE_TRACK to a local audio file");
+            return;
+        };
+        let secs: f64 = std::env::var("RAMUS_TAP_PROBE_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20.0);
+        let h = harness();
+        let mut report = Vec::new();
+        for (label, with_tap) in [("no tap", false), ("tap", true)] {
+            h.frames.lock().clear();
+            h.positions.lock().clear();
+            let cfg = with_tap.then(|| install_tap(&h.mpv));
+            h.mpv
+                .load_file(&track, LoadMode::Replace, Some("start=30"));
+            // Let the pipeline settle before the window opens.
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while Instant::now() < deadline && h.positions.lock().len() < 3 {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            let cpu0 = process_cpu_seconds();
+            let t0 = Instant::now();
+            std::thread::sleep(Duration::from_secs_f64(secs));
+            let wall = t0.elapsed().as_secs_f64();
+            let cpu = match (cpu0, process_cpu_seconds()) {
+                (Some(a), Some(b)) => Some(b - a),
+                _ => None,
+            };
+            let frames = h.frames.lock().len();
+            if let Some(cfg) = cfg {
+                assert!(
+                    frames as f64 > secs * cfg.fps as f64 * 0.8,
+                    "{label}: only {frames} frames in {wall:.1}s"
+                );
+                remove_tap(&h.mpv);
+            }
+            h.mpv.stop();
+            std::thread::sleep(Duration::from_millis(300));
+            let share = cpu.map(|c| format!("{:.1}% of one core", c / wall * 100.0));
+            report.push(format!(
+                "{label:>6}: {} ({frames} frames in {wall:.1}s)",
+                share.unwrap_or_else(|| "cpu unavailable".into())
+            ));
+        }
+        for line in &report {
+            println!("tap_probe_cost {line}");
+            log::info!("tap_probe_cost {line}");
+        }
+    }
+
+    /// The frontend can issue install/remove requests back to back (a
+    /// remount is remove-then-install with no gap) and each command runs
+    /// on its own task, so their mpv calls can interleave. This probe pins
+    /// down what mpv does under each interleaving, and whether a clean
+    /// remove/install afterwards restores the flow:
+    ///
+    /// ```text
+    /// RUST_LOG=info cargo test -p ramus-tauri --lib -- --ignored tap_probe_recovers --nocapture
+    /// ```
+    #[test]
+    #[ignore]
+    fn tap_probe_recovers_after_interleaved_toggles() {
+        let h = harness();
+        h.mpv.load_file(
+            "av://lavfi:sine=frequency=440:sample_rate=44100:duration=180",
+            LoadMode::Replace,
+            None,
+        );
+        let cfg = install_tap(&h.mpv);
+        let want = cfg.fps as usize;
+        let n = wait_for_frames(&h.frames, want, Duration::from_secs(10));
+        assert!(n >= want, "baseline: {n} frames");
+
+        let flows = |label: &str| -> bool {
+            h.frames.lock().clear();
+            let n = wait_for_frames(&h.frames, want, Duration::from_secs(4));
+            println!("tap_probe_recovers {label}: {n} frames in <=4s");
+            n >= want
+        };
+
+        let tap = build_af_string(true, &[0.0; 10], Some(&cfg));
+        let no_tap = build_af_string(true, &[0.0; 10], None);
+
+        // A: the remove's calls land last (chain gone, level lowered).
+        h.mpv.set_verbose_log(true);
+        h.mpv.set_audio_filters(&tap);
+        h.mpv.set_audio_filters(&no_tap);
+        h.mpv.set_verbose_log(false);
+        let _ = flows("after A (chain gone, level low)");
+        remove_tap(&h.mpv);
+        install_tap(&h.mpv);
+        assert!(flows("clean cycle after A"));
+
+        // B: chain kept, level lowered last.
+        h.mpv.set_verbose_log(true);
+        h.mpv.set_audio_filters(&tap);
+        h.mpv.set_verbose_log(false);
+        let _ = flows("after B (chain kept, level low)");
+        remove_tap(&h.mpv);
+        install_tap(&h.mpv);
+        assert!(flows("clean cycle after B"));
+
+        // C: level raised last, chain removed last.
+        h.mpv.set_verbose_log(true);
+        h.mpv.set_audio_filters(&tap);
+        h.mpv.set_audio_filters(&no_tap);
+        let _ = flows("after C (chain gone, level high)");
+        remove_tap(&h.mpv);
+        install_tap(&h.mpv);
+        assert!(flows("clean cycle after C"));
+
+        // Concurrent install/remove/install, as a remount issues them.
+        for i in 0..8 {
+            let m = &h.mpv;
+            std::thread::scope(|s| {
+                s.spawn(|| {
+                    m.set_verbose_log(true);
+                    m.set_audio_filters(&tap);
+                });
+                s.spawn(|| {
+                    m.set_audio_filters(&no_tap);
+                    m.set_verbose_log(false);
+                });
+                s.spawn(|| {
+                    m.set_verbose_log(true);
+                    m.set_audio_filters(&tap);
+                });
+            });
+            let _ = flows(&format!("after concurrent triple {i}"));
+            remove_tap(&h.mpv);
+            install_tap(&h.mpv);
+            assert!(flows(&format!("clean cycle after concurrent triple {i}")));
+        }
+        remove_tap(&h.mpv);
+        h.mpv.stop();
     }
 }

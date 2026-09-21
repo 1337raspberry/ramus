@@ -1,0 +1,1241 @@
+//! Live spectrum tap for the focus-mode visualiser.
+//!
+//! The tap is a libavfilter graph hosted in mpv's `--af` chain (the same
+//! chain the equalizer lives in). It splits the decoded audio: the main
+//! copy passes through `anull` untouched, and a side copy is brought to
+//! stereo and split into its left and right channels, each of which
+//! feeds an identical bank. A bank fans its channel through one
+//! `bandpass` biquad per band and joins the results into a single
+//! N-channel stream, squares it against itself (`amultiply`), low-passes
+//! it into a power envelope and resamples it down to the frame rate, so
+//! from there on the bank handles 60 samples a second per band. `aeval`
+//! turns each sample into the band's level in dBFS, scaled into the range
+//! a 16-bit sample can hold, and `ashowinfo` prints one Adler-32 checksum
+//! per channel plane for every one-sample frame. A checksum over two
+//! bytes is exactly invertible, so the printed line is the bank's half of
+//! the frame: mpv forwards it to its client log stream, where the
+//! platform layer intercepts it and this module decodes it and pairs the
+//! two halves by timestamp.
+//!
+//! Two banks rather than one wide one because swresample, which the
+//! decimator and the format conversions run on, refuses more than 64
+//! channels; a bank per channel keeps every stage within that and gives
+//! the visualiser real stereo rather than a mirrored mono spectrum.
+//!
+//! `astats` would be the obvious way to print per-band levels, but its
+//! per-frame bookkeeping (an 8192-bin histogram walk per channel, whatever
+//! measures were asked for) cost more than the rest of the graph put
+//! together. The checksum route costs nothing measurable.
+//!
+//! Hosting the tap in `--af` (never `--lavfi-complex`) keeps the audio
+//! output open across file boundaries, so gapless playback is unaffected,
+//! and because it is post-decoder it works for direct play, transcodes
+//! and cached files alike.
+//!
+//! This module is pure: graph generation, log-line parsing and the
+//! dB → bar-height mapping. Nothing here touches mpv.
+
+use serde::Serialize;
+
+use super::spectrum::{
+    quantise_db_range, DB_FLOOR, DYNAMIC_RANGE_DB, PEAK_HEADROOM_DB,
+};
+
+/// Number of log-spaced analysis bands per channel the desktop tap runs
+/// by default.
+///
+/// Each band is one `bandpass` biquad plus one channel through a bank's
+/// envelope chain, and there is a bank per stereo channel. The whole tap
+/// measures around 9 % of one core at 64 bands per channel and 60 fps,
+/// only while the visualiser is mounted. 64 is also `MAX_TAP_BANDS`: a
+/// bank's resampler refuses more channels.
+pub const DEFAULT_TAP_BANDS: usize = 64;
+
+/// Channels the tap analyses: one bank each for left and right. The side
+/// branch is forced to stereo first, so mono sources are duplicated into
+/// both banks and multichannel sources are downmixed.
+pub const TAP_CHANNELS: usize = 2;
+
+/// Frames per second the tap emits. The envelope is resampled to this
+/// rate, so it is also the rate the printer runs at.
+pub const DEFAULT_TAP_FPS: u32 = 60;
+
+/// Sample rate the side branch is forced to. The main path is never
+/// resampled; hi-res sources are analysed at 48 kHz, which is plenty for
+/// bands that top out at 16 kHz.
+pub const TAP_SAMPLE_RATE: u32 = 48_000;
+
+/// Centre frequency of the lowest band, in Hz.
+pub const TAP_FREQ_LOW_HZ: f32 = 50.0;
+
+/// Centre frequency of the highest band, in Hz.
+pub const TAP_FREQ_HIGH_HZ: f32 = 16_000.0;
+
+/// Fewest bands a graph can be generated for (the octave width divides
+/// by `bands - 1`).
+pub const MIN_TAP_BANDS: usize = 2;
+
+/// Most bands per channel a graph can be generated for: a bank's `join`
+/// channel layout is spelled as a 64-bit channel mask, and its resampler
+/// refuses more channels anyway.
+pub const MAX_TAP_BANDS: usize = 64;
+
+/// Corner frequency of the low-pass that turns each band's squared
+/// signal into a power envelope, in Hz. Sets the bars' attack and release
+/// (a time constant of roughly 8 ms) and keeps the envelope below the
+/// frame rate's Nyquist so the decimating resampler has little to alias.
+pub const ENVELOPE_LOWPASS_HZ: u32 = 20;
+
+/// `filter_size` for the envelope's decimating resampler. The default
+/// (32) builds a kernel of 32 × the decimation ratio taps per output
+/// sample, measured at about 4 % of a core for 48 channels at an 800×
+/// ratio. The envelope is already band-limited by the low-pass, so a
+/// short kernel loses nothing visible.
+pub const ENVELOPE_RESAMPLE_FILTER_SIZE: u32 = 2;
+
+/// Lowest level the tap can express, in dBFS. The power envelope is
+/// clamped to `TAP_POWER_FLOOR` before the logarithm, which lands this
+/// value on the 16-bit sample's negative full scale. It sits below
+/// `DB_FLOOR`, the mapper's own floor, so nothing visible is lost.
+pub const TAP_DB_FLOOR: f32 = -100.0;
+
+/// The linear power the envelope is clamped to, `10^(TAP_DB_FLOOR / 10)`,
+/// spelled the way it appears in the graph.
+pub const TAP_POWER_FLOOR: &str = "1e-10";
+
+/// Divisor that maps dBFS onto the sample range: a level of
+/// `-TAP_DB_SCALE` dBFS becomes -1.0, negative full scale in the 16-bit
+/// format. One 16-bit step is therefore about 0.003 dB.
+pub const TAP_DB_SCALE: f32 = 100.0;
+
+// The floor lands exactly on negative full scale after scaling, and sits
+// below anything the mapper can show.
+const _: () = assert!(TAP_DB_FLOOR / TAP_DB_SCALE == -1.0);
+const _: () = assert!(TAP_DB_FLOOR <= DB_FLOOR);
+
+/// Prefix of every log line the `ashowinfo` printer emits. The numeric
+/// suffix is the filter's index in the graph and changes every time the
+/// chain is rebuilt, so callers must match on this prefix alone.
+pub const TAP_LOG_PREFIX: &str = "Parsed_ashowinfo_";
+
+/// Longest stitched log line held while its fragments arrive. A 64-band
+/// line is under 1 KB; anything longer is not the printer's output.
+const MAX_TAP_LINE: usize = 4096;
+
+/// Most decoded half-frames held while waiting for their partner from the
+/// other bank. The graph scheduler runs one bank's input chunk to
+/// completion before the other's, so one printer normally leads by a
+/// chunk (five or so frames); anything beyond this is a lost partner.
+const MAX_PENDING_HALVES: usize = 32;
+
+/// A held half-frame this much older than a newly decoded one is stale
+/// (the stream was rebuilt or seeked forward) and is dropped rather than
+/// left waiting for a partner that will never come. Only older halves
+/// are judged: a straggler from before a seek must not evict the fresh
+/// halves queued after it. Halves left over from a backwards seek are
+/// newer than everything that follows and age out through
+/// `MAX_PENDING_HALVES` instead.
+const PENDING_MAX_SPREAD_S: f64 = 1.0;
+
+/// Running-peak seed for a freshly started level mapper, in dBFS. Chosen
+/// so a track's quiet intro renders at a sensible height before the first
+/// loud frame re-anchors the window.
+pub const PEAK_SEED_DB: f32 = -20.0;
+
+/// How fast the running peak relaxes toward the current frame's maximum,
+/// in dB per second, once the music gets quieter than the last peak.
+pub const PEAK_DECAY_DB_PER_SEC: f32 = 6.0;
+
+/// Lowest value the running peak is allowed to decay to. Keeps a fade-out
+/// or a stretch of near-silence from being auto-gained up to full-height
+/// bars: anything more than `DYNAMIC_RANGE_DB` below this floor renders as
+/// zero.
+pub const PEAK_FLOOR_DB: f32 = -40.0;
+
+/// Shape of the tap graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TapConfig {
+    /// Number of analysis bands per channel (`MIN_TAP_BANDS..=MAX_TAP_BANDS`).
+    pub bands: usize,
+    /// Frames per second (must divide `TAP_SAMPLE_RATE` evenly for the
+    /// frame size to be exact; 30 and 60 both do).
+    pub fps: u32,
+}
+
+impl Default for TapConfig {
+    fn default() -> Self {
+        Self {
+            bands: DEFAULT_TAP_BANDS,
+            fps: DEFAULT_TAP_FPS,
+        }
+    }
+}
+
+impl TapConfig {
+    /// Clamp the band count and frame rate into the ranges the graph
+    /// generator supports.
+    pub fn normalised(self) -> Self {
+        Self {
+            bands: self.bands.clamp(MIN_TAP_BANDS, MAX_TAP_BANDS),
+            fps: self.fps.clamp(1, TAP_SAMPLE_RATE),
+        }
+    }
+
+    /// Values in one complete frame: every band of every channel.
+    pub fn frame_width(&self) -> usize {
+        self.normalised().bands * TAP_CHANNELS
+    }
+}
+
+/// Width of each band in octaves: the log range from the lowest to the
+/// highest centre frequency split evenly across `bands - 1` gaps.
+pub fn band_octave_width(cfg: &TapConfig) -> f32 {
+    let cfg = cfg.normalised();
+    (TAP_FREQ_HIGH_HZ / TAP_FREQ_LOW_HZ).log2() / (cfg.bands - 1) as f32
+}
+
+/// Centre frequency of every band, log-spaced from `TAP_FREQ_LOW_HZ` to
+/// `TAP_FREQ_HIGH_HZ` inclusive.
+pub fn band_frequencies(cfg: &TapConfig) -> Vec<f32> {
+    let cfg = cfg.normalised();
+    let w = band_octave_width(&cfg);
+    (0..cfg.bands)
+        .map(|k| TAP_FREQ_LOW_HZ * 2f32.powf(k as f32 * w))
+        .collect()
+}
+
+/// The `channel_layout` value handed to `join` for `n` mono inputs.
+///
+/// FFmpeg's `<N>c` shorthand only parses for channel counts that have a
+/// default layout (it stops working above 24), so the layout is spelled
+/// as a hex channel mask with the low `n` bits set. 24 uses the named
+/// `22.2` layout, which the older channel-layout parser in FFmpeg 4.4
+/// (the Ubuntu 22.04 libmpv) is known to accept.
+pub fn channel_layout_spec(n: usize) -> String {
+    let n = n.clamp(1, MAX_TAP_BANDS);
+    if n == 24 {
+        return "22.2".to_string();
+    }
+    let mask: u64 = if n >= 64 { u64::MAX } else { (1u64 << n) - 1 };
+    format!("0x{mask:x}")
+}
+
+/// Generate the tap filter graph for `cfg`. The result is the inner graph
+/// only; wrap it in `lavfi=[...]` for mpv's `af` property (see
+/// `player::compose_af`).
+///
+/// Formatting goes through `format!`, which always writes `.` for the
+/// decimal point regardless of locale.
+///
+/// The left bank is written before the right one, so its `ashowinfo`
+/// gets the lower filter index in the log prefix; the parser relies on
+/// that to tell the halves apart.
+///
+/// Each bank's printer stage, in order: `aeval` evaluates one expression
+/// per sample on every channel (`val(ch)` is the current channel's
+/// sample; FFmpeg's expression language has only the natural `log`,
+/// hence the `10 / ln 10` factor; the comma inside `max()` is escaped
+/// because a bare comma ends the filter's arguments at the graph level;
+/// and `channel_layout=same` is required or `aeval` outputs as many
+/// channels as it has expressions, one). `aformat` converts to planar
+/// 16-bit, `asetnsamples` cuts the stream into one-sample frames so
+/// `ashowinfo` prints a line per frame, and `anullsink` discards the
+/// audio.
+pub fn tap_graph(cfg: &TapConfig) -> String {
+    let cfg = cfg.normalised();
+    let n = cfg.bands;
+    let w = band_octave_width(&cfg);
+    let freqs = band_frequencies(&cfg);
+
+    let mut g = String::with_capacity(256 + TAP_CHANNELS * n * 64);
+    g.push_str("[in]asplit=2[main][side];");
+    g.push_str(&format!(
+        "[side]aformat=channel_layouts=stereo:sample_fmts=fltp:sample_rates={TAP_SAMPLE_RATE},\
+         channelsplit=channel_layout=stereo[l][r];"
+    ));
+    for tag in ["l", "r"] {
+        push_bank(&mut g, tag, &cfg, w, &freqs);
+    }
+    g.push_str("[main]anull[out]");
+    g
+}
+
+/// Append one channel's bank to the graph: the input pad `[tag]` in, the
+/// printer at the end, every internal pad label prefixed with `tag`.
+fn push_bank(g: &mut String, tag: &str, cfg: &TapConfig, w: f32, freqs: &[f32]) {
+    let n = cfg.bands;
+    g.push_str(&format!("[{tag}]asplit={n}"));
+    for k in 0..n {
+        g.push_str(&format!("[{tag}s{k}]"));
+    }
+    g.push(';');
+    for (k, f) in freqs.iter().enumerate() {
+        g.push_str(&format!(
+            "[{tag}s{k}]bandpass=f={f:.1}:width_type=o:w={w:.3}[{tag}b{k}];"
+        ));
+    }
+    for k in 0..n {
+        g.push_str(&format!("[{tag}b{k}]"));
+    }
+    g.push_str(&format!(
+        "join=inputs={n}:channel_layout={layout},\
+         asplit=2[{tag}p][{tag}q];[{tag}p][{tag}q]amultiply,lowpass=f={lp},\
+         aresample={fps}:filter_size={taps},\
+         aeval=exprs='{db_per_neper:.10}*log(max(val(ch)\\,{floor}))/{scale}':channel_layout=same,\
+         aformat=sample_fmts=s16p,asetnsamples=n=1:p=0,ashowinfo,anullsink;",
+        layout = channel_layout_spec(n),
+        lp = ENVELOPE_LOWPASS_HZ,
+        fps = cfg.fps,
+        taps = ENVELOPE_RESAMPLE_FILTER_SIZE,
+        db_per_neper = 10.0f64 / std::f64::consts::LN_10,
+        floor = TAP_POWER_FLOOR,
+        scale = TAP_DB_SCALE as u32,
+    ));
+}
+
+/// One analysis frame: the mpv timeline position of the frame's sample
+/// and the level of each band in dBFS, the left channel's bands followed
+/// by the right channel's (`TapConfig::frame_width` values).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TapFrame {
+    pub pts: f64,
+    pub db: Vec<f32>,
+}
+
+/// A frame after the level mapper: the track-timeline position and one
+/// quantised bar height (0..255) per band, left channel then right.
+/// Crosses the IPC boundary as is, hence the camelCase rename.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpectrumFrame {
+    pub pos: f64,
+    pub bands: Vec<u8>,
+}
+
+/// Outcome of feeding one log message to `TapLineParser`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TapFeed {
+    /// The message was not part of the tap transport; forward it as usual.
+    Ignored,
+    /// The message belonged to the tap (a fragment of a line, a line that
+    /// did not decode, or one channel's half of a frame still waiting for
+    /// the other) and has been swallowed.
+    Consumed,
+    /// The message completed a frame.
+    Frame(TapFrame),
+}
+
+/// One bank's decoded line, waiting for the other bank's line with the
+/// same timestamp.
+struct HalfFrame {
+    /// The `ashowinfo` filter index from the log prefix: lower is the
+    /// left bank.
+    printer: u32,
+    pts: f64,
+    db: Vec<f32>,
+}
+
+/// Reassembles `ashowinfo` log messages into frames.
+///
+/// The printer writes one line per frame, in pieces: a header, the list
+/// opener, one checksum per channel plane and the closer are each a
+/// separate log call. mpv's message layer buffers partial lines and
+/// delivers the line whole, with the filter-name prefix at its start:
+///
+/// ```text
+/// Parsed_ashowinfo_75: n:59 pts:1853 pts_time:30.883333 fmt:s16p channels:64 chlayout:… rate:60 nb_samples:1 checksum:97BA516D plane_checksums: [ 01BA014A 01C5014C … ]⏎
+/// ```
+///
+/// Should a build deliver the pieces separately instead, they are held
+/// until the one carrying the newline arrives.
+///
+/// Each bank prints its own line per frame, and the graph scheduler runs
+/// one bank's input chunk to completion before the other's, so lines
+/// arrive in runs of one printer then the other. Decoded halves wait in
+/// a small queue until the other printer's line with the same timestamp
+/// arrives; the half from the lower filter index is the left channel.
+///
+/// The parser is defensive throughout: a line that does not decode to
+/// exactly the configured band count (a message lost from mpv's bounded
+/// log ring, another FFmpeg message interleaved mid-line) is dropped, a
+/// half whose partner never comes ages out, and a rebuilt stream's old
+/// halves are dropped as soon as the new timeline shows up.
+pub struct TapLineParser {
+    bands: usize,
+    held: String,
+    pending: Vec<HalfFrame>,
+}
+
+impl TapLineParser {
+    /// `bands` is the count per channel: each printed line must carry
+    /// exactly that many planes.
+    pub fn new(bands: usize) -> Self {
+        Self {
+            bands: bands.max(1),
+            held: String::new(),
+            pending: Vec::with_capacity(MAX_PENDING_HALVES),
+        }
+    }
+
+    /// Band count per channel this parser completes frames at.
+    pub fn bands(&self) -> usize {
+        self.bands
+    }
+
+    /// Feed one mpv log message from the `ffmpeg` prefix, newline and all.
+    pub fn feed(&mut self, fragment: &str) -> TapFeed {
+        if !self.held.is_empty() {
+            self.held.push_str(fragment);
+            if fragment.ends_with('\n') {
+                let line = std::mem::take(&mut self.held);
+                return self.decode(&line);
+            }
+            if self.held.len() > MAX_TAP_LINE {
+                self.held.clear();
+            }
+            return TapFeed::Consumed;
+        }
+        if !fragment.starts_with(TAP_LOG_PREFIX) {
+            return TapFeed::Ignored;
+        }
+        if fragment.ends_with('\n') {
+            return self.decode(fragment);
+        }
+        self.held.push_str(fragment);
+        TapFeed::Consumed
+    }
+
+    fn decode(&mut self, line: &str) -> TapFeed {
+        let Some(half) = parse_showinfo_line(line, self.bands) else {
+            return TapFeed::Consumed;
+        };
+        // The stream was rebuilt or seeked forward: anything well before
+        // this line will never be paired.
+        self.pending
+            .retain(|h| h.pts >= half.pts - PENDING_MAX_SPREAD_S);
+
+        if let Some(i) = self
+            .pending
+            .iter()
+            .position(|h| h.pts == half.pts && h.printer != half.printer)
+        {
+            let other = self.pending.remove(i);
+            let (mut left, right) = if other.printer < half.printer {
+                (other.db, half.db)
+            } else {
+                (half.db, other.db)
+            };
+            left.extend(right);
+            return TapFeed::Frame(TapFrame {
+                pts: half.pts,
+                db: left,
+            });
+        }
+        if let Some(dup) = self
+            .pending
+            .iter_mut()
+            .find(|h| h.pts == half.pts && h.printer == half.printer)
+        {
+            dup.db = half.db;
+            return TapFeed::Consumed;
+        }
+        if self.pending.len() >= MAX_PENDING_HALVES {
+            self.pending.remove(0);
+        }
+        self.pending.push(half);
+        TapFeed::Consumed
+    }
+}
+
+/// Strip `Parsed_ashowinfo_<N>: ` and return the filter index and the
+/// payload, or `None` if the line is not a tap line.
+fn strip_tap_prefix(line: &str) -> Option<(u32, &str)> {
+    let rest = line.strip_prefix(TAP_LOG_PREFIX)?;
+    let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    let index = rest[..digits].parse::<u32>().ok()?;
+    let rest = rest[digits..].strip_prefix(':')?;
+    Some((index, rest.trim_start()))
+}
+
+/// Decode one complete `ashowinfo` line into one bank's half-frame of
+/// `bands` levels.
+///
+/// The header must describe a one-sample planar 16-bit frame (anything
+/// else means the graph is not the one this parser expects) and the
+/// checksum list must hold exactly one entry per band.
+fn parse_showinfo_line(line: &str, bands: usize) -> Option<HalfFrame> {
+    let (printer, payload) = strip_tap_prefix(line)?;
+    let (head, tail) = payload.split_once("plane_checksums: [")?;
+    let (planes, _) = tail.split_once(']')?;
+
+    let mut pts = None;
+    let mut planar_s16 = false;
+    let mut one_sample = false;
+    for tok in head.split_whitespace() {
+        if let Some(v) = tok.strip_prefix("pts_time:") {
+            pts = v.parse::<f64>().ok().filter(|v| v.is_finite());
+        } else if tok == "fmt:s16p" {
+            planar_s16 = true;
+        } else if tok == "nb_samples:1" {
+            one_sample = true;
+        }
+    }
+    if !(planar_s16 && one_sample) {
+        return None;
+    }
+    let pts = pts?;
+
+    let mut db = Vec::with_capacity(bands);
+    for tok in planes.split_whitespace() {
+        let checksum = u32::from_str_radix(tok, 16).ok()?;
+        db.push(sample_to_db(adler32_to_s16(checksum)?));
+    }
+    if db.len() != bands {
+        return None;
+    }
+    Some(HalfFrame { printer, pts, db })
+}
+
+/// Invert the Adler-32 of a two-byte plane back into its sample.
+///
+/// Adler-32 runs two sums over the bytes: `a` adds each byte, `b` adds
+/// `a` after each byte. `ashowinfo` seeds both at 0 (zlib's convention
+/// seeds `a` at 1), so for bytes `x, y` it prints `a = x + y` and
+/// `b = 2x + y`, both far below the modulus, giving `x = b - a` and
+/// `y = a - x`. The bytes are in memory order, so native-endian assembly
+/// recovers the sample on any host.
+///
+/// Returns `None` when the arithmetic leaves the byte range, which
+/// catches most checksums over more than two bytes; a checksum over
+/// fewer bytes is indistinguishable from one with a zero byte, so the
+/// caller must check the frame's format and sample count itself.
+pub fn adler32_to_s16(checksum: u32) -> Option<i16> {
+    let a = checksum & 0xffff;
+    let b = checksum >> 16;
+    let x = b.checked_sub(a)?;
+    let y = a.checked_sub(x)?;
+    if x > 0xff || y > 0xff {
+        return None;
+    }
+    Some(i16::from_ne_bytes([x as u8, y as u8]))
+}
+
+/// Undo the graph's scaling: a 16-bit sample back to dBFS, clamped to the
+/// mapper's floor.
+fn sample_to_db(sample: i16) -> f32 {
+    (sample as f32 / 32768.0 * TAP_DB_SCALE).max(DB_FLOOR)
+}
+
+fn sanitise_db(db: f32) -> f32 {
+    if db.is_finite() {
+        db.max(DB_FLOOR)
+    } else if db == f32::INFINITY {
+        0.0
+    } else {
+        DB_FLOOR
+    }
+}
+
+/// Maps per-band dBFS levels to bar heights against a running peak.
+///
+/// The precomputed visualiser found each track's peak up front and
+/// quantised `[peak - DYNAMIC_RANGE_DB, peak + PEAK_HEADROOM_DB]` onto
+/// 0..255. Live, the peak is tracked instead: it jumps up instantly to
+/// any louder frame and relaxes downward at `PEAK_DECAY_DB_PER_SEC`
+/// toward the current frame's maximum, never below `PEAK_FLOOR_DB`.
+#[derive(Debug, Clone)]
+pub struct LevelMapper {
+    peak_db: f32,
+    decay_per_frame: f32,
+}
+
+impl LevelMapper {
+    /// `fps` is the tap's frame rate; the decay is applied per frame.
+    pub fn new(fps: u32) -> Self {
+        Self {
+            peak_db: PEAK_SEED_DB,
+            decay_per_frame: PEAK_DECAY_DB_PER_SEC / fps.max(1) as f32,
+        }
+    }
+
+    /// Forget the running peak (fresh tap, new listening session).
+    pub fn reset(&mut self) {
+        self.peak_db = PEAK_SEED_DB;
+    }
+
+    /// Current running peak in dBFS.
+    pub fn peak_db(&self) -> f32 {
+        self.peak_db
+    }
+
+    /// Quantise one frame of band levels to bar heights, advancing the
+    /// running peak.
+    pub fn map(&mut self, db: &[f32]) -> Vec<u8> {
+        let frame_max = db
+            .iter()
+            .copied()
+            .filter(|v| v.is_finite())
+            .fold(DB_FLOOR, f32::max);
+        if frame_max > self.peak_db {
+            self.peak_db = frame_max;
+        } else {
+            self.peak_db = (self.peak_db - self.decay_per_frame)
+                .max(frame_max)
+                .max(PEAK_FLOOR_DB);
+        }
+        let ceiling = self.peak_db + PEAK_HEADROOM_DB;
+        let floor = (ceiling - DYNAMIC_RANGE_DB).max(DB_FLOOR);
+        db.iter()
+            .map(|&d| quantise_db_range(sanitise_db(d), floor, ceiling))
+            .collect()
+    }
+}
+
+impl Default for LevelMapper {
+    fn default() -> Self {
+        Self::new(DEFAULT_TAP_FPS)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(bands: usize) -> TapConfig {
+        TapConfig { bands, fps: 60 }
+    }
+
+    // --- graph generation ---
+
+    #[test]
+    fn frequencies_are_log_spaced_from_low_to_high() {
+        let f = band_frequencies(&cfg(48));
+        assert_eq!(f.len(), 48);
+        assert!((f[0] - TAP_FREQ_LOW_HZ).abs() < 0.01);
+        assert!((f[47] - TAP_FREQ_HIGH_HZ).abs() < 0.5);
+        for w in f.windows(2) {
+            assert!(w[1] > w[0]);
+        }
+        // Constant ratio between neighbours.
+        let r0 = f[1] / f[0];
+        let r1 = f[40] / f[39];
+        assert!((r0 - r1).abs() < 1e-3);
+    }
+
+    #[test]
+    fn octave_width_covers_the_whole_range() {
+        let w = band_octave_width(&cfg(48));
+        let total = w * 47.0;
+        assert!((total - (TAP_FREQ_HIGH_HZ / TAP_FREQ_LOW_HZ).log2()).abs() < 1e-4);
+    }
+
+    #[test]
+    fn channel_layout_spelling() {
+        assert_eq!(channel_layout_spec(24), "22.2");
+        assert_eq!(channel_layout_spec(48), "0xffffffffffff");
+        assert_eq!(channel_layout_spec(2), "0x3");
+        assert_eq!(channel_layout_spec(1), "0x1");
+        assert_eq!(channel_layout_spec(64), "0xffffffffffffffff");
+        // Out of range clamps rather than overflowing the shift.
+        assert_eq!(channel_layout_spec(200), "0xffffffffffffffff");
+        assert_eq!(channel_layout_spec(0), "0x1");
+    }
+
+    #[test]
+    fn frame_rate_sets_the_envelope_resample_rate() {
+        assert!(tap_graph(&cfg(48)).contains("aresample=60:"));
+        assert!(tap_graph(&TapConfig { bands: 48, fps: 30 }).contains("aresample=30:"));
+    }
+
+    /// Prints the default graph so it can be pasted into an mpv CLI run
+    /// for re-verification or profiling on another libmpv build:
+    ///
+    /// ```text
+    /// cargo test -p ramus-core -- --ignored print_tap_graph --nocapture
+    /// ```
+    #[test]
+    #[ignore]
+    fn print_tap_graph() {
+        println!("{}", tap_graph(&TapConfig::default()));
+    }
+
+    #[test]
+    fn two_band_graph_exact() {
+        let g = tap_graph(&cfg(2));
+        let bank = |t: &str| {
+            format!(
+                "[{t}]asplit=2[{t}s0][{t}s1];\
+                 [{t}s0]bandpass=f=50.0:width_type=o:w=8.322[{t}b0];\
+                 [{t}s1]bandpass=f=16000.0:width_type=o:w=8.322[{t}b1];\
+                 [{t}b0][{t}b1]join=inputs=2:channel_layout=0x3,\
+                 asplit=2[{t}p][{t}q];[{t}p][{t}q]amultiply,lowpass=f=20,\
+                 aresample=60:filter_size=2,\
+                 aeval=exprs='4.3429448190*log(max(val(ch)\\,1e-10))/100':channel_layout=same,\
+                 aformat=sample_fmts=s16p,asetnsamples=n=1:p=0,ashowinfo,anullsink;"
+            )
+        };
+        assert_eq!(
+            g,
+            format!(
+                "[in]asplit=2[main][side];\
+                 [side]aformat=channel_layouts=stereo:sample_fmts=fltp:sample_rates=48000,\
+                 channelsplit=channel_layout=stereo[l][r];{}{}[main]anull[out]",
+                bank("l"),
+                bank("r")
+            )
+        );
+    }
+
+    #[test]
+    fn default_graph_shape() {
+        let g = tap_graph(&TapConfig::default());
+        assert_eq!(g.matches("bandpass=").count(), TAP_CHANNELS * DEFAULT_TAP_BANDS);
+        assert_eq!(g.matches("ashowinfo").count(), TAP_CHANNELS);
+        assert_eq!(g.matches(&format!("asplit={DEFAULT_TAP_BANDS}")).count(), TAP_CHANNELS);
+        assert_eq!(
+            g.matches(&format!(
+                "join=inputs={DEFAULT_TAP_BANDS}:channel_layout={}",
+                channel_layout_spec(DEFAULT_TAP_BANDS)
+            ))
+            .count(),
+            TAP_CHANNELS
+        );
+        // The left bank is written first, so its printer gets the lower
+        // filter index.
+        assert!(g.find("[l]asplit").unwrap() < g.find("[r]asplit").unwrap());
+        // Envelope per bank: square, low-pass, decimate to the frame
+        // rate, then dB, 16-bit, one-sample frames and the checksum
+        // printer.
+        assert!(g.contains("[lp][lq]amultiply,lowpass=f=20,aresample=60:filter_size=2,aeval="));
+        assert!(g.contains("[rp][rq]amultiply,lowpass=f=20,aresample=60:filter_size=2,aeval="));
+        assert!(g.contains(":channel_layout=same,aformat=sample_fmts=s16p,asetnsamples=n=1:p=0,ashowinfo,anullsink;"));
+        assert!(!g.contains("astats"));
+        assert!(!g.contains("ametadata"));
+        assert!(g.ends_with("[main]anull[out]"));
+        // Exactly one unconnected input and output pad.
+        assert_eq!(g.matches("[in]").count(), 1);
+        assert_eq!(g.matches("[out]").count(), 1);
+        // The main path is never resampled.
+        assert!(!g.contains("[main]aformat"));
+        assert!(!g.contains("[main]aresample"));
+        assert_eq!(TapConfig::default().frame_width(), TAP_CHANNELS * DEFAULT_TAP_BANDS);
+    }
+
+    #[test]
+    fn graph_uses_decimal_points_only() {
+        let g = tap_graph(&TapConfig::default());
+        assert!(!g.contains(",w="));
+        assert!(g.contains("w=0."));
+    }
+
+    #[test]
+    fn power_floor_in_the_graph_matches_the_db_floor() {
+        let floor: f64 = TAP_POWER_FLOOR.parse().unwrap();
+        assert!((10.0 * floor.log10() - TAP_DB_FLOOR as f64).abs() < 1e-9);
+    }
+
+    #[test]
+    fn config_normalises_out_of_range() {
+        let c = TapConfig { bands: 0, fps: 0 }.normalised();
+        assert_eq!(c.bands, MIN_TAP_BANDS);
+        assert_eq!(c.fps, 1);
+        let c = TapConfig { bands: 500, fps: 1_000_000 }.normalised();
+        assert_eq!(c.bands, MAX_TAP_BANDS);
+        assert_eq!(c.fps, TAP_SAMPLE_RATE);
+    }
+
+    // --- checksum decoding ---
+
+    /// Reference Adler-32 seeded at 0, the way `ashowinfo` calls it.
+    fn adler32(bytes: &[u8]) -> u32 {
+        let (mut a, mut b) = (0u32, 0u32);
+        for &x in bytes {
+            a = (a + x as u32) % 65521;
+            b = (b + a) % 65521;
+        }
+        (b << 16) | a
+    }
+
+    /// The checksum `ashowinfo` prints for a plane holding `db` after the
+    /// graph's scaling and 16-bit conversion.
+    fn encode_db(db: f32) -> u32 {
+        let s = (db / TAP_DB_SCALE * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
+        adler32(&s.to_ne_bytes())
+    }
+
+    #[test]
+    fn adler32_of_two_bytes_inverts_exactly() {
+        for s in [0i16, 1, -1, 127, 128, 255, 256, -256, 12345, -9617, i16::MAX, i16::MIN] {
+            assert_eq!(adler32_to_s16(adler32(&s.to_ne_bytes())), Some(s), "{s}");
+        }
+    }
+
+    #[test]
+    fn checksums_over_wider_planes_are_mostly_rejected() {
+        // Four bytes with a large leading byte overflow the byte range.
+        assert_eq!(adler32_to_s16(adler32(&[200, 2, 3, 4])), None);
+        assert_eq!(adler32_to_s16(0xffff_ffff), None);
+        assert_eq!(adler32_to_s16(0x0000_ffff), None);
+        // But a short plane looks like a zero byte followed by the value,
+        // which is why the parser insists on `fmt:s16p` and
+        // `nb_samples:1` rather than trusting the arithmetic alone.
+        assert_eq!(adler32_to_s16(adler32(&[7])), Some(i16::from_ne_bytes([0, 7])));
+    }
+
+    #[test]
+    fn captured_checksums_decode_to_plausible_levels() {
+        // Seen in live runs: 01BA014A → −29.35 dBFS, and 00DF00DF, whose
+        // sample has a zero low byte (bytes [0, 223]) → −25.78 dBFS.
+        let s = adler32_to_s16(0x01BA_014A).unwrap();
+        assert_eq!(s, i16::from_ne_bytes([112, 218]));
+        assert!((sample_to_db(s) - -29.35).abs() < 0.01);
+        let s = adler32_to_s16(0x00DF_00DF).unwrap();
+        assert_eq!(s, i16::from_ne_bytes([0, 223]));
+        assert!((sample_to_db(s) - -25.78).abs() < 0.01);
+    }
+
+    #[test]
+    fn sample_scaling_covers_the_floor_and_full_scale() {
+        assert_eq!(sample_to_db(0), 0.0);
+        // Negative full scale is the graph's floor, clamped to the
+        // mapper's.
+        assert_eq!(sample_to_db(i16::MIN), DB_FLOOR);
+        let minus_sixty = (-60.0 / TAP_DB_SCALE * 32768.0) as i16;
+        assert!((sample_to_db(minus_sixty) - -60.0).abs() < 0.01);
+        // Round trip through the printer's encoding.
+        let s = adler32_to_s16(encode_db(-42.5)).unwrap();
+        assert!((sample_to_db(s) - -42.5).abs() < 0.01);
+    }
+
+    // --- log-line parsing ---
+
+    /// Filter indices the two printers get in a real graph (left bank
+    /// first, so the lower one).
+    const LEFT_PRINTER: u32 = 60;
+    const RIGHT_PRINTER: u32 = 119;
+
+    /// The pieces FFmpeg writes for one bank's line: header with the
+    /// filter prefix, list opener, one checksum per plane, closer.
+    fn fragments(printer: u32, n: u64, pts: f64, db: &[f32]) -> Vec<String> {
+        let mut v = vec![format!(
+            "Parsed_ashowinfo_{printer}: n:{n} pts:{} pts_time:{pts} fmt:s16p channels:{c} chlayout:{c} channels rate:60 nb_samples:1 checksum:00000000 ",
+            n * 800,
+            c = db.len()
+        )];
+        v.push("plane_checksums: [ ".to_string());
+        for &d in db {
+            v.push(format!("{:08X} ", encode_db(d)));
+        }
+        v.push("]\n".to_string());
+        v
+    }
+
+    /// One bank's line as mpv delivers it: whole.
+    fn line(printer: u32, n: u64, pts: f64, db: &[f32]) -> String {
+        fragments(printer, n, pts, db).concat()
+    }
+
+    /// Both banks' lines for one frame, left first.
+    fn frame_lines(n: u64, pts: f64, left: &[f32], right: &[f32]) -> Vec<String> {
+        vec![
+            line(LEFT_PRINTER, n, pts, left),
+            line(RIGHT_PRINTER, n, pts, right),
+        ]
+    }
+
+    fn feed_all(p: &mut TapLineParser, lines: &[String]) -> Vec<TapFrame> {
+        let mut out = Vec::new();
+        for f in lines {
+            if let TapFeed::Frame(frame) = p.feed(f) {
+                out.push(frame);
+            }
+        }
+        out
+    }
+
+    fn close(a: &[f32], b: &[f32]) -> bool {
+        a.len() == b.len() && a.iter().zip(b).all(|(x, y)| (x - y).abs() < 0.01)
+    }
+
+    #[test]
+    fn pairs_the_two_banks_into_one_frame_left_first() {
+        let mut p = TapLineParser::new(3);
+        let lines = frame_lines(12, 0.2, &[-31.4, -29.0, -72.8], &[-40.0, -41.0, -42.0]);
+        assert_eq!(p.feed(&lines[0]), TapFeed::Consumed);
+        match p.feed(&lines[1]) {
+            TapFeed::Frame(frame) => {
+                assert!((frame.pts - 0.2).abs() < 1e-9);
+                assert!(
+                    close(&frame.db, &[-31.4, -29.0, -72.8, -40.0, -41.0, -42.0]),
+                    "{:?}",
+                    frame.db
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(p.pending.is_empty());
+    }
+
+    #[test]
+    fn right_bank_arriving_first_still_lands_on_the_right() {
+        let mut p = TapLineParser::new(2);
+        let mut lines = frame_lines(0, 1.5, &[-10.0, -11.0], &[-20.0, -21.0]);
+        lines.reverse();
+        let frames = feed_all(&mut p, &lines);
+        assert_eq!(frames.len(), 1);
+        assert!(close(&frames[0].db, &[-10.0, -11.0, -20.0, -21.0]), "{:?}", frames[0].db);
+    }
+
+    #[test]
+    fn banks_running_ahead_by_a_chunk_pair_up_in_order() {
+        // The scheduler runs one bank's chunk to completion before the
+        // other's: five left lines, then five right lines.
+        let mut p = TapLineParser::new(1);
+        let mut lines = Vec::new();
+        for n in 0..5 {
+            lines.push(line(LEFT_PRINTER, n, n as f64 / 60.0, &[-(n as f32)]));
+        }
+        for n in 0..5 {
+            lines.push(line(RIGHT_PRINTER, n, n as f64 / 60.0, &[-10.0 - n as f32]));
+        }
+        let frames = feed_all(&mut p, &lines);
+        assert_eq!(frames.len(), 5);
+        for (n, f) in frames.iter().enumerate() {
+            assert!((f.pts - n as f64 / 60.0).abs() < 1e-9);
+            assert!(close(&f.db, &[-(n as f32), -10.0 - n as f32]), "{:?}", f.db);
+        }
+        assert!(p.pending.is_empty());
+    }
+
+    #[test]
+    fn stitches_fragments_into_a_line() {
+        let mut p = TapLineParser::new(3);
+        let frags = fragments(LEFT_PRINTER, 12, 0.2, &[-31.4, -29.0, -72.8]);
+        assert_eq!(frags.len(), 6);
+        // Every fragment is swallowed; the completed line is a half
+        // waiting for its partner.
+        for f in &frags {
+            assert_eq!(p.feed(f), TapFeed::Consumed);
+        }
+        assert!(p.held.is_empty());
+        assert_eq!(p.pending.len(), 1);
+        assert!(matches!(
+            p.feed(&line(RIGHT_PRINTER, 12, 0.2, &[-1.0, -2.0, -3.0])),
+            TapFeed::Frame(_)
+        ));
+    }
+
+    #[test]
+    fn unrelated_messages_are_ignored_and_the_fragments_pass_through() {
+        let mut p = TapLineParser::new(2);
+        assert_eq!(p.feed("http: HTTP/1.1 200 OK\n"), TapFeed::Ignored);
+        assert_eq!(p.feed("Parsed_equalizer_3: something\n"), TapFeed::Ignored);
+        assert_eq!(p.feed(""), TapFeed::Ignored);
+        // A prefix-less fragment while nothing is held is not ours.
+        assert_eq!(p.feed("0123ABCD "), TapFeed::Ignored);
+    }
+
+    #[test]
+    fn printer_indices_only_need_to_be_distinct_and_ordered() {
+        let mut p = TapLineParser::new(1);
+        let lines = vec![
+            line(9, 1, 0.0166667, &[-20.0]),
+            line(4, 1, 0.0166667, &[-30.0]),
+        ];
+        let frames = feed_all(&mut p, &lines);
+        assert_eq!(frames.len(), 1);
+        // Lower index is the left channel regardless of arrival order.
+        assert!(close(&frames[0].db, &[-30.0, -20.0]));
+    }
+
+    #[test]
+    fn a_line_with_the_wrong_plane_count_is_dropped() {
+        let mut p = TapLineParser::new(3);
+        assert_eq!(p.feed(&line(LEFT_PRINTER, 0, 0.0, &[-20.0, -20.0])), TapFeed::Consumed);
+        assert_eq!(p.feed(&line(LEFT_PRINTER, 0, 0.0, &[-20.0; 4])), TapFeed::Consumed);
+        assert!(p.pending.is_empty());
+        // The parser is clean afterwards.
+        assert_eq!(
+            feed_all(&mut p, &frame_lines(1, 0.1, &[-20.0; 3], &[-20.0; 3])).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_line_of_the_wrong_shape_is_dropped() {
+        for (from, to) in [
+            ("fmt:s16p", "fmt:fltp"),
+            ("nb_samples:1", "nb_samples:4"),
+            ("pts_time:0", "pts_time:nan"),
+        ] {
+            let mut p = TapLineParser::new(1);
+            let bad = line(LEFT_PRINTER, 0, 0.0, &[-20.0]).replace(from, to);
+            assert_eq!(p.feed(&bad), TapFeed::Consumed, "{from}");
+            assert!(p.pending.is_empty(), "{from}");
+        }
+    }
+
+    #[test]
+    fn a_checksum_that_cannot_be_two_bytes_drops_the_line() {
+        for junk in ["FFFFFFFF ", "zzzz "] {
+            let mut p = TapLineParser::new(2);
+            let mut frags = fragments(LEFT_PRINTER, 0, 0.0, &[-20.0, -30.0]);
+            frags[3] = junk.to_string();
+            for f in &frags {
+                assert_eq!(p.feed(f), TapFeed::Consumed);
+            }
+            assert!(p.pending.is_empty(), "{junk}");
+        }
+    }
+
+    #[test]
+    fn an_interleaved_message_costs_one_line_then_recovers() {
+        let mut p = TapLineParser::new(2);
+        let frags = fragments(LEFT_PRINTER, 0, 0.0, &[-20.0, -30.0]);
+        // Header and opener arrive, then another FFmpeg message lands
+        // mid-line with its own newline.
+        p.feed(&frags[0]);
+        p.feed(&frags[1]);
+        assert_eq!(p.feed("Parsed_equalizer_3: reconfigured\n"), TapFeed::Consumed);
+        assert!(p.held.is_empty());
+        // The rest of the line's fragments are now orphans (no prefix).
+        for f in &frags[2..] {
+            assert_eq!(p.feed(f), TapFeed::Ignored);
+        }
+        // The right bank's line for that frame waits alone, and the next
+        // frame pairs normally.
+        assert_eq!(p.feed(&line(RIGHT_PRINTER, 0, 0.0, &[-1.0, -2.0])), TapFeed::Consumed);
+        let next = frame_lines(1, 0.0166667, &[-20.0, -30.0], &[-1.0, -2.0]);
+        assert_eq!(feed_all(&mut p, &next).len(), 1);
+    }
+
+    #[test]
+    fn a_runaway_line_is_dropped_and_its_tail_forwarded() {
+        let mut p = TapLineParser::new(1);
+        p.feed("Parsed_ashowinfo_1: n:0 ");
+        let mut results = Vec::new();
+        for _ in 0..200 {
+            results.push(p.feed(&"x".repeat(64)));
+            assert!(p.held.len() <= MAX_TAP_LINE);
+        }
+        // Held while under the cap, then dropped; the remaining pieces are
+        // ordinary log text again.
+        assert_eq!(results[0], TapFeed::Consumed);
+        assert_eq!(*results.last().unwrap(), TapFeed::Ignored);
+        assert!(p.held.is_empty());
+        assert_eq!(feed_all(&mut p, &frame_lines(1, 0.5, &[-20.0], &[-20.0])).len(), 1);
+    }
+
+    #[test]
+    fn side_data_lines_are_consumed() {
+        let mut p = TapLineParser::new(1);
+        assert_eq!(
+            p.feed("Parsed_ashowinfo_75:   side data - replaygain: track gain ...\n"),
+            TapFeed::Consumed
+        );
+        assert!(p.pending.is_empty());
+    }
+
+    #[test]
+    fn levels_below_the_mapper_floor_clamp() {
+        let mut p = TapLineParser::new(2);
+        let frames = feed_all(
+            &mut p,
+            &frame_lines(0, 0.0, &[TAP_DB_FLOOR, -200.0], &[-95.0, -100.0]),
+        );
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].db, vec![DB_FLOOR, DB_FLOOR, DB_FLOOR, DB_FLOOR]);
+    }
+
+    #[test]
+    fn seek_produces_a_new_timeline_immediately() {
+        let mut p = TapLineParser::new(1);
+        let mut lines = frame_lines(600, 10.0, &[-20.0], &[-20.0]);
+        lines.extend(frame_lines(0, 60.0, &[-20.0], &[-20.0]));
+        let frames = feed_all(&mut p, &lines);
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[1].pts, 60.0);
+    }
+
+    #[test]
+    fn a_forward_seek_drops_halves_left_waiting_from_the_old_timeline() {
+        let mut p = TapLineParser::new(1);
+        // Left printed frames at 10.0 and 10.0167 s; the right bank's
+        // lines were lost; then the stream restarts at 60 s.
+        p.feed(&line(LEFT_PRINTER, 600, 10.0, &[-20.0]));
+        p.feed(&line(LEFT_PRINTER, 601, 10.0166667, &[-20.0]));
+        assert_eq!(p.pending.len(), 2);
+        assert_eq!(p.feed(&line(LEFT_PRINTER, 0, 60.0, &[-20.0])), TapFeed::Consumed);
+        assert_eq!(p.pending.len(), 1);
+        // A straggling right half for 10.0 is queued alone and must not
+        // evict the fresh left half.
+        assert_eq!(p.feed(&line(RIGHT_PRINTER, 600, 10.0, &[-20.0])), TapFeed::Consumed);
+        assert_eq!(p.pending.len(), 2);
+        assert!(matches!(
+            p.feed(&line(RIGHT_PRINTER, 0, 60.0, &[-21.0])),
+            TapFeed::Frame(f) if f.pts == 60.0
+        ));
+        // And the straggler went with the pairing.
+        assert!(p.pending.is_empty());
+    }
+
+    #[test]
+    fn a_backward_seek_still_pairs_the_new_timeline() {
+        let mut p = TapLineParser::new(1);
+        // Unpaired halves from 60 s linger; the stream restarts at 10 s.
+        p.feed(&line(LEFT_PRINTER, 0, 60.0, &[-20.0]));
+        p.feed(&line(LEFT_PRINTER, 1, 60.0166667, &[-20.0]));
+        let frames = feed_all(&mut p, &frame_lines(0, 10.0, &[-1.0], &[-2.0]));
+        assert_eq!(frames.len(), 1);
+        assert!(close(&frames[0].db, &[-1.0, -2.0]));
+        // The leftovers are newer than anything that follows, so they
+        // only leave through the queue cap.
+        assert_eq!(p.pending.len(), 2);
+        for n in 1..=(MAX_PENDING_HALVES as u64) {
+            p.feed(&line(LEFT_PRINTER, n, 10.0 + n as f64 / 60.0, &[-20.0]));
+        }
+        assert!(p.pending.iter().all(|h| h.pts < 60.0));
+    }
+
+    #[test]
+    fn a_half_whose_partner_never_comes_ages_out() {
+        let mut p = TapLineParser::new(1);
+        for n in 0..(MAX_PENDING_HALVES as u64 + 10) {
+            assert_eq!(
+                p.feed(&line(LEFT_PRINTER, n, n as f64 / 60.0, &[-20.0])),
+                TapFeed::Consumed
+            );
+            assert!(p.pending.len() <= MAX_PENDING_HALVES);
+        }
+        // The oldest were dropped; the newest still pairs.
+        let newest = MAX_PENDING_HALVES as u64 + 9;
+        assert!(matches!(
+            p.feed(&line(RIGHT_PRINTER, newest, newest as f64 / 60.0, &[-30.0])),
+            TapFeed::Frame(_)
+        ));
+        assert!(matches!(
+            p.feed(&line(RIGHT_PRINTER, 0, 0.0, &[-30.0])),
+            TapFeed::Consumed
+        ));
+    }
+
+    #[test]
+    fn a_duplicate_half_replaces_the_held_one() {
+        let mut p = TapLineParser::new(1);
+        p.feed(&line(LEFT_PRINTER, 0, 0.0, &[-20.0]));
+        p.feed(&line(LEFT_PRINTER, 0, 0.0, &[-25.0]));
+        assert_eq!(p.pending.len(), 1);
+        let frames = feed_all(&mut p, &[line(RIGHT_PRINTER, 0, 0.0, &[-30.0])]);
+        assert_eq!(frames.len(), 1);
+        assert!(close(&frames[0].db, &[-25.0, -30.0]));
+    }
+
+    // --- level mapping ---
+
+    #[test]
+    fn silence_maps_to_zero() {
+        let mut m = LevelMapper::new(60);
+        let out = m.map(&[DB_FLOOR, f32::NEG_INFINITY, f32::NAN, -200.0]);
+        assert_eq!(out, vec![0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn a_louder_frame_re_anchors_the_peak_instantly() {
+        let mut m = LevelMapper::new(60);
+        assert_eq!(m.peak_db(), PEAK_SEED_DB);
+        let out = m.map(&[-5.0, -40.0]);
+        assert_eq!(m.peak_db(), -5.0);
+        // The peak itself sits PEAK_HEADROOM_DB below the ceiling, so it
+        // is bright but not saturated; the quiet band is dim.
+        assert!(out[0] > 240 && out[0] < 255, "{}", out[0]);
+        assert!(out[1] > 0 && out[1] < out[0]);
+    }
+
+    #[test]
+    fn at_or_above_ceiling_saturates() {
+        let mut m = LevelMapper::new(60);
+        m.map(&[-10.0]);
+        // Anything at ceiling or above (impossible in practice: the peak
+        // would move) maps to 255 via the clamp.
+        let ceiling = m.peak_db() + PEAK_HEADROOM_DB;
+        let floor = ceiling - DYNAMIC_RANGE_DB;
+        assert_eq!(quantise_db_range(ceiling, floor, ceiling), 255);
+        assert_eq!(quantise_db_range(floor, floor, ceiling), 0);
+    }
+
+    #[test]
+    fn peak_decays_toward_the_frame_max_at_the_configured_rate() {
+        let fps = 60;
+        let mut m = LevelMapper::new(fps);
+        m.map(&[-10.0]);
+        // One second of a much quieter frame: peak should have fallen by
+        // PEAK_DECAY_DB_PER_SEC, not snapped to the new frame.
+        for _ in 0..fps {
+            m.map(&[-50.0]);
+        }
+        let expected = -10.0 - PEAK_DECAY_DB_PER_SEC;
+        assert!((m.peak_db() - expected).abs() < 1e-3, "{}", m.peak_db());
+    }
+
+    #[test]
+    fn peak_never_decays_below_the_frame_max_or_the_floor() {
+        let mut m = LevelMapper::new(60);
+        m.map(&[-10.0]);
+        for _ in 0..600 {
+            m.map(&[-30.0]);
+        }
+        assert!((m.peak_db() - -30.0).abs() < 1e-3);
+        for _ in 0..6000 {
+            m.map(&[-100.0]);
+        }
+        assert!((m.peak_db() - PEAK_FLOOR_DB).abs() < 1e-3);
+        // A band far below the floor stays dark even under maximal gain.
+        let out = m.map(&[-100.0, PEAK_FLOOR_DB]);
+        assert_eq!(out[0], 0);
+        assert!(out[1] > 200);
+    }
+
+    #[test]
+    fn quiet_intro_renders_at_a_moderate_height_from_the_seed() {
+        let mut m = LevelMapper::new(60);
+        let out = m.map(&[-50.0]);
+        assert!(out[0] > 100 && out[0] < 200, "{}", out[0]);
+    }
+
+    #[test]
+    fn reset_restores_the_seed() {
+        let mut m = LevelMapper::new(60);
+        m.map(&[-3.0]);
+        m.reset();
+        assert_eq!(m.peak_db(), PEAK_SEED_DB);
+    }
+
+    #[test]
+    fn output_length_matches_input() {
+        let mut m = LevelMapper::default();
+        assert_eq!(m.map(&[]).len(), 0);
+        assert_eq!(m.map(&[-20.0; 128]).len(), 128);
+    }
+
+    #[test]
+    fn the_running_peak_is_shared_across_both_channels() {
+        // A loud left channel sets the window for the right channel too,
+        // so a panned instrument reads as louder on one side rather than
+        // being scaled up to match.
+        let mut m = LevelMapper::new(60);
+        let out = m.map(&[-5.0, -5.0, -50.0, -50.0]);
+        assert_eq!(m.peak_db(), -5.0);
+        assert!(out[0] > 240);
+        assert!(out[2] < out[0] / 2, "{:?}", out);
+    }
+
+    #[test]
+    fn spectrum_frame_serialises_camel_case() {
+        let f = SpectrumFrame {
+            pos: 1.5,
+            bands: vec![1, 2],
+        };
+        let s = serde_json::to_string(&f).unwrap();
+        assert_eq!(s, r#"{"pos":1.5,"bands":[1,2]}"#);
+    }
+}

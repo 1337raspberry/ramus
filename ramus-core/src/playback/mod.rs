@@ -6,5 +6,6 @@ pub mod player;
 pub mod queue_store;
 pub mod session;
 pub mod spectrum;
+pub mod spectrum_tap;
 pub mod transcode;
 pub mod waveform;

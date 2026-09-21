@@ -78,6 +78,25 @@ pub fn emit_spectrum_ready(app: &AppHandle, rating_key: impl Into<String>) {
     let _ = app.emit("spectrum-ready", payload);
 }
 
+/// A batch of live spectrum frames from the `--af` tap, already mapped
+/// onto the track timeline and quantised to bar heights. Each frame holds
+/// `band_count` values per channel, `channels` channels in order (left,
+/// right). Frames lead the reported playback position by up to mpv's
+/// `audio-buffer`; the frontend keeps a short position-keyed ring and
+/// picks the frame for the current position on each paint.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpectrumFramesPayload {
+    pub band_count: u32,
+    pub channels: u32,
+    pub frames: Vec<ramus_core::playback::spectrum_tap::SpectrumFrame>,
+}
+
+/// Emit `spectrum-frames`. Called from the mpv event-loop thread.
+pub fn emit_spectrum_frames(app: &AppHandle, payload: SpectrumFramesPayload) {
+    let _ = app.emit("spectrum-frames", payload);
+}
+
 /// Notifies the frontend that a background warm just landed a metadata
 /// artefact on disk — a waveform sidecar (`kind: "waveform"`, carries
 /// `ratingKey`) or cached album art (`kind: "art"`, carries `thumb`).

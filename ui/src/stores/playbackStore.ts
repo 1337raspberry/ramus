@@ -1,32 +1,24 @@
 import { create } from "zustand";
-import type {
-  Album,
-  LyricsResult,
-  LyricsStatus,
-  SpectrumState,
-  Track,
-  UltraBlurColors,
-} from "../lib/types";
+import type { Album, LyricsResult, LyricsStatus, Track, UltraBlurColors } from "../lib/types";
 import { accentFromPalette, blurColorsFromPalette, type VibrantPalette } from "../lib/vibrantColor";
 import { applyAccent } from "../lib/accent";
+import { clearSpectrumRing } from "../lib/spectrumRing";
 
 /**
  * Focus-mode visualiser rendering mode.
  *
  * - `"off"`  — viz is unmounted, RAF loop stops
- * - `"bars"` — 256-bar mirrored spectrum, bass centred, treble at edges
- * - `"line"` — smoothed averaged curve filled from the top edge down
+ * - `"bars"` — one bar per tap band, mirrored: bass centred, treble at edges
  *
- * Cycled via `cycleVisualizerMode`.
+ * Toggled via `cycleVisualizerMode`.
  */
-export type VisualizerMode = "off" | "bars" | "line";
+export type VisualizerMode = "off" | "bars";
 import {
   getVolume,
   setVolume as setVolumeCmd,
   seek as seekCmd,
   fetchLyrics,
   getWaveform,
-  getSpectrum,
   getQueue,
   getAlbum,
   getAlbumGenres,
@@ -79,29 +71,19 @@ interface PlaybackState {
 
   // --- Focus mode ---
   isFocusMode: boolean;
-  // Session-only; resets to `"bars"` on reload. Cycled bars → line → off.
+  // Session-only; resets to `"bars"` on reload. Toggled bars ↔ off.
   visualizerMode: VisualizerMode;
 
-  // --- Focus-mode FFT spectrogram ---
-  //
-  // Precomputed per-track bands from symphonia + realfft in Rust.
-  // Hydrated on track change and on every `spectrum-ready` event.
-  // FocusVisualizer reads this via getState() inside a RAF loop to avoid
-  // re-renders on every 60fps tick. Do not subscribe via a React selector.
-  //
-  // `null` = never fetched for the current track. `"analysing"` = backend
-  // hasn't finished analysis; viz shows a placeholder. `{ ready }` = viz
-  // draws bars at the current position lookup.
-  spectrumState: SpectrumState | null;
+  // `performance.now()` when `position` was last written (a position tick
+  // or a seek). Lets the focus visualiser extrapolate the playhead between
+  // ticks: `position + (now - positionAt) / 1000` while playing. The live
+  // spectrum frames themselves live in `lib/spectrumRing.ts`, not here.
+  positionAt: number;
 
   // --- Event Handlers ---
   onPlaybackState: (status: string, track: Track | null, queueIndex: number) => void;
   onPlaybackPosition: (position: number, duration: number) => void;
   setBuffering: (buffering: boolean) => void;
-  /// Called on `spectrum-ready` events from Rust and on track change to
-  /// hydrate from the cache. Safe to call unconditionally; it only invokes
-  /// `getSpectrum` when there is a current track.
-  refreshSpectrum: (forRatingKey?: string) => void;
   /// Re-fetch the current track's waveform when it's still missing — called
   /// on `metadata-warmed` (a background warm just landed the sidecar) and on
   /// connection recovery. No-op when levels are already loaded, when
@@ -149,14 +131,10 @@ function activeLineIndex(lyrics: LyricsResult, position: number): number {
 
 export { activeLineIndex };
 
-// Monotonic generation counter for async spectrum refreshes. In-flight
-// `getSpectrum` invokes compare against the captured value and drop their
-// result if the track has changed.
-let spectrumGen = 0;
-
-// Same idea for lyrics: a slow `fetchLyrics` (now with retries) for the
-// outgoing track must not overwrite the incoming track's lyrics. Bumped on
-// every track change; each `loadLyrics` captures it and drops a stale result.
+// Generation counter for lyrics: a slow `fetchLyrics` (now with retries)
+// for the outgoing track must not overwrite the incoming track's lyrics.
+// Bumped on every track change; each `loadLyrics` captures it and drops a
+// stale result.
 let lyricsGen = 0;
 
 // --- UltraBlur write gate ---
@@ -232,20 +210,21 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   isFocusMode: false,
   visualizerMode: "bars",
-  spectrumState: null,
+  positionAt: 0,
 
   onPlaybackState: (status, track, queueIndex) => {
     const prev = get().currentTrack;
     const trackChanged = track?.ratingKey !== prev?.ratingKey;
 
-    // Invalidate in-flight spectrum + lyrics refreshes so stale data from the
-    // previous track cannot land on the new one. UltraBlur colours reset per
-    // ALBUM, not per track: on a same-album track change the art (and the
-    // views' lastAccentThumb guard) is unchanged, so extraction never
-    // re-runs — reopening the gate would just let the coarser instant-paint
-    // colours displace the landed art-derived ones mid-album.
+    // Invalidate the in-flight lyrics refresh so stale data from the previous
+    // track cannot land on the new one, and drop the previous track's live
+    // spectrum frames. UltraBlur colours reset per ALBUM, not per track: on
+    // a same-album track change the art (and the views' lastAccentThumb
+    // guard) is unchanged, so extraction never re-runs — reopening the gate
+    // would just let the coarser instant-paint colours displace the landed
+    // art-derived ones mid-album.
     if (trackChanged) {
-      spectrumGen += 1;
+      clearSpectrumRing();
       lyricsGen += 1;
       if (track?.albumKey !== prev?.albumKey) resetUltraBlurGate();
     }
@@ -256,7 +235,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       queueIndex,
       // Seed duration from Plex metadata so the waveform and seek bar are
       // functional before mpv's first time-pos tick.
-      ...(trackChanged ? { position: 0, duration: track?.duration ?? 0 } : {}),
+      ...(trackChanged
+        ? { position: 0, duration: track?.duration ?? 0, positionAt: performance.now() }
+        : {}),
     });
 
     if (trackChanged && track) {
@@ -270,11 +251,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         // scanner (a failover reload never reaches here; it's suppressed).
         isBuffering: false,
       });
-
-      // Do NOT clear `spectrumState` here. `refreshSpectrum` debounces
-      // the "analysing" placeholder, and for cached tracks the fetch
-      // resolves in ~20-80 ms so the placeholder never renders.
-      get().refreshSpectrum(track.ratingKey);
 
       getWaveform(track.ratingKey)
         .then((levels) => {
@@ -348,51 +324,12 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
 
   onPlaybackPosition: (position, duration) => {
-    set({ position, duration });
+    set({ position, duration, positionAt: performance.now() });
   },
 
   setBuffering: (buffering) => {
     // Guard so an idempotent write doesn't churn subscribers each watchdog tick.
     if (get().isBuffering !== buffering) set({ isBuffering: buffering });
-  },
-
-  refreshSpectrum: (forRatingKey) => {
-    const current = get().currentTrack;
-    if (!current) return;
-    if (forRatingKey && forRatingKey !== current.ratingKey) {
-      // Event is for a different track (likely a prefetch). Its state
-      // will hydrate when it starts playing.
-      return;
-    }
-
-    const gen = spectrumGen;
-    const ratingKey = current.ratingKey;
-
-    // Debounced placeholder: only flip to "analysing" after 120 ms.
-    // Cached `.spec` files resolve in ~50 ms, so debouncing avoids a
-    // placeholder flash during bar-to-bar transitions. Cold analysis
-    // (first play or slow decode) still gets visual feedback below
-    // the "app is frozen" perception threshold.
-    const placeholderTimer = window.setTimeout(() => {
-      if (gen !== spectrumGen) return;
-      set({ spectrumState: "analysing" });
-    }, 120);
-
-    getSpectrum(ratingKey)
-      .then((state) => {
-        clearTimeout(placeholderTimer);
-        // Drop stale results if the track changed during the await. The
-        // gen check beats `current.ratingKey` because replay/queue reload
-        // could reuse the same key.
-        if (gen !== spectrumGen) return;
-        set({ spectrumState: state });
-      })
-      .catch((err) => {
-        clearTimeout(placeholderTimer);
-        if (gen !== spectrumGen) return;
-        console.warn("[spectrum] getSpectrum failed:", err);
-        set({ spectrumState: { unavailable: { reason: "Failed to load spectrum data" } } });
-      });
   },
 
   refreshWaveform: (forRatingKey) => {
@@ -415,7 +352,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   seek: (seconds) => {
     seekCmd(seconds).catch(() => {});
-    set({ position: seconds });
+    set({ position: seconds, positionAt: performance.now() });
   },
 
   seekFraction: (fraction) => {
@@ -423,7 +360,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     if (dur > 0) {
       const seconds = fraction * dur;
       seekCmd(seconds).catch(() => {});
-      set({ position: seconds });
+      set({ position: seconds, positionAt: performance.now() });
     }
   },
 
@@ -484,8 +421,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   cycleVisualizerMode: () =>
     set((s) => {
-      const next: VisualizerMode =
-        s.visualizerMode === "bars" ? "line" : s.visualizerMode === "line" ? "off" : "bars";
+      const next: VisualizerMode = s.visualizerMode === "bars" ? "off" : "bars";
       return { visualizerMode: next };
     }),
 
@@ -514,7 +450,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     clearQueueCmd().catch(() => {});
     // Same reset the `!track` branch of onPlaybackState performs, applied up
     // front so the UI empties on the tap rather than on the IPC round-trip.
-    spectrumGen += 1;
+    clearSpectrumRing();
     lyricsGen += 1;
     resetUltraBlurGate();
     set({
@@ -530,7 +466,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       lyricsLoading: false,
       showLyrics: false,
       waveformLevels: null,
-      spectrumState: null,
       currentGenres: [],
       nowPlayingAlbum: null,
       vibrantPalette: null,

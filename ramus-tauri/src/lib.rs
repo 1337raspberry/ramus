@@ -311,6 +311,7 @@ pub fn create_mpv_player(
     let app4 = app_handle.clone();
     let app5 = app_handle.clone();
     let app6 = app_handle.clone();
+    let app7 = app_handle.clone();
 
     // `mc_reanchor` is moved into `on_position_change`; clone it for the
     // file-ended recovery path, which arms the same re-anchor.
@@ -336,6 +337,7 @@ pub fn create_mpv_player(
     let pr5 = player_ref.clone();
     let pr6 = player_ref.clone();
     let pr7 = player_ref.clone();
+    let pr8 = player_ref.clone();
 
     // Deferred session reporter; populated after player construction.
     let reporter_ref: ReporterRef = Arc::new(parking_lot::Mutex::new(None));
@@ -427,6 +429,28 @@ pub fn create_mpv_player(
                         mc.update_metadata(&meta);
                     }
                 }
+            }
+        })),
+        on_spectrum_frames: Some(Box::new(move |frames| {
+            // Runs on the mpv event-loop thread. Remap + quantise under one
+            // player lock, then a single emit per batch. Nothing here is
+            // spawned, so the async-runtime rule for mpv callbacks doesn't
+            // apply.
+            if let Some(ref p) = *pr8.lock() {
+                let mapped = p.map_tap_frames(frames);
+                if mapped.is_empty() {
+                    return;
+                }
+                crate::events::emit_spectrum_frames(
+                    &app7,
+                    crate::events::SpectrumFramesPayload {
+                        band_count: ramus_core::playback::spectrum_tap::TapConfig::default()
+                            .normalised()
+                            .bands as u32,
+                        channels: ramus_core::playback::spectrum_tap::TAP_CHANNELS as u32,
+                        frames: mapped,
+                    },
+                );
             }
         })),
         on_playlist_pos_change: Some(Box::new(move |pos| {
@@ -1680,7 +1704,7 @@ pub fn run() {
             commands::playback::get_debug_info,
             commands::playback::foreground_resync,
             // spectrum (focus-mode visualiser)
-            commands::spectrum::get_spectrum,
+            commands::spectrum::set_spectrum_tap,
             // search
             commands::search::search,
             commands::search::search_albums_for_grid,
