@@ -1,0 +1,292 @@
+import { useEffect, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { usePlaybackStore } from "../stores/playbackStore";
+import {
+  TUNING_DEFAULTS,
+  resetTuning,
+  setTuningValue,
+  tuningSnapshot,
+  useTuning,
+  type FocusVizTuning,
+} from "./focusVizTuning";
+
+/**
+ * Development-only tuning panel for the focus-mode visualiser.
+ *
+ * `install()` mounts this in its own React root beside the app's, so no
+ * production component knows it exists. The panel is toggled with the
+ * backtick key while focus mode is open. Bar values go straight to the
+ * object the paint loop reads (see ./focusVizTuning); art values are
+ * applied by an injected stylesheet that overrides the focus-mode rules,
+ * and the panel's own styles are injected the same way, so styles.css
+ * carries nothing for this either.
+ */
+
+interface ControlSpec {
+  key: keyof FocusVizTuning;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  /** Decimal places shown in the readout. */
+  digits: number;
+}
+
+interface SectionSpec {
+  title: string;
+  controls: ControlSpec[];
+}
+
+const SECTIONS: SectionSpec[] = [
+  {
+    title: "Album art",
+    controls: [
+      { key: "artScale", label: "Scale", min: 0.25, max: 1, step: 0.01, digits: 2 },
+      { key: "artOpacity", label: "Opacity", min: 0, max: 1, step: 0.01, digits: 2 },
+      { key: "artOffsetY", label: "Vertical", min: -0.5, max: 0.5, step: 0.01, digits: 2 },
+      { key: "artColumn", label: "Column (fr)", min: 0.5, max: 2, step: 0.05, digits: 2 },
+    ],
+  },
+  {
+    title: "Bars",
+    controls: [
+      { key: "barMaxHeight", label: "Max height", min: 0.05, max: 1, step: 0.01, digits: 2 },
+      { key: "barSpan", label: "Span", min: 0.2, max: 1, step: 0.01, digits: 2 },
+      { key: "barGap", label: "Gap px", min: 0, max: 8, step: 0.5, digits: 1 },
+      { key: "barAlpha", label: "Alpha", min: 0, max: 1, step: 0.01, digits: 2 },
+      { key: "barTipOpacity", label: "Tip opacity", min: 0, max: 1, step: 0.01, digits: 2 },
+      { key: "easeAttack", label: "Attack", min: 0.05, max: 1, step: 0.01, digits: 2 },
+      { key: "easeDecay", label: "Decay", min: 0.05, max: 1, step: 0.01, digits: 2 },
+    ],
+  },
+  {
+    title: "Level curve",
+    controls: [
+      { key: "gamma", label: "Gamma", min: 0.25, max: 4, step: 0.05, digits: 2 },
+      { key: "floorCut", label: "Floor cut", min: 0, max: 0.9, step: 0.01, digits: 2 },
+      { key: "gain", label: "Gain", min: 0.5, max: 3, step: 0.05, digits: 2 },
+    ],
+  },
+];
+
+const PANEL_CSS = `
+.fv-debug {
+  position: fixed;
+  top: 44px;
+  right: 16px;
+  z-index: 600;
+  width: 320px;
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(10, 10, 14, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: var(--text-primary);
+  font-size: 12px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.fv-debug-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.fv-debug-title {
+  flex: 1;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.fv-debug-head button {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.fv-debug-head button:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.fv-debug-section {
+  margin-top: 8px;
+}
+.fv-debug-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.fv-debug-row {
+  display: grid;
+  grid-template-columns: 84px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.fv-debug-row input[type="range"] {
+  width: 100%;
+  margin: 0;
+  accent-color: rgb(var(--accent-r, 120), var(--accent-g, 90), var(--accent-b, 220));
+}
+.fv-debug-label {
+  color: var(--text-secondary, var(--text-muted));
+}
+.fv-debug-row.is-changed .fv-debug-label {
+  color: var(--text-primary);
+}
+.fv-debug-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.fv-debug-row.is-changed .fv-debug-value {
+  color: rgb(var(--accent-r, 120), var(--accent-g, 90), var(--accent-b, 220));
+}
+.fv-debug-hint {
+  margin-top: 10px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+`;
+
+/**
+ * Overrides for the focus-mode art rules in styles.css. The custom
+ * property and the two direct properties are the ones the shipped rules
+ * set; `!important` keeps these ahead regardless of stylesheet order.
+ */
+function artCss(t: FocusVizTuning): string {
+  return `
+.focus-art-container {
+  --art-scale: ${t.artScale} !important;
+  opacity: ${t.artOpacity} !important;
+  transform: translate(-50%, calc(-50% + ${t.artOffsetY * 100}%)) !important;
+}
+.focus-body {
+  grid-template-columns: ${t.artColumn}fr 1fr !important;
+}
+`;
+}
+
+function styleElement(id: string): HTMLStyleElement {
+  let el = document.getElementById(id) as HTMLStyleElement | null;
+  if (!el) {
+    el = document.createElement("style");
+    el.id = id;
+    document.head.appendChild(el);
+  }
+  return el;
+}
+
+function isEditable(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
+}
+
+function Host() {
+  const inFocus = usePlaybackStore((s) => s.isFocusMode);
+  const [open, setOpen] = useState(false);
+  const tuning = useTuning();
+
+  // The art overrides stay installed whether or not the panel is showing,
+  // so a saved tuning applies as soon as focus mode opens.
+  useEffect(() => {
+    styleElement("fv-debug-art").textContent = artCss(tuning);
+  }, [tuning]);
+
+  useEffect(() => {
+    if (!inFocus) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "`" || e.metaKey || e.ctrlKey || e.altKey || isEditable(e.target)) return;
+      e.preventDefault();
+      setOpen((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [inFocus]);
+
+  if (!inFocus || !open) return null;
+  return <Panel tuning={tuning} onClose={() => setOpen(false)} />;
+}
+
+function Panel({ tuning, onClose }: { tuning: FocusVizTuning; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    const json = JSON.stringify(tuningSnapshot(), null, 2);
+    console.log(`[focus-viz tuning]\n${json}`);
+    navigator.clipboard
+      ?.writeText(json)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      })
+      .catch(() => {});
+  };
+
+  return (
+    <div
+      className="fv-debug"
+      // Keys pressed inside the panel (arrows on a slider, space) must not
+      // reach the app-wide shortcuts.
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <div className="fv-debug-head">
+        <span className="fv-debug-title">Visualiser tuning</span>
+        <button type="button" onClick={copy}>
+          {copied ? "Copied" : "Copy JSON"}
+        </button>
+        <button type="button" onClick={resetTuning}>
+          Reset
+        </button>
+        <button type="button" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+      </div>
+      {SECTIONS.map((section) => (
+        <div className="fv-debug-section" key={section.title}>
+          <div className="fv-debug-section-title">{section.title}</div>
+          {section.controls.map((c) => {
+            const value = tuning[c.key];
+            const isDefault = value === TUNING_DEFAULTS[c.key];
+            return (
+              <label className={`fv-debug-row${isDefault ? "" : " is-changed"}`} key={c.key}>
+                <span className="fv-debug-label">{c.label}</span>
+                <input
+                  type="range"
+                  min={c.min}
+                  max={c.max}
+                  step={c.step}
+                  value={value}
+                  onChange={(e) => setTuningValue(c.key, Number(e.target.value))}
+                  onDoubleClick={() => setTuningValue(c.key, TUNING_DEFAULTS[c.key])}
+                />
+                <span className="fv-debug-value">{value.toFixed(c.digits)}</span>
+              </label>
+            );
+          })}
+        </div>
+      ))}
+      <div className="fv-debug-hint">` toggles · double-click a slider to reset it</div>
+    </div>
+  );
+}
+
+/** Mount the panel host in its own root and inject its styles. */
+export function install(): void {
+  if (document.getElementById("fv-debug-root")) return;
+  styleElement("fv-debug-panel").textContent = PANEL_CSS;
+  const host = document.createElement("div");
+  host.id = "fv-debug-root";
+  document.body.appendChild(host);
+  createRoot(host).render(<Host />);
+}
