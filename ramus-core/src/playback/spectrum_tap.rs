@@ -42,9 +42,10 @@ use serde::Serialize;
 ///
 /// Each band is one `bandpass` biquad plus one channel through a bank's
 /// envelope chain, and there is a bank per stereo channel. The whole tap
-/// measures around 9 % of one core at 64 bands per channel and 60 fps,
-/// only while the visualiser is mounted. 64 is also `MAX_TAP_BANDS`: a
-/// bank's resampler refuses more channels.
+/// measures around 11 % of one core at 64 bands per channel and 60 fps,
+/// or 17 % where the main-path cut is needed (`tap_probe_cost`), only
+/// while the visualiser is mounted. 64 is also `MAX_TAP_BANDS`: a bank's
+/// resampler refuses more channels.
 pub const DEFAULT_TAP_BANDS: usize = 64;
 
 /// Channels the tap analyses: one bank each for left and right. The side
@@ -59,6 +60,27 @@ pub const DEFAULT_TAP_FPS: u32 = 60;
 /// Upper bound on the frame rate the graph is asked for: past this the
 /// envelope resampler and the log transport only cost more.
 pub const MAX_TAP_FPS: u32 = 120;
+
+/// Frame size the main path is cut into before the tap splits off it,
+/// on FFmpeg builds older than 8.0 (`TapConfig::cut_main_path`).
+///
+/// libavfilter advances the side branch only while it drains the graph
+/// after each input frame, and before 8.0 that drain stops at the first
+/// filter reporting an empty source, which leaves the side branch's
+/// frame cutter (`asetnsamples`) one emitted frame per input frame. The
+/// tap then cannot produce more frames per second than the decoder
+/// hands mpv (43 for a 44.1 kHz source in 1024-sample frames, far fewer
+/// for a FLAC block), falls behind at a fixed pace and never recovers.
+/// FFmpeg 8.0's drain skips that condition and empties the branch. On
+/// the older builds, cutting the main path into frames this small keeps
+/// the input rate above `DEFAULT_TAP_FPS` for any source at 32 kHz or
+/// more (below that the tap falls behind; the audio is fine). Smaller
+/// frames would cover lower rates but every filter in both paths then
+/// runs per frame: 256 costs the tap almost twice what 512 does. The
+/// audio is untouched (frames are re-cut, not padded: `p=0`), so gapless
+/// playback is unaffected, and the cut only exists while the tap is
+/// installed.
+pub const MAIN_FRAME_SAMPLES: usize = 512;
 
 /// Sample rate the side branch is forced to. The main path is never
 /// resampled; hi-res sources are analysed at 48 kHz, which is plenty for
@@ -180,6 +202,11 @@ pub struct TapConfig {
     /// Frames per second (`1..=MAX_TAP_FPS`): the envelope is resampled
     /// to exactly this rate.
     pub fps: u32,
+    /// Cut the main path into `MAIN_FRAME_SAMPLES` frames ahead of the
+    /// split. Needed on FFmpeg builds older than 8.0 (see the constant);
+    /// a needless cost everywhere else, so it is off by default and the
+    /// player turns it on from what its libmpv reports.
+    pub cut_main_path: bool,
 }
 
 impl Default for TapConfig {
@@ -187,6 +214,7 @@ impl Default for TapConfig {
         Self {
             bands: DEFAULT_TAP_BANDS,
             fps: DEFAULT_TAP_FPS,
+            cut_main_path: false,
         }
     }
 }
@@ -198,6 +226,7 @@ impl TapConfig {
         Self {
             bands: self.bands.clamp(MIN_TAP_BANDS, MAX_TAP_BANDS),
             fps: self.fps.clamp(1, MAX_TAP_FPS),
+            cut_main_path: self.cut_main_path,
         }
     }
 
@@ -308,7 +337,12 @@ pub fn tap_graph(cfg: &TapConfig) -> String {
     let freqs = band_frequencies(&cfg);
 
     let mut g = String::with_capacity(256 + TAP_CHANNELS * n * 64);
-    g.push_str("[in]asplit=2[main][side];");
+    if cfg.cut_main_path {
+        g.push_str(&format!("[in]asetnsamples=n={MAIN_FRAME_SAMPLES}:p=0,"));
+        g.push_str("asplit=2[main][side];");
+    } else {
+        g.push_str("[in]asplit=2[main][side];");
+    }
     g.push_str(&format!(
         "[side]aformat=channel_layouts=stereo:sample_fmts=fltp:sample_rates={TAP_SAMPLE_RATE},\
          channelsplit=channel_layout=stereo[l][r];"
@@ -711,7 +745,11 @@ mod tests {
     }
 
     fn cfg(bands: usize) -> TapConfig {
-        TapConfig { bands, fps: 60 }
+        TapConfig {
+            bands,
+            fps: 60,
+            cut_main_path: false,
+        }
     }
 
     // --- graph generation ---
@@ -753,7 +791,12 @@ mod tests {
     #[test]
     fn frame_rate_sets_the_envelope_resample_rate() {
         assert!(tap_graph(&cfg(48)).contains("aresample=60:"));
-        assert!(tap_graph(&TapConfig { bands: 48, fps: 30 }).contains("aresample=30:"));
+        let c = TapConfig {
+            bands: 48,
+            fps: 30,
+            cut_main_path: false,
+        };
+        assert!(tap_graph(&c).contains("aresample=30:"));
     }
 
     /// Prints the default graph so it can be pasted into an mpv CLI run
@@ -831,6 +874,27 @@ mod tests {
     }
 
     #[test]
+    fn main_path_is_cut_only_when_asked() {
+        // Off by default: the cut is a cost the player only pays on FFmpeg
+        // builds whose graph drain leaves the side branch behind.
+        let g = tap_graph(&TapConfig::default());
+        assert!(g.starts_with("[in]asplit=2[main][side];"));
+        assert!(!g.contains("asetnsamples=n=512"));
+
+        let cut = TapConfig {
+            cut_main_path: true,
+            ..TapConfig::default()
+        };
+        let g = tap_graph(&cut);
+        assert!(g.starts_with(&format!(
+            "[in]asetnsamples=n={MAIN_FRAME_SAMPLES}:p=0,asplit=2[main][side];"
+        )));
+        // The cut keeps the input rate above the tap's frame rate for any
+        // source at 32 kHz or more.
+        assert!(MAIN_FRAME_SAMPLES as u32 * DEFAULT_TAP_FPS <= 32_000);
+    }
+
+    #[test]
     fn join_maps_every_input_to_its_own_output_channel() {
         // Without a map, `join` guesses from the inputs' channel names:
         // the right bank's inputs each carry `FR`, which the guess puts on
@@ -880,14 +944,21 @@ mod tests {
 
     #[test]
     fn config_normalises_out_of_range() {
-        let c = TapConfig { bands: 0, fps: 0 }.normalised();
+        let c = TapConfig {
+            bands: 0,
+            fps: 0,
+            cut_main_path: false,
+        }
+        .normalised();
         assert_eq!(c.bands, MIN_TAP_BANDS);
         assert_eq!(c.fps, 1);
         let c = TapConfig {
             bands: 500,
             fps: 1_000_000,
+            cut_main_path: true,
         }
         .normalised();
+        assert!(c.cut_main_path);
         assert_eq!(c.bands, MAX_TAP_BANDS);
         assert_eq!(c.fps, MAX_TAP_FPS);
     }

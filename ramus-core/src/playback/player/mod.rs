@@ -129,6 +129,10 @@ struct PlayerInner {
     /// which is logged once so the log alone shows the graph configured
     /// and is producing.
     tap_awaiting_first_batch: bool,
+    /// Whether the tap graph cuts the main path into small frames, asked
+    /// of the player backend once at construction (it depends on the
+    /// FFmpeg build behind libmpv, which does not change at runtime).
+    tap_cut_main_path: bool,
     /// Wall-clock of the last *automatic* current-track reload (failover or
     /// file-ended recovery). Enforces `RELOAD_COOLDOWN` so a burst of triggers
     /// can't stack multiple reloads onto one hiccup. `None` until the first.
@@ -316,6 +320,7 @@ pub struct AudioPlayer {
 
 impl AudioPlayer {
     pub fn new(mpv: Arc<dyn MpvPlayer>) -> Self {
+        let tap_cut_main_path = mpv.tap_needs_main_cut();
         Self {
             mpv,
             af_chain: Mutex::new(()),
@@ -344,6 +349,7 @@ impl AudioPlayer {
                 spectrum_tap_enabled: false,
                 tap_mapper: eq::new_tap_mapper(),
                 tap_awaiting_first_batch: false,
+                tap_cut_main_path,
                 last_auto_reload_at: None,
                 held_for_recovery: false,
                 user_paused: false,
