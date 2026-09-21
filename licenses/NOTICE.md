@@ -97,11 +97,11 @@ loaded by the renderer:
 
 ## Mozilla Public License 2.0 components
 
-Several bundled Rust crates are distributed under MPL-2.0, most notably
-the `symphonia` audio decoder family used by the focus-mode spectrum
-visualiser. MPL-2.0 is a file-scope copyleft — it applies only to the
-MPL-licensed source files themselves and does not affect the rest of
-ramus.
+A few bundled Rust crates are distributed under MPL-2.0: the
+Servo-heritage CSS crates (`cssparser`, `selectors` and their helpers)
+that Tauri's webview layer depends on. MPL-2.0 is a file-scope copyleft
+— it applies only to the MPL-licensed source files themselves and does
+not affect the rest of ramus.
 
 - License text: `licenses/LICENSE.MPL-2.0` in the installed application,
   or https://www.mozilla.org/media/MPL/2.0/index.txt

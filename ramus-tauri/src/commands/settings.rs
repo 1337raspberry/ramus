@@ -5,7 +5,6 @@ use ramus_core::genre::mapper::GenreMapper;
 use ramus_core::genre::markup::{build_description_segments, normalize_artist, DescriptionSegment};
 use ramus_core::genre::parser::CustomGenreParser;
 use ramus_core::models::{Bookmark, Settings};
-use ramus_core::playback::spectrum::spec_file_path;
 
 use crate::events::{emit_connection_status, ConnectionStatusPayload};
 use crate::state::AppState;
@@ -326,11 +325,9 @@ pub async fn clear_audio_cache(state: State<'_, AppState>) -> CmdResult<()> {
     // Clear the in-memory DownloadCache and collect paths to delete.
     let paths = state.player.with_cache(|cache| cache.clear());
 
-    // Delete audio files + sibling .spec files from disk.
+    // Delete the audio files from disk.
     for path in paths {
-        let spec = spec_file_path(&path);
         let _ = tokio::fs::remove_file(&path).await;
-        let _ = tokio::fs::remove_file(&spec).await;
     }
 
     Ok(())

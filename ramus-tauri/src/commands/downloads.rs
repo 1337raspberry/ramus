@@ -24,9 +24,8 @@ use crate::state::AppState;
 
 use super::{with_cache, CmdResult};
 
-/// Sidecar path for a pre-computed waveform: `audio.flac.wave`. Same
-/// pattern as `.spec` files — postcard-serialised `Vec<f32>` next to
-/// the audio file.
+/// Sidecar path for a pre-computed waveform: `audio.flac.wave`. A
+/// postcard-serialised `Vec<f32>` next to the audio file.
 pub fn waveform_sidecar_path(audio_path: &Path) -> PathBuf {
     let mut s = audio_path.as_os_str().to_os_string();
     s.push(".wave");
@@ -70,7 +69,7 @@ pub async fn read_waveform_sidecar(audio_path: &Path) -> Option<Vec<f32>> {
 }
 
 /// Sidecar path for cached lyrics: `audio.flac.lyrics`. Same pattern as the
-/// `.wave`/`.spec` sidecars — a postcard-serialised `LyricsResult` next to the
+/// `.wave` sidecar — a postcard-serialised `LyricsResult` next to the
 /// audio file so a replayed album renders lyrics offline without re-pinging
 /// LRCLIB. Cleaned up alongside the other sidecars on eviction/removal.
 pub fn lyrics_sidecar_path(audio_path: &Path) -> PathBuf {
@@ -379,8 +378,6 @@ pub async fn remove_download(
     state.player.unregister_persistent_download(&rating_key);
     if let Some(p) = path {
         let _ = tokio::fs::remove_file(PathBuf::from(&p)).await;
-        let spec = ramus_core::playback::spectrum::spec_file_path(std::path::Path::new(&p));
-        let _ = tokio::fs::remove_file(spec).await;
         let wave = waveform_sidecar_path(std::path::Path::new(&p));
         let _ = tokio::fs::remove_file(wave).await;
         let lyrics = lyrics_sidecar_path(std::path::Path::new(&p));
@@ -411,8 +408,6 @@ pub async fn remove_album_downloads(
     }
     for p in &paths {
         let _ = tokio::fs::remove_file(PathBuf::from(p)).await;
-        let spec = ramus_core::playback::spectrum::spec_file_path(std::path::Path::new(p));
-        let _ = tokio::fs::remove_file(spec).await;
         let wave = waveform_sidecar_path(std::path::Path::new(p));
         let _ = tokio::fs::remove_file(wave).await;
         let lyrics = lyrics_sidecar_path(std::path::Path::new(p));
@@ -431,8 +426,6 @@ pub async fn remove_all_downloads(app: AppHandle, state: State<'_, AppState>) ->
         .rehydrate_persistent_cache(std::collections::HashMap::new());
     for p in &paths {
         let _ = tokio::fs::remove_file(PathBuf::from(p)).await;
-        let spec = ramus_core::playback::spectrum::spec_file_path(std::path::Path::new(p));
-        let _ = tokio::fs::remove_file(spec).await;
         let wave = waveform_sidecar_path(std::path::Path::new(p));
         let _ = tokio::fs::remove_file(wave).await;
         let lyrics = lyrics_sidecar_path(std::path::Path::new(p));

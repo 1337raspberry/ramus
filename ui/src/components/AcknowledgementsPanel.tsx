@@ -23,11 +23,6 @@ const KEY_COMPONENTS: KeyComponent[] = [
     description: "Audio playback engine. Loaded dynamically at runtime; user-swappable.",
   },
   {
-    name: "symphonia",
-    license: "MPL-2.0",
-    description: "Pure-Rust audio decoders, used for the focus-mode spectrum visualiser.",
-  },
-  {
     name: "Genre tree",
     license: "MIT",
     description:

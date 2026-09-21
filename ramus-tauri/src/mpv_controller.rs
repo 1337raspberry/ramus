@@ -331,8 +331,9 @@ fn read_string_property(lib: &MpvLib, ctx: *mut mpv_handle, name: &str) -> Optio
 /// signature, since old mpv rejects the new args outright while new mpv
 /// tolerates the 3-arg `loadfile` with no per-track options (see
 /// `load_file` below). The bias is therefore "fail safe on old mpv,"
-/// not "fail safe on new mpv" — getting it wrong on a new mpv breaks
-/// stream-record (loadfile would put options in the index slot).
+/// not "fail safe on new mpv" — getting it wrong on a new mpv breaks every
+/// per-file option, such as the `start=` resume (loadfile would put it in
+/// the index slot).
 fn mpv_version_at_least(version: &str, min_major: u32, min_minor: u32) -> bool {
     let Some(rest) = version.strip_prefix("mpv ") else {
         return false;

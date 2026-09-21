@@ -106,11 +106,6 @@ You'll need:
 - **Rust** stable (`rustup install stable`).
 - **Node.js** 20+ and **pnpm**.
 - **Tauri 2 prerequisites** for your platform — follow [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/).
-- **CMake** (and ideally **Ninja**). The focus mode visualiser includes an Opus decoder via the `symphonia-adapter-libopus` crate, which compiles a vendored libopus C source through `cmake` at build time. Without it, `cargo build` will error out partway through `opusic-sys`.
-  - macOS: `brew install cmake ninja`.
-  - Linux (Debian/Ubuntu): `sudo apt-get install cmake ninja-build`.
-  - Linux (Fedora): `sudo dnf install cmake ninja-build`.
-  - Windows: install [CMake](https://cmake.org/download/) (or `winget install Kitware.CMake` / `choco install cmake`) and make sure it's on `PATH`. The MSVC build tools you already need for Tauri provide the rest of the C toolchain — Ninja is optional on Windows; CMake will fall back to MSBuild.
 - **libmpv** in the dev loop:
   - macOS: `brew install mpv` (provides `libmpv.dylib`).
   - Linux (Debian/Ubuntu): `libmpv-dev libwebkit2gtk-4.1-dev libgtk-3-dev` (and `build-essential pkg-config` if you don't have them already).
@@ -181,7 +176,7 @@ scripts/       Build helpers (libmpv bundling, codesigning,
 
 - **Backend** - [Rust](https://www.rust-lang.org/), [Tauri 2](https://tauri.app/), [rusqlite](https://github.com/rusqlite/rusqlite) with WAL + FTS5, [reqwest](https://github.com/seanmonstar/reqwest), [tokio](https://tokio.rs/).
 - **Audio** - [libmpv](https://mpv.io/) on every platform: loaded dynamically via [libloading](https://github.com/nagisa/rust_libloading) on desktop, [MPVKit](https://github.com/mpvkit/MPVKit) on iOS, and the [`dev.jdtech.mpv:libmpv`](https://github.com/jarnedemeulemeester/libmpv-android) AAR wrapped behind a [Media3](https://developer.android.com/media/media3) `SimpleBasePlayer` on Android. Single audio engine, identical behaviour across all five targets.
-- **DSP** - [symphonia](https://github.com/pdeljanov/Symphonia) + [rustfft](https://github.com/ejmahler/RustFFT) for the focus mode visualiser on desktop. Opus playback (transcoded streams, downloaded `.ogg` copies) decodes via the [symphonia-adapter-libopus](https://github.com/sdroege/symphonia-adapter-libopus) crate, which bundles libopus C source and builds it via CMake.
+- **Visualiser** - a [libavfilter](https://ffmpeg.org/libavfilter.html) graph hosted in libmpv's own audio filter chain feeds the focus mode spectrum on desktop, straight from the decoded audio. No second decoder, no extra DSP dependency.
 - **System integration** - [souvlaki](https://github.com/Sinono3/souvlaki) for desktop media keys / Now Playing; `MPRemoteCommandCenter` on iOS; `MediaSession` + `MediaSessionService` on Android.
 - **Frontend** - [React 19](https://react.dev/) + [Vite](https://vite.dev/) + [TypeScript](https://www.typescriptlang.org/), [Zustand](https://github.com/pmndrs/zustand) for state, [@tanstack/react-virtual](https://tanstack.com/virtual) for the long lists.
 - **Fonts** - [Inter](https://rsms.me/inter/), [JetBrains Mono](https://www.jetbrains.com/lp/mono/), [Twemoji Country Flags](https://github.com/talkjs/country-flag-emoji-polyfill).
@@ -275,7 +270,7 @@ ramus is licensed under the [MIT License](LICENSE).
 
 ramus links — at runtime, dynamically — against **libmpv** ([LGPL-2.1-or-later](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)) on desktop. libmpv source is available at [github.com/mpv-player/mpv](https://github.com/mpv-player/mpv); a copy is shipped under `licenses/` in every release artifact. You may substitute your own libmpv build by placing it on the dynamic library search path — the search paths are documented in [`ramus-tauri/src/mpv_ffi.rs`](ramus-tauri/src/mpv_ffi.rs).
 
-A handful of bundled Rust crates (notably the [symphonia](https://github.com/pdeljanov/Symphonia) audio decoder family) are distributed under [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/). MPL-2.0 is file-scope copyleft and does not affect the rest of ramus.
+A few bundled Rust crates (the Servo-heritage CSS crates Tauri's webview layer depends on, such as [cssparser](https://github.com/servo/rust-cssparser)) are distributed under [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/). MPL-2.0 is file-scope copyleft and does not affect the rest of ramus.
 
 The bundled music genre tree (`ramus-tauri/data/open.json`) is derived from the [beets](https://github.com/beetbox/beets) project's `genres-tree.yaml` (MIT, © Adrian Sampson) and has been substantially extended. See [NOTICE.md](licenses/NOTICE.md).
 
@@ -289,4 +284,4 @@ ramus is proudly built on the open source wonders that are:
 - [Tauri](https://tauri.app/) - web frontend with minimal bloat, glorious
 - [Plex](https://www.plex.tv/) - for the media server that makes this app possible.
 - [beets](https://github.com/beetbox/beets) - for seeding the genre hierarchy (and helping me tag my music every day!)
-- The [symphonia](https://github.com/pdeljanov/Symphonia), [rustfft](https://github.com/ejmahler/RustFFT), [souvlaki](https://github.com/Sinono3/souvlaki), and [rusqlite](https://github.com/rusqlite/rusqlite) maintainers - and everyone else listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+- The [souvlaki](https://github.com/Sinono3/souvlaki) and [rusqlite](https://github.com/rusqlite/rusqlite) maintainers - and everyone else listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

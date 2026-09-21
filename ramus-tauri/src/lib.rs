@@ -37,7 +37,6 @@ pub mod now_playing_keeper;
 pub mod prefetch;
 pub mod queue_persist;
 pub mod session_reporter;
-pub mod spectrum_analyzer;
 pub mod stall_watchdog;
 pub mod state;
 
@@ -455,20 +454,11 @@ pub fn create_mpv_player(
         })),
         on_playlist_pos_change: Some(Box::new(move |pos| {
             if let Some(ref p) = *pr3.lock() {
-                // Capture the outgoing track before the state update — used
-                // by the stream-record re-ingest below to tell a natural
-                // advance from a same-track event. (Session reporting no
-                // longer compares before/after: skips mutate state long
-                // before this event, so it uses the player's transition
-                // snapshot instead.) Desktop-only, like its consumer.
-                #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                let prev_track = p.state().current_track.clone();
-
                 // A `false` return is not a real advance (invalid index, the
                 // start_at phantom, or our own current-track reload). Skip the
-                // track-switch emit, metadata refresh, prefetch nudge, session
-                // report, and stream-record re-ingest — otherwise a failover
-                // resume looks like a track restart and the UI snaps to 0:00.
+                // track-switch emit, metadata refresh, prefetch nudge and
+                // session report — otherwise a failover resume looks like a
+                // track restart and the UI snaps to 0:00.
                 if !p.handle_playlist_pos_change(pos) {
                     return;
                 }
@@ -527,36 +517,6 @@ pub fn create_mpv_player(
                             prev_dur,
                             state.current_track.as_ref(),
                             &p.play_session_id(),
-                        );
-                    }
-                }
-
-                // The previous track's mpv stream-record file is now
-                // finalised (mpv stopped writing to it the moment it
-                // transitioned away). Hand it to the analyser + register
-                // in DownloadCache so future plays of this rating-key
-                // skip the second download. Desktop only; mobile spectrum
-                // is force-disabled and `stream_record_dir` stays unset.
-                #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                if let Some(ref prev) = prev_track {
-                    let same_track = state
-                        .current_track
-                        .as_ref()
-                        .is_some_and(|cur| cur.rating_key == prev.rating_key);
-                    if !same_track {
-                        log::info!(
-                            "playlist_pos_change: triggering stream_record re-ingest for previous track rating_key={}",
-                            prev.rating_key
-                        );
-                        crate::prefetch::try_ingest_stream_record(
-                            p.clone(),
-                            app3.clone(),
-                            prev.rating_key.clone(),
-                        );
-                    } else {
-                        log::debug!(
-                            "playlist_pos_change: same track ({}), no re-ingest",
-                            prev.rating_key
                         );
                     }
                 }
@@ -1018,26 +978,6 @@ pub fn run() {
                 recovery_grace.clone(),
             );
 
-            // Capture mpv's source bytes to a sibling directory of the
-            // prefetch cache so the spectrum analyser can run against the
-            // captured file without a second HTTP fetch. Kept under its
-            // own subdir for the verification phase — once we trust the
-            // pipeline end-to-end we can collapse this into the main
-            // audio_cache and drop the second-download path entirely.
-            // Desktop only: spectrum is force-disabled on mobile.
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            if let Ok(cfg_dir) = ramus_core::plex::token_store::config_dir() {
-                let stream_record_dir = cfg_dir.join("audio_cache").join("stream_record");
-                if let Err(e) = std::fs::create_dir_all(&stream_record_dir) {
-                    log::warn!(
-                        "stream_record: failed to create dir {stream_record_dir:?}: {e} (recording disabled)"
-                    );
-                } else {
-                    log::info!("stream_record: writing to {stream_record_dir:?}");
-                    player.set_stream_record_dir(stream_record_dir);
-                }
-            }
-
             // Spawn the long-lived prefetch worker and wire its control handle
             // back into the callbacks.
             let prefetch_handle = crate::prefetch::spawn_worker(
@@ -1062,9 +1002,9 @@ pub fn run() {
             // Load saved settings and apply playback config (defaults to Never).
             #[allow(unused_mut)]
             let mut saved_settings = ramus_core::settings::load();
-            // Force-disable the spectrum analyser on mobile. The symphonia
-            // decode + FFT pipeline isn't worth the battery / thermal cost on
-            // phones, and the UI already hides the toggle on touch devices.
+            // Force-disable the spectrum visualiser on mobile. The bundled
+            // libmpv builds there ship without the lavfi analysis filters the
+            // tap needs, and the UI already hides the toggle on touch devices.
             #[cfg(mobile)]
             {
                 saved_settings.disable_spectrum = true;

@@ -60,24 +60,6 @@ pub fn emit_accent_color(app: &AppHandle, payload: AccentColorPayload) {
     let _ = app.emit("accent-color", payload);
 }
 
-/// Notifies the frontend that a track's spectrogram is available in the cache.
-/// The frontend then invokes `get_spectrum` to fetch the bytes — the payload is
-/// kept lightweight because Tauri's JSON event bridge is slow for ~1 MB payloads.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SpectrumReadyPayload {
-    pub rating_key: String,
-}
-
-/// Emit `spectrum-ready` for a freshly analysed track. Safe to call from any
-/// thread that holds the `AppHandle`.
-pub fn emit_spectrum_ready(app: &AppHandle, rating_key: impl Into<String>) {
-    let payload = SpectrumReadyPayload {
-        rating_key: rating_key.into(),
-    };
-    let _ = app.emit("spectrum-ready", payload);
-}
-
 /// A batch of live spectrum frames from the `--af` tap, already mapped
 /// onto the track timeline and quantised to bar heights. Each frame holds
 /// `band_count` values per channel, `channels` channels in order (left,

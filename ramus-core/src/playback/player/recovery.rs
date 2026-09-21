@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use crate::models::PlaybackStatus;
 
 use super::diagnostics::{derive_phase, Phase};
-use super::resolve::{resolve_url, resolve_url_with_resume, stream_record_option_for, ResumePlan};
+use super::resolve::{resolve_url, resolve_url_with_resume, ResumePlan};
 use super::AudioPlayer;
 
 /// Minimum gap between two *automatic* current-track reloads (connection
@@ -143,8 +143,7 @@ impl AudioPlayer {
                     if url.starts_with("file://") {
                         return None;
                     }
-                    let opts = stream_record_option_for(track, &url, &inner);
-                    Some((idx, url, opts))
+                    Some((idx, url, None))
                 })
                 .collect()
         };
