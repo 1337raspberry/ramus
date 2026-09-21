@@ -44,9 +44,10 @@ pub struct MpvController {
     /// never pairs with one from the next.
     af_epoch: Arc<AtomicU64>,
     /// Whether the spectrum tap graph must cut the main path (FFmpeg
-    /// before 8.0; see `spectrum_tap::MAIN_FRAME_SAMPLES`). Probed once at
-    /// init from `ffmpeg-version`; an unreadable version gets the cut,
-    /// the safe side.
+    /// before 8.0, or a git snapshot before the drain fix; see
+    /// `spectrum_tap::MAIN_FRAME_SAMPLES`). Probed once at init from
+    /// `ffmpeg-version`; an unreadable version gets the cut, the safe
+    /// side.
     tap_needs_main_cut: bool,
     _event_thread: Option<thread::JoinHandle<()>>,
 }
@@ -377,11 +378,31 @@ fn ffmpeg_major_version(version: &str) -> Option<u32> {
     major.parse().ok()
 }
 
+/// Revision count of the FFmpeg commit that made the graph drain skip an
+/// empty source (`d41bac1333`, June 2025, first released in 8.0): a git
+/// snapshot at or past it drains the tap's side branch fully. For scale,
+/// the 7.1 tag is revision 117179 and the 8.0 tag is 120682.
+const FFMPEG_DRAIN_FIX_REVISION: u32 = 120_148;
+
+/// The revision count in a git-snapshot `ffmpeg-version` string such as
+/// `"N-126548-g6efe500d2"`, which is how the prebuilt Windows libmpv
+/// reports its FFmpeg: commits since FFmpeg's `N` tag, which only grows.
+fn ffmpeg_snapshot_revision(version: &str) -> Option<u32> {
+    version.strip_prefix("N-")?.split('-').next()?.parse().ok()
+}
+
 /// Whether the spectrum tap needs the main-path cut on this FFmpeg: every
-/// release before 8.0, and any build whose version cannot be read, since
-/// a needless cut costs CPU while a missing one loses the visualiser.
+/// release before 8.0, every git snapshot before the drain fix, and any
+/// build whose version cannot be read, since a needless cut costs CPU
+/// while a missing one loses the visualiser.
 fn tap_needs_main_cut_for(ffmpeg_version: &str) -> bool {
-    ffmpeg_major_version(ffmpeg_version).is_none_or(|major| major < 8)
+    if let Some(major) = ffmpeg_major_version(ffmpeg_version) {
+        return major < 8;
+    }
+    if let Some(revision) = ffmpeg_snapshot_revision(ffmpeg_version) {
+        return revision < FFMPEG_DRAIN_FIX_REVISION;
+    }
+    true
 }
 
 /// Parse mpv's `mpv-version` string and return whether the reported version
@@ -816,7 +837,10 @@ fn event_loop(
 
 #[cfg(test)]
 mod tests {
-    use super::{ffmpeg_major_version, mpv_version_at_least, tap_needs_main_cut_for};
+    use super::{
+        ffmpeg_major_version, ffmpeg_snapshot_revision, mpv_version_at_least,
+        tap_needs_main_cut_for,
+    };
 
     #[test]
     fn parses_release_versions() {
@@ -839,14 +863,37 @@ mod tests {
     }
 
     #[test]
+    fn ffmpeg_snapshot_revision_reads_git_builds_only() {
+        // The prebuilt Windows libmpv reports its FFmpeg this way.
+        assert_eq!(
+            ffmpeg_snapshot_revision("N-126548-g6efe500d2"),
+            Some(126_548)
+        );
+        assert_eq!(
+            ffmpeg_snapshot_revision("N-120148-gd41bac1333"),
+            Some(120_148)
+        );
+        assert_eq!(ffmpeg_snapshot_revision("9.0.1"), None);
+        assert_eq!(ffmpeg_snapshot_revision("n7.1.5"), None);
+        assert_eq!(ffmpeg_snapshot_revision("N-"), None);
+        assert_eq!(ffmpeg_snapshot_revision(""), None);
+    }
+
+    #[test]
     fn main_path_cut_only_before_ffmpeg_8() {
         assert!(tap_needs_main_cut_for("6.1.1-3ubuntu5"));
         assert!(tap_needs_main_cut_for("n7.1.5"));
         assert!(!tap_needs_main_cut_for("8.0.1-3ubuntu2"));
         assert!(!tap_needs_main_cut_for("9.0.1"));
-        // Unknown builds get the cut: it costs CPU, a missing one loses
+        // Git snapshots are placed by revision against the drain fix.
+        assert!(tap_needs_main_cut_for("N-117179-g0f1e2d3c"));
+        assert!(tap_needs_main_cut_for("N-120147-gabcdef12"));
+        assert!(!tap_needs_main_cut_for("N-120148-gd41bac1333"));
+        assert!(!tap_needs_main_cut_for("N-126548-g6efe500d2"));
+        // Anything else gets the cut: it costs CPU, a missing one loses
         // the visualiser.
-        assert!(tap_needs_main_cut_for("N-120000-g1234abc"));
+        assert!(tap_needs_main_cut_for("git-deadbeef"));
+        assert!(tap_needs_main_cut_for(""));
     }
 
     #[test]
