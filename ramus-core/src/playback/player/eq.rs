@@ -163,7 +163,10 @@ impl AudioPlayer {
 
     /// Compose the `af` value from the remembered EQ state and tap flag.
     fn compose_filters(inner: &PlayerInner) -> String {
-        let tap = inner.spectrum_tap_enabled.then(TapConfig::default);
+        let tap = inner.spectrum_tap_enabled.then(|| TapConfig {
+            cut_main_path: inner.tap_cut_main_path,
+            ..TapConfig::default()
+        });
         build_af_string(inner.eq_enabled, &inner.eq_bands, tap.as_ref())
     }
 }

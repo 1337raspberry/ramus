@@ -188,6 +188,14 @@ pub trait MpvPlayer: Send + Sync {
     /// bridges — their libmpv builds lack the analysis filters) and for
     /// test doubles.
     fn set_verbose_log(&self, _enabled: bool) {}
+
+    /// Whether the spectrum tap graph must cut the main path into small
+    /// frames for the tap to keep up on this libmpv's FFmpeg build (see
+    /// `spectrum_tap::MAIN_FRAME_SAMPLES`). Only the desktop player can
+    /// read its FFmpeg version; everything else answers `false`.
+    fn tap_needs_main_cut(&self) -> bool {
+        false
+    }
 }
 
 /// Thread-safe shutdown flag shared between controller and event loop.

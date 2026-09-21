@@ -33,6 +33,9 @@ struct MockMpv {
     calls: Mutex<Vec<MockCall>>,
     volume: Mutex<f64>,
     shutdown: AtomicBool,
+    /// What `tap_needs_main_cut` answers; the player reads it once, at
+    /// construction.
+    tap_needs_main_cut: AtomicBool,
 }
 
 impl MockMpv {
@@ -41,6 +44,7 @@ impl MockMpv {
             calls: Mutex::new(Vec::new()),
             volume: Mutex::new(100.0),
             shutdown: AtomicBool::new(false),
+            tap_needs_main_cut: AtomicBool::new(false),
         }
     }
 
@@ -54,6 +58,10 @@ impl MockMpv {
 }
 
 impl MpvPlayer for MockMpv {
+    fn tap_needs_main_cut(&self) -> bool {
+        self.tap_needs_main_cut.load(Ordering::SeqCst)
+    }
+
     fn load_file(&self, url: &str, mode: LoadMode, options: Option<&str>) {
         self.calls.lock().push(MockCall::LoadFile {
             url: url.to_string(),
@@ -853,7 +861,7 @@ fn test_set_spectrum_tap_installs_and_removes_the_graph() {
     assert!(player.set_spectrum_tap(true));
     assert!(player.spectrum_tap_enabled());
     let af = last_af(&mpv).expect("tap install sets af");
-    assert!(af.contains("[in]asplit=2[main][side]"));
+    assert!(af.contains("asplit=2[main][side]"));
     assert!(af.contains("ashowinfo,anullsink"));
     // The log level is raised before the graph goes in.
     assert_eq!(call_tags_since(&mpv, mark), vec!["verbose-on", "af"]);
@@ -951,15 +959,36 @@ fn test_tap_toggle_preserves_eq_and_eq_toggle_preserves_tap() {
     player.set_spectrum_tap(false);
     let af = last_af(&mpv).unwrap();
     assert!(af.contains("g=4.0"));
-    assert!(!af.contains("[in]asplit"));
+    assert!(!af.contains("asplit=2[main][side]"));
     assert_eq!(af.matches("lavfi=[").count(), 1);
+}
+
+#[test]
+fn test_tap_graph_cuts_the_main_path_only_when_the_backend_asks() {
+    let (player, mpv) = make_player();
+    assert!(player.set_spectrum_tap(true));
+    let af = last_af(&mpv).unwrap();
+    assert!(af.contains("lavfi=[[in]asplit=2[main][side];"));
+    assert!(!af.contains("asetnsamples=n=512"));
+
+    let mpv = Arc::new(MockMpv::new());
+    mpv.tap_needs_main_cut.store(true, Ordering::SeqCst);
+    let player = AudioPlayer::new(mpv.clone());
+    assert!(player.set_spectrum_tap(true));
+    let af = last_af(&mpv).unwrap();
+    assert!(af.contains("lavfi=[[in]asetnsamples=n=512:p=0,asplit=2[main][side];"));
 }
 
 #[test]
 fn test_map_tap_frames_applies_position_base() {
     use crate::playback::spectrum_tap::TapFrame;
     let (player, _mpv) = make_player();
-    let batch = || vec![TapFrame { pts: 12.5, db: vec![-20.0; 128] }];
+    let batch = || {
+        vec![TapFrame {
+            pts: 12.5,
+            db: vec![-20.0; 128],
+        }]
+    };
     assert_eq!(player.map_tap_frames(batch())[0].pos, 12.5);
     player.inner.lock().position_base = 100.0;
     assert_eq!(player.map_tap_frames(batch())[0].pos, 112.5);

@@ -43,6 +43,11 @@ pub struct MpvController {
     /// when it sees a new value, so a half-frame from the previous graph
     /// never pairs with one from the next.
     af_epoch: Arc<AtomicU64>,
+    /// Whether the spectrum tap graph must cut the main path (FFmpeg
+    /// before 8.0; see `spectrum_tap::MAIN_FRAME_SAMPLES`). Probed once at
+    /// init from `ffmpeg-version`; an unreadable version gets the cut,
+    /// the safe side.
+    tap_needs_main_cut: bool,
     _event_thread: Option<thread::JoinHandle<()>>,
 }
 
@@ -171,6 +176,26 @@ impl MpvController {
                 }
             };
 
+            // FFmpeg before 8.0 leaves the spectrum tap's side branch one
+            // step behind per input frame; the tap graph compensates on
+            // those builds only (see `spectrum_tap::MAIN_FRAME_SAMPLES`).
+            let tap_needs_main_cut = match read_string_property(&lib, ctx, "ffmpeg-version") {
+                Some(v) => {
+                    let cut = tap_needs_main_cut_for(&v);
+                    log::info!(
+                        "libmpv: FFmpeg {v} (spectrum tap {} the main-path cut)",
+                        if cut { "needs" } else { "skips" }
+                    );
+                    cut
+                }
+                None => {
+                    log::warn!(
+                        "libmpv: could not read ffmpeg-version, assuming the spectrum tap needs the main-path cut"
+                    );
+                    true
+                }
+            };
+
             // Read back the cache / demuxer caps so we can verify our
             // `set_option_string` calls actually landed. mpv silently
             // discards unknown options and doesn't reject out-of-range
@@ -198,7 +223,13 @@ impl MpvController {
             let event_thread = thread::Builder::new()
                 .name("mpv-event-loop".into())
                 .spawn(move || {
-                    event_loop(lib_clone, handle_clone, shutdown_clone, epoch_clone, callbacks);
+                    event_loop(
+                        lib_clone,
+                        handle_clone,
+                        shutdown_clone,
+                        epoch_clone,
+                        callbacks,
+                    );
                 })
                 .map_err(|e| format!("Failed to spawn mpv event thread: {e}"))?;
 
@@ -209,6 +240,7 @@ impl MpvController {
                 loadfile_has_index_slot,
                 base_log_level,
                 af_epoch,
+                tap_needs_main_cut,
                 _event_thread: Some(event_thread),
             })
         }
@@ -328,6 +360,28 @@ fn read_string_property(lib: &MpvLib, ctx: *mut mpv_handle, name: &str) -> Optio
         lib.free(out as *mut c_void);
         Some(value)
     }
+}
+
+/// The major release number in mpv's `ffmpeg-version` string, the value
+/// of `av_version_info()` for the FFmpeg libmpv was linked against.
+/// Observed forms: `"6.1.1-3ubuntu5"` (apt), `"n7.1.5"` (a release tag),
+/// `"9.0.1"` (Homebrew). A git snapshot reads `"N-123456-gabcdef"` and
+/// carries no release number, so it parses as `None`.
+fn ffmpeg_major_version(version: &str) -> Option<u32> {
+    let digits = version.trim_start_matches(|c: char| !c.is_ascii_digit());
+    let major = digits.split(['.', '-', '+']).next()?;
+    let rest = &digits[major.len()..];
+    if !rest.starts_with('.') {
+        return None;
+    }
+    major.parse().ok()
+}
+
+/// Whether the spectrum tap needs the main-path cut on this FFmpeg: every
+/// release before 8.0, and any build whose version cannot be read, since
+/// a needless cut costs CPU while a missing one loses the visualiser.
+fn tap_needs_main_cut_for(ffmpeg_version: &str) -> bool {
+    ffmpeg_major_version(ffmpeg_version).is_none_or(|major| major < 8)
 }
 
 /// Parse mpv's `mpv-version` string and return whether the reported version
@@ -493,6 +547,10 @@ impl MpvPlayer for MpvController {
 
     fn demuxer_cache_time(&self) -> Option<f64> {
         self.get_property_double("demuxer-cache-time")
+    }
+
+    fn tap_needs_main_cut(&self) -> bool {
+        self.tap_needs_main_cut
     }
 
     fn set_verbose_log(&self, enabled: bool) {
@@ -758,7 +816,7 @@ fn event_loop(
 
 #[cfg(test)]
 mod tests {
-    use super::mpv_version_at_least;
+    use super::{ffmpeg_major_version, mpv_version_at_least, tap_needs_main_cut_for};
 
     #[test]
     fn parses_release_versions() {
@@ -767,6 +825,28 @@ mod tests {
         assert!(mpv_version_at_least("mpv 0.38.0", 0, 38));
         assert!(mpv_version_at_least("mpv 0.39.0", 0, 38));
         assert!(mpv_version_at_least("mpv 1.0.0", 0, 38));
+    }
+
+    #[test]
+    fn ffmpeg_version_parses_release_and_distro_strings() {
+        assert_eq!(ffmpeg_major_version("6.1.1-3ubuntu5"), Some(6));
+        assert_eq!(ffmpeg_major_version("n7.1.5"), Some(7));
+        assert_eq!(ffmpeg_major_version("7.1.5-0+deb13u1"), Some(7));
+        assert_eq!(ffmpeg_major_version("8.0.1-3ubuntu2"), Some(8));
+        assert_eq!(ffmpeg_major_version("9.0.1"), Some(9));
+        assert_eq!(ffmpeg_major_version("N-120000-g1234abc"), None);
+        assert_eq!(ffmpeg_major_version(""), None);
+    }
+
+    #[test]
+    fn main_path_cut_only_before_ffmpeg_8() {
+        assert!(tap_needs_main_cut_for("6.1.1-3ubuntu5"));
+        assert!(tap_needs_main_cut_for("n7.1.5"));
+        assert!(!tap_needs_main_cut_for("8.0.1-3ubuntu2"));
+        assert!(!tap_needs_main_cut_for("9.0.1"));
+        // Unknown builds get the cut: it costs CPU, a missing one loses
+        // the visualiser.
+        assert!(tap_needs_main_cut_for("N-120000-g1234abc"));
     }
 
     #[test]
@@ -849,8 +929,26 @@ mod tap_probe {
         let positions: Arc<Mutex<Vec<f64>>> = Arc::new(Mutex::new(Vec::new()));
         let sink = frames.clone();
         let pos_sink = positions.clone();
+        let pos_peek = positions.clone();
+        let started = Instant::now();
         let callbacks = Arc::new(MpvCallbacks {
-            on_spectrum_frames: Some(Box::new(move |batch| sink.lock().extend(batch))),
+            on_spectrum_frames: Some(Box::new(move |batch| {
+                // Arrival timing per batch: how far the newest frame sits
+                // from the latest reported position tells whether frames
+                // lead the output (as they should) or arrive late.
+                if let (Some(first), Some(last)) = (batch.first(), batch.last()) {
+                    let pos = pos_peek.lock().last().copied().unwrap_or(f64::NAN);
+                    log::info!(
+                        "tap_probe: +{:>5}ms batch of {:>2}: pts {:.3}..{:.3}, time-pos {pos:.3}, lead {:+.3}s",
+                        started.elapsed().as_millis(),
+                        batch.len(),
+                        first.pts,
+                        last.pts,
+                        last.pts - pos
+                    );
+                }
+                sink.lock().extend(batch);
+            })),
             on_position_change: Some(Box::new(move |p| pos_sink.lock().push(p))),
             ..Default::default()
         });
@@ -887,7 +985,15 @@ mod tap_probe {
     /// Install the tap the way `AudioPlayer::set_spectrum_tap` does: raise
     /// the log level, then compose EQ + tap.
     fn install_tap(mpv: &MpvController) -> TapConfig {
-        let cfg = TapConfig::default().normalised();
+        let cfg = TapConfig {
+            cut_main_path: mpv.tap_needs_main_cut(),
+            ..TapConfig::default()
+        }
+        .normalised();
+        log::info!(
+            "tap_probe: main-path cut {}",
+            if cfg.cut_main_path { "on" } else { "off" }
+        );
         mpv.set_verbose_log(true);
         mpv.set_audio_filters(&build_af_string(true, &[0.0; 10], Some(&cfg)));
         cfg
@@ -960,11 +1066,17 @@ mod tap_probe {
             "left/right disagree: {l:?} vs {r:?}"
         );
         // Frames lead (or at worst match) the reported position.
-        let last_pos = h.positions.lock().last().copied().unwrap_or(0.0);
+        let positions = h.positions.lock().clone();
+        let last_pos = positions.last().copied().unwrap_or(0.0);
         let last_pts = got.last().unwrap().pts;
         assert!(
             last_pts + 0.1 >= last_pos,
-            "frames should lead time-pos: last pts {last_pts:.3} vs pos {last_pos:.3}"
+            "frames should lead time-pos: last pts {last_pts:.3} vs pos {last_pos:.3} \
+             ({} frames from pts {:.3}; {} position ticks from {:.3})",
+            got.len(),
+            got[0].pts,
+            positions.len(),
+            positions.first().copied().unwrap_or(0.0)
         );
         log::info!(
             "tap_probe: {} frames, loudest band {loudest} ({f:.0} Hz) at {:.1} dB, lead {:.3}s",
