@@ -325,9 +325,14 @@ pub async fn clear_audio_cache(state: State<'_, AppState>) -> CmdResult<()> {
     // Clear the in-memory DownloadCache and collect paths to delete.
     let paths = state.player.with_cache(|cache| cache.clear());
 
-    // Delete the audio files from disk.
+    // Delete the audio files and their `.wave` / `.lyrics` sidecars, the
+    // same set the eviction and remove paths clean up.
     for path in paths {
+        let wave = super::downloads::waveform_sidecar_path(&path);
+        let lyrics = super::downloads::lyrics_sidecar_path(&path);
         let _ = tokio::fs::remove_file(&path).await;
+        let _ = tokio::fs::remove_file(&wave).await;
+        let _ = tokio::fs::remove_file(&lyrics).await;
     }
 
     Ok(())
