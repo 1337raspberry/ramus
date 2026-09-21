@@ -9,8 +9,9 @@
 #
 # Baseline: every license spelled SPDX-style that is permissive for
 # redistribution. MPL-2.0 is in because a handful of Servo-heritage
-# crates (cssparser, selectors) pulled in by Tauri are MPL-licensed; we
-# ship the text in licenses/LICENSE.MPL-2.0.
+# crates (cssparser, selectors) pulled in by Tauri, plus option-ext via
+# directories, are MPL-licensed; we ship the text in
+# licenses/LICENSE.MPL-2.0. THIRD_PARTY_LICENSES.md is the full list.
 accepted = [
     "MIT",
     "Apache-2.0",

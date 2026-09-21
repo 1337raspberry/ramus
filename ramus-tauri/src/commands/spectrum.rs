@@ -21,11 +21,6 @@ use super::CmdResult;
 /// remember to check it.
 #[tauri::command]
 pub async fn set_spectrum_tap(state: State<'_, AppState>, enabled: bool) -> CmdResult<()> {
-    #[cfg(mobile)]
-    {
-        let _ = (&state, enabled);
-        return Ok(());
-    }
     #[cfg(not(mobile))]
     {
         let disabled = state.settings.read().disable_spectrum;
@@ -33,6 +28,8 @@ pub async fn set_spectrum_tap(state: State<'_, AppState>, enabled: bool) -> CmdR
         if state.player.set_spectrum_tap(want) {
             log::info!("spectrum tap {}", if want { "installed" } else { "removed" });
         }
-        Ok(())
     }
+    #[cfg(mobile)]
+    let _ = (&state, enabled);
+    Ok(())
 }

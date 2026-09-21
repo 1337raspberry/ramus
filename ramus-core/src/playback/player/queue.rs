@@ -140,8 +140,12 @@ impl AudioPlayer {
                 };
                 // Track URLs contain `X-Plex-Token` in the query string —
                 // log only enough to correlate with mpv events, never the
-                // URL itself.
-                log::debug!("load_queue[{i}]: mode={mode:?} opts={}", opts.is_some());
+                // URL itself. The only per-file option is the token-free
+                // `start=` resume, so its value is safe to show.
+                log::debug!(
+                    "load_queue[{i}]: mode={mode:?} opts={}",
+                    opts.as_deref().unwrap_or("-")
+                );
                 self.mpv.load_file(url, mode, opts.as_deref());
             }
         }
@@ -265,9 +269,9 @@ impl AudioPlayer {
             } else if was_stopped {
                 (true, Vec::new())
             } else {
-                let loads: Vec<Option<(String, Option<String>)>> = tracks
+                let loads: Vec<Option<String>> = tracks
                     .iter()
-                    .map(|t| resolve_url(t, &inner, &persistent).map(|url| (url, None)))
+                    .map(|t| resolve_url(t, &inner, &persistent))
                     .collect();
                 (false, loads)
             }
@@ -277,8 +281,8 @@ impl AudioPlayer {
             let queue = self.inner.lock().state.queue.clone();
             self.load_queue(queue, 0);
         } else {
-            for (url, opts) in loads.into_iter().flatten() {
-                self.mpv.load_file(&url, LoadMode::Append, opts.as_deref());
+            for url in loads.into_iter().flatten() {
+                self.mpv.load_file(&url, LoadMode::Append, None);
             }
         }
     }
@@ -314,24 +318,21 @@ impl AudioPlayer {
 
             // See `append_to_queue`: mpv holds no playlist for a restored
             // queue, so inserting at our indices would desync the two.
-            let loads: Vec<Option<(String, Option<String>)>> = if inner.pending_materialize {
+            let loads: Vec<Option<String>> = if inner.pending_materialize {
                 Vec::new()
             } else {
                 tracks
                     .iter()
-                    .map(|t| resolve_url(t, &inner, &persistent).map(|url| (url, None)))
+                    .map(|t| resolve_url(t, &inner, &persistent))
                     .collect()
             };
             (insert_base, loads)
         };
 
         for (offset, load) in loads.iter().enumerate() {
-            if let Some((url, opts)) = load {
-                self.mpv.load_file_at(
-                    url,
-                    (insert_base + offset) as i64,
-                    opts.as_deref(),
-                );
+            if let Some(url) = load {
+                self.mpv
+                    .load_file_at(url, (insert_base + offset) as i64, None);
             }
         }
     }

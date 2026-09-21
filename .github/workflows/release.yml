@@ -156,8 +156,13 @@ jobs:
           # where each user's brew install provides the right one.
           macos='{"id":"macos","platform":"macos-14","label":"macOS (Universal)","rust-target":"aarch64-apple-darwin,x86_64-apple-darwin","tauri-args":"--target universal-apple-darwin"}'
           # Two separate linux entries so each arch can be dispatched
-          # independently. Native arm64 runner — GitHub's
-          # `ubuntu-22.04-arm` images are free for public repos and
+          # independently. Ubuntu 24.04: its libmpv carries FFmpeg 6.1,
+          # the first LTS with the channel-layout API the spectrum tap's
+          # `join` map needs (FFmpeg 5.1+); 22.04's FFmpeg 4.4 cannot run
+          # the tap. The AppImage bundles that libmpv but never glibc, so
+          # the runner's glibc (2.39) is the floor for hosts it runs on.
+          # Native arm64 runner — GitHub's
+          # `ubuntu-24.04-arm` images are free for public repos and
           # billed (Larger Runner allocation) for private. Cross-
           # compiling AppImages is impractical (appimagetool + runtime
           # are arch-specific binaries the tauri bundler invokes
@@ -166,8 +171,8 @@ jobs:
           # `startsWith(matrix.id, 'linux')` so both arches share the
           # same recipe; apt-get and ldd pick up the right arch
           # automatically when run on the matching host.
-          linux='{"id":"linux","platform":"ubuntu-22.04","label":"Linux (x86_64)","rust-target":"","tauri-args":""}'
-          linux_arm='{"id":"linux-arm","platform":"ubuntu-22.04-arm","label":"Linux (arm64)","rust-target":"","tauri-args":""}'
+          linux='{"id":"linux","platform":"ubuntu-24.04","label":"Linux (x86_64)","rust-target":"","tauri-args":""}'
+          linux_arm='{"id":"linux-arm","platform":"ubuntu-24.04-arm","label":"Linux (arm64)","rust-target":"","tauri-args":""}'
           windows='{"id":"windows","platform":"windows-latest","label":"Windows (x86_64)","rust-target":"","tauri-args":""}'
           # 64-bit ARM covers all modern phones; 32-bit ARM keeps older
           # devices working. Skipping x86 / x86_64 keeps the APK smaller
@@ -770,8 +775,9 @@ jobs:
       # bundles the host's wayland/X11/xkbcommon stack alongside GTK.
       # Those libs are version-coupled to the host compositor and
       # webkit2gtk; shipping our build-host copies breaks webkit's
-      # EGL init on distros newer than Ubuntu 22.04 (Fedora 42 aborts
-      # with EGL_BAD_PARAMETER and renders an invisible window).
+      # EGL init on distros whose lib versions have moved past the
+      # build host's (first seen from an Ubuntu 22.04 host on Fedora
+      # 42: EGL_BAD_PARAMETER and an invisible window).
       # bundle.linux.appimage.files is additive — we can't un-bundle
       # via Tauri config — so strip them after the fact, then re-upload
       # to the draft release with --clobber to replace the asset

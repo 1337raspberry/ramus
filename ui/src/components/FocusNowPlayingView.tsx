@@ -67,7 +67,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
   const changeVolume = usePlaybackStore((s) => s.changeVolume);
   const toggleFocusMode = usePlaybackStore((s) => s.toggleFocusMode);
   const visualizerMode = usePlaybackStore((s) => s.visualizerMode);
-  const cycleVisualizerMode = usePlaybackStore((s) => s.cycleVisualizerMode);
+  const toggleVisualizer = usePlaybackStore((s) => s.toggleVisualizer);
 
   const suggestion = useLibraryStore((s) => s.suggestion);
   const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
@@ -380,7 +380,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
               )}
               <button
                 className={`np-viz-btn${visualizerMode !== "off" ? " active" : ""}`}
-                onClick={cycleVisualizerMode}
+                onClick={toggleVisualizer}
                 title={
                   visualizerMode === "off"
                     ? "Visualiser: off — click to show"

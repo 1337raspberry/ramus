@@ -224,15 +224,9 @@ If you've found a vulnerability, please **don't open a public issue**. See [SECU
 
 <details>
 
-- The focus mode visualiser does not run/intercept our audio data "live", we need to compute the spectrum data separately. This leads to a slight delay on first song load for it to appear, and a negigible but not-nothing cpu hit. This is a limitation of our broad one-size-fits-all mpv based audio engine. Hooking into the audio stream to do it live would require an entirely new audio engine I believe, and on each front, how we do that depends on per platform so it gets a lot messier. For a feature that's off by default and I imagine most people will ignore, this is an okay compromise for me for now.
-
 - Because Plex only exposes minimal genre and style data on a standard broad api call, we need to maintain a local db with an initial cache/sync setup phase and deep sync on all albums. Without this we'd lack the data to make the app do the cool stuff it was built to do! This gives us the ability to do our super fast locally cached search as well which is great, and even on massive libraries, connected remotely, the initial sync is only a few minutes. Worth the trade off I think. Incremental syncs after that are genuinely incremental and if nothing changes in your library, are essentially a no-op. If plex ever changes what they serve out by default, we can reconsider this. 
 
 - No playlist support - currently on the fence about if i even want to add this. Depends on demand i suppose.
-
-- I wouldn't mind improving some of the more hidden/unintuitive ux. I've spent a lot of time making it as obvious and, what i think is as user friendly as possible. But this is still very much a myopic one person project. What is obvious to me might not be obvious to everybody else. I haven't written anything in the way of usage guides because I hope it's all self evident but if people aren't finding features then I'll revisit accordingly.
-
-- The colour extraction and accent colours still aren't as perfect as I'd like, and there are some edge cases where things aren't as readable as I'd want, but I've done loads of tweaking to try and get to a happy medium, on many different displays, SDR and HDR too. So I might just have to accept that perfect is the enemy of good, or whatever it is they say.
 
 - Speaking of colour, because we're using tauri, each individual platform uses it's own native webview/kit/etc and each one treats the 4 way background gradient (and dithering/banding reduction of it) differently. Looks great on apple, pretty good on windows, but Webkitgtk on linux is particularly poor tbh. We've got a manual dither pattern only on linux to try and cover that up a bit but its not perfect. How much it bothers you may vary.
 
@@ -270,7 +264,7 @@ ramus is licensed under the [MIT License](LICENSE).
 
 ramus links — at runtime, dynamically — against **libmpv** ([LGPL-2.1-or-later](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)) on desktop. libmpv source is available at [github.com/mpv-player/mpv](https://github.com/mpv-player/mpv); a copy is shipped under `licenses/` in every release artifact. You may substitute your own libmpv build by placing it on the dynamic library search path — the search paths are documented in [`ramus-tauri/src/mpv_ffi.rs`](ramus-tauri/src/mpv_ffi.rs).
 
-A few bundled Rust crates (the Servo-heritage CSS crates Tauri's webview layer depends on, such as [cssparser](https://github.com/servo/rust-cssparser)) are distributed under [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/). MPL-2.0 is file-scope copyleft and does not affect the rest of ramus.
+A few bundled Rust crates are distributed under [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/): the Servo-heritage CSS crates Tauri's webview layer depends on, such as [cssparser](https://github.com/servo/rust-cssparser), and [option-ext](https://github.com/soc/option-ext), reached through the `directories` crate. [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) lists every crate with its licence. MPL-2.0 is file-scope copyleft and does not affect the rest of ramus.
 
 The bundled music genre tree (`ramus-tauri/data/open.json`) is derived from the [beets](https://github.com/beetbox/beets) project's `genres-tree.yaml` (MIT, © Adrian Sampson) and has been substantially extended. See [NOTICE.md](licenses/NOTICE.md).
 

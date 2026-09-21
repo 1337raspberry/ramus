@@ -95,11 +95,11 @@ pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
         // OFF the list even though it's the dominant audio daemon on
         // modern distros, for two reasons:
         //
-        // 1. The AppImage's bundled libmpv (Ubuntu 22.04 / mpv 0.34.1)
-        //    has no pipewire AO compiled in — Debian/Ubuntu didn't
-        //    enable it that long ago. Listing pipewire first guarantees
-        //    a noisy "Audio output pipewire not found!" probe on every
-        //    session with zero upside.
+        // 1. Not every libmpv the app meets has a pipewire AO compiled
+        //    in (the Ubuntu 22.04 build, mpv 0.34.1, did not, and the
+        //    .deb/.rpm packages use whatever the host provides). Listing
+        //    pipewire first guarantees a noisy "Audio output pipewire
+        //    not found!" probe on every such session with zero upside.
         // 2. On modern PipeWire-based systems (Ubuntu 24+, Fedora 38+,
         //    Arch, etc.), pipewire-pulse ships the PulseAudio API
         //    alongside the daemon. mpv's `pulse` AO transparently goes

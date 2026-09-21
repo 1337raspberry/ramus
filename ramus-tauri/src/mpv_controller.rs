@@ -6,7 +6,7 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 
@@ -39,6 +39,10 @@ pub struct MpvController {
     /// `set_verbose_log` raises to `v` above it while the spectrum tap is
     /// installed and restores it afterwards.
     base_log_level: String,
+    /// Bumped on every `af` rewrite. The event loop resets the tap parser
+    /// when it sees a new value, so a half-frame from the previous graph
+    /// never pairs with one from the next.
+    af_epoch: Arc<AtomicU64>,
     _event_thread: Option<thread::JoinHandle<()>>,
 }
 
@@ -118,8 +122,16 @@ impl MpvController {
             // connection transcode bail is invisible. Override via
             // `RAMUS_MPV_LOG_LEVEL` env var if more / less is needed
             // (valid values: no, fatal, error, warn, info, v, debug, trace).
-            let base_log_level = std::env::var("RAMUS_MPV_LOG_LEVEL")
-                .unwrap_or_else(|_| "info".into());
+            let base_log_level = match std::env::var("RAMUS_MPV_LOG_LEVEL") {
+                Ok(level) if MPV_LOG_LEVELS.contains(&level.as_str()) => level,
+                Ok(other) => {
+                    // An unknown name would be refused by mpv when the tap
+                    // restores it, pinning the level at `v` for the session.
+                    log::warn!("RAMUS_MPV_LOG_LEVEL={other:?} is not an mpv log level; using info");
+                    "info".to_string()
+                }
+                Err(_) => "info".to_string(),
+            };
             let level = CString::new(base_log_level.clone()).unwrap();
             lib.request_log_messages(ctx, level.as_ptr());
 
@@ -180,11 +192,13 @@ impl MpvController {
 
             let handle_clone = handle.clone();
             let shutdown_clone = shutdown.clone();
+            let af_epoch = Arc::new(AtomicU64::new(0));
+            let epoch_clone = af_epoch.clone();
             let lib_clone = lib.clone();
             let event_thread = thread::Builder::new()
                 .name("mpv-event-loop".into())
                 .spawn(move || {
-                    event_loop(lib_clone, handle_clone, shutdown_clone, callbacks);
+                    event_loop(lib_clone, handle_clone, shutdown_clone, epoch_clone, callbacks);
                 })
                 .map_err(|e| format!("Failed to spawn mpv event thread: {e}"))?;
 
@@ -194,6 +208,7 @@ impl MpvController {
                 shutdown,
                 loadfile_has_index_slot,
                 base_log_level,
+                af_epoch,
                 _event_thread: Some(event_thread),
             })
         }
@@ -465,6 +480,7 @@ impl MpvPlayer for MpvController {
             let reason = unsafe { CStr::from_ptr(self.lib.error_string(rc)) }.to_string_lossy();
             log::error!("mpv rejected af chain ({reason}): {value}");
         }
+        self.af_epoch.fetch_add(1, Ordering::AcqRel);
     }
 
     fn stop(&self) {
@@ -488,10 +504,13 @@ impl MpvPlayer for MpvController {
             self.base_log_level.as_str()
         };
         let c = CString::new(level).unwrap();
-        unsafe {
-            self.lib.request_log_messages(self.handle.ptr(), c.as_ptr());
+        let rc = unsafe { self.lib.request_log_messages(self.handle.ptr(), c.as_ptr()) };
+        if rc < 0 {
+            let reason = unsafe { CStr::from_ptr(self.lib.error_string(rc)) }.to_string_lossy();
+            log::error!("mpv refused log level {level} ({reason}); the spectrum tap needs `v`");
+        } else {
+            log::debug!("mpv log level -> {level}");
         }
-        log::debug!("mpv log level -> {level}");
     }
 }
 
@@ -534,6 +553,7 @@ fn event_loop(
     lib: Arc<MpvLib>,
     handle: Arc<MpvHandle>,
     shutdown: Arc<AtomicBool>,
+    af_epoch: Arc<AtomicU64>,
     callbacks: Arc<MpvCallbacks>,
 ) {
     // Live spectrum tap transport. The tap's `ashowinfo` printer writes
@@ -543,6 +563,7 @@ fn event_loop(
     // swallowed before the generic log forwarding below.
     let mut tap_parser = TapLineParser::new(TapConfig::default().normalised().bands);
     let mut tap_frames: Vec<TapFrame> = Vec::new();
+    let mut seen_epoch = af_epoch.load(Ordering::Acquire);
 
     loop {
         if shutdown.load(Ordering::Acquire) {
@@ -553,6 +574,14 @@ fn event_loop(
 
         if shutdown.load(Ordering::Acquire) {
             break;
+        }
+
+        // The chain was rebuilt: the new graph's printers start over, so
+        // nothing half-parsed from the old one may pair with their lines.
+        let epoch = af_epoch.load(Ordering::Acquire);
+        if epoch != seen_epoch {
+            seen_epoch = epoch;
+            tap_parser.reset();
         }
 
         // mpv runs the filter chain when the audio output needs data, so
@@ -654,11 +683,15 @@ fn event_loop(
                             TapFeed::Consumed => {
                                 // A complete tap line that did not decode
                                 // is worth seeing when chasing frame loss.
+                                // Mid-stitch the parser absorbs whatever
+                                // `ffmpeg` message comes next, so this can
+                                // be ordinary log text: redact it like the
+                                // rest.
                                 if text.ends_with('\n') {
                                     log::trace!(
                                         "spectrum tap: undecodable line ({} bytes): {}",
                                         text.len(),
-                                        text.trim_end()
+                                        redact_urls(text.trim_end())
                                     );
                                 }
                                 continue;
@@ -669,12 +702,15 @@ fn event_loop(
                     let trimmed = text.trim_end_matches('\n');
                     if !trimmed.is_empty() {
                         let safe = redact_urls(trimmed);
-                        // A graph that fails to configure makes mpv drop
-                        // that `af` entry and carry on without it, so a
-                        // missing EQ or a blank visualiser is otherwise
-                        // silent. Call it out explicitly.
+                        // A graph that fails to build makes mpv drop that
+                        // `af` entry and carry on without it, so a missing
+                        // EQ or a blank visualiser is otherwise silent. The
+                        // `af` property set itself succeeds; the failure
+                        // only shows up here, later. Call it out.
                         if safe.contains("failed to configure the filter graph")
                             || safe.contains("Disabling filter")
+                            || safe.contains("parsing the filter graph failed")
+                            || safe.contains("Audio filter initialized failed")
                         {
                             log::warn!(
                                 "mpv af chain rejected — the EQ or the spectrum tap is absent: {safe}"
@@ -768,7 +804,10 @@ mod tests {
 /// doubt (the Linux AppImage's FFmpeg 4.4 in particular):
 ///
 /// ```text
-/// RUST_LOG=info cargo test -p ramus-tauri --lib -- --ignored tap_probe --nocapture
+/// RUST_LOG=info cargo test -p ramus-tauri --lib -- --ignored tap_probe --nocapture --test-threads=1
+///
+/// One at a time: each probe drives its own libmpv instance through the
+/// audio output, and two at once starve each other of frames.
 /// ```
 ///
 /// `tap_probe_produces_frames_from_a_tone` proves the graph parses on
@@ -918,6 +957,39 @@ mod tap_probe {
         let settled = h.frames.lock().len();
         std::thread::sleep(Duration::from_millis(600));
         assert_eq!(h.frames.lock().len(), settled, "frames kept arriving after removal");
+    }
+
+    /// A tone at the lowest band's centre must peak in band 0 on BOTH
+    /// channels. Left to guess its own mapping, `join` puts the right
+    /// bank's first input (which carries `FR`) on output channel 1, and
+    /// that bank's two lowest bands come out swapped.
+    #[test]
+    #[ignore]
+    fn tap_probe_lowest_band_lands_on_both_channels() {
+        let h = harness();
+        let cfg = install_tap(&h.mpv);
+        let f0 = band_frequencies(&cfg)[0];
+        h.mpv.load_file(
+            &format!("av://lavfi:sine=frequency={f0:.1}:sample_rate=44100:duration=4"),
+            LoadMode::Replace,
+            None,
+        );
+
+        let want = 2 * cfg.fps as usize;
+        let n = wait_for_frames(&h.frames, want, Duration::from_secs(10));
+        assert!(n >= want, "expected at least {want} frames within 10 s, got {n}");
+        let got = h.frames.lock().clone();
+        let mid = &got[got.len() / 2];
+        for (channel, half) in mid.db.chunks(cfg.bands).enumerate() {
+            let loudest = (0..cfg.bands)
+                .max_by(|&a, &b| half[a].partial_cmp(&half[b]).unwrap())
+                .unwrap();
+            assert_eq!(
+                loudest, 0,
+                "channel {channel}: loudest band {loudest} for a {f0:.1} Hz tone; {half:?}"
+            );
+        }
+        remove_tap(&h.mpv);
     }
 
     /// Cumulative CPU time of this process in seconds, via `ps` (portable
