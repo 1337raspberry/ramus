@@ -807,7 +807,8 @@ mod tests {
 /// RUST_LOG=info cargo test -p ramus-tauri --lib -- --ignored tap_probe --nocapture --test-threads=1
 ///
 /// One at a time: each probe drives its own libmpv instance through the
-/// audio output, and two at once starve each other of frames.
+/// audio output, and two at once starve each other of frames. On a
+/// machine without a sound device set `RAMUS_TAP_PROBE_AO=null`.
 /// ```
 ///
 /// `tap_probe_produces_frames_from_a_tone` proves the graph parses on
@@ -855,11 +856,32 @@ mod tap_probe {
         });
         let mpv = MpvController::new(lib, callbacks).expect("mpv controller");
         mpv.set_volume(0.0);
+        apply_probe_ao(&mpv);
         Harness {
             mpv,
             frames,
             positions,
         }
+    }
+
+    /// `RAMUS_TAP_PROBE_AO` picks the audio output for the probes. A
+    /// headless machine has no device; mpv's `null` output is a timed
+    /// simulation with accurate delay reporting, so the timing checks
+    /// still mean something there. A PulseAudio null sink is not a
+    /// substitute: the latency it reports makes `time-pos` run ahead of
+    /// the frames.
+    fn apply_probe_ao(mpv: &MpvController) {
+        let Ok(ao) = std::env::var("RAMUS_TAP_PROBE_AO") else {
+            return;
+        };
+        let name = CString::new("ao").unwrap();
+        let value = CString::new(ao.clone()).unwrap();
+        let rc = unsafe {
+            mpv.lib
+                .set_property_string(mpv.handle.ptr(), name.as_ptr(), value.as_ptr())
+        };
+        assert!(rc >= 0, "mpv rejected ao={ao}");
+        log::info!("tap_probe: audio output {ao}");
     }
 
     /// Install the tap the way `AudioPlayer::set_spectrum_tap` does: raise
