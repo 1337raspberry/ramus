@@ -1661,6 +1661,7 @@ pub fn run() {
             commands::playback::foreground_resync,
             // spectrum (focus-mode visualiser)
             commands::spectrum::set_spectrum_tap,
+            commands::spectrum::set_spectrum_tilt,
             // search
             commands::search::search,
             commands::search::search_albums_for_grid,

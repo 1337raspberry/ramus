@@ -105,8 +105,8 @@ export const VISUALIZER_PARAMS: VisualizerParams = {
   floorCut: 0,
   gain: 1.1,
 
-  ridgeRows: 28,
-  ridgeHeight: 0.34,
+  ridgeRows: 34,
+  ridgeHeight: 0.41,
   ridgePeak: 0.6,
   ridgeDepthScale: 0.6,
   ridgeBottom: 0.01,

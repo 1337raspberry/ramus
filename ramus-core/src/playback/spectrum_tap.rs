@@ -188,6 +188,16 @@ pub const PEAK_SEED_DB: f32 = -20.0;
 /// in dB per second, once the music gets quieter than the last peak.
 pub const PEAK_DECAY_DB_PER_SEC: f32 = 6.0;
 
+/// Spectral tilt applied to every band before the running peak and the
+/// window see it, in dB per octave: the spectrum is rotated about the
+/// geometric centre of the band range, so the lowest band moves down and
+/// the highest up by the same amount. Music's energy falls away above the
+/// low-mids by several dB per octave, and against a single peak-anchored
+/// window the treble bands then sit near the floor; a small positive tilt
+/// lets them through without flattening the bass-led shape. The
+/// `RAMUS_TAP_TILT` environment variable overrides it for tuning.
+pub const TILT_DB_PER_OCTAVE: f32 = 1.0;
+
 /// Lowest value the running peak is allowed to decay to. Keeps a fade-out
 /// or a stretch of near-silence from being auto-gained up to full-height
 /// bars: anything more than `DYNAMIC_RANGE_DB` below this floor renders as
@@ -672,14 +682,30 @@ fn quantise_db_range(db: f32, floor: f32, ceiling: f32) -> u8 {
 pub struct LevelMapper {
     peak_db: f32,
     decay_per_frame: f32,
+    tilt_db_per_octave: f32,
+    /// Per-value tilt offsets for the frame width last mapped, rebuilt
+    /// when the width changes.
+    tilt: Vec<f32>,
 }
 
 impl LevelMapper {
-    /// `fps` is the tap's frame rate; the decay is applied per frame.
+    /// `fps` is the tap's frame rate; the decay is applied per frame. The
+    /// tilt is `TILT_DB_PER_OCTAVE`.
     pub fn new(fps: u32) -> Self {
+        Self::with_tilt(fps, TILT_DB_PER_OCTAVE)
+    }
+
+    /// As `new`, with an explicit spectral tilt in dB per octave.
+    pub fn with_tilt(fps: u32, tilt_db_per_octave: f32) -> Self {
         Self {
             peak_db: PEAK_SEED_DB,
             decay_per_frame: PEAK_DECAY_DB_PER_SEC / fps.max(1) as f32,
+            tilt_db_per_octave: if tilt_db_per_octave.is_finite() {
+                tilt_db_per_octave
+            } else {
+                0.0
+            },
+            tilt: Vec::new(),
         }
     }
 
@@ -688,19 +714,47 @@ impl LevelMapper {
         self.peak_db = PEAK_SEED_DB;
     }
 
+    /// Change the spectral tilt; the next frame is mapped with it. A
+    /// non-finite value means no tilt.
+    pub fn set_tilt(&mut self, db_per_octave: f32) {
+        self.tilt_db_per_octave = if db_per_octave.is_finite() {
+            db_per_octave
+        } else {
+            0.0
+        };
+        self.tilt.clear();
+    }
+
+    /// The spectral tilt in dB per octave.
+    pub fn tilt(&self) -> f32 {
+        self.tilt_db_per_octave
+    }
+
     /// Current running peak in dBFS.
     pub fn peak_db(&self) -> f32 {
         self.peak_db
     }
 
     /// Quantise one frame of band levels to bar heights, advancing the
-    /// running peak.
+    /// running peak. The tilt is applied first, so the peak anchors to the
+    /// tilted spectrum; a band at the floor is silence and stays there.
     pub fn map(&mut self, db: &[f32]) -> Vec<u8> {
-        let frame_max = db
+        if self.tilt.len() != db.len() {
+            self.tilt = tilt_offsets(db.len(), self.tilt_db_per_octave);
+        }
+        let db: Vec<f32> = db
             .iter()
-            .copied()
-            .filter(|v| v.is_finite())
-            .fold(DB_FLOOR, f32::max);
+            .zip(&self.tilt)
+            .map(|(&d, &t)| {
+                let d = sanitise_db(d);
+                if d > DB_FLOOR {
+                    (d + t).max(DB_FLOOR)
+                } else {
+                    d
+                }
+            })
+            .collect();
+        let frame_max = db.iter().copied().fold(DB_FLOOR, f32::max);
         if frame_max > self.peak_db {
             self.peak_db = frame_max;
         } else {
@@ -711,9 +765,27 @@ impl LevelMapper {
         let ceiling = self.peak_db + PEAK_HEADROOM_DB;
         let floor = (ceiling - DYNAMIC_RANGE_DB).max(DB_FLOOR);
         db.iter()
-            .map(|&d| quantise_db_range(sanitise_db(d), floor, ceiling))
+            .map(|&d| quantise_db_range(d, floor, ceiling))
             .collect()
     }
+}
+
+/// The tilt offset for every value of a `len`-wide frame (`TAP_CHANNELS`
+/// runs of equal-octave bands): `slope` dB per octave, zero at the centre
+/// of the band range. A width that isn't a whole number of channels, or
+/// a single band, gets no tilt.
+fn tilt_offsets(len: usize, slope: f32) -> Vec<f32> {
+    let n = len / TAP_CHANNELS;
+    if slope == 0.0 || n < 2 || !len.is_multiple_of(TAP_CHANNELS) {
+        return vec![0.0; len];
+    }
+    let span = (TAP_FREQ_HIGH_HZ / TAP_FREQ_LOW_HZ).log2();
+    (0..len)
+        .map(|i| {
+            let k = (i % n) as f32 / (n - 1) as f32;
+            slope * span * (k - 0.5)
+        })
+        .collect()
 }
 
 impl Default for LevelMapper {
@@ -1522,12 +1594,53 @@ mod tests {
     fn the_running_peak_is_shared_across_both_channels() {
         // A loud left channel sets the window for the right channel too,
         // so a panned instrument reads as louder on one side rather than
-        // being scaled up to match.
-        let mut m = LevelMapper::new(60);
+        // being scaled up to match. No tilt, so the peak is the raw level.
+        let mut m = LevelMapper::with_tilt(60, 0.0);
         let out = m.map(&[-5.0, -5.0, -50.0, -50.0]);
         assert_eq!(m.peak_db(), -5.0);
         assert!(out[0] > 240);
         assert!(out[2] < out[0] / 2, "{:?}", out);
+    }
+
+    #[test]
+    fn tilt_rotates_a_flat_spectrum_about_the_centre_band() {
+        // Four bands per channel, evenly spaced in octaves, all at the same
+        // level: the tilt lowers the low bands and raises the high ones by
+        // the same amount either side of the centre, and both channels get
+        // the same treatment. The running peak follows the tilted levels,
+        // so the top band is the loudest.
+        let mut m = LevelMapper::with_tilt(60, 6.0);
+        let out = m.map(&[-20.0; 8]);
+        assert!(out[0] < out[1] && out[1] < out[2] && out[2] < out[3], "{:?}", out);
+        assert_eq!(&out[..4], &out[4..]);
+        let span = (TAP_FREQ_HIGH_HZ / TAP_FREQ_LOW_HZ).log2();
+        assert!((m.peak_db() - (-20.0 + 6.0 * span / 2.0)).abs() < 1e-3);
+        let mut flat = LevelMapper::with_tilt(60, 0.0);
+        let out = flat.map(&[-20.0; 8]);
+        assert!(out.iter().all(|&v| v == out[0]), "{:?}", out);
+    }
+
+    #[test]
+    fn tilt_leaves_silent_bands_silent() {
+        // A band at the floor is silence, not a level to be boosted: with
+        // one loud low band and the rest at the floor, the tilted top band
+        // still renders as nothing.
+        let mut m = LevelMapper::with_tilt(60, 6.0);
+        let out = m.map(&[0.0, DB_FLOOR, DB_FLOOR, DB_FLOOR, 0.0, DB_FLOOR, DB_FLOOR, DB_FLOOR]);
+        assert!(out[0] > 200, "{:?}", out);
+        assert_eq!(out[3], 0);
+    }
+
+    #[test]
+    fn changing_the_tilt_takes_effect_on_the_next_frame() {
+        // A live tuning change: the same flat frame is tilted, then flat
+        // again once the tilt is set to zero, with no new mapper needed.
+        let mut m = LevelMapper::with_tilt(60, 6.0);
+        let tilted = m.map(&[-20.0; 8]);
+        assert!(tilted[0] < tilted[3], "{:?}", tilted);
+        m.set_tilt(0.0);
+        let flat = m.map(&[-20.0; 8]);
+        assert!(flat.iter().all(|&v| v == flat[0]), "{:?}", flat);
     }
 
     #[test]
