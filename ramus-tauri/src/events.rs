@@ -48,6 +48,23 @@ pub fn emit_playback_position(app: &AppHandle, payload: PlaybackPositionPayload)
     let _ = app.emit("playback-position", payload);
 }
 
+/// The audible position for the visualiser: mpv's `audio-pts` remapped
+/// like `position`, with the stream epoch it belongs to. `time-pos` sits
+/// at 0 for the length of the audio buffer after a gapless join while the
+/// previous track is still sounding; this runs negative through that
+/// window, so a frame lookup can stay on the outgoing track until the
+/// join is actually heard.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackAudiblePayload {
+    pub epoch: u64,
+    pub position: f64,
+}
+
+pub fn emit_playback_audible(app: &AppHandle, payload: PlaybackAudiblePayload) {
+    let _ = app.emit("playback-audible", payload);
+}
+
 pub fn emit_playback_buffering(app: &AppHandle, buffering: bool) {
     let _ = app.emit("playback-buffering", PlaybackBufferingPayload { buffering });
 }
@@ -69,6 +86,9 @@ pub fn emit_accent_color(app: &AppHandle, payload: AccentColorPayload) {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpectrumFramesPayload {
+    /// The stream every frame in the batch belongs to; matches the epoch
+    /// on `playback-audible` ticks.
+    pub epoch: u64,
     pub band_count: u32,
     pub channels: u32,
     pub frames: Vec<ramus_core::playback::spectrum_tap::SpectrumFrame>,

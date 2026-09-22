@@ -28,6 +28,7 @@ pub enum ObserverID {
     Pause = 3,
     PlaylistPos = 5,
     IdleActive = 9,
+    AudioPts = 10,
 }
 
 /// mpv file load mode.
@@ -53,6 +54,11 @@ impl LoadMode {
 #[derive(Default)]
 pub struct MpvCallbacks {
     pub on_position_change: Option<Box<dyn Fn(f64) + Send + Sync>>,
+    /// mpv's `audio-pts`: the position of the audio being heard, on the
+    /// current file's timeline. Keeps ticking through a gapless join,
+    /// negative while the previous file's tail still sounds, where
+    /// `time-pos` sits at 0.
+    pub on_audible_change: Option<Box<dyn Fn(f64) + Send + Sync>>,
     pub on_duration_change: Option<Box<dyn Fn(f64) + Send + Sync>>,
     pub on_playlist_pos_change: Option<Box<dyn Fn(i64) + Send + Sync>>,
     pub on_pause_change: Option<Box<dyn Fn(bool) + Send + Sync>>,
@@ -145,6 +151,7 @@ pub fn observed_properties() -> Vec<(&'static str, ObserverID)> {
         ("pause", ObserverID::Pause),
         ("playlist-pos", ObserverID::PlaylistPos),
         ("idle-active", ObserverID::IdleActive),
+        ("audio-pts", ObserverID::AudioPts),
     ]
 }
 
@@ -278,9 +285,10 @@ mod tests {
     #[test]
     fn test_observed_properties_complete() {
         let props = observed_properties();
-        assert_eq!(props.len(), 5);
+        assert_eq!(props.len(), 6);
         assert!(props.iter().any(|(name, id)| *name == "time-pos" && *id == ObserverID::TimePos));
         assert!(props.iter().any(|(name, id)| *name == "duration" && *id == ObserverID::Duration));
+        assert!(props.iter().any(|(name, id)| *name == "audio-pts" && *id == ObserverID::AudioPts));
         assert!(props.iter().any(|(name, id)| *name == "pause" && *id == ObserverID::Pause));
         assert!(props
             .iter()
