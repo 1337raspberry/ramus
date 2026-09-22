@@ -4022,6 +4022,102 @@ body.is-fullscreen .focus-body {
   font-size: 15px;
 }
 
+/* --- Clear screen: focus mode reduced to the visualiser and a corner
+   player. No panel behind it: the controls sit straight on the visuals,
+   below the window drag region and inside the right edge; the seek bar
+   is the normal waveform bar at a smaller height. --- */
+
+.focus-clear-player {
+  position: absolute;
+  top: 44px;
+  right: 32px;
+  z-index: 1;
+  width: 440px;
+  max-width: calc(100% - 64px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.focus-clear-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.focus-clear-art {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.focus-clear-art-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.focus-clear-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* A faint shadow keeps the text readable where a visualiser line runs
+   behind it, since there is no panel to separate them. */
+.focus-clear-title {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+
+.focus-clear-artist {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+
+.focus-clear-transport {
+  gap: 0;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.focus-clear-transport .np-transport-btn {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  font-size: 15px;
+}
+
+.focus-clear-transport .np-play-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  font-size: 19px;
+}
+
+.focus-clear-player .waveform-container {
+  min-height: 0;
+}
+
+.focus-clear-player .waveform-canvas-wrap {
+  height: 22px;
+}
+
 /* --- Right panel: controls + expandable queue --- */
 
 .focus-controls-panel {

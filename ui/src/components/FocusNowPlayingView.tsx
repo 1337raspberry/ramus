@@ -4,7 +4,6 @@ import {
   applyUltraBlurColors,
   resetUltraBlurGate,
   ultraBlurColorsGen,
-  type VisualizerMode,
 } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { ART_SIZE, setAlbumPalette, getAlbumGenres, getAlbumColors } from "../lib/commands";
@@ -23,6 +22,8 @@ import NowPlayingMenu from "./NowPlayingMenu";
 import PlaybackQualityNotice from "./PlaybackQualityNotice";
 import QueueView from "./QueueView";
 import FocusVisualizer from "./FocusVisualizer";
+import FocusClearPlayer from "./FocusClearPlayer";
+import VisualizerToggle from "./VisualizerToggle";
 import MarqueeText from "./MarqueeText";
 import {
   IconStarFilled,
@@ -35,9 +36,8 @@ import {
   IconNext,
   IconChevronDown,
   IconClose,
-  IconWave,
-  IconRidge,
   IconShuffle,
+  IconCollapseCorner,
 } from "./Icons";
 
 interface Props {
@@ -45,20 +45,14 @@ interface Props {
   onOpenSettings?: () => void;
 }
 
-/** Tooltip per visualiser mode; the button cycles bars → ridge → off. */
-const VISUALIZER_TOGGLE_TITLE: Record<VisualizerMode, string> = {
-  off: "Visualiser: off — click for bars",
-  bars: "Visualiser: bars — click for ridgeline",
-  ridge: "Visualiser: ridgeline — click to hide",
-};
-
 /**
  * Full-screen Now Playing overlay. Mounted from App.tsx when
  * `playbackStore.isFocusMode === true`.
  *
  * Layout: FocusVisualizer paints a full-window background layer (bars
- * drape from the top edge, the ridgeline rises from the bottom). A
- * two-column grid sits on top, offset 32px from
+ * drape from the top edge, the ridgeline rises from the bottom). In the
+ * clear screen (`focusClear`) only a corner player sits on top of it
+ * (`FocusClearPlayer`); otherwise a two-column grid does, offset 32px from
  * the top to clear the window drag region. Left: album art with
  * artist/album/year anchored below. Right: track title, waveform,
  * transport, volume, genres, codec, plus an expandable queue that reuses
@@ -77,7 +71,8 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
   const changeVolume = usePlaybackStore((s) => s.changeVolume);
   const toggleFocusMode = usePlaybackStore((s) => s.toggleFocusMode);
   const visualizerMode = usePlaybackStore((s) => s.visualizerMode);
-  const toggleVisualizer = usePlaybackStore((s) => s.toggleVisualizer);
+  const focusClear = usePlaybackStore((s) => s.focusClear);
+  const toggleFocusClear = usePlaybackStore((s) => s.toggleFocusClear);
 
   const suggestion = useLibraryStore((s) => s.suggestion);
   const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
@@ -310,15 +305,34 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
 
   const albumTitle = track.albumTitle;
   const artistName = track.artistName;
+  const artistLabel = hasTrackArtist ? `${artistName} (${track.trackArtist})` : artistName;
+
+  // Clear screen: the visualiser and the corner player, nothing else. The
+  // full layout below is unmounted rather than hidden so its queue panel,
+  // lyrics and suggestion effects don't run behind the visuals.
+  if (focusClear) {
+    return (
+      <div className="focus-overlay">
+        <FocusVisualizer mode={visualizerMode} />
+        <FocusClearPlayer
+          title={track.title}
+          artist={artistLabel}
+          artSrc={artSrc}
+          artErr={artErr}
+          onArtError={() => setArtErr(true)}
+          onExit={toggleFocusClear}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="focus-overlay">
       {/* Visualiser is a full-window background layer behind art and
        * controls: bars drape from the top edge, the ridgeline rises from
-       * the bottom. Gated on `visualizerMode !== "off"` and unmounted
-       * (not CSS-hidden) so the RAF loop stops (and the audio tap is
-       * removed) in "off" mode. */}
-      {visualizerMode !== "off" && <FocusVisualizer mode={visualizerMode} />}
+       * the bottom. Turning it off is the `disableSpectrum` setting, which
+       * the component honours by rendering nothing and removing the tap. */}
+      <FocusVisualizer mode={visualizerMode} />
 
       <div className="focus-body">
         <div className={`focus-art-panel${showLyrics ? " lyrics-mode" : ""}`}>
@@ -341,7 +355,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
 
           <div className="focus-art-meta">
             <MarqueeText className="focus-artist np-clickable" onClick={handleArtistClick}>
-              {hasTrackArtist ? `${artistName} (${track.trackArtist})` : artistName}
+              {artistLabel}
             </MarqueeText>
             <div className="focus-album-row">
               <MarqueeText className="focus-album-title np-clickable" onClick={handleAlbumClick}>
@@ -388,14 +402,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
                   <IconEqualizer />
                 </button>
               )}
-              <button
-                className={`np-viz-btn${visualizerMode !== "off" ? " active" : ""}`}
-                onClick={toggleVisualizer}
-                title={VISUALIZER_TOGGLE_TITLE[visualizerMode]}
-                aria-label={VISUALIZER_TOGGLE_TITLE[visualizerMode]}
-              >
-                {visualizerMode === "ridge" ? <IconRidge /> : <IconWave />}
-              </button>
+              <VisualizerToggle />
               <button
                 className={`np-fav-btn${trackFav ? " active" : ""}`}
                 onClick={(e) => {
@@ -407,6 +414,14 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
                 {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
               </button>
               <NowPlayingMenu />
+              <button
+                className="np-viz-btn"
+                onClick={toggleFocusClear}
+                title="Clear screen: hide everything but the visualiser"
+                aria-label="Clear screen: hide everything but the visualiser"
+              >
+                <IconCollapseCorner />
+              </button>
               <button
                 className="focus-close-btn"
                 onClick={toggleFocusMode}

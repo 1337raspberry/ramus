@@ -7,16 +7,14 @@ import { clearSpectrumRing } from "../lib/spectrumRing";
 /**
  * Focus-mode visualiser rendering mode.
  *
- * - `"off"`   — viz is unmounted, RAF loop stops
  * - `"bars"`  — one bar per tap band from the top edge, mirrored: bass centred, treble at edges
  * - `"ridge"` — a stack of spectrum-history lines rising from the bottom edge, bass left, treble right
  *
- * `toggleVisualizer` cycles bars → ridge → off. The style last shown is
- * persisted and comes back on the next launch; on/off is session state.
+ * `toggleVisualizer` steps to the next mode and the choice is persisted,
+ * so it comes back on the next launch. There is no "off" here: turning the
+ * visualiser off is the `disableSpectrum` setting.
  */
-export type VisualizerMode = "off" | "bars" | "ridge";
-/** The looks the visualiser can be showing. */
-export type VisualizerStyle = Exclude<VisualizerMode, "off">;
+export type VisualizerMode = "bars" | "ridge";
 import {
   getVolume,
   setVolume as setVolumeCmd,
@@ -35,7 +33,7 @@ import {
 
 const VISUALIZER_STYLE_KEY = "ramus-visualizer-style";
 
-function loadPersistedVisualizerStyle(): VisualizerStyle {
+function loadPersistedVisualizerStyle(): VisualizerMode {
   try {
     const raw = localStorage.getItem(VISUALIZER_STYLE_KEY);
     if (raw === "bars" || raw === "ridge") return raw;
@@ -43,7 +41,7 @@ function loadPersistedVisualizerStyle(): VisualizerStyle {
   return "bars";
 }
 
-function persistVisualizerStyle(style: VisualizerStyle): void {
+function persistVisualizerStyle(style: VisualizerMode): void {
   try {
     localStorage.setItem(VISUALIZER_STYLE_KEY, style);
   } catch {}
@@ -91,6 +89,12 @@ interface PlaybackState {
 
   // --- Focus mode ---
   isFocusMode: boolean;
+  /**
+   * Clear screen: focus mode with everything but the visualiser and a
+   * small corner player hidden. A sub-state of focus mode, reset
+   * whenever focus mode is toggled.
+   */
+  focusClear: boolean;
   // Session-only; resets to `"bars"` on reload. Toggled bars ↔ off.
   visualizerMode: VisualizerMode;
 
@@ -125,6 +129,7 @@ interface PlaybackState {
   toggleLyrics: () => void;
   toggleQueue: () => void;
   toggleFocusMode: () => void;
+  toggleFocusClear: () => void;
   toggleVisualizer: () => void;
   removeQueueItem: (index: number) => void;
   /// Drag reorder: move the entry at `from` to position `to` (absolute
@@ -231,6 +236,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   currentGenres: [],
 
   isFocusMode: false,
+  focusClear: false,
   visualizerMode: loadPersistedVisualizerStyle(),
   positionAt: 0,
 
@@ -442,13 +448,14 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     }
   },
 
-  toggleFocusMode: () => set((s) => ({ isFocusMode: !s.isFocusMode })),
+  toggleFocusMode: () => set((s) => ({ isFocusMode: !s.isFocusMode, focusClear: false })),
+
+  toggleFocusClear: () => set((s) => ({ focusClear: !s.focusClear })),
 
   toggleVisualizer: () =>
     set((s) => {
-      const next: VisualizerMode =
-        s.visualizerMode === "bars" ? "ridge" : s.visualizerMode === "ridge" ? "off" : "bars";
-      if (next !== "off") persistVisualizerStyle(next);
+      const next: VisualizerMode = s.visualizerMode === "bars" ? "ridge" : "bars";
+      persistVisualizerStyle(next);
       return { visualizerMode: next };
     }),
 
