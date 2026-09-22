@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { setSpectrumTap } from "../lib/commands";
-import { pickSpectrumFrame, spectrumLastPushAt } from "../lib/spectrumRing";
+import { audibleTarget, pickSpectrumFrame, spectrumLastPushAt } from "../lib/spectrumRing";
 import { VISUALIZER_PARAMS } from "../lib/visualizerParams";
 import { accentFromPalette } from "../lib/vibrantColor";
 import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
@@ -17,11 +17,13 @@ import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
  * land in `lib/spectrumRing.ts` keyed by track position, up to ~0.5 s
  * ahead of the reported playback position.
  *
- * Sync: each paint estimates the playhead as the last position tick plus
- * the wall-clock elapsed since it (while playing) and draws the ring
- * frame nearest that estimate. Because the frames carry mpv's own
- * timestamps, seeks, pauses, stalls and track changes need no special
- * handling here: no frame near the estimated position means no bars.
+ * Sync: each paint estimates where the audio is from the last audible
+ * tick (`playback-audible`: mpv's `audio-pts` with its stream epoch) plus
+ * the wall-clock elapsed since it, and draws the ring frame of that
+ * epoch nearest the estimate. Because the frames carry mpv's own
+ * timestamps and epoch, seeks, pauses, stalls and track changes need no
+ * special handling here: no frame near the estimate means no bars, and
+ * a gapless join keeps drawing the outgoing track until it is heard.
  *
  * Rendering: one bar per band per channel. A frame carries the left
  * channel's N bands followed by the right channel's (N is 64 by default),
@@ -259,17 +261,27 @@ function CanvasLayer() {
       const rawDelta = lastTs !== 0 ? now - lastTs : 0;
       lastTs = now;
 
-      // Hot-path reads. Position is the ground truth for the frame
-      // lookup — never subscribe via a React selector.
+      // Hot-path reads. Playback state gates the lookup and the seek-bar
+      // position is its fallback clock — never subscribe via a React
+      // selector.
       const playback = usePlaybackStore.getState();
       const isPlaying = playback.status === "playing";
 
       let haveFrame = false;
       if (isPlaying) {
-        // Extrapolate from the last position tick; ticks land several
-        // times a second, which is far too coarse on its own.
-        const estimate = playback.position + (now - playback.positionAt) / 1000;
-        const frame = pickSpectrumFrame(estimate, FRAME_LAG_TOLERANCE_S, FRAME_LEAD_TOLERANCE_S);
+        // Clock off the audible position (mpv's `audio-pts`, with its
+        // stream epoch), extrapolated from the last tick; ticks land
+        // several times a second, which is far too coarse on its own.
+        // Before the first tick, fall back to the seek-bar position.
+        const target = audibleTarget(now);
+        const frame = target
+          ? pickSpectrumFrame(target.epoch, target.pos, FRAME_LAG_TOLERANCE_S, FRAME_LEAD_TOLERANCE_S)
+          : pickSpectrumFrame(
+              null,
+              playback.position + (now - playback.positionAt) / 1000,
+              FRAME_LAG_TOLERANCE_S,
+              FRAME_LEAD_TOLERANCE_S,
+            );
         if (frame) {
           if (frame.bands.length !== current.length) {
             current = new Float32Array(frame.bands.length);

@@ -29,6 +29,22 @@ impl AudioPlayer {
     }
 
     /// Handle mpv position change (called by event loop, ~30fps).
+    /// mpv's `audio-pts` tick: the position of the audio actually being
+    /// heard. Across a gapless join it runs negative on the new file's
+    /// timeline for the length of the audio buffer, while `time-pos`
+    /// already reads 0, so the visualiser clocks off this instead.
+    /// Remapped like `position` and paired with the stream epoch.
+    pub fn handle_audible_change(&self, pts: f64) -> Option<super::AudiblePosition> {
+        let inner = self.inner.lock();
+        if Self::ignores_mpv_events(&inner) {
+            return None;
+        }
+        Some(super::AudiblePosition {
+            epoch: inner.tap_epoch,
+            position: pts + inner.position_base,
+        })
+    }
+
     pub fn handle_position_change(&self, pos: f64) {
         let mut inner = self.inner.lock();
         if Self::ignores_mpv_events(&inner) {

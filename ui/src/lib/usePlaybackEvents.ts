@@ -5,12 +5,13 @@ import type {
   AccentColorPayload,
   PlaybackStatePayload,
   PlaybackPositionPayload,
+  PlaybackAudiblePayload,
   PlaybackBufferingPayload,
   SpectrumFramesPayload,
   MetadataWarmedPayload,
 } from "./types";
 import { usePlaybackStore } from "../stores/playbackStore";
-import { pushSpectrumFrames } from "./spectrumRing";
+import { pushSpectrumFrames, setAudibleClock } from "./spectrumRing";
 import { useConnectionStore } from "../stores/connectionStore";
 import { usePlaybackQualityStore } from "../stores/playbackQualityStore";
 import { applyAccent } from "./accent";
@@ -78,6 +79,11 @@ export function usePlaybackEvents(authed: boolean): void {
     // visualiser's paint loop reads the ring directly.
     const u3 = listen<SpectrumFramesPayload>("spectrum-frames", (event) => {
       pushSpectrumFrames(event.payload);
+    });
+    // The visualiser's clock: the position being heard, with its stream
+    // epoch. Bypasses the store for the same reason the frames do.
+    const u6 = listen<PlaybackAudiblePayload>("playback-audible", (event) => {
+      setAudibleClock(event.payload.epoch, event.payload.position);
     });
     // Backend-driven buffering signal for the reconnect/reload gap (a
     // connection failover or file-ended resume). The frontend can't infer
@@ -156,6 +162,7 @@ export function usePlaybackEvents(authed: boolean): void {
       u3.then((fn) => fn());
       u4.then((fn) => fn());
       u5.then((fn) => fn());
+      u6.then((fn) => fn());
     };
   }, []);
 

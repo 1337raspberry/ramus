@@ -375,6 +375,15 @@ export interface PlaybackPositionPayload {
   duration: number;
 }
 
+// Payload of the `playback-audible` event: the position of the audio being
+// heard, on the current stream's timeline, with the stream epoch. Across a
+// gapless join it runs negative while the previous track's tail is still
+// sounding, where `position` already reads 0 for the new track.
+export interface PlaybackAudiblePayload {
+  epoch: number;
+  position: number;
+}
+
 export interface PlaybackBufferingPayload {
   buffering: boolean;
 }
@@ -401,6 +410,11 @@ export interface SpectrumFrame {
 }
 
 export interface SpectrumFramesPayload {
+  /**
+   * The stream every frame in the batch belongs to; matches the epoch on
+   * `playback-audible` ticks.
+   */
+  epoch: number;
   /** Bands per channel. */
   bandCount: number;
   /** Channels per frame; 2 for the stereo tap. */

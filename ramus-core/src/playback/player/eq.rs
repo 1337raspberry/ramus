@@ -134,11 +134,12 @@ impl AudioPlayer {
     /// `offset=` resume that stream is 0-based and `position_base` holds
     /// the shift; the frontend's position is the shifted value, so frames
     /// shift the same way or the visualiser drifts for the rest of that
-    /// stream. Across a gapless boundary the next file's first frames (up
-    /// to `audio-buffer` ahead of the audible switch) arrive before the
-    /// playlist position moves and so still carry the outgoing track's
-    /// base; the frontend clears its ring on the track change.
-    pub fn map_tap_frames(&self, frames: Vec<TapFrame>) -> Vec<SpectrumFrame> {
+    /// stream. Across a gapless join mpv moves the playlist position
+    /// first and the next file's first frames follow a few frames later,
+    /// so they are mapped with the new base and the new stream epoch;
+    /// the epoch is returned with the batch so the frontend can keep the
+    /// outgoing stream's tail and the incoming stream's start apart.
+    pub fn map_tap_frames(&self, frames: Vec<TapFrame>) -> (u64, Vec<SpectrumFrame>) {
         let mut inner = self.inner.lock();
         if inner.tap_awaiting_first_batch {
             if let Some(first) = frames.first() {
@@ -152,13 +153,15 @@ impl AudioPlayer {
             }
         }
         let base = inner.position_base;
-        frames
+        let epoch = inner.tap_epoch;
+        let mapped = frames
             .into_iter()
             .map(|f| SpectrumFrame {
                 pos: f.pts + base,
                 bands: inner.tap_mapper.map(&f.db),
             })
-            .collect()
+            .collect();
+        (epoch, mapped)
     }
 
     /// Compose the `af` value from the remembered EQ state and tap flag.

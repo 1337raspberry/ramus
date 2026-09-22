@@ -60,6 +60,14 @@ pub struct AudioPlayerState {
     pub volume: f64,
 }
 
+/// An `audio-pts` tick remapped onto the track timeline, with the stream
+/// epoch it belongs to (see `PlayerInner::tap_epoch`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AudiblePosition {
+    pub epoch: u64,
+    pub position: f64,
+}
+
 struct PlayerInner {
     state: PlayerState,
     position: f64,
@@ -133,6 +141,12 @@ struct PlayerInner {
     /// of the player backend once at construction (it depends on the
     /// FFmpeg build behind libmpv, which does not change at runtime).
     tap_cut_main_path: bool,
+    /// Counts fresh mpv streams (every `begin_load`: a gapless advance, a
+    /// load, a failover reload). Stamped on tap frames and audible-position
+    /// ticks so the frontend can tell the outgoing stream's last frames
+    /// from the incoming stream's first ones, whose timelines both sit
+    /// near the join.
+    tap_epoch: u64,
     /// Wall-clock of the last *automatic* current-track reload (failover or
     /// file-ended recovery). Enforces `RELOAD_COOLDOWN` so a burst of triggers
     /// can't stack multiple reloads onto one hiccup. `None` until the first.
@@ -260,6 +274,7 @@ impl PlayerInner {
     /// track that starved condemn the one after it, which may well be playing
     /// from cache.
     fn begin_load(&mut self) {
+        self.tap_epoch += 1;
         self.load_started_at = Some(Instant::now());
         self.last_position_update = None;
         self.last_load_error = None;
@@ -350,6 +365,7 @@ impl AudioPlayer {
                 tap_mapper: eq::new_tap_mapper(),
                 tap_awaiting_first_batch: false,
                 tap_cut_main_path,
+                tap_epoch: 0,
                 last_auto_reload_at: None,
                 held_for_recovery: false,
                 user_paused: false,

@@ -219,14 +219,16 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     const trackChanged = track?.ratingKey !== prev?.ratingKey;
 
     // Invalidate the in-flight lyrics refresh so stale data from the previous
-    // track cannot land on the new one, and drop the previous track's live
-    // spectrum frames. UltraBlur colours reset per ALBUM, not per track: on
-    // a same-album track change the art (and the views' lastAccentThumb
-    // guard) is unchanged, so extraction never re-runs — reopening the gate
-    // would just let the coarser instant-paint colours displace the landed
+    // track cannot land on the new one. The spectrum ring is left alone:
+    // across a gapless join the outgoing track's tail frames are still the
+    // ones being heard, and the visualiser's audible clock keeps picking
+    // them by stream epoch until the join is heard (lib/spectrumRing.ts).
+    // UltraBlur colours reset per ALBUM, not per track: on a same-album
+    // track change the art (and the views' lastAccentThumb guard) is
+    // unchanged, so extraction never re-runs — reopening the gate would
+    // just let the coarser instant-paint colours displace the landed
     // art-derived ones mid-album.
     if (trackChanged) {
-      clearSpectrumRing();
       lyricsGen += 1;
       if (track?.albumKey !== prev?.albumKey) resetUltraBlurGate();
     }

@@ -73,8 +73,8 @@ use ramus_core::models::PlaybackStatus;
 use ramus_core::playback::player::RecoverOutcome;
 
 use crate::events::{
-    emit_playback_buffering, emit_playback_position, emit_playback_state,
-    PlaybackPositionPayload, PlaybackStatePayload,
+    emit_playback_audible, emit_playback_buffering, emit_playback_position, emit_playback_state,
+    PlaybackAudiblePayload, PlaybackPositionPayload, PlaybackStatePayload,
 };
 use crate::media_controls::MediaControlsRef;
 #[cfg(desktop)]
@@ -311,6 +311,7 @@ pub fn create_mpv_player(
     let app5 = app_handle.clone();
     let app6 = app_handle.clone();
     let app7 = app_handle.clone();
+    let app8 = app_handle.clone();
 
     // `mc_reanchor` is moved into `on_position_change`; clone it for the
     // file-ended recovery path, which arms the same re-anchor.
@@ -337,6 +338,7 @@ pub fn create_mpv_player(
     let pr6 = player_ref.clone();
     let pr7 = player_ref.clone();
     let pr8 = player_ref.clone();
+    let pr9 = player_ref.clone();
 
     // Deferred session reporter; populated after player construction.
     let reporter_ref: ReporterRef = Arc::new(parking_lot::Mutex::new(None));
@@ -436,13 +438,14 @@ pub fn create_mpv_player(
             // spawned, so the async-runtime rule for mpv callbacks doesn't
             // apply.
             if let Some(ref p) = *pr8.lock() {
-                let mapped = p.map_tap_frames(frames);
+                let (epoch, mapped) = p.map_tap_frames(frames);
                 if mapped.is_empty() {
                     return;
                 }
                 crate::events::emit_spectrum_frames(
                     &app7,
                     crate::events::SpectrumFramesPayload {
+                        epoch,
                         band_count: ramus_core::playback::spectrum_tap::TapConfig::default()
                             .normalised()
                             .bands as u32,
@@ -450,6 +453,19 @@ pub fn create_mpv_player(
                         frames: mapped,
                     },
                 );
+            }
+        })),
+        on_audible_change: Some(Box::new(move |pts| {
+            if let Some(ref p) = *pr9.lock() {
+                if let Some(audible) = p.handle_audible_change(pts) {
+                    emit_playback_audible(
+                        &app8,
+                        PlaybackAudiblePayload {
+                            epoch: audible.epoch,
+                            position: audible.position,
+                        },
+                    );
+                }
             }
         })),
         on_playlist_pos_change: Some(Box::new(move |pos| {

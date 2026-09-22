@@ -110,7 +110,9 @@ impl MpvController {
             for (name, id) in &props {
                 let n = CString::new(*name).unwrap();
                 let fmt = match id {
-                    ObserverID::TimePos | ObserverID::Duration => MPV_FORMAT_DOUBLE,
+                    ObserverID::TimePos | ObserverID::Duration | ObserverID::AudioPts => {
+                        MPV_FORMAT_DOUBLE
+                    }
                     ObserverID::Pause | ObserverID::IdleActive => MPV_FORMAT_FLAG,
                     ObserverID::PlaylistPos => MPV_FORMAT_INT64,
                 };
@@ -693,6 +695,14 @@ fn event_loop(
                             safe_invoke("on_position_change", || cb(val));
                         }
                     }
+                    id if id == ObserverID::AudioPts as u64
+                        && prop.format == MPV_FORMAT_DOUBLE =>
+                    {
+                        let val = unsafe { *(prop.data as *const f64) };
+                        if let Some(ref cb) = callbacks.on_audible_change {
+                            safe_invoke("on_audible_change", || cb(val));
+                        }
+                    }
                     id if id == ObserverID::Duration as u64
                         && prop.format == MPV_FORMAT_DOUBLE =>
                     {
@@ -963,10 +973,22 @@ mod tap_probe {
 
     use super::*;
 
+    /// One thing the event thread handed a callback, in arrival order:
+    /// the order the frontend sees things in.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    enum Arrival {
+        PlaylistPos(i64),
+        /// Lowest pts in a frame batch.
+        Frames(f64),
+        Audible(f64),
+        TimePos(f64),
+    }
+
     struct Harness {
         mpv: MpvController,
         frames: Arc<Mutex<Vec<TapFrame>>>,
         positions: Arc<Mutex<Vec<f64>>>,
+        arrivals: Arc<Mutex<Vec<Arrival>>>,
     }
 
     fn harness() -> Harness {
@@ -974,12 +996,22 @@ mod tap_probe {
         let lib = Arc::new(MpvLib::load().expect("libmpv must be loadable"));
         let frames: Arc<Mutex<Vec<TapFrame>>> = Arc::new(Mutex::new(Vec::new()));
         let positions: Arc<Mutex<Vec<f64>>> = Arc::new(Mutex::new(Vec::new()));
+        let arrivals: Arc<Mutex<Vec<Arrival>>> = Arc::new(Mutex::new(Vec::new()));
         let sink = frames.clone();
         let pos_sink = positions.clone();
         let pos_peek = positions.clone();
+        let (arr_frames, arr_pos, arr_audible, arr_playlist) = (
+            arrivals.clone(),
+            arrivals.clone(),
+            arrivals.clone(),
+            arrivals.clone(),
+        );
         let started = Instant::now();
         let callbacks = Arc::new(MpvCallbacks {
             on_spectrum_frames: Some(Box::new(move |batch| {
+                if let Some(lowest) = batch.iter().map(|f| f.pts).min_by(|a, b| a.total_cmp(b)) {
+                    arr_frames.lock().push(Arrival::Frames(lowest));
+                }
                 // Arrival timing per batch: how far the newest frame sits
                 // from the latest reported position tells whether frames
                 // lead the output (as they should) or arrive late.
@@ -996,7 +1028,16 @@ mod tap_probe {
                 }
                 sink.lock().extend(batch);
             })),
-            on_position_change: Some(Box::new(move |p| pos_sink.lock().push(p))),
+            on_position_change: Some(Box::new(move |p| {
+                pos_sink.lock().push(p);
+                arr_pos.lock().push(Arrival::TimePos(p));
+            })),
+            on_audible_change: Some(Box::new(move |p| {
+                arr_audible.lock().push(Arrival::Audible(p))
+            })),
+            on_playlist_pos_change: Some(Box::new(move |i| {
+                arr_playlist.lock().push(Arrival::PlaylistPos(i))
+            })),
             ..Default::default()
         });
         let mpv = MpvController::new(lib, callbacks).expect("mpv controller");
@@ -1006,6 +1047,7 @@ mod tap_probe {
             mpv,
             frames,
             positions,
+            arrivals,
         }
     }
 
@@ -1138,6 +1180,104 @@ mod tap_probe {
         let settled = h.frames.lock().len();
         std::thread::sleep(Duration::from_millis(600));
         assert_eq!(h.frames.lock().len(), settled, "frames kept arriving after removal");
+    }
+
+    /// Across a gapless join mpv moves the playlist position about an
+    /// audio buffer before the join is heard: the next file's frames
+    /// follow the move (never precede it), `audio-pts` then counts up
+    /// from minus the buffered tail and crosses zero as the join is
+    /// heard, while `time-pos` sits at 0 until then. The visualiser's
+    /// clock relies on that order and on the negative run.
+    #[test]
+    #[ignore]
+    fn tap_probe_audible_runs_negative_across_a_gapless_join() {
+        let h = harness();
+        install_tap(&h.mpv);
+        let tone = |hz: u32| format!("av://lavfi:sine=frequency={hz}:sample_rate=44100:duration=2");
+        h.mpv.load_file(&tone(440), LoadMode::Replace, None);
+        h.mpv.load_file(&tone(880), LoadMode::Append, None);
+
+        // Wait for the join and for the audible position to reach the
+        // second file's timeline.
+        let deadline = Instant::now() + Duration::from_secs(12);
+        let switch = loop {
+            let a = h.arrivals.lock();
+            let switch = a.iter().position(|e| *e == Arrival::PlaylistPos(1));
+            if let Some(i) = switch {
+                if a[i..]
+                    .iter()
+                    .any(|e| matches!(e, Arrival::Audible(p) if *p >= 0.0))
+                {
+                    break i;
+                }
+            }
+            drop(a);
+            assert!(
+                Instant::now() < deadline,
+                "no audible tick at or past 0 on the second file within 12 s: {:?}",
+                h.arrivals.lock()
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        // A little more so the frames after the join are well represented.
+        std::thread::sleep(Duration::from_millis(500));
+        let arrivals = h.arrivals.lock().clone();
+
+        // The next file's frames follow the playlist move, never precede
+        // it: nothing near a 0 pts lands in the batches before the move.
+        let before: Vec<f64> = arrivals[..switch]
+            .iter()
+            .filter_map(|e| match e {
+                Arrival::Frames(p) => Some(*p),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            before.iter().rev().take(8).all(|p| *p > 0.5),
+            "next file's frames arrived before the playlist move: {before:?}"
+        );
+        let after: Vec<f64> = arrivals[switch..]
+            .iter()
+            .filter_map(|e| match e {
+                Arrival::Frames(p) => Some(*p),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            after.iter().take(4).any(|p| *p < 0.5),
+            "next file's frames did not follow the move promptly: {after:?}"
+        );
+        assert!(after.len() >= 4, "frames stopped after the join: {after:?}");
+
+        // The audible position runs negative first, never steps back, and
+        // crosses zero.
+        let audible: Vec<f64> = arrivals[switch..]
+            .iter()
+            .filter_map(|e| match e {
+                Arrival::Audible(p) => Some(*p),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            audible.first().is_some_and(|p| *p < 0.0),
+            "first audible tick after the move should be negative: {audible:?}"
+        );
+        assert!(
+            audible.windows(2).all(|w| w[1] >= w[0] - 0.01),
+            "audible ticks stepped backwards: {audible:?}"
+        );
+        // How long `time-pos` stays at 0 after the move is informative,
+        // not asserted: it depends on the audio output's buffering.
+        let frozen = arrivals[switch..]
+            .iter()
+            .take_while(|e| !matches!(e, Arrival::Audible(p) if *p >= 0.0))
+            .filter(|e| matches!(e, Arrival::TimePos(_)))
+            .count();
+        log::info!(
+            "tap_probe: join at arrival {switch}; first audible {:+.3}, {} negative ticks,              {frozen} time-pos ticks before the join was audible",
+            audible[0],
+            audible.iter().take_while(|p| **p < 0.0).count()
+        );
     }
 
     /// A tone at the lowest band's centre must peak in band 0 on BOTH

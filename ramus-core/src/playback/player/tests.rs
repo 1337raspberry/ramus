@@ -989,9 +989,53 @@ fn test_map_tap_frames_applies_position_base() {
             db: vec![-20.0; 128],
         }]
     };
-    assert_eq!(player.map_tap_frames(batch())[0].pos, 12.5);
+    assert_eq!(player.map_tap_frames(batch()).1[0].pos, 12.5);
     player.inner.lock().position_base = 100.0;
-    assert_eq!(player.map_tap_frames(batch())[0].pos, 112.5);
+    assert_eq!(player.map_tap_frames(batch()).1[0].pos, 112.5);
+}
+
+#[test]
+fn test_map_tap_frames_carries_the_stream_epoch() {
+    use crate::playback::spectrum_tap::TapFrame;
+    let (player, _mpv) = make_player();
+    let batch = || {
+        vec![TapFrame {
+            pts: 0.5,
+            db: vec![-20.0; 128],
+        }]
+    };
+    let tracks = vec![make_test_track("A"), make_test_track("B")];
+    player.load_queue(tracks, 0);
+    let (first, _) = player.map_tap_frames(batch());
+
+    // A gapless advance is a fresh stream: frames mapped after it belong
+    // to the next epoch, so the frontend can keep the outgoing track's
+    // tail apart from the incoming track's start.
+    assert!(player.handle_playlist_pos_change(1));
+    let (second, _) = player.map_tap_frames(batch());
+    assert_eq!(second, first + 1);
+
+    // A pos-change that is not a real advance leaves the epoch alone.
+    assert!(!player.handle_playlist_pos_change(7));
+    assert_eq!(player.map_tap_frames(batch()).0, second);
+}
+
+#[test]
+fn test_audible_position_applies_base_and_epoch() {
+    let (player, _mpv) = make_player();
+    let tracks = vec![make_test_track("A"), make_test_track("B")];
+    player.load_queue(tracks, 0);
+    let epoch = player.map_tap_frames(Vec::new()).0;
+
+    let audible = player.handle_audible_change(-0.4).expect("stream is live");
+    assert_eq!(audible.epoch, epoch);
+    assert_eq!(audible.position, -0.4);
+
+    // Same remap as the seek bar: a transcode offset resume plays a
+    // 0-based stream that really starts at `position_base`.
+    player.inner.lock().position_base = 100.0;
+    let audible = player.handle_audible_change(2.0).expect("stream is live");
+    assert_eq!(audible.position, 102.0);
 }
 
 #[test]
@@ -1009,7 +1053,7 @@ fn test_map_tap_frames_remaps_and_quantises() {
             db: vec![-90.0, -10.0],
         },
     ];
-    let out = player.map_tap_frames(frames);
+    let (_, out) = player.map_tap_frames(frames);
     assert_eq!(out.len(), 2);
     assert_eq!(out[0].pos, 30.0);
     assert!((out[1].pos - (30.0 + 1.0 / 60.0)).abs() < 1e-9);
