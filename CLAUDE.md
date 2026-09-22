@@ -56,7 +56,7 @@ cargo tauri android dev
 - **Tokens leak via URLs and via `reqwest::Error` Display.** Never log a track URL; use `prefetch.rs::redact_reqwest_err()` for download-path errors; frontend `redactUrl()`; Kotlin `redactTokens` before `Log.*`; Swift command logger likewise.
 - **Comments describe features by their technical behaviour**, never by comparison to other players ("the server sets Content-Disposition: attachment", not "matches X").
 - **Sync:** Artists → Albums → Tracks (DB upserts in batches of 500) → deep genre fetch (semaphore 8, one album per permit). Incremental diffs `updatedAt` + first genre tag. `SyncPhase::Error` is emitted by callers, never the engine. Auto-sync emits real `sync-progress`.
-- **Schema:** `artists`, `albums`, `tracks`, `tracks_fts`, `genres`/`album_genres`, `collections`/`album_collections` (`genres.name` and `collections.name` are NOCASE), `playlists`/`playlist_items`, `downloads`. Album upserts `COALESCE` deep-metadata columns. Album-returning fns must `drop(conn)` before `populate_album_collections`.
+- **Schema:** `artists`, `albums`, `tracks`, `tracks_fts`, `genres`/`album_genres`, `collections`/`album_collections` (`genres.name` and `collections.name` are NOCASE), `playlists`/`playlist_items`, `downloads`. Album upserts `COALESCE` deep-metadata columns. Album-returning fns must `drop(conn)` before `populate_album_collections`. **A new column needs a `pragma_table_info` + `ALTER TABLE` step in `configure_and_migrate`** — `CREATE TABLE IF NOT EXISTS` never touches an existing table (`vibrantPalette` shipped without one and every palette read failed on upgraded databases; `opening_a_first_release_database_…` guards `albums`).
 
 ## Plex
 
