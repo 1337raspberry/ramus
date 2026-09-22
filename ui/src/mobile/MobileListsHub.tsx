@@ -116,7 +116,7 @@ export default function MobileListsHub({ onOpenGrid }: Props) {
       selectedGenreId: "__all__",
       selectedArtistId: null,
     });
-    usePlaybackStore.setState({ isFocusMode: false });
+    usePlaybackStore.getState().exitFocusMode();
     useLibraryStore.getState().loadBookmark(filtersFromBookmark(entry), entry.name);
     onOpenGrid();
   };

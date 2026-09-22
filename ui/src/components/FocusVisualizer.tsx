@@ -233,10 +233,13 @@ function CanvasLayer({ mode }: Props) {
     if (!ctx) return;
 
     // Track DPR and dimensions so the backing store resizes cleanly
-    // when moving between displays (e.g. 1x to 2x Retina).
+    // when moving between displays (e.g. 1x to 2x Retina). Sizing the
+    // backing store wipes the canvas; `wiped` tells the next paint so a
+    // frame that would otherwise leave the canvas as it is repaints.
     let lastW = 0;
     let lastH = 0;
     let lastDpr = 0;
+    let wiped = false;
 
     const resize = () => {
       const rect = container.getBoundingClientRect();
@@ -252,6 +255,7 @@ function CanvasLayer({ mode }: Props) {
         lastW = w;
         lastH = h;
         lastDpr = dpr;
+        wiped = true;
       }
       return { w, h };
     };
@@ -267,14 +271,14 @@ function CanvasLayer({ mode }: Props) {
     // Per-point buffers. `current` is the eased level each point is drawn
     // at (so it decays smoothly between frames rather than snapping),
     // `scratch` receives the target frame, `shaped` the target after the
-    // level curve, and `spread` and `smoothed` the ridge's widened and
-    // neighbour-blended copies of it. All are reallocated, and the eased
-    // levels start from silence, if the point count ever changes.
+    // level curve, and `spread` and `smoothed` (ridge only) the widened
+    // and neighbour-blended copies of it. All are reallocated, and the
+    // eased levels start from silence, if the point count ever changes.
     let current = new Float32Array(pointsFor(CHANNELS * DEFAULT_BAND_COUNT));
     let scratch = new Float32Array(current.length);
     let shaped = new Float32Array(current.length);
-    let spread = new Float32Array(current.length);
-    let smoothed = new Float32Array(current.length);
+    let spread = new Float32Array(ridge ? current.length : 0);
+    let smoothed = new Float32Array(ridge ? current.length : 0);
 
     // Ridge only, all on the fine grid the eased row is resampled to:
     // the resampled row, the history rows behind it, the per-point edge
@@ -290,6 +294,11 @@ function CanvasLayer({ mode }: Props) {
     let lastRowAt = 0;
     let grain = new Float32Array(0);
     let grained = new Float32Array(0);
+    // Wall-clock since the live line has been flat (0 while it isn't),
+    // and the row count of the last paint: together they decide when the
+    // picture has stopped changing and the paint can be skipped.
+    let quietSince = 0;
+    let paintedRows = 0;
 
     // Wall-clock of the mount; the "no frames" hint waits this long after
     // mounting as well as after the last frame, so the tap has time to
@@ -315,7 +324,8 @@ function CanvasLayer({ mode }: Props) {
 
     const render = () => {
       const { w, h } = resize();
-      ctx.clearRect(0, 0, w, h);
+      const repaintForced = wiped;
+      wiped = false;
 
       // Frame delta for time-normalised easing.
       const now = performance.now();
@@ -336,7 +346,12 @@ function CanvasLayer({ mode }: Props) {
         // Before the first tick, fall back to the seek-bar position.
         const target = audibleTarget(now);
         const frame = target
-          ? pickSpectrumFrame(target.epoch, target.pos, FRAME_LAG_TOLERANCE_S, FRAME_LEAD_TOLERANCE_S)
+          ? pickSpectrumFrame(
+              target.epoch,
+              target.pos,
+              FRAME_LAG_TOLERANCE_S,
+              FRAME_LEAD_TOLERANCE_S,
+            )
           : pickSpectrumFrame(
               null,
               playback.position + (now - playback.positionAt) / 1000,
@@ -349,8 +364,8 @@ function CanvasLayer({ mode }: Props) {
             current = new Float32Array(points);
             scratch = new Float32Array(points);
             shaped = new Float32Array(points);
-            spread = new Float32Array(points);
-            smoothed = new Float32Array(points);
+            spread = new Float32Array(ridge ? points : 0);
+            smoothed = new Float32Array(ridge ? points : 0);
           }
           if (ridge) mixBandsInto(frame.bands, CHANNELS, scratch);
           else readBandsInto(frame.bands, scratch);
@@ -424,36 +439,74 @@ function CanvasLayer({ mode }: Props) {
         const rows = Math.max(1, Math.round(P.ridgeRows));
         const historyRows = Math.max(1, rows - 1);
         const perBand = Math.min(8, Math.max(1, Math.round(P.ridgeOversample)));
-        const fineCount = (pointCount - 1) * perBand + 1;
-        if (fine.length !== fineCount) {
-          fine = new Float32Array(fineCount);
-          grain = new Float32Array(fineCount);
-          grained = new Float32Array(fineCount);
-          rerollGrain(grain);
+
+        // The live line is flat once its tallest point would rise under
+        // half a pixel on the tallest row. Flat for longer than the stack
+        // takes to carry a row off the top means every history row is
+        // flat too, so the picture is a fixed set of rules and repainting
+        // it is wasted work: the canvas keeps its last paint until a
+        // frame lifts the line again. A wiped canvas or a changed row
+        // count still gets one paint.
+        let peak = 0;
+        for (let i = 0; i < pointCount; i++) if (current[i] > peak) peak = current[i];
+        const rise = h * P.ridgePeak * Math.max(1, P.ridgeDepthScale);
+        if (peak * rise >= MIN_VISIBLE_HEIGHT_PX) quietSince = 0;
+        else if (quietSince === 0) quietSince = now;
+        const settled = quietSince !== 0 && now - quietSince > (rows + 1) * P.ridgeRowMs;
+
+        if (!settled || repaintForced || rows !== paintedRows) {
+          ctx.clearRect(0, 0, w, h);
+          paintedRows = rows;
+          // One point has no interval to resample; the row count and the
+          // fine grid both come out of the intervals between points.
+          if (pointCount >= 2) {
+            const fineCount = (pointCount - 1) * perBand + 1;
+            if (fine.length !== fineCount) {
+              fine = new Float32Array(fineCount);
+              grain = new Float32Array(fineCount);
+              grained = new Float32Array(fineCount);
+              rerollGrain(grain);
+            }
+            if (!history || history.rows !== historyRows || history.width !== fineCount) {
+              history = new RidgeHistory(historyRows, fineCount);
+            }
+            if (!taper || taper.length !== fineCount || taperAmount !== P.ridgeEdgeTaper) {
+              taper = edgeWindow(fineCount, P.ridgeEdgeTaper);
+              taperAmount = P.ridgeEdgeTaper;
+            }
+            resampleRow(current, fine, perBand);
+            // A history row is cut from the live line every `ridgeRowMs`
+            // of wall-clock, so the stack scrolls at one speed whatever
+            // the display's refresh rate. It keeps scrolling through a
+            // pause, carrying the flat line up until every row is flat;
+            // the rows never go away, a flat row is a rule at its
+            // baseline. The cut time steps by the period so the cadence
+            // keeps its fractional credit rather than rounding up to the
+            // frame rate; after a hitch longer than two periods it
+            // resyncs instead of replaying the gap as a burst of rows.
+            if (now - lastRowAt >= P.ridgeRowMs) {
+              applyGrain(fine, grained, grain, P.ridgeGrain);
+              history.push(grained);
+              rerollGrain(grain);
+              lastRowAt = now - lastRowAt > 2 * P.ridgeRowMs ? now : lastRowAt + P.ridgeRowMs;
+            }
+            applyGrain(fine, grained, grain, P.ridgeGrain);
+            const behind = history;
+            const live = grained;
+            drawRidgeline(
+              ctx,
+              w,
+              h,
+              rows,
+              (r) => (r === 0 ? live : behind.get(r - 1)),
+              taper,
+              RIDGE_RGB,
+              P,
+            );
+          }
         }
-        if (!history || history.rows !== historyRows || history.width !== fineCount) {
-          history = new RidgeHistory(historyRows, fineCount);
-        }
-        if (!taper || taper.length !== fineCount || taperAmount !== P.ridgeEdgeTaper) {
-          taper = edgeWindow(fineCount, P.ridgeEdgeTaper);
-          taperAmount = P.ridgeEdgeTaper;
-        }
-        resampleRow(current, fine, perBand);
-        // A history row is cut from the live line every `ridgeRowMs` of
-        // wall-clock, so the stack scrolls at one speed whatever the
-        // display's refresh rate. It keeps scrolling through a pause,
-        // carrying the flat line up until the stack is empty.
-        if (now - lastRowAt >= P.ridgeRowMs) {
-          applyGrain(fine, grained, grain, P.ridgeGrain);
-          history.push(grained);
-          rerollGrain(grain);
-          lastRowAt = now;
-        }
-        applyGrain(fine, grained, grain, P.ridgeGrain);
-        const behind = history;
-        const live = grained;
-        drawRidgeline(ctx, w, h, rows, (r) => (r === 0 ? live : behind.get(r - 1)), taper, RIDGE_RGB, P);
       } else {
+        ctx.clearRect(0, 0, w, h);
         // Accent colour from the cached ref; no per-frame style-recalc.
         const { r, g, b } = accentRef.current;
         const { barAlpha, barMaxHeight, barTipOpacity, barGap, barSpan } = P;

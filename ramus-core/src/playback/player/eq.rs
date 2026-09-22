@@ -189,7 +189,9 @@ impl AudioPlayer {
 /// callers constructing a player know which frame rate it assumes. The
 /// spectral tilt is the shipped constant unless `RAMUS_TAP_TILT` (dB per
 /// octave) is set, which is how a tuning pass tries other slopes without
-/// a rebuild.
+/// a rebuild. The frontend's development tuning panel, when its loader
+/// is enabled, pushes its own saved value over `set_spectrum_tilt` on
+/// start-up and wins over the variable.
 pub(super) fn new_tap_mapper() -> LevelMapper {
     let tilt = std::env::var("RAMUS_TAP_TILT")
         .ok()

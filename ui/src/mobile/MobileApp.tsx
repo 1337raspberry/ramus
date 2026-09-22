@@ -81,7 +81,7 @@ export default function MobileApp({ onOpenSettings }: Props) {
 
   useEffect(() => {
     if (!sheetExpanded) {
-      usePlaybackStore.setState({ isFocusMode: false });
+      usePlaybackStore.getState().exitFocusMode();
     }
   }, [sheetExpanded]);
 

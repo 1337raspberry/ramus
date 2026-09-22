@@ -28,15 +28,19 @@ impl AudioPlayer {
         inner.pending_materialize
     }
 
-    /// Handle mpv position change (called by event loop, ~30fps).
     /// mpv's `audio-pts` tick: the position of the audio actually being
     /// heard. Across a gapless join it runs negative on the new file's
     /// timeline for the length of the audio buffer, while `time-pos`
     /// already reads 0, so the visualiser clocks off this instead.
     /// Remapped like `position` and paired with the stream epoch.
+    ///
+    /// The tick exists only to clock the visualiser, which installs the
+    /// tap for exactly as long as it is showing, so it is dropped while
+    /// the tap is out: nothing would read it, and it would otherwise
+    /// double the steady-state event rate of every playback session.
     pub fn handle_audible_change(&self, pts: f64) -> Option<super::AudiblePosition> {
         let inner = self.inner.lock();
-        if Self::ignores_mpv_events(&inner) {
+        if Self::ignores_mpv_events(&inner) || !inner.spectrum_tap_enabled {
             return None;
         }
         Some(super::AudiblePosition {
@@ -45,6 +49,7 @@ impl AudioPlayer {
         })
     }
 
+    /// Handle mpv position change (called by event loop, ~30fps).
     pub fn handle_position_change(&self, pos: f64) {
         let mut inner = self.inner.lock();
         if Self::ignores_mpv_events(&inner) {

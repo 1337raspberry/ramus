@@ -6,6 +6,7 @@ import {
   ultraBlurColorsGen,
 } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { ART_SIZE, setAlbumPalette, getAlbumGenres, getAlbumColors } from "../lib/commands";
 import { togglePlayPause, nextTrack, previousTrack } from "../lib/commands";
 import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib/vibrantColor";
@@ -73,6 +74,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
   const visualizerMode = usePlaybackStore((s) => s.visualizerMode);
   const focusClear = usePlaybackStore((s) => s.focusClear);
   const toggleFocusClear = usePlaybackStore((s) => s.toggleFocusClear);
+  const spectrumDisabled = useSettingsStore((s) => s.disableSpectrum);
 
   const suggestion = useLibraryStore((s) => s.suggestion);
   const loadSuggestion = useLibraryStore((s) => s.loadSuggestion);
@@ -308,12 +310,15 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
   const artistLabel = hasTrackArtist ? `${artistName} (${track.trackArtist})` : artistName;
 
   // Clear screen: the visualiser and the corner player, nothing else. The
-  // full layout below is unmounted rather than hidden so its queue panel,
-  // lyrics and suggestion effects don't run behind the visuals.
+  // full layout below is unmounted rather than hidden so its queue panel
+  // and lyrics overlay don't render behind the visuals. The visualiser
+  // carries the same key in both layouts so React keeps the one instance
+  // across the switch: a remount would reinstall the tap and drop the
+  // ridge history.
   if (focusClear) {
     return (
       <div className="focus-overlay">
-        <FocusVisualizer mode={visualizerMode} />
+        <FocusVisualizer key="focus-viz" mode={visualizerMode} />
         <FocusClearPlayer
           title={track.title}
           artist={artistLabel}
@@ -332,7 +337,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
        * controls: bars drape from the top edge, the ridgeline rises from
        * the bottom. Turning it off is the `disableSpectrum` setting, which
        * the component honours by rendering nothing and removing the tap. */}
-      <FocusVisualizer mode={visualizerMode} />
+      <FocusVisualizer key="focus-viz" mode={visualizerMode} />
 
       <div className="focus-body">
         <div className={`focus-art-panel${showLyrics ? " lyrics-mode" : ""}`}>
@@ -414,14 +419,18 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
                 {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
               </button>
               <NowPlayingMenu />
-              <button
-                className="np-viz-btn"
-                onClick={toggleFocusClear}
-                title="Clear screen: hide everything but the visualiser"
-                aria-label="Clear screen: hide everything but the visualiser"
-              >
-                <IconCollapseCorner />
-              </button>
+              {/* With the visualiser disabled the clear screen would be an
+               * empty room, so the way in goes with it. */}
+              {!spectrumDisabled && (
+                <button
+                  className="focus-clear-btn"
+                  onClick={toggleFocusClear}
+                  title="Clear screen: hide everything but the visualiser"
+                  aria-label="Clear screen: hide everything but the visualiser"
+                >
+                  <IconCollapseCorner />
+                </button>
+              )}
               <button
                 className="focus-close-btn"
                 onClick={toggleFocusMode}

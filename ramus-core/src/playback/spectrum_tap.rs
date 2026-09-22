@@ -686,6 +686,9 @@ pub struct LevelMapper {
     /// Per-value tilt offsets for the frame width last mapped, rebuilt
     /// when the width changes.
     tilt: Vec<f32>,
+    /// The tilted values of the frame being mapped; kept between frames
+    /// so mapping allocates nothing but its output.
+    tilted: Vec<f32>,
 }
 
 impl LevelMapper {
@@ -706,6 +709,7 @@ impl LevelMapper {
                 0.0
             },
             tilt: Vec::new(),
+            tilted: Vec::new(),
         }
     }
 
@@ -742,18 +746,17 @@ impl LevelMapper {
         if self.tilt.len() != db.len() {
             self.tilt = tilt_offsets(db.len(), self.tilt_db_per_octave);
         }
-        let db: Vec<f32> = db
-            .iter()
-            .zip(&self.tilt)
-            .map(|(&d, &t)| {
+        self.tilted.clear();
+        self.tilted
+            .extend(db.iter().zip(&self.tilt).map(|(&d, &t)| {
                 let d = sanitise_db(d);
                 if d > DB_FLOOR {
                     (d + t).max(DB_FLOOR)
                 } else {
                     d
                 }
-            })
-            .collect();
+            }));
+        let db = &self.tilted;
         let frame_max = db.iter().copied().fold(DB_FLOOR, f32::max);
         if frame_max > self.peak_db {
             self.peak_db = frame_max;
