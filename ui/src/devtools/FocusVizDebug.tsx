@@ -67,6 +67,33 @@ const SECTIONS: SectionSpec[] = [
       { key: "gain", label: "Gain", min: 0.5, max: 3, step: 0.05, digits: 2 },
     ],
   },
+  {
+    title: "Ridge",
+    controls: [
+      { key: "ridgeRows", label: "Rows", min: 2, max: 60, step: 1, digits: 0 },
+      { key: "ridgeHeight", label: "Stack height", min: 0.05, max: 0.9, step: 0.01, digits: 2 },
+      { key: "ridgePeak", label: "Peak", min: 0.02, max: 0.6, step: 0.01, digits: 2 },
+      { key: "ridgeDepthScale", label: "Depth scale", min: 0.1, max: 1.5, step: 0.05, digits: 2 },
+      { key: "ridgeBottom", label: "Bottom gap", min: 0, max: 0.4, step: 0.01, digits: 2 },
+      { key: "ridgeSpan", label: "Span", min: 0.2, max: 1, step: 0.01, digits: 2 },
+      { key: "ridgeLineWidth", label: "Line px", min: 0.5, max: 4, step: 0.25, digits: 2 },
+      { key: "ridgeAlpha", label: "Alpha", min: 0, max: 1, step: 0.01, digits: 2 },
+      { key: "ridgeBackAlpha", label: "Back alpha", min: 0, max: 1, step: 0.01, digits: 2 },
+      { key: "ridgeRowMs", label: "Row ms", min: 16, max: 250, step: 1, digits: 0 },
+      { key: "ridgeSmooth", label: "Smooth", min: 0, max: 1, step: 0.01, digits: 2 },
+      { key: "ridgeEdgeTaper", label: "Edge taper", min: 0, max: 0.5, step: 0.01, digits: 2 },
+      { key: "ridgeAttack", label: "Attack", min: 0.05, max: 1, step: 0.01, digits: 2 },
+      { key: "ridgeDecay", label: "Decay", min: 0.05, max: 1, step: 0.01, digits: 2 },
+    ],
+  },
+  {
+    title: "Ridge level curve",
+    controls: [
+      { key: "ridgeGamma", label: "Gamma", min: 0.25, max: 4, step: 0.05, digits: 2 },
+      { key: "ridgeFloorCut", label: "Floor cut", min: 0, max: 0.9, step: 0.01, digits: 2 },
+      { key: "ridgeGain", label: "Gain", min: 0.5, max: 3, step: 0.05, digits: 2 },
+    ],
+  },
 ];
 
 const PANEL_CSS = `
