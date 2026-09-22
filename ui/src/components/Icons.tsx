@@ -313,6 +313,48 @@ export function IconWave({ size = defaults.size, className }: IconProps) {
   );
 }
 
+/** A panel shrinking away into the top-right corner (enter clear screen). */
+export function IconCollapseCorner({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <rect x="3" y="11" width="10" height="10" rx="1" />
+      <path d="M12 12 L21 3" />
+      <path d="M14 3 h7 v7" />
+    </svg>
+  );
+}
+
+/** A corner panel growing back out to fill the view (leave clear screen). */
+export function IconExpandCorner({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <rect x="15" y="3" width="6" height="6" rx="1" />
+      <path d="M12 12 L3 21" />
+      <path d="M10 21 h-7 v-7" />
+    </svg>
+  );
+}
+
 export function IconRidge({ size = defaults.size, className }: IconProps) {
   return (
     <svg
