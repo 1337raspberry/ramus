@@ -5,7 +5,7 @@ import { setSpectrumTap } from "../lib/commands";
 import { pickSpectrumFrame, spectrumLastPushAt } from "../lib/spectrumRing";
 import { VISUALIZER_PARAMS } from "../lib/visualizerParams";
 import { accentFromPalette } from "../lib/vibrantColor";
-import { DEFAULT_ACCENT } from "../lib/accent";
+import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
 
 /**
  * Focus-mode live spectrum visualiser.
@@ -173,9 +173,12 @@ function CanvasLayer() {
       return;
     }
     if (!vibrantPalette) {
-      // Fresh session or a track with no art. Match the CSS `:root`
-      // defaults.
-      accentRef.current = { r: "120", g: "90", b: "220" };
+      // No palette for this track (a same-album skip re-uses the art, so
+      // nothing re-extracts, and the cached palette may be absent): keep
+      // painting whatever accent the rest of the UI is showing. Before
+      // any accent has been applied, match the CSS `:root` defaults.
+      const [r, g, b] = currentAccent() ?? [120, 90, 220];
+      accentRef.current = { r: String(r), g: String(g), b: String(b) };
       return;
     }
     const [r, g, b] = accentFromPalette(vibrantPalette);

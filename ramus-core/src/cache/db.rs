@@ -261,6 +261,18 @@ impl CacheDatabase {
             )?;
         }
 
+        // vibrantPalette arrived two days after the first schema and only
+        // in CREATE TABLE, so a database from that first release still
+        // lacked it: every palette read and write failed on that column.
+        let has_vibrant_palette: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('albums') WHERE name = 'vibrantPalette'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_vibrant_palette == 0 {
+            conn.execute("ALTER TABLE albums ADD COLUMN vibrantPalette TEXT", [])?;
+        }
+
         let has_file_size: i64 = conn.query_row(
             "SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name = 'fileSizeBytes'",
             [],
@@ -2327,5 +2339,89 @@ mod tests {
         };
         let ids = db.filtered_album_internal_ids(&params).unwrap();
         assert_eq!(ids, HashSet::from([a_80s]));
+    }
+
+    /// The `artists` and `albums` tables exactly as the first release
+    /// created them. A database from that era must open cleanly and
+    /// end up with the current column set.
+    const FIRST_RELEASE_SCHEMA: &str = "
+        CREATE TABLE artists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            sortName TEXT,
+            sourceId TEXT NOT NULL UNIQUE,
+            artUrl TEXT,
+            summary TEXT,
+            updatedAt INTEGER
+        );
+        CREATE TABLE albums (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            artistId INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+            year INTEGER,
+            sourceId TEXT NOT NULL UNIQUE,
+            artUrl TEXT,
+            updatedAt INTEGER,
+            rating DOUBLE,
+            studio TEXT,
+            ultraBlurColors TEXT,
+            addedAt INTEGER,
+            lastViewedAt INTEGER
+        );
+        INSERT INTO artists (id, name, sourceId) VALUES (1, 'Artist', 'ar1');
+        INSERT INTO albums (id, title, artistId, sourceId) VALUES (1, 'Album', 1, 'al1');";
+
+    fn first_release_database(dir: &tempfile::TempDir) -> std::path::PathBuf {
+        let path = dir.path().join("library_cache.db");
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(FIRST_RELEASE_SCHEMA)
+            .unwrap();
+        path
+    }
+
+    fn column_names(db: &CacheDatabase, table: &str) -> Vec<String> {
+        let conn = db.conn.lock();
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT name FROM pragma_table_info('{table}') ORDER BY name"
+            ))
+            .unwrap();
+        let names = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        names
+    }
+
+    #[test]
+    fn opening_a_first_release_database_adds_every_current_albums_column() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = first_release_database(&dir);
+        let upgraded = CacheDatabase::open(&path).unwrap();
+        let fresh = setup();
+        assert_eq!(
+            column_names(&upgraded, "albums"),
+            column_names(&fresh, "albums")
+        );
+    }
+
+    #[test]
+    fn palette_cache_round_trips_on_a_first_release_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = first_release_database(&dir);
+        let db = CacheDatabase::open(&path).unwrap();
+        let palette = crate::models::VibrantPalette {
+            vibrant: Some("112233".into()),
+            dark_vibrant: None,
+            light_vibrant: None,
+            muted: None,
+            dark_muted: None,
+            light_muted: None,
+        };
+        db.set_album_palette("al1", &palette).unwrap();
+        let info = db.album_colors("al1").unwrap();
+        assert_eq!(info.palette.unwrap().vibrant.as_deref(), Some("112233"));
     }
 }

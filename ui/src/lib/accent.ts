@@ -47,6 +47,16 @@ let lastG = -1;
 let lastB = -1;
 
 /**
+ * The accent most recently written to the CSS variables, or null before
+ * the first write. Lets a surface that paints outside CSS (the canvas
+ * visualiser) stay in step with the rest of the UI when the playback
+ * store holds no palette for the current track.
+ */
+export function currentAccent(): [number, number, number] | null {
+  return lastR < 0 ? null : [lastR, lastG, lastB];
+}
+
+/**
  * Write accent CSS custom properties AND forward the colour to the OS
  * media controls. Dedupes on exact RGB so rapid palette re-extractions
  * don't spam the Kotlin bridge with identical updates.
