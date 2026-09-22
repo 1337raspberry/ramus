@@ -24,14 +24,20 @@ interface Props {
 }
 
 /**
- * The corner player shown in focus mode's clear screen: a small
- * backgroundless cluster at the top right with the art thumbnail, title and artist,
- * transport, the visualiser mode button, the seek bar and a button back to
- * the full layout. Everything
- * else in focus mode is unmounted while it shows, so the visualiser has
- * the window to itself.
+ * The corner player shown in focus mode's clear screen: a small cluster
+ * at the top right, with no panel behind it, holding the art thumbnail,
+ * title and artist, transport, the visualiser mode button, the seek bar
+ * and a button back to the full layout. Everything else in focus mode is
+ * unmounted while it shows, so the visualiser has the window to itself.
  */
-export default function FocusClearPlayer({ title, artist, artSrc, artErr, onArtError, onExit }: Props) {
+export default function FocusClearPlayer({
+  title,
+  artist,
+  artSrc,
+  artErr,
+  onArtError,
+  onExit,
+}: Props) {
   const status = usePlaybackStore((s) => s.status);
 
   return (

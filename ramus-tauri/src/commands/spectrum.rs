@@ -36,12 +36,19 @@ pub async fn set_spectrum_tap(state: State<'_, AppState>, enabled: bool) -> CmdR
 
 /// Change the spectral tilt applied to every band before it is mapped to
 /// a bar height, in dB per octave. A development tuning control; the
-/// shipped value lives in `ramus-core`'s `TILT_DB_PER_OCTAVE`.
+/// shipped value lives in `ramus-core`'s `TILT_DB_PER_OCTAVE`, and a
+/// release build refuses the call so the IPC surface carries no live
+/// tuning knob.
 #[tauri::command]
 pub async fn set_spectrum_tilt(state: State<'_, AppState>, db_per_octave: f32) -> CmdResult<()> {
-    #[cfg(not(mobile))]
-    state.player.set_tap_tilt(db_per_octave);
-    #[cfg(mobile)]
-    let _ = (&state, db_per_octave);
-    Ok(())
+    #[cfg(all(not(mobile), debug_assertions))]
+    {
+        state.player.set_tap_tilt(db_per_octave);
+        Ok(())
+    }
+    #[cfg(not(all(not(mobile), debug_assertions)))]
+    {
+        let _ = (&state, db_per_octave);
+        Err("set_spectrum_tilt is a development-only tuning control".into())
+    }
 }

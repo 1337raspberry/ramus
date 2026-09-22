@@ -182,7 +182,7 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
       selectedGenreId: null,
       selectedArtistId: null,
     });
-    usePlaybackStore.setState({ isFocusMode: false });
+    usePlaybackStore.getState().exitFocusMode();
 
     if (v === "genres") {
       setSidebarMode("genres");

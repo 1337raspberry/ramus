@@ -9,9 +9,11 @@ import type { SpectrumFramesPayload } from "./types";
  * store subscriber per frame for nothing.
  *
  * Frames arrive in bursts, up to mpv's `audio-buffer` (0.5 s) ahead of the
- * reported playback position. The ring holds ~1.6 s at 60 fps so the
- * lookup always has the frame for "now" with margin on both sides, and a
- * seek's stale frames simply age out.
+ * reported playback position. The ring holds ~2 s at 60 fps so the lookup
+ * always has the frame for "now" with margin on both sides, even across a
+ * gapless join where the incoming stream's frames share the ring with the
+ * outgoing stream's still-audible tail, and a seek's stale frames simply
+ * age out.
  *
  * Every frame carries the stream epoch it was cut from, and the lookup is
  * clocked by the `playback-audible` tick (mpv's `audio-pts`) rather than
@@ -34,7 +36,7 @@ export interface SpectrumRingFrame {
   bands: Uint8Array;
 }
 
-const RING_CAPACITY = 96;
+const RING_CAPACITY = 128;
 
 // Slots are allocated once and overwritten in place: a burst lands every
 // few frames, and a fresh object plus typed array per frame would just be
@@ -62,6 +64,18 @@ interface AudibleClock {
   at: number;
 }
 let clock: AudibleClock | null = null;
+
+/**
+ * A clock tick older than this is no clock at all. Ticks land about
+ * twenty times a second while audio flows (mpv's playloop cadence), so a
+ * gap this long means the stream behind the clock has stopped: a skip
+ * has replaced it, or playback paused. Past it the lookup falls back to
+ * the seek-bar position rather than running the dead stream's timeline
+ * on, which would otherwise draw the frames the tap cut ahead of the
+ * last audible moment (up to an audio buffer's worth) for as long as the
+ * next stream takes to tick.
+ */
+const AUDIBLE_CLOCK_STALE_MS = 250;
 
 /** Append a burst of frames (oldest first) from the `spectrum-frames` event. */
 export function pushSpectrumFrames(payload: SpectrumFramesPayload): void {
@@ -103,10 +117,11 @@ export function setAudibleClock(epoch: number, position: number): void {
  * Where the audio is right now, extrapolated from the last audible tick:
  * the epoch to look in and the position within it. A negative position on
  * the current epoch is still the previous stream's tail and is mapped
- * onto the end of that stream. Null until the first tick arrives.
+ * onto the end of that stream. Null until the first tick arrives, and
+ * again once the last tick is stale (`AUDIBLE_CLOCK_STALE_MS`).
  */
 export function audibleTarget(now: number): { epoch: number; pos: number } | null {
-  if (!clock) return null;
+  if (!clock || now - clock.at > AUDIBLE_CLOCK_STALE_MS) return null;
   let epoch = clock.epoch;
   let pos = clock.position + (now - clock.at) / 1000;
   if (pos < 0) {

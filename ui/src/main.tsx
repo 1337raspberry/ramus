@@ -29,7 +29,9 @@ createRoot(document.getElementById("root")!).render(
 
 // Development-only tooling (src/devtools) mounts beside the app in its own
 // React root. The condition folds to false in a production build, so the
-// module is never bundled.
-if (import.meta.env.DEV) {
-  import("./devtools/FocusVizDebug").then((m) => m.install());
-}
+// module is never bundled. The loader stays commented out between tuning
+// passes; uncomment it to get the focus-mode visualiser panel back (the
+// backtick key while focus mode is open).
+// if (import.meta.env.DEV) {
+//   import("./devtools/FocusVizDebug").then((m) => m.install());
+// }

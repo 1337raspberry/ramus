@@ -141,11 +141,13 @@ struct PlayerInner {
     /// of the player backend once at construction (it depends on the
     /// FFmpeg build behind libmpv, which does not change at runtime).
     tap_cut_main_path: bool,
-    /// Counts fresh mpv streams (every `begin_load`: a gapless advance, a
-    /// load, a failover reload). Stamped on tap frames and audible-position
-    /// ticks so the frontend can tell the outgoing stream's last frames
-    /// from the incoming stream's first ones, whose timelines both sit
-    /// near the join.
+    /// Counts the streams whose timeline restarts near zero (every
+    /// `begin_load`: a gapless advance, a queue load, a skip or jump).
+    /// Stamped on tap frames and audible-position ticks so the frontend
+    /// can tell the outgoing stream's last frames from the incoming
+    /// stream's first ones, whose timelines both sit near the join. A
+    /// failover reload keeps its epoch: `position_base` already maps its
+    /// frames onto the same absolute timeline as the frames before it.
     tap_epoch: u64,
     /// Wall-clock of the last *automatic* current-track reload (failover or
     /// file-ended recovery). Enforces `RELOAD_COOLDOWN` so a burst of triggers

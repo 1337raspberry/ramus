@@ -45,7 +45,7 @@ export default function GenreInfoModal() {
   const beforeNavigate = () => {
     close();
     if (usePlaybackStore.getState().isFocusMode) {
-      usePlaybackStore.setState({ isFocusMode: false });
+      usePlaybackStore.getState().exitFocusMode();
     }
   };
 

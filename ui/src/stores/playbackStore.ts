@@ -92,10 +92,14 @@ interface PlaybackState {
   /**
    * Clear screen: focus mode with everything but the visualiser and a
    * small corner player hidden. A sub-state of focus mode, reset
-   * whenever focus mode is toggled.
+   * whenever focus mode is entered or left.
    */
   focusClear: boolean;
-  // Session-only; resets to `"bars"` on reload. Toggled bars ↔ off.
+  /**
+   * Which visualiser the focus view paints; persisted under
+   * `ramus-visualizer-style`. Turning the visualiser off is the
+   * `disableSpectrum` setting, not a mode.
+   */
   visualizerMode: VisualizerMode;
 
   // `performance.now()` when `position` was last known good: a position
@@ -129,6 +133,8 @@ interface PlaybackState {
   toggleLyrics: () => void;
   toggleQueue: () => void;
   toggleFocusMode: () => void;
+  /** Leave focus mode from any path; also drops the clear-screen sub-state. */
+  exitFocusMode: () => void;
   toggleFocusClear: () => void;
   toggleVisualizer: () => void;
   removeQueueItem: (index: number) => void;
@@ -340,6 +346,10 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     }
 
     if (!track) {
+      // Stopped: nothing is audible, so the spectrum ring and its clock
+      // go too, or the next play would briefly look up the old stream's
+      // frames against a stale clock.
+      clearSpectrumRing();
       set({
         lyrics: null,
         lyricsStatus: null,
@@ -450,7 +460,13 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   toggleFocusMode: () => set((s) => ({ isFocusMode: !s.isFocusMode, focusClear: false })),
 
-  toggleFocusClear: () => set((s) => ({ focusClear: !s.focusClear })),
+  exitFocusMode: () => set({ isFocusMode: false, focusClear: false }),
+
+  // Entering the clear screen closes the lyrics takeover: the clear
+  // layout never shows it, and leaving the flag set would make the first
+  // Escape close an overlay nobody can see.
+  toggleFocusClear: () =>
+    set((s) => ({ focusClear: !s.focusClear, showLyrics: s.focusClear ? s.showLyrics : false })),
 
   toggleVisualizer: () =>
     set((s) => {

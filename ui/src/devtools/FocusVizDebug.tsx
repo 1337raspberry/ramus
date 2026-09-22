@@ -34,11 +34,11 @@ interface ControlSpec {
 }
 
 interface SectionSpec {
-  title: string;
-  controls: ControlSpec[];
+  readonly title: string;
+  readonly controls: readonly ControlSpec[];
 }
 
-const SECTIONS: SectionSpec[] = [
+const SECTIONS = [
   {
     title: "Album art",
     controls: [
@@ -73,7 +73,7 @@ const SECTIONS: SectionSpec[] = [
     controls: [
       { key: "ridgeRows", label: "Rows", min: 2, max: 60, step: 1, digits: 0 },
       { key: "ridgeHeight", label: "Stack height", min: 0.05, max: 0.9, step: 0.01, digits: 2 },
-      { key: "ridgePeak", label: "Peak", min: 0.02, max: 0.6, step: 0.01, digits: 2 },
+      { key: "ridgePeak", label: "Peak", min: 0.02, max: 1, step: 0.01, digits: 2 },
       { key: "ridgeDepthScale", label: "Depth scale", min: 0.1, max: 1.5, step: 0.05, digits: 2 },
       { key: "ridgeBottom", label: "Bottom gap", min: 0, max: 0.4, step: 0.01, digits: 2 },
       { key: "ridgeSpan", label: "Span", min: 0.2, max: 1, step: 0.01, digits: 2 },
@@ -97,12 +97,19 @@ const SECTIONS: SectionSpec[] = [
   {
     title: "Ridge level curve",
     controls: [
-      { key: "ridgeGamma", label: "Gamma", min: 0.25, max: 4, step: 0.05, digits: 2 },
+      { key: "ridgeGamma", label: "Gamma", min: 0.25, max: 6, step: 0.05, digits: 2 },
       { key: "ridgeFloorCut", label: "Floor cut", min: 0, max: 0.9, step: 0.01, digits: 2 },
       { key: "ridgeGain", label: "Gain", min: 0.5, max: 3, step: 0.05, digits: 2 },
     ],
   },
-];
+] as const satisfies readonly SectionSpec[];
+
+// Every tuning value has a slider: a key added to `FocusVizTuning` without
+// a control above fails to compile here, naming the key.
+type SliderKey = (typeof SECTIONS)[number]["controls"][number]["key"];
+type KeyWithoutSlider = Exclude<keyof FocusVizTuning, SliderKey>;
+const EVERY_KEY_HAS_A_SLIDER: [KeyWithoutSlider] extends [never] ? true : KeyWithoutSlider = true;
+void EVERY_KEY_HAS_A_SLIDER;
 
 const PANEL_CSS = `
 .fv-debug {

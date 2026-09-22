@@ -279,7 +279,7 @@ export default function App() {
             onDismiss={() => setShowSettings(false)}
             onSignOut={() => {
               setShowSettings(false);
-              usePlaybackStore.setState({ isFocusMode: false });
+              usePlaybackStore.getState().exitFocusMode();
               clearOnboardingStorage();
               clearPin();
               setAuthed(false);
@@ -339,7 +339,7 @@ export default function App() {
           onDismiss={() => setShowSettings(false)}
           onSignOut={() => {
             setShowSettings(false);
-            usePlaybackStore.setState({ isFocusMode: false });
+            usePlaybackStore.getState().exitFocusMode();
             clearOnboardingStorage();
             clearPin();
             setAuthed(false);

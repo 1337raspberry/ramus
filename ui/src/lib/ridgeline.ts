@@ -14,10 +14,11 @@
  * canvas is transparent over the backdrop, so the erase reveals the
  * backdrop rather than painting a background colour.
  *
- * Everything here is either pure (the mix, smoothing, window, history and
- * row geometry, which have standalone checks) or a plain canvas painter
- * with no state of its own; `FocusVisualizer` owns the buffers and the
- * paint loop.
+ * Everything here is either a pure function of its arguments (the mix,
+ * spread, smoothing, grain, window, resampling and row geometry, written
+ * with explicit output buffers so they can be checked standalone) or a
+ * plain canvas painter with no state of its own beyond scratch buffers;
+ * `FocusVisualizer` owns the row buffers and the paint loop.
  */
 
 /**
@@ -58,6 +59,11 @@ export function smoothRow(src: Float32Array, out: Float32Array, amount: number):
   }
 }
 
+// The bell for the last `sigma` and radius spread with, so a spread
+// allocates nothing per frame.
+let bell = new Float32Array(0);
+let bellSigma = NaN;
+
 /**
  * Widen every peak without lowering it: each point becomes the largest
  * of itself and its neighbours scaled by a bell of width `sigma` (in
@@ -75,8 +81,11 @@ export function spreadRow(src: Float32Array, out: Float32Array, sigma: number): 
   }
   // Beyond three sigma the bell is under 1.2 % and changes nothing visible.
   const radius = Math.min(n - 1, Math.ceil(sigma * 3));
-  const bell = new Float32Array(radius + 1);
-  for (let d = 0; d <= radius; d++) bell[d] = Math.exp(-(d * d) / (2 * sigma * sigma));
+  if (sigma !== bellSigma || bell.length !== radius + 1) {
+    bell = new Float32Array(radius + 1);
+    for (let d = 0; d <= radius; d++) bell[d] = Math.exp(-(d * d) / (2 * sigma * sigma));
+    bellSigma = sigma;
+  }
   for (let i = 0; i < n; i++) {
     let best = src[i];
     for (let d = 1; d <= radius; d++) {
@@ -154,6 +163,8 @@ export class RidgeHistory {
   readonly rows: number;
   readonly width: number;
   private readonly views: Float32Array[];
+  /** A row of silence, handed out for any slot the ring doesn't have. */
+  private readonly silence: Float32Array;
   /** Slot the next push writes; the newest row is the slot before it. */
   private head = 0;
 
@@ -164,16 +175,32 @@ export class RidgeHistory {
     this.views = Array.from({ length: this.rows }, (_, i) =>
       buf.subarray(i * this.width, (i + 1) * this.width),
     );
+    this.silence = new Float32Array(this.width);
   }
 
-  /** Copy `row` in as the newest; the oldest row is dropped. */
+  /**
+   * Copy `row` in as the newest; the oldest row is dropped. A row wider
+   * than the ring is cut to fit, a narrower one is padded with silence.
+   */
   push(row: Float32Array): void {
-    this.views[this.head].set(row.subarray(0, this.width));
+    const slot = this.views[this.head];
+    if (row.length === this.width) {
+      slot.set(row);
+    } else if (row.length > this.width) {
+      slot.set(row.subarray(0, this.width));
+    } else {
+      slot.set(row);
+      slot.fill(0, row.length);
+    }
     this.head = (this.head + 1) % this.rows;
   }
 
-  /** Row `k` back from the newest (0 = newest). Silence until pushed. */
+  /**
+   * Row `k` back from the newest (0 = newest). Silence until pushed, and
+   * silence for any `k` the ring doesn't hold.
+   */
   get(k: number): Float32Array {
+    if (!(k >= 0 && k < this.rows)) return this.silence;
     const i = (((this.head - 1 - k) % this.rows) + this.rows) % this.rows;
     return this.views[i];
   }
@@ -226,6 +253,10 @@ export function ridgeRow(k: number, rows: number, h: number, p: RidgeLayout): Ri
   };
 }
 
+// Secant scratch for the tangents, sized to the last row seen so a call
+// allocates nothing per frame.
+let secant = new Float32Array(0);
+
 /**
  * Slope at every point for a curve through `y` that never overshoots
  * between neighbouring points (Fritsch–Carlson monotone cubic
@@ -244,7 +275,8 @@ export function monotoneTangents(y: Float32Array, out: Float32Array): void {
     return;
   }
   // Secant of each segment, then the first-guess slope at each point.
-  const d = new Float32Array(n - 1);
+  if (secant.length !== n - 1) secant = new Float32Array(n - 1);
+  const d = secant;
   for (let k = 0; k < n - 1; k++) d[k] = y[k + 1] - y[k];
   out[0] = d[0];
   out[n - 1] = d[n - 2];
@@ -271,7 +303,7 @@ export function monotoneTangents(y: Float32Array, out: Float32Array): void {
   }
 }
 
-// Slope scratch for the resampler, grown to the widest row seen.
+// Slope scratch for the resampler, sized to the last row seen.
 let resampleSlope = new Float32Array(0);
 
 /**
@@ -292,8 +324,8 @@ export function resampleRow(src: Float32Array, out: Float32Array, k: number): vo
     out.set(src);
     return;
   }
-  if (resampleSlope.length < n) resampleSlope = new Float32Array(n);
-  const m = resampleSlope.length === n ? resampleSlope : resampleSlope.subarray(0, n);
+  if (resampleSlope.length !== n) resampleSlope = new Float32Array(n);
+  const m = resampleSlope;
   monotoneTangents(src, m);
   for (let i = 0; i < n - 1; i++) {
     const y0 = src[i];
@@ -307,7 +339,10 @@ export function resampleRow(src: Float32Array, out: Float32Array, k: number): vo
       const t2 = t * t;
       const t3 = t2 * t;
       out[base + j] =
-        (2 * t3 - 3 * t2 + 1) * y0 + (t3 - 2 * t2 + t) * m0 + (-2 * t3 + 3 * t2) * y1 + (t3 - t2) * m1;
+        (2 * t3 - 3 * t2 + 1) * y0 +
+        (t3 - 2 * t2 + t) * m0 +
+        (-2 * t3 + 3 * t2) * y1 +
+        (t3 - t2) * m1;
     }
   }
   out[(n - 1) * steps] = src[n - 1];
@@ -320,19 +355,27 @@ export interface RidgePaint extends RidgeLayout {
   ridgeLineWidth: number;
 }
 
-// Per-row scratch for the screen y of each point, grown to the widest
-// row seen so a paint allocates nothing per row.
+// Per-row scratch for the screen y of each point, sized to the last row
+// painted so a paint allocates nothing per row.
 let rowY = new Float32Array(0);
+
+// Stroke colour of every row for the row count, alphas and colour last
+// painted with; rebuilt only when one of those changes, so a paint builds
+// no strings.
+let strokeStyles: string[] = [];
+let strokeStylesFor = "";
 
 /**
  * Paint `rows` rows back to front. `row(k)` returns row `k`'s levels
- * (0 = front), `window` the per-point edge multiplier (same length), and
+ * (0 = front), `edge` the per-point edge multiplier (same length), and
  * `rgb` the stroke colour's channels. Each row first erases the canvas
  * between its line and its baseline (`destination-out`, which on this
  * transparent canvas exposes the backdrop) so the rows behind it are
  * hidden where it rises, then strokes its line as straight segments;
  * the rows are already resampled finely enough for that to read as a
- * curve.
+ * curve. The erase reaches the line's centre, not its outer edge, so up
+ * to half the stroke width of a row behind can show above a row in
+ * front; at hairline widths that is under a pixel.
  */
 export function drawRidgeline(
   ctx: CanvasRenderingContext2D,
@@ -340,17 +383,25 @@ export function drawRidgeline(
   h: number,
   rows: number,
   row: (k: number) => Float32Array,
-  window: Float32Array,
+  edge: Float32Array,
   rgb: string,
   p: RidgePaint,
 ): void {
-  const n = window.length;
+  const n = edge.length;
   if (n < 2 || rows < 1) return;
   const fieldW = w * p.ridgeSpan;
   const fieldX = (w - fieldW) / 2;
   const step = fieldW / (n - 1);
-  if (rowY.length < n) rowY = new Float32Array(n);
-  const ys = rowY.length === n ? rowY : rowY.subarray(0, n);
+  if (rowY.length !== n) rowY = new Float32Array(n);
+  const ys = rowY;
+  const styleKey = `${rows}|${p.ridgeAlpha}|${p.ridgeBackAlpha}|${rgb}`;
+  if (styleKey !== strokeStylesFor) {
+    strokeStyles = Array.from(
+      { length: rows },
+      (_, k) => `rgba(${rgb}, ${ridgeRow(k, rows, h, p).alpha})`,
+    );
+    strokeStylesFor = styleKey;
+  }
   ctx.lineWidth = p.ridgeLineWidth;
   ctx.lineJoin = "round";
   // Butt caps, deliberately: CoreGraphics strokes a long path in runs of
@@ -358,10 +409,12 @@ export function drawRidgeline(
   // run boundary and a translucent line shows a brighter dot there, at
   // the same x on every row. Butt-capped runs abut exactly.
   ctx.lineCap = "butt";
+  // Any opaque fill erases fully under `destination-out`.
+  ctx.fillStyle = "#000";
   for (let k = rows - 1; k >= 0; k--) {
     const g = ridgeRow(k, rows, h, p);
     const values = row(k);
-    for (let i = 0; i < n; i++) ys[i] = g.baseline - values[i] * window[i] * g.scale;
+    for (let i = 0; i < n; i++) ys[i] = g.baseline - values[i] * edge[i] * g.scale;
     const line = new Path2D();
     line.moveTo(fieldX, ys[0]);
     for (let i = 1; i < n; i++) line.lineTo(fieldX + i * step, ys[i]);
@@ -373,12 +426,10 @@ export function drawRidgeline(
     under.lineTo(fieldX + fieldW, g.baseline);
     under.lineTo(fieldX, g.baseline);
     under.closePath();
-    ctx.save();
     ctx.globalCompositeOperation = "destination-out";
-    ctx.fillStyle = "#000";
     ctx.fill(under);
-    ctx.restore();
-    ctx.strokeStyle = `rgba(${rgb}, ${g.alpha})`;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.strokeStyle = strokeStyles[k];
     ctx.stroke(line);
   }
 }

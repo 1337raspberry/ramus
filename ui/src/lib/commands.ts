@@ -350,7 +350,8 @@ export const setMediaAccent = (r: number, g: number, b: number) =>
 // disabled in settings; the backend applies that veto itself.
 export const setSpectrumTap = (enabled: boolean) => invoke<void>("set_spectrum_tap", { enabled });
 // Spectral tilt the backend applies to every band before mapping it to a
-// bar height, in dB per octave. A development tuning control.
+// bar height, in dB per octave. A development tuning control; a release
+// build rejects it.
 export const setSpectrumTilt = (dbPerOctave: number) =>
   invoke<void>("set_spectrum_tilt", { dbPerOctave });
 

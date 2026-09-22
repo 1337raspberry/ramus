@@ -1025,6 +1025,7 @@ fn test_audible_position_applies_base_and_epoch() {
     let (player, _mpv) = make_player();
     let tracks = vec![make_test_track("A"), make_test_track("B")];
     player.load_queue(tracks, 0);
+    player.set_spectrum_tap(true);
     let epoch = player.map_tap_frames(Vec::new()).0;
 
     let audible = player.handle_audible_change(-0.4).expect("stream is live");
@@ -1036,6 +1037,63 @@ fn test_audible_position_applies_base_and_epoch() {
     player.inner.lock().position_base = 100.0;
     let audible = player.handle_audible_change(2.0).expect("stream is live");
     assert_eq!(audible.position, 102.0);
+}
+
+#[test]
+fn test_audible_ticks_are_dropped_while_the_tap_is_off() {
+    let (player, _mpv) = make_player();
+    player.load_queue(vec![make_test_track("A")], 0);
+
+    // The tick only clocks the visualiser, and the visualiser installs
+    // the tap for exactly as long as it is showing: with no tap there is
+    // no reader, so the tick is not worth an IPC hop.
+    assert!(player.handle_audible_change(1.0).is_none());
+    assert!(player.set_spectrum_tap(true));
+    assert!(player.handle_audible_change(1.0).is_some());
+    assert!(player.set_spectrum_tap(false));
+    assert!(player.handle_audible_change(1.0).is_none());
+}
+
+#[test]
+fn test_audible_ticks_are_dropped_while_a_restored_queue_is_unmaterialised() {
+    let (player, _mpv) = restored_player();
+    player.set_spectrum_tap(true);
+
+    // mpv has never seen the restored queue, so its ticks describe a
+    // player with nothing loaded and must not reach the frontend.
+    assert!(player.handle_audible_change(0.0).is_none());
+
+    player.resume();
+    assert!(player.handle_audible_change(90.0).is_some());
+}
+
+#[test]
+fn test_set_tap_tilt_changes_how_the_next_batch_is_mapped() {
+    use crate::playback::spectrum_tap::TapFrame;
+    let (player, _mpv) = make_player();
+    player.load_queue(vec![make_test_track("A")], 0);
+    let batch = || {
+        vec![TapFrame {
+            pts: 0.0,
+            db: vec![-20.0; 128],
+        }]
+    };
+
+    player.set_tap_tilt(0.0);
+    let (_, flat) = player.map_tap_frames(batch());
+    let bands = &flat[0].bands;
+    assert!(
+        bands.iter().all(|&b| b == bands[0]),
+        "with no tilt a flat spectrum maps to one height everywhere"
+    );
+
+    player.set_tap_tilt(3.0);
+    let (_, tilted) = player.map_tap_frames(batch());
+    let bands = &tilted[0].bands;
+    assert!(
+        bands[63] > bands[0],
+        "a rising tilt lifts the top band above the bottom one on the next frame"
+    );
 }
 
 #[test]
