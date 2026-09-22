@@ -1,10 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { usePlaybackStore, type VisualizerStyle } from "../stores/playbackStore";
+import { usePlaybackStore, type VisualizerMode } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { setSpectrumTap } from "../lib/commands";
 import { audibleTarget, pickSpectrumFrame, spectrumLastPushAt } from "../lib/spectrumRing";
 import { VISUALIZER_PARAMS } from "../lib/visualizerParams";
-import { RidgeHistory, drawRidgeline, edgeWindow, mixBandsInto, smoothRow } from "../lib/ridgeline";
+import {
+  RidgeHistory,
+  applyGrain,
+  drawRidgeline,
+  edgeWindow,
+  mixBandsInto,
+  rerollGrain,
+  resampleRow,
+  smoothRow,
+  spreadRow,
+} from "../lib/ridgeline";
 import { accentFromPalette } from "../lib/vibrantColor";
 import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
 
@@ -27,7 +37,7 @@ import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
  * a gapless join keeps drawing the outgoing track until it is heard.
  *
  * Rendering has two modes, chosen by the `mode` prop (the store's
- * `VisualizerMode` less "off", which unmounts this component instead):
+ * `VisualizerMode`):
  *
  * `bars`: one bar per band per channel hanging from the top edge. A frame
  * carries the left channel's N bands followed by the right channel's (N
@@ -43,9 +53,10 @@ import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
  *     bar 2N-1   → right band N-1 (highest, far right)
  *
  * `ridge`: the two channels averaged into N points, bass on the left and
- * treble on the right, drawn as a stack of lines rising from the bottom
- * edge: the live line in front and, behind it, one row per `ridgeRowMs`
- * of history (`lib/ridgeline.ts`).
+ * treble on the right, resampled to `ridgeOversample` points per band
+ * along a monotone cubic and textured, then drawn as a stack of lines
+ * rising from the bottom edge: the live line in front and, behind it,
+ * one row per `ridgeRowMs` of history (`lib/ridgeline.ts`).
  *
  * Both modes shape every point through a level curve and spring-ease it
  * between frames; the ridge has its own curve and easing values because
@@ -131,8 +142,8 @@ function requestTap(enabled: boolean): void {
 }
 
 interface Props {
-  /** Which look to paint. "off" never reaches here: the parent unmounts. */
-  mode: VisualizerStyle;
+  /** Which look to paint. */
+  mode: VisualizerMode;
 }
 
 export default function FocusVisualizer({ mode }: Props) {
@@ -256,21 +267,29 @@ function CanvasLayer({ mode }: Props) {
     // Per-point buffers. `current` is the eased level each point is drawn
     // at (so it decays smoothly between frames rather than snapping),
     // `scratch` receives the target frame, `shaped` the target after the
-    // level curve, and `smoothed` the ridge's neighbour-blended copy of
-    // it. All are reallocated, and the eased levels start from silence,
-    // if the point count ever changes.
+    // level curve, and `spread` and `smoothed` the ridge's widened and
+    // neighbour-blended copies of it. All are reallocated, and the eased
+    // levels start from silence, if the point count ever changes.
     let current = new Float32Array(pointsFor(CHANNELS * DEFAULT_BAND_COUNT));
     let scratch = new Float32Array(current.length);
     let shaped = new Float32Array(current.length);
+    let spread = new Float32Array(current.length);
     let smoothed = new Float32Array(current.length);
 
-    // Ridge only: the history rows behind the live line, the per-point
-    // edge window, and when the last history row was cut. Rebuilt when a
-    // tuning value or the point count changes.
+    // Ridge only, all on the fine grid the eased row is resampled to:
+    // the resampled row, the history rows behind it, the per-point edge
+    // window, when the last history row was cut, and the grain: one
+    // noise value per fine point, applied to the live line as drawn and
+    // frozen into each history row when it is cut, then re-rolled, so
+    // every row carries its own texture. Rebuilt when a tuning value or
+    // the point count changes.
+    let fine = new Float32Array(0);
     let history: RidgeHistory | null = null;
     let taper: Float32Array | null = null;
     let taperAmount = NaN;
     let lastRowAt = 0;
+    let grain = new Float32Array(0);
+    let grained = new Float32Array(0);
 
     // Wall-clock of the mount; the "no frames" hint waits this long after
     // mounting as well as after the last frame, so the tap has time to
@@ -330,6 +349,7 @@ function CanvasLayer({ mode }: Props) {
             current = new Float32Array(points);
             scratch = new Float32Array(points);
             shaped = new Float32Array(points);
+            spread = new Float32Array(points);
             smoothed = new Float32Array(points);
           }
           if (ridge) mixBandsInto(frame.bands, CHANNELS, scratch);
@@ -376,11 +396,17 @@ function CanvasLayer({ mode }: Props) {
         }
         shaped[i] = level;
       }
-      // The ridge blends each point with its neighbours after the curve,
-      // so the hard zeros a floor cut leaves are softened too.
+      // The ridge widens each peak and then blends each point with its
+      // neighbours, both after the curve: a floor cut leaves one band
+      // standing alone as a needle, and the spread turns it back into a
+      // peak while the blend softens the hard zeros around it.
       let source = shaped;
+      if (ridge && P.ridgeSpread > 0) {
+        spreadRow(source, spread, P.ridgeSpread);
+        source = spread;
+      }
       if (ridge && P.ridgeSmooth > 0) {
-        smoothRow(shaped, smoothed, P.ridgeSmooth);
+        smoothRow(source, smoothed, P.ridgeSmooth);
         source = smoothed;
       }
       const easeDt = Math.min(rawDelta, EASE_DT_CLAMP_MS);
@@ -397,24 +423,36 @@ function CanvasLayer({ mode }: Props) {
       if (ridge) {
         const rows = Math.max(1, Math.round(P.ridgeRows));
         const historyRows = Math.max(1, rows - 1);
-        if (!history || history.rows !== historyRows || history.width !== pointCount) {
-          history = new RidgeHistory(historyRows, pointCount);
+        const perBand = Math.min(8, Math.max(1, Math.round(P.ridgeOversample)));
+        const fineCount = (pointCount - 1) * perBand + 1;
+        if (fine.length !== fineCount) {
+          fine = new Float32Array(fineCount);
+          grain = new Float32Array(fineCount);
+          grained = new Float32Array(fineCount);
+          rerollGrain(grain);
         }
-        if (!taper || taper.length !== pointCount || taperAmount !== P.ridgeEdgeTaper) {
-          taper = edgeWindow(pointCount, P.ridgeEdgeTaper);
+        if (!history || history.rows !== historyRows || history.width !== fineCount) {
+          history = new RidgeHistory(historyRows, fineCount);
+        }
+        if (!taper || taper.length !== fineCount || taperAmount !== P.ridgeEdgeTaper) {
+          taper = edgeWindow(fineCount, P.ridgeEdgeTaper);
           taperAmount = P.ridgeEdgeTaper;
         }
+        resampleRow(current, fine, perBand);
         // A history row is cut from the live line every `ridgeRowMs` of
         // wall-clock, so the stack scrolls at one speed whatever the
         // display's refresh rate. It keeps scrolling through a pause,
         // carrying the flat line up until the stack is empty.
         if (now - lastRowAt >= P.ridgeRowMs) {
-          history.push(current);
+          applyGrain(fine, grained, grain, P.ridgeGrain);
+          history.push(grained);
+          rerollGrain(grain);
           lastRowAt = now;
         }
+        applyGrain(fine, grained, grain, P.ridgeGrain);
         const behind = history;
-        const live = current;
-        drawRidgeline(ctx, w, h, rows, (k) => (k === 0 ? live : behind.get(k - 1)), taper, RIDGE_RGB, P);
+        const live = grained;
+        drawRidgeline(ctx, w, h, rows, (r) => (r === 0 ? live : behind.get(r - 1)), taper, RIDGE_RGB, P);
       } else {
         // Accent colour from the cached ref; no per-frame style-recalc.
         const { r, g, b } = accentRef.current;

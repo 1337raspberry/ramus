@@ -53,14 +53,30 @@ export interface VisualizerParams {
   ridgeSpan: number;
   /** Ridge stroke width in CSS px. */
   ridgeLineWidth: number;
+  /**
+   * Points each ridge row is resampled to per band, along a monotone
+   * cubic through the bands (1..8). 1 draws straight lines between the
+   * bands themselves.
+   */
+  ridgeOversample: number;
   /** Line alpha at the front row. */
   ridgeAlpha: number;
   /** Line alpha at the back row. */
   ridgeBackAlpha: number;
   /** Wall-clock interval between history rows, in ms. */
   ridgeRowMs: number;
+  /**
+   * Width in points (a bell's sigma) each ridge peak is spread into
+   * without losing height; 0 is identity. Applied before `ridgeSmooth`.
+   */
+  ridgeSpread: number;
   /** Neighbour blend applied to each ridge point, 0..1; 0 is identity. */
   ridgeSmooth: number;
+  /**
+   * Random texture on every resampled point of a ridge row as a fraction
+   * of its own height, re-rolled for every history row; 0 is off.
+   */
+  ridgeGrain: number;
   /** Fraction of the ridge width over which each end tapers to the baseline. */
   ridgeEdgeTaper: number;
   /** Easing factor per 60 Hz frame while a ridge point rises. */
@@ -96,15 +112,18 @@ export const VISUALIZER_PARAMS: VisualizerParams = {
   ridgeBottom: 0.01,
   ridgeSpan: 1,
   ridgeLineWidth: 1.25,
+  ridgeOversample: 5,
   // Same wide-gamut allowance as the bars.
   ridgeAlpha: isHDR ? 0.6 : 0.85,
-  ridgeBackAlpha: isHDR ? 0.15 : 0.25,
+  ridgeBackAlpha: isHDR ? 0.1 : 0.17,
   ridgeRowMs: 33,
-  ridgeSmooth: 0.19,
+  ridgeSpread: 1,
+  ridgeSmooth: 0.1,
+  ridgeGrain: 0.03,
   ridgeEdgeTaper: 0.22,
   ridgeAttack: 0.67,
-  ridgeDecay: 0.29,
+  ridgeDecay: 0.5,
   ridgeGamma: 4,
-  ridgeFloorCut: 0.67,
+  ridgeFloorCut: 0.6,
   ridgeGain: 1.15,
 };
