@@ -313,6 +313,26 @@ export function IconWave({ size = defaults.size, className }: IconProps) {
   );
 }
 
+export function IconRidge({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M3 8 h4 l3 -3 l3 3 h8" />
+      <path d="M3 13 h3 l4 -4 l4 4 h7" />
+      <path d="M3 18 h5 l3 -4 l4 4 h6" />
+    </svg>
+  );
+}
+
 export function IconTriangleFilled({ size = defaults.size, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>

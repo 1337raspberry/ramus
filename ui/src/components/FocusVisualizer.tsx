@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { usePlaybackStore } from "../stores/playbackStore";
+import { usePlaybackStore, type VisualizerStyle } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { setSpectrumTap } from "../lib/commands";
 import { audibleTarget, pickSpectrumFrame, spectrumLastPushAt } from "../lib/spectrumRing";
 import { VISUALIZER_PARAMS } from "../lib/visualizerParams";
+import { RidgeHistory, drawRidgeline, edgeWindow, mixBandsInto, smoothRow } from "../lib/ridgeline";
 import { accentFromPalette } from "../lib/vibrantColor";
 import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
 
@@ -25,21 +26,32 @@ import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
  * special handling here: no frame near the estimate means no bars, and
  * a gapless join keeps drawing the outgoing track until it is heard.
  *
- * Rendering: one bar per band per channel. A frame carries the left
- * channel's N bands followed by the right channel's (N is 64 by default),
- * drawn as a stereo mirror: the left channel on the left half with its
- * bass at the centre, the right channel on the right half likewise, so
- * treble sits at both edges. No interpolation and no synthetic jitter:
- * every bar is a measured band, and the two halves differ exactly as
- * much as the mix does.
+ * Rendering has two modes, chosen by the `mode` prop (the store's
+ * `VisualizerMode` less "off", which unmounts this component instead):
+ *
+ * `bars`: one bar per band per channel hanging from the top edge. A frame
+ * carries the left channel's N bands followed by the right channel's (N
+ * is 64 by default), drawn as a stereo mirror: the left channel on the
+ * left half with its bass at the centre, the right channel on the right
+ * half likewise, so treble sits at both edges. No interpolation and no
+ * synthetic jitter: every bar is a measured band, and the two halves
+ * differ exactly as much as the mix does.
  *
  *     bar 0      → left  band N-1 (highest, far left)
  *     bar N-1    → left  band 0   (lowest, just left of centre)
  *     bar N      → right band 0   (lowest, just right of centre)
  *     bar 2N-1   → right band N-1 (highest, far right)
  *
- * The bar count comes from the frames themselves; buffers are sized on
- * the first frame and resized if it ever changes.
+ * `ridge`: the two channels averaged into N points, bass on the left and
+ * treble on the right, drawn as a stack of lines rising from the bottom
+ * edge: the live line in front and, behind it, one row per `ridgeRowMs`
+ * of history (`lib/ridgeline.ts`).
+ *
+ * Both modes shape every point through a level curve and spring-ease it
+ * between frames; the ridge has its own curve and easing values because
+ * a scrolling line wants slower dynamics than a bar. The point count
+ * comes from the frames themselves; buffers are sized on the first frame
+ * and resized if it ever changes.
  */
 
 /** Bands per channel assumed until the first frame arrives. */
@@ -52,6 +64,12 @@ const MIN_VISIBLE_HEIGHT_PX = 0.5;
 const GRADIENT_TOP_OPACITY = 0.95;
 const BORDER_WIDTH_PX = 0;
 const BORDER_OPACITY = 0;
+
+/**
+ * Ridge lines are white whatever the accent: the look is ink over the
+ * backdrop, and the backdrop already carries the accent.
+ */
+const RIDGE_RGB = "255, 255, 255";
 
 /**
  * A frame this far behind the estimated playhead is still drawn. Covers
@@ -73,12 +91,12 @@ const FRAME_LEAD_TOLERANCE_S = 0.05;
 const NO_FRAMES_HINT_MS = 3000;
 
 /**
- * Copy one stereo frame's band heights onto the bars in `out`, one bar
- * per value: the left channel's bands reversed onto the left half so its
- * bass sits at the centre, the right channel's bands in order onto the
- * right half. `out` must be exactly as long as the frame.
+ * Copy one stereo frame's band levels onto the bars in `out` as 0..1,
+ * one bar per value: the left channel's bands reversed onto the left
+ * half so its bass sits at the centre, the right channel's bands in
+ * order onto the right half. `out` must be exactly as long as the frame.
  */
-function readBandsInto(bands: Uint8Array, out: Uint8Array): void {
+function readBandsInto(bands: Uint8Array, out: Float32Array): void {
   const total = bands.length;
   const n = total / CHANNELS;
   if (out.length !== total || !Number.isInteger(n)) {
@@ -86,8 +104,8 @@ function readBandsInto(bands: Uint8Array, out: Uint8Array): void {
     return;
   }
   for (let i = 0; i < n; i++) {
-    out[i] = bands[n - 1 - i];
-    out[n + i] = bands[n + i];
+    out[i] = bands[n - 1 - i] / 255;
+    out[n + i] = bands[n + i] / 255;
   }
 }
 
@@ -112,7 +130,12 @@ function requestTap(enabled: boolean): void {
     .catch((e) => console.warn(`[spectrum] tap ${enabled ? "install" : "remove"} failed:`, e));
 }
 
-export default function FocusVisualizer() {
+interface Props {
+  /** Which look to paint. "off" never reaches here: the parent unmounts. */
+  mode: VisualizerStyle;
+}
+
+export default function FocusVisualizer({ mode }: Props) {
   const disabled = useSettingsStore((s) => s.disableSpectrum);
 
   // The tap is installed for exactly as long as this component is mounted
@@ -139,12 +162,15 @@ export default function FocusVisualizer() {
 
   if (disabled) return null;
 
-  return <CanvasLayer />;
+  // Keyed on the mode so a switch remounts the canvas with fresh buffers
+  // (the two modes size their point buffers differently) while the tap,
+  // owned above, stays installed.
+  return <CanvasLayer key={mode} mode={mode} />;
 }
 
 // --- Canvas layer ---
 
-function CanvasLayer() {
+function CanvasLayer({ mode }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
@@ -222,13 +248,29 @@ function CanvasLayer() {
     const resizeObs = new ResizeObserver(() => resize());
     resizeObs.observe(container);
 
-    // Per-bar buffers, one entry per band per channel. `current` is the
-    // eased height each bar is drawn at (so bars decay smoothly between
-    // frames rather than snapping); `scratch` receives the target frame.
-    // Both are reallocated, and the eased heights start from silence, if
-    // the frame width ever changes.
-    let current = new Float32Array(CHANNELS * DEFAULT_BAND_COUNT);
-    let scratch = new Uint8Array(CHANNELS * DEFAULT_BAND_COUNT);
+    // The ridge reads one point per band (both channels averaged); the
+    // bars read one per band per channel.
+    const ridge = mode === "ridge";
+    const pointsFor = (frameWidth: number) => (ridge ? frameWidth / CHANNELS : frameWidth);
+
+    // Per-point buffers. `current` is the eased level each point is drawn
+    // at (so it decays smoothly between frames rather than snapping),
+    // `scratch` receives the target frame, `shaped` the target after the
+    // level curve, and `smoothed` the ridge's neighbour-blended copy of
+    // it. All are reallocated, and the eased levels start from silence,
+    // if the point count ever changes.
+    let current = new Float32Array(pointsFor(CHANNELS * DEFAULT_BAND_COUNT));
+    let scratch = new Float32Array(current.length);
+    let shaped = new Float32Array(current.length);
+    let smoothed = new Float32Array(current.length);
+
+    // Ridge only: the history rows behind the live line, the per-point
+    // edge window, and when the last history row was cut. Rebuilt when a
+    // tuning value or the point count changes.
+    let history: RidgeHistory | null = null;
+    let taper: Float32Array | null = null;
+    let taperAmount = NaN;
+    let lastRowAt = 0;
 
     // Wall-clock of the mount; the "no frames" hint waits this long after
     // mounting as well as after the last frame, so the tap has time to
@@ -283,11 +325,15 @@ function CanvasLayer() {
               FRAME_LEAD_TOLERANCE_S,
             );
         if (frame) {
-          if (frame.bands.length !== current.length) {
-            current = new Float32Array(frame.bands.length);
-            scratch = new Uint8Array(frame.bands.length);
+          const points = pointsFor(frame.bands.length);
+          if (points !== current.length) {
+            current = new Float32Array(points);
+            scratch = new Float32Array(points);
+            shaped = new Float32Array(points);
+            smoothed = new Float32Array(points);
           }
-          readBandsInto(frame.bands, scratch);
+          if (ridge) mixBandsInto(frame.bands, CHANNELS, scratch);
+          else readBandsInto(frame.bands, scratch);
           haveFrame = true;
         }
       }
@@ -308,80 +354,109 @@ function CanvasLayer() {
         setStarved(starvedNow);
       }
 
-      // Shape each bar's level, then spring-ease toward it. The backend
+      // Shape each point's level, then spring-ease toward it. The backend
       // delivers dB position through its own compression curve; the
       // floor cut, gamma and gain here are the display-side adjustments
-      // (see lib/visualizerParams.ts). Easing alphas are computed once
-      // per frame, not per bar.
-      const {
-        floorCut,
-        gamma,
-        gain,
-        easeAttack,
-        easeDecay,
-        barAlpha,
-        barMaxHeight,
-        barTipOpacity,
-        barGap,
-        barSpan,
-      } = VISUALIZER_PARAMS;
+      // (see lib/visualizerParams.ts), one set per mode. Easing alphas
+      // are computed once per frame, not per point.
+      const P = VISUALIZER_PARAMS;
+      const floorCut = ridge ? P.ridgeFloorCut : P.floorCut;
+      const gamma = ridge ? P.ridgeGamma : P.gamma;
+      const gain = ridge ? P.ridgeGain : P.gain;
+      const easeAttack = ridge ? P.ridgeAttack : P.easeAttack;
+      const easeDecay = ridge ? P.ridgeDecay : P.easeDecay;
       const shape = floorCut > 0 || gamma !== 1 || gain !== 1;
-      const barCount = current.length;
+      const pointCount = current.length;
+      for (let i = 0; i < pointCount; i++) {
+        let level = scratch[i];
+        if (shape) {
+          level = level <= floorCut ? 0 : (level - floorCut) / (1 - floorCut);
+          if (gamma !== 1) level = Math.pow(level, gamma);
+          level = Math.min(1, level * gain);
+        }
+        shaped[i] = level;
+      }
+      // The ridge blends each point with its neighbours after the curve,
+      // so the hard zeros a floor cut leaves are softened too.
+      let source = shaped;
+      if (ridge && P.ridgeSmooth > 0) {
+        smoothRow(shaped, smoothed, P.ridgeSmooth);
+        source = smoothed;
+      }
       const easeDt = Math.min(rawDelta, EASE_DT_CLAMP_MS);
       const dtRatio = easeDt / EASE_REFERENCE_DT_MS;
       const alphaAttack = easeDt > 0 ? 1 - Math.pow(1 - easeAttack, dtRatio) : 0;
       const alphaDecay = easeDt > 0 ? 1 - Math.pow(1 - easeDecay, dtRatio) : 0;
-      for (let i = 0; i < barCount; i++) {
-        let target = scratch[i] / 255;
-        if (shape) {
-          target = target <= floorCut ? 0 : (target - floorCut) / (1 - floorCut);
-          if (gamma !== 1) target = Math.pow(target, gamma);
-          target = Math.min(1, target * gain);
-        }
+      for (let i = 0; i < pointCount; i++) {
         const prev = current[i];
-        const alpha = target > prev ? alphaAttack : alphaDecay;
-        current[i] = prev + (target - prev) * alpha;
+        const level = source[i];
+        const alpha = level > prev ? alphaAttack : alphaDecay;
+        current[i] = prev + (level - prev) * alpha;
       }
 
-      // Accent colour from the cached ref; no per-frame style-recalc.
-      const { r, g, b } = accentRef.current;
-
-      ctx.globalAlpha = barAlpha;
-
-      // Gradient: opaque at the top edge where bars originate, fading
-      // toward their tips.
-      const maxH = h * barMaxHeight;
-      const grad = ctx.createLinearGradient(0, 0, 0, maxH);
-      grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${GRADIENT_TOP_OPACITY})`);
-      grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${barTipOpacity})`);
-      ctx.fillStyle = grad;
-
-      // Stroke is applied per-bar after the fill, only when width > 0.
-      const drawBorder = BORDER_WIDTH_PX > 0 && BORDER_OPACITY > 0;
-      if (drawBorder) {
-        ctx.lineWidth = BORDER_WIDTH_PX;
-        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${BORDER_OPACITY})`;
-      }
-
-      // Even spacing across the bar field (the full width by default,
-      // centred when narrower); recomputed per frame for resize.
-      const fieldW = w * barSpan;
-      const fieldX = (w - fieldW) / 2;
-      const totalGap = barGap * (barCount - 1);
-      const barWidth = Math.max(0.5, (fieldW - totalGap) / barCount);
-
-      for (let i = 0; i < barCount; i++) {
-        const barHeight = current[i] * maxH;
-        if (barHeight < MIN_VISIBLE_HEIGHT_PX) continue;
-        const x = fieldX + i * (barWidth + barGap);
-        ctx.fillRect(x, 0, barWidth, barHeight);
-        if (drawBorder) {
-          ctx.strokeRect(x, 0, barWidth, barHeight);
+      if (ridge) {
+        const rows = Math.max(1, Math.round(P.ridgeRows));
+        const historyRows = Math.max(1, rows - 1);
+        if (!history || history.rows !== historyRows || history.width !== pointCount) {
+          history = new RidgeHistory(historyRows, pointCount);
         }
-      }
+        if (!taper || taper.length !== pointCount || taperAmount !== P.ridgeEdgeTaper) {
+          taper = edgeWindow(pointCount, P.ridgeEdgeTaper);
+          taperAmount = P.ridgeEdgeTaper;
+        }
+        // A history row is cut from the live line every `ridgeRowMs` of
+        // wall-clock, so the stack scrolls at one speed whatever the
+        // display's refresh rate. It keeps scrolling through a pause,
+        // carrying the flat line up until the stack is empty.
+        if (now - lastRowAt >= P.ridgeRowMs) {
+          history.push(current);
+          lastRowAt = now;
+        }
+        const behind = history;
+        const live = current;
+        drawRidgeline(ctx, w, h, rows, (k) => (k === 0 ? live : behind.get(k - 1)), taper, RIDGE_RGB, P);
+      } else {
+        // Accent colour from the cached ref; no per-frame style-recalc.
+        const { r, g, b } = accentRef.current;
+        const { barAlpha, barMaxHeight, barTipOpacity, barGap, barSpan } = P;
 
-      // Reset globalAlpha for any future shared-canvas code paths.
-      ctx.globalAlpha = 1.0;
+        ctx.globalAlpha = barAlpha;
+
+        // Gradient: opaque at the top edge where bars originate, fading
+        // toward their tips.
+        const maxH = h * barMaxHeight;
+        const grad = ctx.createLinearGradient(0, 0, 0, maxH);
+        grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${GRADIENT_TOP_OPACITY})`);
+        grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${barTipOpacity})`);
+        ctx.fillStyle = grad;
+
+        // Stroke is applied per-bar after the fill, only when width > 0.
+        const drawBorder = BORDER_WIDTH_PX > 0 && BORDER_OPACITY > 0;
+        if (drawBorder) {
+          ctx.lineWidth = BORDER_WIDTH_PX;
+          ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${BORDER_OPACITY})`;
+        }
+
+        // Even spacing across the bar field (the full width by default,
+        // centred when narrower); recomputed per frame for resize.
+        const fieldW = w * barSpan;
+        const fieldX = (w - fieldW) / 2;
+        const totalGap = barGap * (pointCount - 1);
+        const barWidth = Math.max(0.5, (fieldW - totalGap) / pointCount);
+
+        for (let i = 0; i < pointCount; i++) {
+          const barHeight = current[i] * maxH;
+          if (barHeight < MIN_VISIBLE_HEIGHT_PX) continue;
+          const x = fieldX + i * (barWidth + barGap);
+          ctx.fillRect(x, 0, barWidth, barHeight);
+          if (drawBorder) {
+            ctx.strokeRect(x, 0, barWidth, barHeight);
+          }
+        }
+
+        // Reset globalAlpha for any future shared-canvas code paths.
+        ctx.globalAlpha = 1.0;
+      }
 
       rafRef.current = requestAnimationFrame(render);
     };
@@ -392,7 +467,7 @@ function CanvasLayer() {
       cancelAnimationFrame(rafRef.current);
       resizeObs.disconnect();
     };
-  }, []);
+  }, [mode]);
 
   return (
     <div ref={containerRef} className="focus-visualizer">

@@ -4,6 +4,7 @@ import {
   applyUltraBlurColors,
   resetUltraBlurGate,
   ultraBlurColorsGen,
+  type VisualizerMode,
 } from "../stores/playbackStore";
 import { useLibraryStore } from "../stores/libraryStore";
 import { ART_SIZE, setAlbumPalette, getAlbumGenres, getAlbumColors } from "../lib/commands";
@@ -35,6 +36,7 @@ import {
   IconChevronDown,
   IconClose,
   IconWave,
+  IconRidge,
   IconShuffle,
 } from "./Icons";
 
@@ -43,12 +45,20 @@ interface Props {
   onOpenSettings?: () => void;
 }
 
+/** Tooltip per visualiser mode; the button cycles bars → ridge → off. */
+const VISUALIZER_TOGGLE_TITLE: Record<VisualizerMode, string> = {
+  off: "Visualiser: off — click for bars",
+  bars: "Visualiser: bars — click for ridgeline",
+  ridge: "Visualiser: ridgeline — click to hide",
+};
+
 /**
  * Full-screen Now Playing overlay. Mounted from App.tsx when
  * `playbackStore.isFocusMode === true`.
  *
- * Layout: FocusVisualizer paints a full-window background layer (drapes
- * from the top edge). A two-column grid sits on top, offset 32px from
+ * Layout: FocusVisualizer paints a full-window background layer (bars
+ * drape from the top edge, the ridgeline rises from the bottom). A
+ * two-column grid sits on top, offset 32px from
  * the top to clear the window drag region. Left: album art with
  * artist/album/year anchored below. Right: track title, waveform,
  * transport, volume, genres, codec, plus an expandable queue that reuses
@@ -304,11 +314,11 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
   return (
     <div className="focus-overlay">
       {/* Visualiser is a full-window background layer behind art and
-       * controls, draping from the top edge. Gated on
-       * `visualizerMode !== "off"` and unmounted (not CSS-hidden) so
-       * the RAF loop stops (and the audio tap is removed) in "off"
-       * mode. */}
-      {visualizerMode !== "off" && <FocusVisualizer />}
+       * controls: bars drape from the top edge, the ridgeline rises from
+       * the bottom. Gated on `visualizerMode !== "off"` and unmounted
+       * (not CSS-hidden) so the RAF loop stops (and the audio tap is
+       * removed) in "off" mode. */}
+      {visualizerMode !== "off" && <FocusVisualizer mode={visualizerMode} />}
 
       <div className="focus-body">
         <div className={`focus-art-panel${showLyrics ? " lyrics-mode" : ""}`}>
@@ -381,18 +391,10 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
               <button
                 className={`np-viz-btn${visualizerMode !== "off" ? " active" : ""}`}
                 onClick={toggleVisualizer}
-                title={
-                  visualizerMode === "off"
-                    ? "Visualiser: off — click to show"
-                    : "Visualiser: on — click to hide"
-                }
-                aria-label={
-                  visualizerMode === "off"
-                    ? "Visualiser: off, click to show"
-                    : "Visualiser: on, click to hide"
-                }
+                title={VISUALIZER_TOGGLE_TITLE[visualizerMode]}
+                aria-label={VISUALIZER_TOGGLE_TITLE[visualizerMode]}
               >
-                <IconWave />
+                {visualizerMode === "ridge" ? <IconRidge /> : <IconWave />}
               </button>
               <button
                 className={`np-fav-btn${trackFav ? " active" : ""}`}

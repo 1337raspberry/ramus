@@ -7,12 +7,16 @@ import { clearSpectrumRing } from "../lib/spectrumRing";
 /**
  * Focus-mode visualiser rendering mode.
  *
- * - `"off"`  — viz is unmounted, RAF loop stops
- * - `"bars"` — one bar per tap band, mirrored: bass centred, treble at edges
+ * - `"off"`   — viz is unmounted, RAF loop stops
+ * - `"bars"`  — one bar per tap band from the top edge, mirrored: bass centred, treble at edges
+ * - `"ridge"` — a stack of spectrum-history lines rising from the bottom edge, bass left, treble right
  *
- * Toggled via `toggleVisualizer`.
+ * `toggleVisualizer` cycles bars → ridge → off. The style last shown is
+ * persisted and comes back on the next launch; on/off is session state.
  */
-export type VisualizerMode = "off" | "bars";
+export type VisualizerMode = "off" | "bars" | "ridge";
+/** The looks the visualiser can be showing. */
+export type VisualizerStyle = Exclude<VisualizerMode, "off">;
 import {
   getVolume,
   setVolume as setVolumeCmd,
@@ -28,6 +32,22 @@ import {
   jumpToQueueIndex as jumpToQueueIndexCmd,
   clearQueue as clearQueueCmd,
 } from "../lib/commands";
+
+const VISUALIZER_STYLE_KEY = "ramus-visualizer-style";
+
+function loadPersistedVisualizerStyle(): VisualizerStyle {
+  try {
+    const raw = localStorage.getItem(VISUALIZER_STYLE_KEY);
+    if (raw === "bars" || raw === "ridge") return raw;
+  } catch {}
+  return "bars";
+}
+
+function persistVisualizerStyle(style: VisualizerStyle): void {
+  try {
+    localStorage.setItem(VISUALIZER_STYLE_KEY, style);
+  } catch {}
+}
 
 interface PlaybackState {
   // --- Playback ---
@@ -211,7 +231,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   currentGenres: [],
 
   isFocusMode: false,
-  visualizerMode: "bars",
+  visualizerMode: loadPersistedVisualizerStyle(),
   positionAt: 0,
 
   onPlaybackState: (status, track, queueIndex) => {
@@ -426,7 +446,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   toggleVisualizer: () =>
     set((s) => {
-      const next: VisualizerMode = s.visualizerMode === "bars" ? "off" : "bars";
+      const next: VisualizerMode =
+        s.visualizerMode === "bars" ? "ridge" : s.visualizerMode === "ridge" ? "off" : "bars";
+      if (next !== "off") persistVisualizerStyle(next);
       return { visualizerMode: next };
     }),
 
