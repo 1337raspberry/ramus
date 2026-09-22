@@ -8,7 +8,9 @@
 //! unaffected. The tap sits after the equalizer so it measures what the
 //! listener hears.
 
-use crate::playback::spectrum_tap::{tap_graph, LevelMapper, SpectrumFrame, TapConfig, TapFrame};
+use crate::playback::spectrum_tap::{
+    tap_graph, LevelMapper, SpectrumFrame, TapConfig, TapFrame, TILT_DB_PER_OCTAVE,
+};
 
 use super::{AudioPlayer, PlayerInner};
 
@@ -174,8 +176,25 @@ impl AudioPlayer {
     }
 }
 
+impl AudioPlayer {
+    /// Change the spectral tilt the tap's level mapper applies, in dB per
+    /// octave, for every frame from now on. A tuning control; the shipped
+    /// value is `TILT_DB_PER_OCTAVE`.
+    pub fn set_tap_tilt(&self, db_per_octave: f32) {
+        self.inner.lock().tap_mapper.set_tilt(db_per_octave);
+    }
+}
+
 /// The mapper the player owns per tap session; re-exported type alias so
-/// callers constructing a player know which frame rate it assumes.
+/// callers constructing a player know which frame rate it assumes. The
+/// spectral tilt is the shipped constant unless `RAMUS_TAP_TILT` (dB per
+/// octave) is set, which is how a tuning pass tries other slopes without
+/// a rebuild.
 pub(super) fn new_tap_mapper() -> LevelMapper {
-    LevelMapper::new(TapConfig::default().fps)
+    let tilt = std::env::var("RAMUS_TAP_TILT")
+        .ok()
+        .and_then(|v| v.trim().parse::<f32>().ok())
+        .filter(|t| t.is_finite())
+        .unwrap_or(TILT_DB_PER_OCTAVE);
+    LevelMapper::with_tilt(TapConfig::default().fps, tilt)
 }

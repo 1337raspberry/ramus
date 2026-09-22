@@ -7,9 +7,10 @@ import { VISUALIZER_PARAMS, type VisualizerParams } from "../lib/visualizerParam
  * Bar values are written straight into `VISUALIZER_PARAMS`, the object the
  * paint loop reads, so a slider drag changes the next frame without a
  * React render. Art values have no production-side object: `FocusVizDebug`
- * applies them through an injected stylesheet. Both persist to
- * `localStorage` so a tuning pass survives reloads. This module is only
- * ever loaded in development builds.
+ * applies them through an injected stylesheet, and the tap value is pushed
+ * to the backend over a command. All persist to `localStorage` so a tuning
+ * pass survives reloads. This module is only ever loaded in development
+ * builds.
  */
 
 /** Art layout values; production reads the equivalents from styles.css. */
@@ -24,7 +25,13 @@ export interface ArtTuning {
   artColumn: number;
 }
 
-export type FocusVizTuning = VisualizerParams & ArtTuning;
+/** Backend tap values; production reads the constants in `spectrum_tap.rs`. */
+export interface TapTuning {
+  /** Spectral tilt in dB per octave (`TILT_DB_PER_OCTAVE`). */
+  tapTilt: number;
+}
+
+export type FocusVizTuning = VisualizerParams & ArtTuning & TapTuning;
 
 /**
  * The shipped art layout, mirrored from styles.css: `--art-scale` on
@@ -38,18 +45,25 @@ const ART_DEFAULTS: Readonly<ArtTuning> = Object.freeze({
   artColumn: 1,
 });
 
+/** The shipped tap values, mirrored from `spectrum_tap.rs`. */
+const TAP_DEFAULTS: Readonly<TapTuning> = Object.freeze({
+  tapTilt: 1.0,
+});
+
 /** Shipped values, captured before anything here touches the params. */
 export const TUNING_DEFAULTS: Readonly<FocusVizTuning> = Object.freeze({
   ...VISUALIZER_PARAMS,
   ...ART_DEFAULTS,
+  ...TAP_DEFAULTS,
 });
 
 const STORAGE_KEY = "ramus.dev.focusVizTuning";
 
 const art: ArtTuning = { ...ART_DEFAULTS };
+const tap: TapTuning = { ...TAP_DEFAULTS };
 
 function current(): FocusVizTuning {
-  return { ...VISUALIZER_PARAMS, ...art };
+  return { ...VISUALIZER_PARAMS, ...art, ...tap };
 }
 
 /** Immutable copy replaced on every change, for `useSyncExternalStore`. */
@@ -60,9 +74,15 @@ function isArtKey(key: keyof FocusVizTuning): key is keyof ArtTuning {
   return key in ART_DEFAULTS;
 }
 
+function isTapKey(key: keyof FocusVizTuning): key is keyof TapTuning {
+  return key in TAP_DEFAULTS;
+}
+
 function write(key: keyof FocusVizTuning, value: number): void {
   if (isArtKey(key)) {
     art[key] = value;
+  } else if (isTapKey(key)) {
+    tap[key] = value;
   } else {
     VISUALIZER_PARAMS[key] = value;
   }

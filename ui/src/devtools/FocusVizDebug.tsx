@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { setSpectrumTilt } from "../lib/commands";
 import {
   TUNING_DEFAULTS,
   resetTuning,
@@ -88,6 +89,10 @@ const SECTIONS: SectionSpec[] = [
       { key: "ridgeAttack", label: "Attack", min: 0.05, max: 1, step: 0.01, digits: 2 },
       { key: "ridgeDecay", label: "Decay", min: 0.05, max: 1, step: 0.01, digits: 2 },
     ],
+  },
+  {
+    title: "Tap",
+    controls: [{ key: "tapTilt", label: "Tilt dB/oct", min: -3, max: 6, step: 0.1, digits: 1 }],
   },
   {
     title: "Ridge level curve",
@@ -232,6 +237,12 @@ function Host() {
   useEffect(() => {
     styleElement("fv-debug-art").textContent = artCss(tuning);
   }, [tuning]);
+
+  // The tap tilt lives in the backend: push it on every change, and once
+  // at startup so a saved value applies without opening the panel.
+  useEffect(() => {
+    setSpectrumTilt(tuning.tapTilt).catch(() => {});
+  }, [tuning.tapTilt]);
 
   useEffect(() => {
     if (!inFocus) return;
