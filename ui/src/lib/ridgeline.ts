@@ -394,6 +394,16 @@ export function drawRidgeline(
   const step = fieldW / (n - 1);
   if (rowY.length !== n) rowY = new Float32Array(n);
   const ys = rowY;
+  // Device pixels per CSS px, read off the context's own transform, so
+  // each baseline can be put on the same sub-pixel phase: the stroke's
+  // upper edge on a device-pixel boundary. A row at rest is a straight
+  // rule, and without this each rule lands at its own fraction of a
+  // pixel and the anti-aliasing spreads it over one bright row or two
+  // dim ones at random, which at a device pixel ratio of 1 reads as
+  // alternating fat and thin lines up the stack.
+  const scale = ctx.getTransform().a || 1;
+  const halfStroke = (p.ridgeLineWidth * scale) / 2;
+  const snap = (y: number) => (Math.round(y * scale - halfStroke) + halfStroke) / scale;
   const styleKey = `${rows}|${p.ridgeAlpha}|${p.ridgeBackAlpha}|${rgb}`;
   if (styleKey !== strokeStylesFor) {
     strokeStyles = Array.from(
@@ -413,8 +423,9 @@ export function drawRidgeline(
   ctx.fillStyle = "#000";
   for (let k = rows - 1; k >= 0; k--) {
     const g = ridgeRow(k, rows, h, p);
+    const baseline = snap(g.baseline);
     const values = row(k);
-    for (let i = 0; i < n; i++) ys[i] = g.baseline - values[i] * edge[i] * g.scale;
+    for (let i = 0; i < n; i++) ys[i] = baseline - values[i] * edge[i] * g.scale;
     const line = new Path2D();
     line.moveTo(fieldX, ys[0]);
     for (let i = 1; i < n; i++) line.lineTo(fieldX + i * step, ys[i]);
@@ -423,8 +434,8 @@ export function drawRidgeline(
     // copy of the line closed along the baseline; the line itself stays
     // open so the baseline is never stroked.
     const under = new Path2D(line);
-    under.lineTo(fieldX + fieldW, g.baseline);
-    under.lineTo(fieldX, g.baseline);
+    under.lineTo(fieldX + fieldW, baseline);
+    under.lineTo(fieldX, baseline);
     under.closePath();
     ctx.globalCompositeOperation = "destination-out";
     ctx.fill(under);

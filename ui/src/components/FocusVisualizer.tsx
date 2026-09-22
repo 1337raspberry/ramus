@@ -233,27 +233,35 @@ function CanvasLayer({ mode }: Props) {
     if (!ctx) return;
 
     // Track DPR and dimensions so the backing store resizes cleanly
-    // when moving between displays (e.g. 1x to 2x Retina). Sizing the
+    // when moving between displays (e.g. 1x to 2x Retina). The backing
+    // store is sized in whole device pixels and the CSS box derived from
+    // it, so the bitmap maps onto the screen one to one: at a fractional
+    // scale (Windows at 125 % or 150 %) `width * dpr` is fractional, the
+    // canvas truncates it, and the browser then resamples the bitmap
+    // into a box a fraction of a pixel larger, smearing every hairline
+    // over two pixel rows with a different blend on each row. Sizing the
     // backing store wipes the canvas; `wiped` tells the next paint so a
     // frame that would otherwise leave the canvas as it is repaints.
-    let lastW = 0;
-    let lastH = 0;
+    let lastBw = 0;
+    let lastBh = 0;
     let lastDpr = 0;
     let wiped = false;
 
     const resize = () => {
       const rect = container.getBoundingClientRect();
-      const w = Math.max(1, Math.floor(rect.width));
-      const h = Math.max(1, Math.floor(rect.height));
       const dpr = window.devicePixelRatio || 1;
-      if (w !== lastW || h !== lastH || dpr !== lastDpr) {
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
+      const bw = Math.max(1, Math.floor(rect.width * dpr));
+      const bh = Math.max(1, Math.floor(rect.height * dpr));
+      const w = bw / dpr;
+      const h = bh / dpr;
+      if (bw !== lastBw || bh !== lastBh || dpr !== lastDpr) {
+        canvas.width = bw;
+        canvas.height = bh;
         canvas.style.width = `${w}px`;
         canvas.style.height = `${h}px`;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        lastW = w;
-        lastH = h;
+        lastBw = bw;
+        lastBh = bh;
         lastDpr = dpr;
         wiped = true;
       }
