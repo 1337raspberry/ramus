@@ -295,6 +295,9 @@ jobs:
       # script (sets RPATH=$ORIGIN on each bundled lib).
       # libayatana-appindicator3-dev is the maintained replacement for
       # the deprecated libappindicator3-dev package.
+      # xdg-utils: tauri's AppImage bundler copies /usr/bin/xdg-open into
+      # the image and aborts when the host lacks it; the ubuntu-24.04-arm
+      # runner image ships without it (the x86_64 image has it).
       - name: Install Linux system dependencies
         if: startsWith(matrix.id, 'linux')
         run: |
@@ -310,7 +313,8 @@ jobs:
             build-essential \
             curl \
             wget \
-            file
+            file \
+            xdg-utils
 
       # Walk libmpv.so.2's transitive non-glibc deps via ldd, copy them to
       # ramus-tauri/linux-libs/, set RPATH=$ORIGIN on each, and write
