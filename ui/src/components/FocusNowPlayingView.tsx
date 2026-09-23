@@ -323,7 +323,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
   if (focusClear) {
     return (
       <div className="focus-overlay">
-        <FocusVisualizer key="focus-viz" mode={visualizerMode} />
+        <FocusVisualizer key="focus-viz" mode={visualizerMode} subdued={false} />
         <FocusClearPlayer
           title={track.title}
           artist={artistLabel}
@@ -342,7 +342,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
        * controls: bars drape from the top edge, the ridgeline rises from
        * the bottom. The off mode and the `disableSpectrum` setting both
        * render nothing and remove the tap. */}
-      <FocusVisualizer key="focus-viz" mode={visualizerMode} />
+      <FocusVisualizer key="focus-viz" mode={visualizerMode} subdued />
 
       <div className="focus-body">
         <div className={`focus-art-panel${showLyrics ? " lyrics-mode" : ""}`}>

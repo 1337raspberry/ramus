@@ -145,9 +145,16 @@ function requestTap(enabled: boolean): void {
 interface Props {
   /** Which look to paint; off paints nothing and removes the tap. */
   mode: VisualizerMode;
+  /**
+   * The full focus layout sits on top, so the ridge is drawn at half
+   * strength and the art and controls stay the subject; the clear screen
+   * shows it at full strength. The bars hang in a strip along the top
+   * edge, clear of the layout, and are unaffected.
+   */
+  subdued: boolean;
 }
 
-export default function FocusVisualizer({ mode }: Props) {
+export default function FocusVisualizer({ mode, subdued }: Props) {
   const disabled = useSettingsStore((s) => s.disableSpectrum);
   const active = !disabled && mode !== "off";
 
@@ -179,12 +186,18 @@ export default function FocusVisualizer({ mode }: Props) {
   // Keyed on the mode so a switch remounts the canvas with fresh buffers
   // (the two looks size their point buffers differently) while the tap,
   // owned above, stays installed.
-  return <CanvasLayer key={mode} mode={mode} />;
+  return <CanvasLayer key={mode} mode={mode} subdued={subdued && mode === "ridge"} />;
 }
 
 // --- Canvas layer ---
 
-function CanvasLayer({ mode }: { mode: Exclude<VisualizerMode, "off"> }) {
+function CanvasLayer({
+  mode,
+  subdued,
+}: {
+  mode: Exclude<VisualizerMode, "off">;
+  subdued: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
@@ -573,7 +586,7 @@ function CanvasLayer({ mode }: { mode: Exclude<VisualizerMode, "off"> }) {
 
   return (
     <div ref={containerRef} className="focus-visualizer">
-      <canvas ref={canvasRef} />
+      <canvas ref={canvasRef} className={subdued ? "is-subdued" : undefined} />
       {starved && (
         <div className="focus-visualizer focus-visualizer-placeholder is-muted">
           <span className="focus-visualizer-placeholder-label">Visualiser unavailable</span>
