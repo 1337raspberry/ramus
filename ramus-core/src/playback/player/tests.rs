@@ -3402,6 +3402,19 @@ fn test_a_cached_current_track_plays_locally() {
 }
 
 #[test]
+fn test_a_copy_cached_mid_play_leaves_the_stream_live() {
+    let (player, _) = make_player();
+    player.load_queue(vec![make_test_track("1")], 0);
+    // The prefetch lands a copy of the current track after mpv has started
+    // pulling it over the network; mpv keeps reading the stream it opened.
+    std::thread::sleep(Duration::from_millis(2));
+    player.with_cache(|cache| {
+        cache.insert("1".into(), PathBuf::from("/tmp/cached_1.flac"), 1000);
+    });
+    assert!(player.current_track_streams_from_network());
+}
+
+#[test]
 fn test_a_restored_queue_streams_nothing_until_it_materialises() {
     let (player, _) = restored_player();
     assert!(

@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { flushQueueState, foregroundResync, isAuthenticated, setWebviewVisible } from "./lib/commands";
+import {
+  flushQueueState,
+  foregroundResync,
+  isAuthenticated,
+  setWebviewVisible,
+} from "./lib/commands";
 import { clearGenreMetadataCache } from "./lib/genreMetadataCache";
 import type { SyncProgress } from "./lib/types";
 import { usePlaybackEvents } from "./lib/usePlaybackEvents";
@@ -50,9 +55,7 @@ applyAccent(...DEFAULT_ACCENT);
  */
 let visibilityReports: Promise<void> = Promise.resolve();
 function reportWebviewVisible(visible: boolean): void {
-  visibilityReports = visibilityReports
-    .then(() => setWebviewVisible(visible))
-    .catch(() => {});
+  visibilityReports = visibilityReports.then(() => setWebviewVisible(visible)).catch(() => {});
 }
 
 export default function App() {

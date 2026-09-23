@@ -4,6 +4,16 @@ import os
 
 private let log = Logger(subsystem: "com.raspsoft.ramus", category: "MpvController")
 
+/// `text` with any Plex token blanked. Transcode URLs nest the token
+/// inside `X-Plex-Headers=<base64>`, so both forms are redacted.
+private func redactTokens(_ text: String) -> String {
+    text.replacingOccurrences(
+        of: #"(X-Plex-Token|X-Plex-Headers)=[^&\s]*"#,
+        with: "$1=REDACTED",
+        options: .regularExpression
+    )
+}
+
 /// Thin Swift wrapper around libmpv's C API for iOS audio-only playback.
 /// Trimmed of buffering/cache observers that aren't yet surfaced, and
 /// de-`@MainActor`-ified because Tauri plugin callbacks already run off
@@ -35,6 +45,10 @@ final class MpvController {
 
     var isReady: Bool { mpv != nil }
     private var mpv: OpaquePointer?
+    /// Whether `setVerboseLog` has the verbose log (and the `audio-pts`
+    /// observer) on; a repeat request is a no-op, so the property is never
+    /// observed twice.
+    private var verboseLog = false
     private let eventQueue = DispatchQueue(
         label: "com.raspsoft.ramus.mpv-events",
         qos: .userInteractive
@@ -224,6 +238,14 @@ final class MpvController {
         return value
     }
 
+    /// mpv's `ffmpeg-version`: `av_version_info()` of the FFmpeg linked
+    /// into this libmpv. The spectrum tap's graph depends on it.
+    func getFfmpegVersion() -> String? {
+        guard let mpv, let raw = mpv_get_property_string(mpv, "ffmpeg-version") else { return nil }
+        defer { mpv_free(raw) }
+        return String(cString: raw)
+    }
+
     func setAudioFilters(_ value: String) {
         setPropertyString("af", value)
     }
@@ -234,7 +256,8 @@ final class MpvController {
     // switch: nothing reads it while the tap is out, and observing it
     // would otherwise double the event rate of every playback session.
     func setVerboseLog(_ enabled: Bool) {
-        guard let mpv else { return }
+        guard let mpv, enabled != verboseLog else { return }
+        verboseLog = enabled
         let level = enabled ? "v" : "no"
         let err = mpv_request_log_messages(mpv, level)
         if err < 0 {
@@ -310,15 +333,7 @@ final class MpvController {
         let err = mpv_command(mpv, &cArgs)
         cStrings.forEach { free($0) }
         if err < 0 {
-            // Redact tokens before logging. Transcode URLs nest the token
-            // inside `X-Plex-Headers=<base64>`, so redact both forms.
-            let safe = args.map { arg in
-                arg.replacingOccurrences(
-                    of: #"(X-Plex-Token|X-Plex-Headers)=[^&]*"#,
-                    with: "$1=REDACTED",
-                    options: .regularExpression
-                )
-            }
+            let safe = args.map(redactTokens)
             let msg = String(cString: mpv_error_string(err))
             log.warning("mpv cmd '\(safe.joined(separator: " "), privacy: .public)' failed: \(msg, privacy: .public)")
         }
@@ -378,13 +393,21 @@ private final class WakeupContext {
 
             switch event.pointee.event_id {
             case MPV_EVENT_LOG_MESSAGE:
-                // Only the tap's printers matter; the rest of the verbose
-                // stream is dropped here rather than carried to Rust.
+                // Only the tap's printers are carried to Rust. Warnings and
+                // errors go to the system log instead, so a filter graph
+                // mpv refuses (and drops from the chain) leaves a trace;
+                // the rest of the verbose stream is dropped here.
                 guard let data = event.pointee.data else { continue }
                 let msg = data.assumingMemoryBound(to: mpv_event_log_message.self).pointee
-                guard let prefix = msg.prefix, let text = msg.text,
-                    strncmp(prefix, "ffmpeg", 6) == 0
-                else { continue }
+                guard let prefix = msg.prefix, let text = msg.text else { continue }
+                if msg.log_level.rawValue <= MPV_LOG_LEVEL_WARN.rawValue {
+                    let module = String(cString: prefix)
+                    let line = redactTokens(String(cString: text))
+                        .trimmingCharacters(in: .newlines)
+                    log.warning("mpv [\(module, privacy: .public)] \(line, privacy: .public)")
+                    continue
+                }
+                guard strncmp(prefix, "ffmpeg", 6) == 0 else { continue }
                 tapLines.append(String(cString: text))
                 if tapLines.count >= Self.tapLineBatch { flushTapLines() }
 

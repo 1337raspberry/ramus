@@ -371,6 +371,12 @@ class MpvBridgePlugin: Plugin {
         invoke.resolve(["value": value])
     }
 
+    /// Forward `ffmpeg-version` to Rust; an empty string when mpv cannot
+    /// report it (`JSObject` won't accept nil values).
+    @objc public func mpvGetFfmpegVersion(_ invoke: Invoke) throws {
+        invoke.resolve(["value": mpv?.getFfmpegVersion() ?? ""])
+    }
+
     @objc public func mpvGetEqConfig(_ invoke: Invoke) throws {
         invoke.resolve([
             "frequencies": [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],
@@ -454,15 +460,21 @@ class MpvBridgePlugin: Plugin {
 
     /// Enter or leave the visualiser's presentation: landscape only (with
     /// rotation lock on too: iOS turns an interface whose orientation is
-    /// no longer allowed), the status bar hidden, the home indicator
-    /// auto-hidden and the idle timer held off. Leaving puts every one of
-    /// them back and turns the interface to the orientation it had.
+    /// no longer allowed), the status bar hidden and the home indicator
+    /// auto-hidden. While it is held the idle timer is off exactly when
+    /// `keepAwake` says so, and a repeat enter only updates that, so the
+    /// screen can follow playback and still lock once the music stops.
+    /// Leaving puts every one of them back and turns the interface to the
+    /// orientation it had.
     @objc public func setVisualizerPresentation(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(VisualizerPresentationArgs.self)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if args.active {
                 self.enterVisualizerPresentation()
+                if self.visualizerRestore != nil {
+                    UIApplication.shared.isIdleTimerDisabled = args.keepAwake
+                }
             } else {
                 self.leaveVisualizerPresentation()
             }
@@ -478,23 +490,47 @@ class MpvBridgePlugin: Plugin {
             statusBarHidden: controller.prefersStatusBarHidden,
             homeIndicatorAutoHidden: controller.prefersHomeIndicatorAutoHidden
         )
+        // Where the device is held is read on the way out; UIDevice only
+        // reports it while someone has asked for orientation updates.
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
         setRootOrientations(.landscape)
         requestOrientations(.landscape)
         setRootFlag("setPrefersStatusBarHidden:", true)
         setRootFlag("setPrefersHomeIndicatorAutoHidden:", true)
-        UIApplication.shared.isIdleTimerDisabled = true
     }
 
     private func leaveVisualizerPresentation() {
         guard let restore = visualizerRestore else { return }
         visualizerRestore = nil
-        setRootOrientations(Self.everydayOrientations)
-        if let orientation = restore.orientation {
+        let everyday = Self.everydayOrientations
+        setRootOrientations(everyday)
+        if let orientation = Self.heldOrientation(within: everyday) ?? restore.orientation {
             requestOrientations(orientation)
         }
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
         setRootFlag("setPrefersStatusBarHidden:", restore.statusBarHidden)
         setRootFlag("setPrefersHomeIndicatorAutoHidden:", restore.homeIndicatorAutoHidden)
         UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    /// The interface orientation matching the way the device is held, when
+    /// `mask` offers more than one and the device reports a usable one. An
+    /// iPad turned while the visualiser was up then comes back the way its
+    /// holder now has it, not the way it was opened; a portrait-only
+    /// iPhone, or a device lying flat, turns back to where it started.
+    private static func heldOrientation(within mask: UIInterfaceOrientationMask) -> UIInterfaceOrientationMask? {
+        guard mask != .portrait else { return nil }
+        let held: UIInterfaceOrientationMask
+        switch UIDevice.current.orientation {
+        case .portrait: held = .portrait
+        case .portraitUpsideDown: held = .portraitUpsideDown
+        // UIKit names the two landscapes from opposite ends: a device in
+        // landscape-left shows its interface in landscape-right.
+        case .landscapeLeft: held = .landscapeRight
+        case .landscapeRight: held = .landscapeLeft
+        default: return nil
+        }
+        return mask.contains(held) ? held : nil
     }
 
     /// Set the root view controller's supported orientations. It is tao's
@@ -504,7 +540,11 @@ class MpvBridgePlugin: Plugin {
     /// expose that call, so it is sent here directly.
     private func setRootOrientations(_ mask: UIInterfaceOrientationMask) {
         let setter = NSSelectorFromString("setSupportedInterfaceOrientations:")
-        guard let controller = manager.viewController, controller.responds(to: setter) else {
+        guard let controller = manager.viewController else {
+            log.error("no root view controller yet; orientations are not held")
+            return
+        }
+        guard controller.responds(to: setter) else {
             log.error("root view controller has no orientation setter; orientations are not held")
             return
         }
@@ -533,7 +573,10 @@ class MpvBridgePlugin: Plugin {
     /// each setter also asks UIKit to re-read the property.
     private func setRootFlag(_ selectorName: String, _ value: Bool) {
         let setter = NSSelectorFromString(selectorName)
-        guard let controller = manager.viewController, controller.responds(to: setter) else { return }
+        guard let controller = manager.viewController, controller.responds(to: setter) else {
+            log.error("root view controller cannot take \(selectorName, privacy: .public)")
+            return
+        }
         typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
         unsafeBitCast(controller.method(for: setter), to: Setter.self)(controller, setter, value)
     }
@@ -782,6 +825,7 @@ class RecoveryGraceArgs: Decodable {
 
 class VisualizerPresentationArgs: Decodable {
     let active: Bool
+    let keepAwake: Bool
 }
 
 /// What `setVisualizerPresentation` puts back when the visualiser closes.

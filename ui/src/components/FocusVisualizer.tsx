@@ -15,6 +15,7 @@ import {
   resampleRow,
   smoothRow,
   spreadRow,
+  type RidgePaint,
 } from "../lib/ridgeline";
 import { accentFromPalette } from "../lib/vibrantColor";
 import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
@@ -141,6 +142,12 @@ function requestTap(enabled: boolean): void {
     .then(() => setSpectrumTap(enabled))
     .catch((e) => console.warn(`[spectrum] tap ${enabled ? "install" : "remove"} failed:`, e));
 }
+
+// A fresh page owns no tap. A reload, or a restarted web content process,
+// runs no unmount cleanup, so a tap the previous page installed would
+// otherwise keep running (and its frames keep streaming) under a page with
+// no visualiser mounted. Removing a tap that is not installed is a no-op.
+requestTap(false);
 
 interface Props {
   /** Which look to paint; off paints nothing and removes the tap. */
@@ -327,6 +334,9 @@ function CanvasLayer({
     // the point count changes.
     let fine = new Float32Array(0);
     let history: RidgeHistory | null = null;
+    // The full-screen stack's layout, refilled from the parameters on
+    // each paint.
+    const deepLayout: RidgePaint = { ...VISUALIZER_PARAMS };
     let taper: Float32Array | null = null;
     let taperAmount = NaN;
     let lastRowAt = 0;
@@ -475,11 +485,6 @@ function CanvasLayer({
 
       if (ridge) {
         const rows = Math.max(1, Math.round(fullScreen ? P.ridgeFullScreenRows : P.ridgeRows));
-        // Extra rows sit at the usual spacing, so the stack grows with them.
-        const layout =
-          fullScreen && P.ridgeRows > 1
-            ? { ...P, ridgeHeight: (P.ridgeHeight * (rows - 1)) / (P.ridgeRows - 1) }
-            : P;
         const historyRows = Math.max(1, rows - 1);
         const perBand = Math.min(8, Math.max(1, Math.round(P.ridgeOversample)));
 
@@ -536,6 +541,16 @@ function CanvasLayer({
             applyGrain(fine, grained, grain, P.ridgeGrain);
             const behind = history;
             const live = grained;
+            // Extra rows sit at the usual spacing, so the stack grows with
+            // them. The deepened layout is refilled in place rather than
+            // rebuilt, so a paint allocates nothing and live parameter
+            // changes still reach it.
+            let layout: RidgePaint = P;
+            if (fullScreen && P.ridgeRows > 1) {
+              Object.assign(deepLayout, P);
+              deepLayout.ridgeHeight = (P.ridgeHeight * (rows - 1)) / (P.ridgeRows - 1);
+              layout = deepLayout;
+            }
             drawRidgeline(
               ctx,
               w,

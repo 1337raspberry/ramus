@@ -20,11 +20,10 @@ of the original beets source.
 The original beets hierarchy was compiled primarily from Wikipedia;
 Wikipedia text content is available under CC BY-SA 3.0.
 
-## Runtime-linked native library: libmpv
+## Native library: libmpv
 
-ramus dynamically loads libmpv at runtime to provide audio playback on
-every platform (desktop, iOS, Android). libmpv is distributed under
-LGPL-2.1-or-later.
+ramus uses libmpv for audio playback on every platform (desktop, iOS,
+Android). libmpv is distributed under LGPL-2.1-or-later.
 
 - Upstream: https://github.com/mpv-player/mpv
 - License text: `licenses/LICENSE.LGPL-2.1` in the installed application,
@@ -32,8 +31,11 @@ LGPL-2.1-or-later.
 
 Source code for libmpv can be obtained from https://github.com/mpv-player/mpv.
 
-libmpv is loaded dynamically (not statically linked) on every platform,
-and the user may substitute their own copy:
+On desktop and Android libmpv is loaded dynamically, and the user may
+substitute their own copy. On iOS it is statically linked, together with
+the libraries listed below; ramus's own source is published under the MIT
+License, so the app can be rebuilt and relinked against a modified
+library.
 
 - **Desktop** (macOS / Windows / Linux) — place an alternative `libmpv`
   on the dynamic library search path. See `ramus-tauri/src/mpv_ffi.rs`
@@ -43,6 +45,9 @@ and the user may substitute their own copy:
   Package, resolved by Xcode at build time: an LGPL build of
   [MPVKit](https://github.com/mpvkit/MPVKit) with a few more FFmpeg audio
   filters enabled. Its build scripts are published in that repository.
+  To relink, point the package pin in `ramus-tauri/gen/apple/project.yml`
+  and `plugins/tauri-plugin-ramus-ios-bridge/ios/Package.swift` at a
+  modified build and rebuild the app (see the README's iOS build steps).
 - **Android** — libmpv is provided by the
   [`dev.jdtech.mpv:libmpv`](https://github.com/jarnedemeulemeester/libmpv-android)
   Maven Central AAR (`v1.0.0` at the time of writing). The AAR ships the
@@ -79,6 +84,44 @@ applies. The libmpv-android packaging itself is the work of
 [jarnedemeulemeester](https://github.com/jarnedemeulemeester/libmpv-android);
 the exact build configuration used for each AAR version is in that
 repository.
+
+### Native libraries statically linked into the iOS app
+
+`MPVKit-lavfi` 1.0.0 provides libmpv as static libraries along with the
+libraries it depends on, all of which are linked into the iOS app. Each
+retains its own upstream license:
+
+| Library          | Version  | License                                    | Upstream                                              |
+| ---------------- | -------- | ------------------------------------------ | ----------------------------------------------------- |
+| mpv (libmpv)     | 0.41.0   | LGPL-2.1-or-later                          | https://github.com/mpv-player/mpv                     |
+| ffmpeg           | 8.1.2    | LGPL-2.1-or-later (non-GPL build)          | https://ffmpeg.org/                                    |
+| libplacebo       | 7.360    | LGPL-2.1-or-later                          | https://code.videolan.org/videolan/libplacebo         |
+| libbluray        | 1.4.0    | LGPL-2.1-or-later                          | https://code.videolan.org/videolan/libbluray          |
+| fribidi          | 1.0.16   | LGPL-2.1-or-later                          | https://github.com/fribidi/fribidi                    |
+| gnutls           | 3.8.11   | LGPL-2.1-or-later                          | https://gnutls.org/                                    |
+| nettle, hogweed  | 3.10     | LGPL-3.0-or-later or GPL-2.0-or-later      | https://www.lysator.liu.se/~nisse/nettle/             |
+| gmp              | 6.2.1    | LGPL-3.0-or-later or GPL-2.0-or-later      | https://gmplib.org/                                    |
+| uchardet         | 0.0.8    | MPL-1.1 or GPL-2.0-or-later or LGPL-2.1-or-later | https://www.freedesktop.org/wiki/Software/uchardet/ |
+| libass           | 0.17.5   | ISC                                        | https://github.com/libass/libass                      |
+| harfbuzz         | 14.2.0   | Old MIT                                    | https://github.com/harfbuzz/harfbuzz                  |
+| freetype         | 2.14.3   | FTL or GPL-2.0                             | https://gitlab.freedesktop.org/freetype/freetype      |
+| libunibreak      | 6.1      | Zlib                                       | https://github.com/adah1972/libunibreak               |
+| OpenSSL          | 3.3.5    | Apache-2.0                                 | https://www.openssl.org/                               |
+| MoltenVK         | 1.4.2    | Apache-2.0                                 | https://github.com/KhronosGroup/MoltenVK              |
+| shaderc          | 2025.5.0 | Apache-2.0                                 | https://github.com/google/shaderc                     |
+| lcms2            | 2.17     | MIT                                        | https://github.com/mm2/Little-CMS                     |
+| libdovi          | 3.3.2    | MIT                                        | https://github.com/quietvoid/dovi_tool                |
+| dav1d            | 1.5.3    | BSD-2-Clause                               | https://code.videolan.org/videolan/dav1d              |
+| uavs3d           | 1.2.1    | BSD-3-Clause                               | https://github.com/uavs3/uavs3d                       |
+
+For the LGPL-2.1-or-later components the license text at
+`licenses/LICENSE.LGPL-2.1` applies. nettle, hogweed and gmp are used
+under LGPL-3.0-or-later, whose text is at `licenses/LICENSE.LGPL-3.0`;
+the LGPL-3.0 is a set of additional permissions on top of the GNU GPL
+version 3, whose text is at `licenses/LICENSE.GPL-3.0`. Both ship in
+every ramus release. Source code for each component is available from
+the upstream listed above, and the exact build configuration from the
+MPVKit-lavfi repository.
 
 ## Bundled fonts
 

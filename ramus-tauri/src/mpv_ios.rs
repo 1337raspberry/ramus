@@ -15,6 +15,7 @@ use tauri::{AppHandle, Runtime};
 use tauri_plugin_ramus_ios_bridge::{LoadFileArgs, LoadFileAtArgs, RamusIosBridgeExt};
 
 use ramus_core::playback::mpv::{LoadMode, MpvCallbacks, MpvPlayer};
+use ramus_core::playback::spectrum_tap::tap_needs_main_cut_for;
 
 use crate::mpv_mobile::{register_mpv_listeners, register_tap_listeners};
 
@@ -25,6 +26,10 @@ pub struct IosMpvPlayer<R: Runtime> {
     /// Bumped on every `af` write so the spectrum tap's line decoder
     /// drops whatever the previous graph left half-parsed.
     af_epoch: Arc<AtomicU64>,
+    /// Whether the tap graph cuts the main path, decided once at
+    /// construction from mpv's `ffmpeg-version` as on desktop; an
+    /// unreadable version gets the cut, the safe side.
+    tap_needs_main_cut: bool,
 }
 
 impl<R: Runtime> IosMpvPlayer<R> {
@@ -47,12 +52,33 @@ impl<R: Runtime> IosMpvPlayer<R> {
             .init_audio()
             .map_err(|e| format!("failed to init audio session: {e}"))?;
 
+        let tap_needs_main_cut = match app.ramus_ios_bridge().mpv_ffmpeg_version() {
+            Ok(Some(v)) => {
+                let cut = tap_needs_main_cut_for(&v);
+                log::info!(
+                    "libmpv: FFmpeg {v} (spectrum tap {} the main-path cut)",
+                    if cut { "needs" } else { "skips" }
+                );
+                cut
+            }
+            other => {
+                if let Err(e) = other {
+                    log::debug!("mpv_ffmpeg_version bridge call failed: {e}");
+                }
+                log::warn!(
+                    "libmpv: could not read ffmpeg-version, assuming the spectrum tap needs the main-path cut"
+                );
+                true
+            }
+        };
+
         let shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
         Ok(Self {
             app,
             shutdown,
             cached_volume: AtomicU64::new(100.0_f64.to_bits()),
             af_epoch,
+            tap_needs_main_cut,
         })
     }
 
@@ -127,6 +153,10 @@ impl<R: Runtime> MpvPlayer for IosMpvPlayer<R> {
 
     fn is_shutdown(&self) -> bool {
         self.shutdown.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    fn tap_needs_main_cut(&self) -> bool {
+        self.tap_needs_main_cut
     }
 
     fn demuxer_cache_time(&self) -> Option<f64> {

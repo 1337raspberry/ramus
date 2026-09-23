@@ -483,10 +483,11 @@ export const openExternalUrl = (url: string) => invoke<void>("open_external_url"
 export const dismissKeyboard = () => invoke<void>("dismiss_keyboard");
 
 /** Enter or leave the full-screen visualiser's native presentation (iOS:
- * landscape, status bar and home indicator out of the way, screen kept
- * awake). A no-op on other platforms. */
-export const setVisualizerPresentation = (active: boolean) =>
-  invoke<void>("set_visualizer_presentation", { active });
+ * landscape, status bar and home indicator out of the way, and the screen
+ * kept awake while `keepAwake`; a repeat enter updates just that). A no-op
+ * on other platforms. */
+export const setVisualizerPresentation = (active: boolean, keepAwake: boolean) =>
+  invoke<void>("set_visualizer_presentation", { active, keepAwake });
 
 // The native search bar's show/hide commands are serialised. Each is an
 // async command handled on its own runtime task, so a show issued straight

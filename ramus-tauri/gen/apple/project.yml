@@ -17,13 +17,16 @@ configs:
 # `libapp.a`), but Tauri doesn't forward transitive plugin SPM deps to
 # the app's Xcode project — so without this declaration, the final
 # app-link step fails with unresolved `_mpv_*` symbols. The plugin's
-# own `ios/Package.swift` keeps its identical dependency so the Swift
-# sources compile standalone too; SPM dedupes the actual resolution.
+# own `ios/Package.swift` carries the same dependency because its Swift
+# sources are built on their own: Tauri's swift-rs step resolves and
+# compiles the plugin package separately, against the headers of the
+# MPVKit it resolves, while the libraries linked into the app come from
+# this declaration.
 packages:
   # MPVKit rebuilt with the extra FFmpeg audio filters the spectrum tap's
   # filter graph needs. Keep the URL and version identical to the plugin's
-  # Package.swift: a different URL is a different package identity, and
-  # two packages would then both provide the MPVKit product.
+  # Package.swift: the plugin is compiled against one resolution and the
+  # app links the other, so they must be the same build.
   MPVKit:
     url: https://github.com/1337raspberry/MPVKit-lavfi.git
     exactVersion: 1.0.0

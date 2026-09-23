@@ -131,6 +131,14 @@ impl<R: Runtime> RamusIosBridge<R> {
         }
     }
 
+    /// mpv's `ffmpeg-version`, or `None` when mpv cannot report it.
+    pub fn mpv_ffmpeg_version(&self) -> crate::Result<Option<String>> {
+        let response: FfmpegVersionResponse = self
+            .0
+            .run_mobile_plugin("mpvGetFfmpegVersion", Empty::default())?;
+        Ok(Some(response.value).filter(|v| !v.is_empty()))
+    }
+
     pub fn mpv_get_eq_config(&self) -> crate::Result<EqConfigResponse> {
         Ok(self
             .0
@@ -160,13 +168,14 @@ impl<R: Runtime> RamusIosBridge<R> {
     }
 
     /// Enter or leave the full-screen visualiser's presentation: landscape
-    /// only, the home indicator auto-hidden and the idle timer held off
-    /// while `active`; the app's usual orientations and screen timeout
+    /// only and the home indicator auto-hidden while `active`, with the
+    /// idle timer held off only while `keep_awake` (a repeat enter updates
+    /// just that); the app's usual orientations and screen timeout
     /// afterwards. iOS only — the Android plugin has no counterpart.
-    pub fn set_visualizer_presentation(&self, active: bool) -> crate::Result<()> {
+    pub fn set_visualizer_presentation(&self, active: bool, keep_awake: bool) -> crate::Result<()> {
         self.0.run_mobile_plugin::<Empty>(
             "setVisualizerPresentation",
-            VisualizerPresentationArgs { active },
+            VisualizerPresentationArgs { active, keep_awake },
         )?;
         Ok(())
     }

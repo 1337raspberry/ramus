@@ -551,15 +551,12 @@ pub async fn set_webview_visible(
     state: State<'_, AppState>,
     visible: bool,
 ) -> CmdResult<()> {
-    if state.webview_visibility.set(visible) {
-        crate::events::emit_playback_position(
-            &app,
-            crate::events::PlaybackPositionPayload {
-                position: state.player.position(),
-                duration: state.player.duration(),
-            },
-        );
-    }
+    crate::events::record_webview_visibility(&app, visible, || {
+        crate::events::PlaybackPositionPayload {
+            position: state.player.position(),
+            duration: state.player.duration(),
+        }
+    });
     Ok(())
 }
 

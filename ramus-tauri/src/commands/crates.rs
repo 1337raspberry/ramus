@@ -11,7 +11,9 @@
 //! candidate tracks and talks to the server.
 
 use std::collections::HashSet;
+use std::sync::LazyLock;
 
+use parking_lot::Mutex;
 use serde::Serialize;
 use tauri::State;
 
@@ -308,12 +310,43 @@ pub async fn update_crate_playlist(
     Ok(CrateUpdate { playlist, items })
 }
 
+/// Crates with a rebuild in flight. A rebuild is a remove-all followed by
+/// an add against the server, so two overlapping runs on one playlist
+/// interleave their halves: one clears what the other has just added, or
+/// both add and the tracks double up. A second run is refused instead.
+static REBUILDING: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// One crate's claim on `REBUILDING`, released when dropped (including when
+/// the rebuild fails part-way or its command future is dropped).
+struct RebuildGuard<'a> {
+    set: &'a Mutex<HashSet<String>>,
+    source_id: String,
+}
+
+impl<'a> RebuildGuard<'a> {
+    /// Claim `source_id`, or `None` while another rebuild holds it.
+    fn claim(set: &'a Mutex<HashSet<String>>, source_id: &str) -> Option<Self> {
+        set.lock().insert(source_id.to_string()).then(|| Self {
+            set,
+            source_id: source_id.to_string(),
+        })
+    }
+}
+
+impl Drop for RebuildGuard<'_> {
+    fn drop(&mut self) {
+        self.set.lock().remove(&self.source_id);
+    }
+}
+
 /// Select tracks for a recipe and replace the playlist's contents with them.
 async fn rebuild_playlist(
     state: &State<'_, AppState>,
     source_id: &str,
     recipe: &CrateRecipe,
 ) -> CmdResult<Vec<PlaylistItem>> {
+    let _claim = RebuildGuard::claim(&REBUILDING, source_id)
+        .ok_or("This crate is already being regenerated")?;
     let (_, candidates) = resolve_candidates(state, recipe)?;
     let picked = recipe.select(candidates);
     if picked.is_empty() {
@@ -356,4 +389,21 @@ async fn rebuild_playlist(
         })?;
 
     refresh_items(state, source_id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_second_rebuild_of_the_same_crate_is_refused_until_the_first_ends() {
+        let set = Mutex::new(HashSet::new());
+        let first = RebuildGuard::claim(&set, "7").expect("first claim");
+        assert!(RebuildGuard::claim(&set, "7").is_none());
+        // Another crate is unaffected.
+        let other = RebuildGuard::claim(&set, "8");
+        assert!(other.is_some());
+        drop(first);
+        assert!(RebuildGuard::claim(&set, "7").is_some());
+    }
 }

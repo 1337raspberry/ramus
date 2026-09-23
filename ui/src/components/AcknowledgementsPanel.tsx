@@ -20,7 +20,8 @@ const KEY_COMPONENTS: KeyComponent[] = [
   {
     name: "libmpv",
     license: "LGPL-2.1-or-later",
-    description: "Audio playback engine. Loaded dynamically at runtime; user-swappable.",
+    description:
+      "Audio playback engine. Loaded dynamically on desktop and Android (user-swappable); statically linked on iOS with its supporting libraries (see the notices).",
   },
   {
     name: "Genre tree",

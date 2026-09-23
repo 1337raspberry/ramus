@@ -377,8 +377,11 @@ impl AudioPlayer {
     /// `false` when nothing is loaded: no current track, or a restored queue
     /// that mpv has not been handed yet (its drain check would never pass,
     /// holding every download for the full drain ceiling). Also `false` when
-    /// the track resolves to a local file, a permanent download or an LRU
-    /// cache entry.
+    /// the track resolves to a permanent download or to an LRU cache entry
+    /// that was already there when the track loaded. An entry that landed
+    /// after the load (the prefetch finishing a copy mid-play) leaves mpv
+    /// reading the stream it opened, so that still counts as streaming;
+    /// the two are told apart the same way as in `try_recover_current_track`.
     pub fn current_track_streams_from_network(&self) -> bool {
         let persistent = self.persistent_cache.read();
         let inner = self.inner.lock();
@@ -386,7 +389,16 @@ impl AudioPlayer {
             return false;
         }
         inner.state.current_track.as_ref().is_some_and(|t| {
-            !persistent.contains_key(&t.rating_key) && inner.cache.get(&t.rating_key).is_none()
+            if persistent.contains_key(&t.rating_key) {
+                return false;
+            }
+            if inner.cache.get(&t.rating_key).is_none() {
+                return true;
+            }
+            matches!(
+                (inner.cache.inserted_at(&t.rating_key), inner.load_started_at),
+                (Some(inserted), Some(load)) if inserted > load
+            )
         })
     }
 
