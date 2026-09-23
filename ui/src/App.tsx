@@ -45,6 +45,19 @@ import { handleAndroidBack, pushBackHandler } from "./lib/backHandler";
 
 applyAccent(...DEFAULT_ACCENT);
 
+/**
+ * Visibility reports are chained so they reach the backend in the order they
+ * happened: each command runs on its own backend task, and a quick hide/show
+ * pair landing reversed would leave the backend holding back position ticks
+ * from a page that is on screen.
+ */
+let visibilityReports: Promise<void> = Promise.resolve();
+function reportWebviewVisible(visible: boolean): void {
+  visibilityReports = visibilityReports
+    .then(() => setWebviewVisible(visible))
+    .catch(() => {});
+}
+
 export default function App() {
   const isMobile = useIsMobile();
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -133,20 +146,23 @@ export default function App() {
   // Every edge also tells the backend whether the webview is on screen, so
   // position and download-progress ticks stop while it's hidden (each one
   // would wake a suspended webview). Not debounced: a missed "visible" would
-  // freeze the seek bar.
+  // freeze the seek bar. The page also reports where it stands on load: the
+  // page it replaced (a reload, or a restarted web content process) reported
+  // "hidden" as it unloaded, and a page that starts visible sees no edge.
   useEffect(() => {
     if (authed !== true) return;
+    reportWebviewVisible(document.visibilityState === "visible");
     let lastResync = 0;
     const onVisibility = () => {
       if (document.visibilityState !== "visible") {
-        setWebviewVisible(false).catch(() => {});
+        reportWebviewVisible(false);
         // Backgrounding is the last moment we're reliably scheduled — a
         // suspended process freezes the periodic queue writer mid-interval,
         // so flush the playing position now rather than lose it.
         flushQueueState().catch(() => {});
         return;
       }
-      setWebviewVisible(true).catch(() => {});
+      reportWebviewVisible(true);
       const now = Date.now();
       if (now - lastResync < 3000) return;
       lastResync = now;
