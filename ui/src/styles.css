@@ -1750,6 +1750,12 @@ textarea {
   background: var(--bg-hover);
 }
 
+.adv-dropdown button:disabled {
+  background: none;
+  color: var(--text-muted);
+  cursor: default;
+}
+
 .adv-footer {
   display: flex;
   justify-content: space-between;
@@ -5307,6 +5313,7 @@ body.is-fullscreen .focus-clear-player {
 }
 
 .lists-panel-manage {
+  display: block;
   margin: 8px 12px 0;
   background: none;
   border: none;

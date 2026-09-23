@@ -5,6 +5,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import GenreTreeView from "./GenreTreeView";
 import BookmarkEditor from "./BookmarkEditor";
 import SmartPlaylistBuilder from "../mobile/SmartPlaylistBuilder";
+import CrateBuilder from "../mobile/CrateBuilder";
 import { filtersFromBookmark } from "../lib/bookmark";
 import { describeFilters } from "../lib/filterDescribe";
 import { getAllCollectionNames, getPlaylists } from "../lib/commands";
@@ -108,8 +109,9 @@ function ArtistList({
 }
 
 /**
- * "Lists" sidebar tab: Playlists, Collections (browse) and Smart Filters
- * (saved filter snapshots) in one place.
+ * "Lists" sidebar tab: Playlists (with the smart playlist and discovery
+ * crate builders), Collections (browse) and Smart Filters (saved filter
+ * snapshots) in one place.
  */
 function ListsPanel({
   onLoadBookmark,
@@ -130,6 +132,7 @@ function ListsPanel({
   const [collections, setCollections] = useState<string[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [crateBuilderOpen, setCrateBuilderOpen] = useState(false);
 
   const refreshPlaylists = useCallback(() => {
     getPlaylists()
@@ -177,6 +180,9 @@ function ListsPanel({
       <button className="lists-panel-manage" onClick={() => setBuilderOpen(true)}>
         New Smart Playlist…
       </button>
+      <button className="lists-panel-manage" onClick={() => setCrateBuilderOpen(true)}>
+        New Discovery Crate…
+      </button>
 
       <div className="lists-panel-heading">Collections</div>
       {collections.length === 0 ? (
@@ -223,6 +229,16 @@ function ListsPanel({
           onDismiss={() => setBuilderOpen(false)}
           onCreated={(p) => {
             setBuilderOpen(false);
+            refreshPlaylists();
+            useLibraryStore.setState({ browsePlaylist: p, detailAlbum: null });
+          }}
+        />
+      )}
+      {crateBuilderOpen && (
+        <CrateBuilder
+          onDismiss={() => setCrateBuilderOpen(false)}
+          onCreated={(p) => {
+            setCrateBuilderOpen(false);
             refreshPlaylists();
             useLibraryStore.setState({ browsePlaylist: p, detailAlbum: null });
           }}
