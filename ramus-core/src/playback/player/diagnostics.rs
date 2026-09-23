@@ -370,6 +370,26 @@ impl AudioPlayer {
         source_fully_buffered(self.mpv.demuxer_cache_time(), track.duration)
     }
 
+    /// Whether mpv is being fed the current track over the network — the
+    /// live source the prefetch worker lets drain before opening a download
+    /// of its own.
+    ///
+    /// `false` when nothing is loaded: no current track, or a restored queue
+    /// that mpv has not been handed yet (its drain check would never pass,
+    /// holding every download for the full drain ceiling). Also `false` when
+    /// the track resolves to a local file, a permanent download or an LRU
+    /// cache entry.
+    pub fn current_track_streams_from_network(&self) -> bool {
+        let persistent = self.persistent_cache.read();
+        let inner = self.inner.lock();
+        if inner.pending_materialize {
+            return false;
+        }
+        inner.state.current_track.as_ref().is_some_and(|t| {
+            !persistent.contains_key(&t.rating_key) && inner.cache.get(&t.rating_key).is_none()
+        })
+    }
+
     /// Raw `demuxer-cache-time` from the underlying mpv bridge, exposed
     /// for callers (the prefetch worker) that need to track changes
     /// across polls — e.g. confirming the demuxer has actually stopped
