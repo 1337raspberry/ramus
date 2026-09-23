@@ -109,6 +109,10 @@ impl<R: Runtime> MpvPlayer for IosMpvPlayer<R> {
         let _ = self.bridge().mpv_set_audio_filters(value);
     }
 
+    fn set_verbose_log(&self, enabled: bool) {
+        let _ = self.bridge().mpv_set_verbose_log(enabled);
+    }
+
     fn stop(&self) {
         let _ = self.bridge().mpv_stop();
     }

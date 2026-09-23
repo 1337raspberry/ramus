@@ -64,6 +64,9 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn mpv_set_audio_filters(&self, _value: &str) -> crate::Result<()> {
         Ok(())
     }
+    pub fn mpv_set_verbose_log(&self, _enabled: bool) -> crate::Result<()> {
+        Ok(())
+    }
     pub fn mpv_stop(&self) -> crate::Result<()> {
         Ok(())
     }

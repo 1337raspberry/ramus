@@ -20,9 +20,13 @@ configs:
 # own `ios/Package.swift` keeps its identical dependency so the Swift
 # sources compile standalone too; SPM dedupes the actual resolution.
 packages:
+  # MPVKit rebuilt with the extra FFmpeg audio filters the spectrum tap's
+  # filter graph needs. Keep the URL and version identical to the plugin's
+  # Package.swift: a different URL is a different package identity, and
+  # two packages would then both provide the MPVKit product.
   MPVKit:
-    url: https://github.com/mpvkit/MPVKit.git
-    from: 0.41.0
+    url: https://github.com/1337raspberry/MPVKit-lavfi.git
+    exactVersion: 1.0.0
 settingGroups:
   app:
     # Substituted by xcodegen at generate-time from the environment.

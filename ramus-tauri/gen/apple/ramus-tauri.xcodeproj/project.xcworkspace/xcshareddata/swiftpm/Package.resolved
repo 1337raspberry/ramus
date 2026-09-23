@@ -1,13 +1,13 @@
 {
-  "originHash" : "ef00e3d8fbb2d30a5feeffd901afe269da81ef29cbd621b41e76ca47bb5e65af",
+  "originHash" : "39c936302c3c9b3ccf6c1e7134645e143e7ae98f6836c6af43335124df9994a2",
   "pins" : [
     {
-      "identity" : "mpvkit",
+      "identity" : "mpvkit-lavfi",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mpvkit/MPVKit.git",
+      "location" : "https://github.com/1337raspberry/MPVKit-lavfi.git",
       "state" : {
-        "revision" : "613c0ccc3acf70e136aaff880a9b5fe8fdfaf5b8",
-        "version" : "0.41.0"
+        "revision" : "a257ba2c8da3300b7e4f8b05ce2fc4105f0472dd",
+        "version" : "1.0.0"
       }
     }
   ],
