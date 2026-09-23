@@ -159,6 +159,18 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
 
+    /// Enter or leave the full-screen visualiser's presentation: landscape
+    /// only, the home indicator auto-hidden and the idle timer held off
+    /// while `active`; the app's usual orientations and screen timeout
+    /// afterwards. iOS only — the Android plugin has no counterpart.
+    pub fn set_visualizer_presentation(&self, active: bool) -> crate::Result<()> {
+        self.0.run_mobile_plugin::<Empty>(
+            "setVisualizerPresentation",
+            VisualizerPresentationArgs { active },
+        )?;
+        Ok(())
+    }
+
     pub fn dismiss_keyboard(&self) -> crate::Result<()> {
         self.0
             .run_mobile_plugin::<Empty>("dismissKeyboard", Empty::default())?;

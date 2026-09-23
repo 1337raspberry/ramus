@@ -70,6 +70,9 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn mpv_stop(&self) -> crate::Result<()> {
         Ok(())
     }
+    pub fn set_visualizer_presentation(&self, _active: bool) -> crate::Result<()> {
+        Ok(())
+    }
     pub fn dismiss_keyboard(&self) -> crate::Result<()> {
         Ok(())
     }

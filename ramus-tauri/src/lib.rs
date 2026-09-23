@@ -1018,12 +1018,19 @@ pub fn run() {
             // Load saved settings and apply playback config (defaults to Never).
             #[allow(unused_mut)]
             let mut saved_settings = ramus_core::settings::load();
-            // Force-disable the spectrum visualiser on mobile. The bundled
-            // libmpv builds there ship without the lavfi analysis filters the
-            // tap needs, and the UI already hides the toggle on touch devices.
-            #[cfg(mobile)]
+            // Touch devices have no visualiser toggle, so the setting is
+            // decided here. Android's libmpv build lacks the lavfi analysis
+            // filters the tap needs: always off. iOS runs the visualiser only
+            // when it is opened from the now-playing menu: always on, which
+            // also clears the `true` earlier builds forced into saved
+            // settings.
+            #[cfg(target_os = "android")]
             {
                 saved_settings.disable_spectrum = true;
+            }
+            #[cfg(target_os = "ios")]
+            {
+                saved_settings.disable_spectrum = false;
             }
             player.update_config(saved_settings.to_playback_config());
             player.apply_equalizer(saved_settings.eq_enabled, &saved_settings.eq_bands);
@@ -1687,6 +1694,7 @@ pub fn run() {
             commands::platform::dismiss_keyboard,
             commands::platform::show_native_search_bar,
             commands::platform::hide_native_search_bar,
+            commands::platform::set_visualizer_presentation,
             // acknowledgements / licenses
             commands::acknowledgements::get_acknowledgements_text,
             commands::acknowledgements::open_external_url,

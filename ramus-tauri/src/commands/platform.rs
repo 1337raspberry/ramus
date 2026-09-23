@@ -46,3 +46,19 @@ pub async fn hide_native_search_bar(app: tauri::AppHandle) -> CmdResult<()> {
     let _ = app;
     Ok(())
 }
+
+/// Enter (`true`) or leave the full-screen visualiser's presentation: on
+/// iOS the interface turns to landscape, the home indicator auto-hides
+/// and the screen stays awake until it is left. A no-op elsewhere.
+#[tauri::command]
+pub async fn set_visualizer_presentation(app: tauri::AppHandle, active: bool) -> CmdResult<()> {
+    #[cfg(target_os = "ios")]
+    {
+        use tauri_plugin_ramus_ios_bridge::RamusIosBridgeExt;
+        app.ramus_ios_bridge()
+            .set_visualizer_presentation(active)
+            .map_err(|e| e.to_string())?;
+    }
+    let _ = (app, active);
+    Ok(())
+}

@@ -57,6 +57,24 @@ interface SectionSpec {
   readonly controls: readonly ControlSpec[];
 }
 
+/**
+ * Adds or drops ridge rows at the current spacing: the stack grows or
+ * shrinks without its rows closing up, so the scroll speed holds.
+ */
+const DEPTH_SLIDER: LinkedSpec = {
+  label: "Depth",
+  min: 2,
+  max: 90,
+  step: 1,
+  digits: 0,
+  keys: ["ridgeRows", "ridgeHeight"],
+  value: (t) => t.ridgeRows,
+  apply: (rows, t) => {
+    const spacing = t.ridgeHeight / Math.max(1, t.ridgeRows - 1);
+    setTuningValues({ ridgeRows: rows, ridgeHeight: spacing * (rows - 1) });
+  },
+};
+
 const SECTIONS = [
   {
     title: "Album art",
@@ -89,25 +107,10 @@ const SECTIONS = [
   },
   {
     title: "Ridge",
-    linked: [
-      {
-        label: "Depth",
-        min: 2,
-        max: 90,
-        step: 1,
-        digits: 0,
-        keys: ["ridgeRows", "ridgeHeight"],
-        value: (t) => t.ridgeRows,
-        // Adds or drops rows at the current spacing: the stack grows or
-        // shrinks without its rows closing up, so the scroll speed holds.
-        apply: (rows, t) => {
-          const spacing = t.ridgeHeight / Math.max(1, t.ridgeRows - 1);
-          setTuningValues({ ridgeRows: rows, ridgeHeight: spacing * (rows - 1) });
-        },
-      },
-    ],
+    linked: [DEPTH_SLIDER],
     controls: [
       { key: "ridgeRows", label: "Rows", min: 2, max: 90, step: 1, digits: 0 },
+      { key: "ridgeFullScreenRows", label: "Mobile rows", min: 2, max: 120, step: 1, digits: 0 },
       { key: "ridgeHeight", label: "Stack height", min: 0.05, max: 1.2, step: 0.01, digits: 2 },
       { key: "ridgePeak", label: "Peak", min: 0.02, max: 1, step: 0.01, digits: 2 },
       { key: "ridgeDepthScale", label: "Depth scale", min: 0.1, max: 1.5, step: 0.05, digits: 2 },
@@ -233,6 +236,25 @@ const PANEL_CSS = `
   font-size: 10px;
   color: var(--text-muted);
 }
+.fv-debug.fv-debug-mobile {
+  top: 10px;
+  left: max(12px, env(safe-area-inset-left));
+  right: auto;
+  z-index: 10001;
+  width: 300px;
+  padding: 8px 12px;
+}
+.fv-debug-mobile .fv-debug-hint {
+  margin-top: 4px;
+}
+.fv-debug-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+}
 `;
 
 /**
@@ -273,6 +295,7 @@ function isEditable(target: EventTarget | null): boolean {
 
 function Host() {
   const inFocus = usePlaybackStore((s) => s.isFocusMode);
+  const mobileVisualizer = usePlaybackStore((s) => s.mobileVisualizerOpen);
   const [open, setOpen] = useState(false);
   const tuning = useTuning();
 
@@ -299,8 +322,43 @@ function Host() {
     return () => window.removeEventListener("keydown", onKey);
   }, [inFocus]);
 
+  if (mobileVisualizer) return <MobilePanel tuning={tuning} />;
   if (!inFocus || !open) return null;
   return <Panel tuning={tuning} onClose={() => setOpen(false)} />;
+}
+
+/**
+ * The touch-screen counterpart, shown while the mobile full-screen
+ * visualiser is open: its depth (`ridgeFullScreenRows`, at the usual row
+ * spacing) pinned to a corner above the overlay. It renders in this root,
+ * outside the overlay's tree, so a drag on it never reaches the overlay's
+ * tap-to-close.
+ */
+function MobilePanel({ tuning }: { tuning: FocusVizTuning }) {
+  const key = "ridgeFullScreenRows";
+  const rows = tuning[key];
+  const stack = (tuning.ridgeHeight * (rows - 1)) / Math.max(1, tuning.ridgeRows - 1);
+  return (
+    <div className="fv-debug fv-debug-mobile" onClick={(e) => e.stopPropagation()}>
+      <Slider
+        label="Depth"
+        min={2}
+        max={120}
+        step={1}
+        digits={0}
+        value={rows}
+        changed={rows !== TUNING_DEFAULTS[key]}
+        onChange={(v) => setTuningValue(key, v)}
+        onReset={() => setTuningValue(key, TUNING_DEFAULTS[key])}
+      />
+      <div className="fv-debug-hint">
+        stack height {stack.toFixed(3)} · double-tap resets ·{" "}
+        <button type="button" className="fv-debug-link" onClick={resetTuning}>
+          reset all
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function Slider({

@@ -3769,6 +3769,17 @@ body.is-fullscreen .focus-clear-player {
   transition: opacity 0.4s ease;
 }
 
+/* Full-screen visualiser on touch devices (mobile/MobileVisualizer.tsx):
+ * its own gradient with the ridge over it, above every other surface. The
+ * whole overlay is the close button. */
+.mobile-visualizer {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: #050508;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* The ridge behind the full focus layout (see FocusVisualizer's `subdued`).
  * Opacity on the canvas rather than lower line alphas: the rows hide the
  * ones behind them by erasing, and fading the finished layer keeps that
@@ -7790,7 +7801,9 @@ body.is-fullscreen .focus-clear-player {
      compositor: the mini player's promoted layers paint over even an
      opaque z-1000 body-level panel, so z-index alone provably loses. */
   body:has(.settings-backdrop) .mobile-miniplayer,
-  body:has(.settings-backdrop) .mobile-sheet {
+  body:has(.settings-backdrop) .mobile-sheet,
+  body:has(.mobile-visualizer) .mobile-miniplayer,
+  body:has(.mobile-visualizer) .mobile-sheet {
     visibility: hidden;
   }
 
@@ -8993,9 +9006,11 @@ body.is-fullscreen .focus-clear-player {
 /* ===== Tablet-class touch viewports (iPad) =====
    Breakpoints mirror lib/useMediaQuery.ts. From 700px the phone layouts
    simply get room; from 900px MobileApp browses in two panes
-   (`.mobile-root.split`). Keep the two in sync. */
+   (`.mobile-root.split`). The 500px height floor keeps a phone turned to
+   landscape (the full-screen visualiser) on the phone layout. Keep the
+   two in sync. */
 
-@media (pointer: coarse) and (min-width: 700px) {
+@media (pointer: coarse) and (min-width: 700px) and (min-height: 500px) {
   /* Seven icons spread across a tablet read as unrelated controls; keep
      them in a phone-width cluster. The split layout's pane is narrow
      enough already. */
@@ -9071,7 +9086,7 @@ body.is-fullscreen .focus-clear-player {
 
 /* --- Two-pane browsing --- */
 
-@media (pointer: coarse) and (min-width: 900px) {
+@media (pointer: coarse) and (min-width: 900px) and (min-height: 500px) {
   .mobile-root.split {
     display: grid;
     grid-template-columns: 360px minmax(0, 1fr);
@@ -9093,7 +9108,7 @@ body.is-fullscreen .focus-clear-player {
    same scroller, exactly as in portrait, so the drag-to-close rule
    (body scrolled to top) and the peek chevron are untouched. */
 
-@media (pointer: coarse) and (min-width: 900px) and (orientation: landscape) {
+@media (pointer: coarse) and (min-width: 900px) and (min-height: 500px) and (orientation: landscape) {
   .mobile-sheet-body {
     padding-left: 40px;
     padding-right: 40px;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { flushQueueState, foregroundResync, isAuthenticated, setWebviewVisible } from "./lib/commands";
 import { clearGenreMetadataCache } from "./lib/genreMetadataCache";
@@ -33,13 +33,10 @@ import OnboardingFlow, { clearOnboardingStorage } from "./components/onboarding/
 import { clearPin } from "./components/onboarding/OAuthSignIn";
 import UltraBlurBackground from "./components/UltraBlurBackground";
 import MobileApp from "./mobile/MobileApp";
+import MobileVisualizer from "./mobile/MobileVisualizer";
 import Toast, { useToastStore } from "./components/Toast";
-import {
-  applyAccent,
-  DEFAULT_ACCENT,
-  DEFAULT_BLUR_COLORS,
-  OLED_VOID_BLUR_COLORS,
-} from "./lib/accent";
+import { applyAccent, DEFAULT_ACCENT } from "./lib/accent";
+import { useBlurColors } from "./lib/useBlurColors";
 import { accentFromPalette } from "./lib/vibrantColor";
 import { handleAndroidBack, pushBackHandler } from "./lib/backHandler";
 
@@ -71,15 +68,11 @@ export default function App() {
   const suggestion = useLibraryStore((s) => s.suggestion);
   const detailAlbum = useLibraryStore((s) => s.detailAlbum);
   const browsePlaylist = useLibraryStore((s) => s.browsePlaylist);
-  const albumColors = usePlaybackStore((s) => s.ultraBlurColors);
   const isFocusMode = usePlaybackStore((s) => s.isFocusMode);
+  const mobileVisualizerOpen = usePlaybackStore((s) => s.mobileVisualizerOpen);
   const toggleFocusMode = usePlaybackStore((s) => s.toggleFocusMode);
   const backgroundStyle = useSettingsStore((s) => s.backgroundStyle);
-  const blurColors = useMemo(() => {
-    if (backgroundStyle === "defaultColours") return DEFAULT_BLUR_COLORS;
-    if (backgroundStyle === "oledVoid") return OLED_VOID_BLUR_COLORS;
-    return albumColors ?? DEFAULT_BLUR_COLORS;
-  }, [albumColors, backgroundStyle]);
+  const blurColors = useBlurColors();
 
   // Snap accent both directions when the background style flips.
   // `defaultColours` → force brand default; anything else (dynamic OR
@@ -297,6 +290,7 @@ export default function App() {
       <>
         <UltraBlurBackground colors={blurColors} />
         <MobileApp onOpenSettings={() => setShowSettings(true)} />
+        {mobileVisualizerOpen && <MobileVisualizer />}
         {showSettings && (
           <LibrarySettingsPanel
             onDismiss={() => setShowSettings(false)}

@@ -565,6 +565,49 @@ impl TapLineParser {
     }
 }
 
+/// Decodes tap log messages that arrive in batches rather than one log
+/// event at a time: the iOS bridge collects mpv's `ffmpeg` messages
+/// natively and crosses into Rust once per burst.
+///
+/// `epoch` is the caller's filter-chain generation, bumped on every `af`
+/// write. When it moves, the parser starts over (`TapLineParser::reset`)
+/// so nothing half-parsed from the old graph pairs with the new graph's
+/// lines.
+pub struct TapBatchDecoder {
+    parser: TapLineParser,
+    epoch: u64,
+}
+
+impl TapBatchDecoder {
+    /// `bands` is the count per channel, as for `TapLineParser::new`.
+    pub fn new(bands: usize) -> Self {
+        Self {
+            parser: TapLineParser::new(bands),
+            epoch: 0,
+        }
+    }
+
+    /// Feed one batch of messages, each newline and all, and return the
+    /// frames it completed. Messages that are not tap lines are skipped.
+    pub fn decode<'a>(
+        &mut self,
+        epoch: u64,
+        messages: impl IntoIterator<Item = &'a str>,
+    ) -> Vec<TapFrame> {
+        if epoch != self.epoch {
+            self.epoch = epoch;
+            self.parser.reset();
+        }
+        messages
+            .into_iter()
+            .filter_map(|m| match self.parser.feed(m) {
+                TapFeed::Frame(frame) => Some(frame),
+                TapFeed::Consumed | TapFeed::Ignored => None,
+            })
+            .collect()
+    }
+}
+
 /// Strip `Parsed_ashowinfo_<N>: ` and return the filter index and the
 /// payload, or `None` if the line is not a tap line.
 fn strip_tap_prefix(line: &str) -> Option<(u32, &str)> {
@@ -1471,6 +1514,52 @@ mod tests {
             p.feed(&line(LEFT_PRINTER, n, 10.0 + n as f64 / 60.0, &[-20.0]));
         }
         assert!(p.pending.iter().all(|h| h.pts < 60.0));
+    }
+
+    // --- batched delivery ---
+
+    fn decode_batch(d: &mut TapBatchDecoder, epoch: u64, lines: &[String]) -> Vec<TapFrame> {
+        d.decode(epoch, lines.iter().map(String::as_str))
+    }
+
+    #[test]
+    fn a_batch_decodes_every_frame_it_completes() {
+        let mut d = TapBatchDecoder::new(1);
+        let mut lines = frame_lines(0, 0.0, &[-1.0], &[-2.0]);
+        lines.extend(frame_lines(1, 1.0 / 60.0, &[-3.0], &[-4.0]));
+        let frames = decode_batch(&mut d, 0, &lines);
+        assert_eq!(frames.len(), 2);
+        assert!(close(&frames[0].db, &[-1.0, -2.0]), "{:?}", frames[0].db);
+        assert!(close(&frames[1].db, &[-3.0, -4.0]), "{:?}", frames[1].db);
+    }
+
+    #[test]
+    fn a_frame_split_across_two_batches_still_pairs() {
+        let mut d = TapBatchDecoder::new(1);
+        let lines = frame_lines(0, 0.5, &[-1.0], &[-2.0]);
+        assert!(decode_batch(&mut d, 0, &lines[..1]).is_empty());
+        let frames = decode_batch(&mut d, 0, &lines[1..]);
+        assert_eq!(frames.len(), 1);
+        assert!(close(&frames[0].db, &[-1.0, -2.0]));
+    }
+
+    #[test]
+    fn other_ffmpeg_messages_in_a_batch_are_skipped() {
+        let mut d = TapBatchDecoder::new(1);
+        let mut lines = frame_lines(0, 0.0, &[-1.0], &[-2.0]);
+        lines.insert(1, "Opening an output file: -\n".to_string());
+        assert_eq!(decode_batch(&mut d, 0, &lines).len(), 1);
+    }
+
+    #[test]
+    fn a_rebuilt_chain_drops_a_half_left_by_the_old_graph() {
+        let mut d = TapBatchDecoder::new(1);
+        let lines = frame_lines(0, 0.5, &[-1.0], &[-2.0]);
+        assert!(decode_batch(&mut d, 0, &lines[..1]).is_empty());
+        // The chain was rebuilt between the batches: the new graph's line
+        // at the same timestamp must not pair with the old graph's half.
+        assert!(decode_batch(&mut d, 1, &lines[1..]).is_empty());
+        assert_eq!(decode_batch(&mut d, 1, &lines).len(), 1);
     }
 
     #[test]

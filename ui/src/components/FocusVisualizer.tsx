@@ -152,9 +152,14 @@ interface Props {
    * edge, clear of the layout, and are unaffected.
    */
   subdued: boolean;
+  /**
+   * The mobile full-screen visualiser: the ridge runs
+   * `ridgeFullScreenRows` deep at the usual row spacing.
+   */
+  fullScreen?: boolean;
 }
 
-export default function FocusVisualizer({ mode, subdued }: Props) {
+export default function FocusVisualizer({ mode, subdued, fullScreen = false }: Props) {
   const disabled = useSettingsStore((s) => s.disableSpectrum);
   const active = !disabled && mode !== "off";
 
@@ -186,7 +191,14 @@ export default function FocusVisualizer({ mode, subdued }: Props) {
   // Keyed on the mode so a switch remounts the canvas with fresh buffers
   // (the two looks size their point buffers differently) while the tap,
   // owned above, stays installed.
-  return <CanvasLayer key={mode} mode={mode} subdued={subdued && mode === "ridge"} />;
+  return (
+    <CanvasLayer
+      key={mode}
+      mode={mode}
+      subdued={subdued && mode === "ridge"}
+      fullScreen={fullScreen}
+    />
+  );
 }
 
 // --- Canvas layer ---
@@ -194,9 +206,11 @@ export default function FocusVisualizer({ mode, subdued }: Props) {
 function CanvasLayer({
   mode,
   subdued,
+  fullScreen,
 }: {
   mode: Exclude<VisualizerMode, "off">;
   subdued: boolean;
+  fullScreen: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -460,7 +474,12 @@ function CanvasLayer({
       }
 
       if (ridge) {
-        const rows = Math.max(1, Math.round(P.ridgeRows));
+        const rows = Math.max(1, Math.round(fullScreen ? P.ridgeFullScreenRows : P.ridgeRows));
+        // Extra rows sit at the usual spacing, so the stack grows with them.
+        const layout =
+          fullScreen && P.ridgeRows > 1
+            ? { ...P, ridgeHeight: (P.ridgeHeight * (rows - 1)) / (P.ridgeRows - 1) }
+            : P;
         const historyRows = Math.max(1, rows - 1);
         const perBand = Math.min(8, Math.max(1, Math.round(P.ridgeOversample)));
 
@@ -525,7 +544,7 @@ function CanvasLayer({
               (r) => (r === 0 ? live : behind.get(r - 1)),
               taper,
               RIDGE_RGB,
-              P,
+              layout,
             );
           }
         }
@@ -582,7 +601,7 @@ function CanvasLayer({
       cancelAnimationFrame(rafRef.current);
       resizeObs.disconnect();
     };
-  }, [mode]);
+  }, [mode, fullScreen]);
 
   return (
     <div ref={containerRef} className="focus-visualizer">

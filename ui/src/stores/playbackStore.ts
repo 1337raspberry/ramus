@@ -95,6 +95,11 @@ interface PlaybackState {
    * overrides it.
    */
   visualizerMode: VisualizerMode;
+  /**
+   * The mobile full-screen visualiser (`mobile/MobileVisualizer.tsx`) is
+   * open. Opened from the now-playing menu; the overlay closes itself.
+   */
+  mobileVisualizerOpen: boolean;
 
   // `performance.now()` when `position` was last known good: a position
   // tick, a seek, or a playback-state change (no ticks arrive while paused,
@@ -131,6 +136,7 @@ interface PlaybackState {
   exitFocusMode: () => void;
   toggleFocusClear: () => void;
   toggleVisualizer: () => void;
+  setMobileVisualizerOpen: (open: boolean) => void;
   removeQueueItem: (index: number) => void;
   /// Drag reorder: move the entry at `from` to position `to` (absolute
   /// queue indices). Optimistic, like removeQueueItem.
@@ -238,6 +244,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   isFocusMode: false,
   focusClear: false,
   visualizerMode: loadPersistedVisualizerStyle(),
+  mobileVisualizerOpen: false,
   positionAt: 0,
 
   onPlaybackState: (status, track, queueIndex) => {
@@ -470,6 +477,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       persistVisualizerStyle(next);
       return { visualizerMode: next };
     }),
+
+  setMobileVisualizerOpen: (open) => set({ mobileVisualizerOpen: open }),
 
   removeQueueItem: (index) => {
     removeFromQueueCmd(index).catch(() => {});
