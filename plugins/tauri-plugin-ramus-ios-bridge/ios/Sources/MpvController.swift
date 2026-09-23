@@ -220,6 +220,19 @@ final class MpvController {
         setPropertyString("af", value)
     }
 
+    // The spectrum tap's frames are FFmpeg INFO messages, which mpv
+    // forwards to clients at level `v`; `no` restores the default of no
+    // client log events.
+    func setVerboseLog(_ enabled: Bool) {
+        guard let mpv else { return }
+        let level = enabled ? "v" : "no"
+        let err = mpv_request_log_messages(mpv, level)
+        if err < 0 {
+            let msg = String(cString: mpv_error_string(err))
+            log.warning("mpv log level \(level, privacy: .public) refused: \(msg, privacy: .public)")
+        }
+    }
+
     func stop() {
         command("stop")
     }

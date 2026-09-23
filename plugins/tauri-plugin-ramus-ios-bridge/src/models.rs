@@ -84,6 +84,12 @@ pub struct AudioFiltersArgs {
     pub value: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerboseLogArgs {
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EqConfigResponse {

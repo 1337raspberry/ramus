@@ -147,6 +147,12 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
 
+    pub fn mpv_set_verbose_log(&self, enabled: bool) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin::<Empty>("mpvSetVerboseLog", VerboseLogArgs { enabled })?;
+        Ok(())
+    }
+
     pub fn mpv_stop(&self) -> crate::Result<()> {
         self.0
             .run_mobile_plugin::<Empty>("mpvStop", Empty::default())?;

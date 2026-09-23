@@ -372,6 +372,12 @@ class MpvBridgePlugin: Plugin {
         invoke.resolve([:])
     }
 
+    @objc public func mpvSetVerboseLog(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(VerboseLogArgs.self)
+        mpv?.setVerboseLog(args.enabled)
+        invoke.resolve([:])
+    }
+
     @objc public func mpvStop(_ invoke: Invoke) throws {
         mpv?.stop()
         invoke.resolve([:])
@@ -655,6 +661,10 @@ class VolumeArgs: Decodable {
 
 class AudioFiltersArgs: Decodable {
     let value: String
+}
+
+class VerboseLogArgs: Decodable {
+    let enabled: Bool
 }
 
 class KeychainAccountArgs: Decodable {

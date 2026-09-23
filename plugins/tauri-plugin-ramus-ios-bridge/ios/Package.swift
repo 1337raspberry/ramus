@@ -2,8 +2,8 @@
 //
 // MPVKit ships pre-built libmpv + FFmpeg + libass xcframeworks via a Swift
 // Package, so the Rust side doesn't need to cross-compile anything. The
-// version pin should move forward in tandem with Rust-side mpv API
-// changes; 0.41 was the latest stable at the time we adopted this.
+// pin is exact: each MPVKit-lavfi release republishes one upstream MPVKit
+// release, so moving it moves mpv and FFmpeg together with it.
 
 import PackageDescription
 
@@ -12,9 +12,9 @@ let package = Package(
     platforms: [
         // Tauri's swift-rs build step compiles the package for macOS
         // to generate Rust bindings — even on an iOS-only target — so
-        // the minimum here has to satisfy MPVKit's (v11) too, otherwise
+        // the minimum here has to satisfy MPVKit's (v12) too, otherwise
         // SPM rejects the dependency resolution.
-        .macOS(.v11),
+        .macOS(.v12),
         // Matches the app's Info.plist deployment target in project.yml.
         // iOS 15 is the first version where Swift concurrency ships in
         // the OS; older targets make Xcode back-deploy concurrency into
@@ -30,14 +30,16 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "Tauri", path: "../.tauri/tauri-api"),
-        .package(url: "https://github.com/mpvkit/MPVKit.git", from: "0.41.0"),
+        // MPVKit rebuilt with the extra FFmpeg audio filters the spectrum
+        // tap's filter graph needs; otherwise identical to upstream.
+        .package(url: "https://github.com/1337raspberry/MPVKit-lavfi.git", exact: "1.0.0"),
     ],
     targets: [
         .target(
             name: "tauri-plugin-ramus-ios-bridge",
             dependencies: [
                 .byName(name: "Tauri"),
-                .product(name: "MPVKit", package: "MPVKit"),
+                .product(name: "MPVKit", package: "MPVKit-lavfi"),
             ],
             path: "Sources",
             linkerSettings: [

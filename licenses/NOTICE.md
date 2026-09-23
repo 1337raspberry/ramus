@@ -38,8 +38,11 @@ and the user may substitute their own copy:
 - **Desktop** (macOS / Windows / Linux) — place an alternative `libmpv`
   on the dynamic library search path. See `ramus-tauri/src/mpv_ffi.rs`
   for the platform-specific search paths.
-- **iOS** — libmpv is provided by the [MPVKit](https://github.com/mpvkit/MPVKit)
-  Swift Package, resolved by Xcode at build time.
+- **iOS** — libmpv is provided by the
+  [MPVKit-lavfi](https://github.com/1337raspberry/MPVKit-lavfi) Swift
+  Package, resolved by Xcode at build time: an LGPL build of
+  [MPVKit](https://github.com/mpvkit/MPVKit) with a few more FFmpeg audio
+  filters enabled. Its build scripts are published in that repository.
 - **Android** — libmpv is provided by the
   [`dev.jdtech.mpv:libmpv`](https://github.com/jarnedemeulemeester/libmpv-android)
   Maven Central AAR (`v1.0.0` at the time of writing). The AAR ships the
