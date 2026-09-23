@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { usePlaybackStore, type VisualizerMode } from "../stores/playbackStore";
+import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { setSpectrumTap } from "../lib/commands";
+import type { VisualizerMode } from "../lib/visualizerMode";
 import { audibleTarget, pickSpectrumFrame, spectrumLastPushAt } from "../lib/spectrumRing";
 import { VISUALIZER_PARAMS } from "../lib/visualizerParams";
 import {
@@ -23,10 +24,10 @@ import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
  *
  * Data source: the `spectrum-frames` event, fed by a libavfilter tap in
  * mpv's `--af` chain (`ramus-core/src/playback/spectrum_tap.rs`). Mounting
- * installs the tap via `setSpectrumTap(true)`; unmounting removes it, so
- * its CPU cost is only paid while the visualiser is on screen. Frames
- * land in `lib/spectrumRing.ts` keyed by track position, up to ~0.5 s
- * ahead of the reported playback position.
+ * installs the tap via `setSpectrumTap(true)`; unmounting removes it, as
+ * does the off mode, so its CPU cost is only paid while the visualiser is
+ * on screen. Frames land in `lib/spectrumRing.ts` keyed by track
+ * position, up to ~0.5 s ahead of the reported playback position.
  *
  * Sync: each paint estimates where the audio is from the last audible
  * tick (`playback-audible`: mpv's `audio-pts` with its stream epoch) plus
@@ -36,8 +37,8 @@ import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
  * special handling here: no frame near the estimate means no bars, and
  * a gapless join keeps drawing the outgoing track until it is heard.
  *
- * Rendering has two modes, chosen by the `mode` prop (the store's
- * `VisualizerMode`):
+ * Rendering has two looks, chosen by the `mode` prop
+ * (`lib/visualizerMode.ts`; off draws nothing):
  *
  * `bars`: one bar per band per channel hanging from the top edge. A frame
  * carries the left channel's N bands followed by the right channel's (N
@@ -142,23 +143,25 @@ function requestTap(enabled: boolean): void {
 }
 
 interface Props {
-  /** Which look to paint. */
+  /** Which look to paint; off paints nothing and removes the tap. */
   mode: VisualizerMode;
 }
 
 export default function FocusVisualizer({ mode }: Props) {
   const disabled = useSettingsStore((s) => s.disableSpectrum);
+  const active = !disabled && mode !== "off";
 
   // The tap is installed for exactly as long as this component is mounted
-  // with the visualiser enabled AND the document is visible: the paint
-  // loop stops while the window is hidden, so frames measured then would
-  // cost the tap's CPU for nothing. Disabling it in settings while
-  // mounted runs the cleanup, which removes the tap; the backend applies
-  // the same veto on its side, so a stale install request can't slip
-  // through. Every request goes through the chain, so a hide/show pair
-  // lands in order like any other toggle.
+  // with a look to paint AND the document is visible: the paint loop
+  // stops while the window is hidden, so frames measured then would cost
+  // the tap's CPU for nothing. Switching off, or disabling the visualiser
+  // in settings, while mounted runs the cleanup, which removes the tap;
+  // the backend applies the settings veto on its side too, so a stale
+  // install request can't slip through. Switching between the two looks
+  // keeps it installed. Every request goes through the chain, so a
+  // hide/show pair lands in order like any other toggle.
   useEffect(() => {
-    if (disabled) return;
+    if (!active) return;
     const sync = () => {
       if (!document.hidden) tapVisibleSince = performance.now();
       requestTap(!document.hidden);
@@ -169,19 +172,19 @@ export default function FocusVisualizer({ mode }: Props) {
       document.removeEventListener("visibilitychange", sync);
       requestTap(false);
     };
-  }, [disabled]);
+  }, [active]);
 
-  if (disabled) return null;
+  if (!active) return null;
 
   // Keyed on the mode so a switch remounts the canvas with fresh buffers
-  // (the two modes size their point buffers differently) while the tap,
+  // (the two looks size their point buffers differently) while the tap,
   // owned above, stays installed.
   return <CanvasLayer key={mode} mode={mode} />;
 }
 
 // --- Canvas layer ---
 
-function CanvasLayer({ mode }: Props) {
+function CanvasLayer({ mode }: { mode: Exclude<VisualizerMode, "off"> }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
