@@ -54,6 +54,9 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn mpv_demuxer_cache_time(&self) -> crate::Result<Option<f64>> {
         Ok(None)
     }
+    pub fn mpv_ffmpeg_version(&self) -> crate::Result<Option<String>> {
+        Ok(None)
+    }
     pub fn mpv_get_eq_config(&self) -> crate::Result<EqConfigResponse> {
         Ok(EqConfigResponse {
             frequencies: vec![31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],
@@ -70,7 +73,7 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn mpv_stop(&self) -> crate::Result<()> {
         Ok(())
     }
-    pub fn set_visualizer_presentation(&self, _active: bool) -> crate::Result<()> {
+    pub fn set_visualizer_presentation(&self, _active: bool, _keep_awake: bool) -> crate::Result<()> {
         Ok(())
     }
     pub fn dismiss_keyboard(&self) -> crate::Result<()> {

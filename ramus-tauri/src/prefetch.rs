@@ -111,6 +111,28 @@ fn progress_tick_due(since_last: Duration, webview_hidden: impl FnOnce() -> bool
     since_last >= PROGRESS_EMIT_INTERVAL && !webview_hidden()
 }
 
+/// Whether a cycle's next unit of work must first let the live track's
+/// network source drain. Asked before every unit rather than once at the
+/// start: a cycle that began with nothing streaming (a restored queue not
+/// yet handed to mpv) must still wait once playback starts, or the rest of
+/// its downloads would run alongside the stream mpv has just opened. A
+/// cycle waits at most once.
+#[derive(Debug, Default)]
+struct DrainGate {
+    waited: bool,
+}
+
+impl DrainGate {
+    /// `streams_from_network` is only read while the cycle has not waited.
+    fn due(&self, streams_from_network: impl FnOnce() -> bool) -> bool {
+        !self.waited && streams_from_network()
+    }
+
+    fn drained(&mut self) {
+        self.waited = true;
+    }
+}
+
 // --- Public types ---
 
 /// Build a `DownloadProgressPayload` by cloning the identity fields from a
@@ -732,10 +754,9 @@ async fn wait_for_source_drain(player: &AudioPlayer, shared_gen: &Arc<AtomicU64>
     }
 }
 
-/// One pass through the prefetch worker: wait the initial settle gap,
-/// hold until the live source has drained, then run the serial downloads
-/// for upcoming tracks. Aborts silently if the shared generation has
-/// moved on.
+/// One pass through the prefetch worker: wait the initial settle gap, then
+/// run the serial downloads for upcoming tracks, held until the live source
+/// has drained. Aborts silently if the shared generation has moved on.
 async fn run_cycle(
     player: Arc<AudioPlayer>,
     http: reqwest::Client,
@@ -769,20 +790,6 @@ async fn run_cycle(
         return;
     }
 
-    // Hold serial downloads until the live track has stopped pulling from its
-    // source. Opening a competing transcode session while Plex is still feeding
-    // the current track cuts the live one (Plex's ~1-transcoder cap) — the
-    // cause of "9/9 cached but song 1 keeps stalling" on a slow link. Runs on
-    // every platform. A local file or an unmaterialised restored queue has
-    // nothing streaming, so waiting for a "live source" to drain would just
-    // burn the ceiling.
-    if player.current_track_streams_from_network() {
-        wait_for_source_drain(&player, &shared_gen, my_gen).await;
-        if shared_gen.load(Ordering::SeqCst) != my_gen {
-            return;
-        }
-    }
-
     log::debug!("prefetch: serial downloads");
     run_serial_downloads(
         &player,
@@ -814,11 +821,26 @@ async fn run_serial_downloads(
     let mut user_failed: HashSet<String> = HashSet::new();
     let mut warm_failed: HashSet<String> = HashSet::new();
     let mut consecutive_net_failures: u32 = 0;
+    let mut drain = DrainGate::default();
 
     loop {
         if shared_gen.load(Ordering::SeqCst) != my_gen {
             log::debug!("downloads: cycle superseded, exiting");
             return;
+        }
+
+        // Hold downloads until the live track has stopped pulling from its
+        // source. Opening a competing transcode session while Plex is still
+        // feeding the current track cuts the live one (Plex's ~1-transcoder
+        // cap) — the cause of "9/9 cached but song 1 keeps stalling" on a slow
+        // link. Runs on every platform. A local file or an unmaterialised
+        // restored queue has nothing streaming, so waiting for a "live source"
+        // to drain would just burn the ceiling; `DrainGate` asks again before
+        // each unit so playback starting mid-cycle is still waited for.
+        if drain.due(|| player.current_track_streams_from_network()) {
+            wait_for_source_drain(player, shared_gen, my_gen).await;
+            drain.drained();
+            continue;
         }
 
         // User queue first — always preempts prefetch.
@@ -1589,8 +1611,29 @@ async fn download_http_to_file(
 
 #[cfg(test)]
 mod tests {
-    use super::{progress_tick_due, PROGRESS_EMIT_INTERVAL};
+    use super::{progress_tick_due, DrainGate, PROGRESS_EMIT_INTERVAL};
     use std::time::Duration;
+
+    #[test]
+    fn drain_gate_holds_work_behind_a_live_stream() {
+        assert!(DrainGate::default().due(|| true));
+    }
+
+    #[test]
+    fn drain_gate_waits_for_a_stream_that_starts_mid_cycle() {
+        // A restored queue: nothing streams when the cycle starts, then the
+        // user presses Play and mpv opens the live stream between jobs.
+        let gate = DrainGate::default();
+        assert!(!gate.due(|| false));
+        assert!(gate.due(|| true));
+    }
+
+    #[test]
+    fn drain_gate_waits_once_per_cycle() {
+        let mut gate = DrainGate::default();
+        gate.drained();
+        assert!(!gate.due(|| panic!("player read after the cycle already waited")));
+    }
 
     #[test]
     fn progress_tick_goes_out_once_the_interval_has_passed() {

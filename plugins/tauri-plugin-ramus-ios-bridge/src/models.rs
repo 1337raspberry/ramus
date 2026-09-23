@@ -76,6 +76,7 @@ pub struct RecoveryGraceArgs {
 #[serde(rename_all = "camelCase")]
 pub struct VisualizerPresentationArgs {
     pub active: bool,
+    pub keep_awake: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -119,6 +120,14 @@ pub struct VolumeResponse {
 #[serde(rename_all = "camelCase")]
 pub struct DemuxerCacheTimeResponse {
     pub value: f64,
+}
+
+/// Response shape for `mpvGetFfmpegVersion`: an empty `value` when mpv
+/// cannot report the version, for the same reason as above.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FfmpegVersionResponse {
+    pub value: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -43,6 +43,17 @@ export function useAppKeyboard({
       // stays live so it keeps working as a settings toggle.
       if (document.querySelector(".settings-backdrop") && !(mod && e.key === ",")) return;
 
+      // The mobile full-screen visualiser covers the whole app and owns
+      // Escape; only the transport keys reach past it, since a panel
+      // opened from here would open behind it.
+      if (
+        usePlaybackStore.getState().mobileVisualizerOpen &&
+        !(e.key === " " && !mod) &&
+        !(mod && (e.key === "ArrowRight" || e.key === "ArrowLeft"))
+      ) {
+        return;
+      }
+
       // Esc exits focus mode before any other Esc-based dismissal — but
       // it unwinds one layer at a time: the lyrics takeover closes first,
       // then the clear screen, so backing out of either doesn't dump the

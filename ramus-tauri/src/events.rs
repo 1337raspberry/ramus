@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use ramus_core::cache::sync::SyncProgress;
 use ramus_core::models::Track;
@@ -48,14 +48,29 @@ pub fn emit_playback_state(app: &AppHandle, payload: PlaybackStatePayload) {
 
 /// Whether the frontend last reported the webview as hidden. High-rate
 /// emits check this and skip the webview (see [`WebviewVisibility`]).
-pub fn webview_hidden(app: &AppHandle) -> bool {
-    app.try_state::<crate::state::AppState>()
-        .is_some_and(|state| !state.webview_visibility.is_visible())
+pub fn webview_hidden<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.try_state::<WebviewVisibility>()
+        .is_some_and(|visibility| !visibility.is_visible())
+}
+
+/// Record the webview's visibility as the frontend reports it. Showing a
+/// hidden webview emits `snapshot()`, the position it stopped receiving.
+pub fn record_webview_visibility<R: Runtime>(
+    app: &AppHandle<R>,
+    visible: bool,
+    snapshot: impl FnOnce() -> PlaybackPositionPayload,
+) {
+    let Some(visibility) = app.try_state::<WebviewVisibility>() else {
+        return;
+    };
+    if visibility.set(visible) {
+        emit_playback_position(app, snapshot());
+    }
 }
 
 /// Skipped while the webview is hidden: position ticks arrive many times a
 /// second, and `set_webview_visible` sends a fresh one when it reappears.
-pub fn emit_playback_position(app: &AppHandle, payload: PlaybackPositionPayload) {
+pub fn emit_playback_position<R: Runtime>(app: &AppHandle<R>, payload: PlaybackPositionPayload) {
     if webview_hidden(app) {
         return;
     }
@@ -210,7 +225,8 @@ pub fn emit_playback_quality(app: &AppHandle, payload: PlaybackQualityPayload) {
 /// hidden: a backgrounded WKWebView's content process is suspended, and each
 /// script evaluation wakes it, recompiles its JavaScript (suspension purged
 /// the compiled code) and sends it back to sleep through a full memory
-/// release.
+/// release. Managed as its own app state from the builder on, so it is in
+/// place before the page can report anything.
 #[derive(Debug)]
 pub struct WebviewVisibility(AtomicBool);
 
@@ -235,7 +251,59 @@ impl WebviewVisibility {
 
 #[cfg(test)]
 mod tests {
-    use super::WebviewVisibility;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use tauri::{Listener, Manager};
+
+    use super::{
+        emit_playback_position, record_webview_visibility, PlaybackPositionPayload,
+        WebviewVisibility,
+    };
+
+    fn tick() -> PlaybackPositionPayload {
+        PlaybackPositionPayload {
+            position: 12.0,
+            duration: 200.0,
+        }
+    }
+
+    /// A mock app with the visibility flag managed, and a count of the
+    /// `playback-position` events that reach its listeners.
+    fn app_counting_ticks() -> (tauri::App<tauri::test::MockRuntime>, Arc<AtomicUsize>) {
+        let app = tauri::test::mock_app();
+        app.manage(WebviewVisibility::default());
+        let ticks = Arc::new(AtomicUsize::new(0));
+        let counter = ticks.clone();
+        app.listen_any("playback-position", move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+        });
+        (app, ticks)
+    }
+
+    #[test]
+    fn position_ticks_skip_a_hidden_webview() {
+        let (app, ticks) = app_counting_ticks();
+        emit_playback_position(app.handle(), tick());
+        assert_eq!(ticks.load(Ordering::SeqCst), 1);
+
+        record_webview_visibility(app.handle(), false, tick);
+        emit_playback_position(app.handle(), tick());
+        assert_eq!(ticks.load(Ordering::SeqCst), 1, "a hidden webview gets no ticks");
+    }
+
+    #[test]
+    fn showing_a_hidden_webview_sends_one_position_snapshot() {
+        let (app, ticks) = app_counting_ticks();
+        record_webview_visibility(app.handle(), false, || panic!("hiding sends nothing"));
+        record_webview_visibility(app.handle(), true, tick);
+        assert_eq!(ticks.load(Ordering::SeqCst), 1);
+
+        // A repeat report (the load report on a page that is already
+        // visible) is not a reopen.
+        record_webview_visibility(app.handle(), true, || panic!("already visible"));
+        assert_eq!(ticks.load(Ordering::SeqCst), 1);
+    }
 
     #[test]
     fn webview_starts_visible() {

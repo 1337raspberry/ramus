@@ -443,6 +443,8 @@ export interface AcknowledgementsText {
   notice: string;
   thirdParty: string;
   lgpl: string;
+  lgpl3: string;
+  gpl3: string;
   mpl: string;
 }
 

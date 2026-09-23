@@ -232,14 +232,15 @@ export default function MobileNowPlaying({
 
   // Close the sheet on Escape (iOS keyboard / external keyboard). The
   // overflow menu is nested inside the sheet, so it consumes Escape first.
-  // The EQ and debug panels handle their own Escape, and this listener is
-  // on `window` so it would fire alongside theirs — yield while either is
-  // open, or one keypress closes the panel AND collapses the sheet.
+  // The EQ and debug panels and the full-screen visualiser handle their
+  // own Escape, and this listener is on `window` so it would fire
+  // alongside theirs — yield while any is open, or one keypress closes it
+  // AND collapses the sheet.
   useEffect(() => {
     if (!expanded) return;
     const h = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (showEQ || showDebug) return;
+      if (showEQ || showDebug || usePlaybackStore.getState().mobileVisualizerOpen) return;
       if (collectionAlbum) setCollectionAlbum(null);
       else if (playlistSheet) setPlaylistSheet(null);
       else if (showMenu) setShowMenu(false);

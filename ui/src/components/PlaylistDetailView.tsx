@@ -222,22 +222,27 @@ export default function PlaylistDetailView() {
   };
 
   // This view stays mounted from one playlist to the next, so the new
-  // entries land only if their crate is still the one on screen.
+  // entries (and the end of the busy state) land only if their crate is
+  // still the one on screen. The backend refuses a second rebuild of a
+  // crate that is still regenerating.
   const handleRegenerate = () => {
     if (regenerating) return;
     const sourceId = playlist.sourceId;
+    const onScreen = () => useLibraryStore.getState().browsePlaylist?.sourceId === sourceId;
     setRegenerating(true);
     regenerateCratePlaylist(sourceId)
       .then((next) => {
         useToastStore.getState().show(`Regenerated — ${next.length} tracks`);
-        if (useLibraryStore.getState().browsePlaylist?.sourceId !== sourceId) return;
+        if (!onScreen()) return;
         setItems(next);
         setMenuOpen(false);
       })
       .catch((e) => {
         useToastStore.getState().show(String(e) || "Couldn't regenerate");
       })
-      .finally(() => setRegenerating(false));
+      .finally(() => {
+        if (onScreen()) setRegenerating(false);
+      });
   };
 
   const handleRename = () => {

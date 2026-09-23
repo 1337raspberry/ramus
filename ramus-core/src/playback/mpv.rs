@@ -198,9 +198,9 @@ pub trait MpvPlayer: Send + Sync {
 
     /// Whether the spectrum tap graph must cut the main path into small
     /// frames for the tap to keep up on this libmpv's FFmpeg build (see
-    /// `spectrum_tap::MAIN_FRAME_SAMPLES`). Only the desktop player can
-    /// read its FFmpeg version; everything else answers `false` (the iOS
-    /// libmpv ships FFmpeg 8, which needs no cut).
+    /// `spectrum_tap::MAIN_FRAME_SAMPLES` and `tap_needs_main_cut_for`).
+    /// The desktop and iOS players read their FFmpeg version; the default
+    /// `false` is for backends that never host the tap and test doubles.
     fn tap_needs_main_cut(&self) -> bool {
         false
     }

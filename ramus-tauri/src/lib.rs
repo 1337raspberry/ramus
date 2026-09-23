@@ -777,6 +777,7 @@ pub fn run() {
         .init();
 
     let builder = tauri::Builder::default()
+        .manage(events::WebviewVisibility::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_ramus_ios_bridge::init());
 
@@ -1067,7 +1068,6 @@ pub fn run() {
                 server_reachable: Arc::new(std::sync::atomic::AtomicBool::new(true)),
                 recovery_grace: recovery_grace.clone(),
                 mc_reanchor: mc_reanchor.clone(),
-                webview_visibility: Default::default(),
             };
 
             // Restore previous session. State is set synchronously (no blocking

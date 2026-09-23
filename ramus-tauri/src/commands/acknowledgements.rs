@@ -18,6 +18,8 @@ pub struct AcknowledgementsText {
     pub notice: &'static str,
     pub third_party: &'static str,
     pub lgpl: &'static str,
+    pub lgpl3: &'static str,
+    pub gpl3: &'static str,
     pub mpl: &'static str,
 }
 
@@ -28,6 +30,8 @@ pub fn get_acknowledgements_text() -> CmdResult<AcknowledgementsText> {
         notice: include_str!("../../../licenses/NOTICE.md"),
         third_party: include_str!("../../../THIRD_PARTY_LICENSES.md"),
         lgpl: include_str!("../../../licenses/LICENSE.LGPL-2.1"),
+        lgpl3: include_str!("../../../licenses/LICENSE.LGPL-3.0"),
+        gpl3: include_str!("../../../licenses/LICENSE.GPL-3.0"),
         mpl: include_str!("../../../licenses/LICENSE.MPL-2.0"),
     })
 }

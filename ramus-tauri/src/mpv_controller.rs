@@ -11,7 +11,9 @@ use std::sync::Arc;
 use std::thread;
 
 use ramus_core::playback::mpv::{FileEndReason, LoadMode, MpvCallbacks, MpvPlayer, ObserverID};
-use ramus_core::playback::spectrum_tap::{TapConfig, TapFeed, TapFrame, TapLineParser};
+use ramus_core::playback::spectrum_tap::{
+    tap_needs_main_cut_for, TapConfig, TapFeed, TapFrame, TapLineParser,
+};
 use ramus_core::util::redact_urls;
 
 use crate::mpv_ffi::*;
@@ -363,48 +365,6 @@ fn read_string_property(lib: &MpvLib, ctx: *mut mpv_handle, name: &str) -> Optio
         lib.free(out as *mut c_void);
         Some(value)
     }
-}
-
-/// The major release number in mpv's `ffmpeg-version` string, the value
-/// of `av_version_info()` for the FFmpeg libmpv was linked against.
-/// Observed forms: `"6.1.1-3ubuntu5"` (apt), `"n7.1.5"` (a release tag),
-/// `"9.0.1"` (Homebrew). A git snapshot reads `"N-123456-gabcdef"` and
-/// carries no release number, so it parses as `None`.
-fn ffmpeg_major_version(version: &str) -> Option<u32> {
-    let digits = version.trim_start_matches(|c: char| !c.is_ascii_digit());
-    let major = digits.split(['.', '-', '+']).next()?;
-    let rest = &digits[major.len()..];
-    if !rest.starts_with('.') {
-        return None;
-    }
-    major.parse().ok()
-}
-
-/// Revision count of the FFmpeg commit that made the graph drain skip an
-/// empty source (`d41bac1333`, June 2025, first released in 8.0): a git
-/// snapshot at or past it drains the tap's side branch fully. For scale,
-/// the 7.1 tag is revision 117179 and the 8.0 tag is 120682.
-const FFMPEG_DRAIN_FIX_REVISION: u32 = 120_148;
-
-/// The revision count in a git-snapshot `ffmpeg-version` string such as
-/// `"N-126548-g6efe500d2"`, which is how the prebuilt Windows libmpv
-/// reports its FFmpeg: commits since FFmpeg's `N` tag, which only grows.
-fn ffmpeg_snapshot_revision(version: &str) -> Option<u32> {
-    version.strip_prefix("N-")?.split('-').next()?.parse().ok()
-}
-
-/// Whether the spectrum tap needs the main-path cut on this FFmpeg: every
-/// release before 8.0, every git snapshot before the drain fix, and any
-/// build whose version cannot be read, since a needless cut costs CPU
-/// while a missing one loses the visualiser.
-fn tap_needs_main_cut_for(ffmpeg_version: &str) -> bool {
-    if let Some(major) = ffmpeg_major_version(ffmpeg_version) {
-        return major < 8;
-    }
-    if let Some(revision) = ffmpeg_snapshot_revision(ffmpeg_version) {
-        return revision < FFMPEG_DRAIN_FIX_REVISION;
-    }
-    true
 }
 
 /// Parse mpv's `mpv-version` string and return whether the reported version
@@ -847,10 +807,7 @@ fn event_loop(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ffmpeg_major_version, ffmpeg_snapshot_revision, mpv_version_at_least,
-        tap_needs_main_cut_for,
-    };
+    use super::mpv_version_at_least;
 
     #[test]
     fn parses_release_versions() {
@@ -859,51 +816,6 @@ mod tests {
         assert!(mpv_version_at_least("mpv 0.38.0", 0, 38));
         assert!(mpv_version_at_least("mpv 0.39.0", 0, 38));
         assert!(mpv_version_at_least("mpv 1.0.0", 0, 38));
-    }
-
-    #[test]
-    fn ffmpeg_version_parses_release_and_distro_strings() {
-        assert_eq!(ffmpeg_major_version("6.1.1-3ubuntu5"), Some(6));
-        assert_eq!(ffmpeg_major_version("n7.1.5"), Some(7));
-        assert_eq!(ffmpeg_major_version("7.1.5-0+deb13u1"), Some(7));
-        assert_eq!(ffmpeg_major_version("8.0.1-3ubuntu2"), Some(8));
-        assert_eq!(ffmpeg_major_version("9.0.1"), Some(9));
-        assert_eq!(ffmpeg_major_version("N-120000-g1234abc"), None);
-        assert_eq!(ffmpeg_major_version(""), None);
-    }
-
-    #[test]
-    fn ffmpeg_snapshot_revision_reads_git_builds_only() {
-        // The prebuilt Windows libmpv reports its FFmpeg this way.
-        assert_eq!(
-            ffmpeg_snapshot_revision("N-126548-g6efe500d2"),
-            Some(126_548)
-        );
-        assert_eq!(
-            ffmpeg_snapshot_revision("N-120148-gd41bac1333"),
-            Some(120_148)
-        );
-        assert_eq!(ffmpeg_snapshot_revision("9.0.1"), None);
-        assert_eq!(ffmpeg_snapshot_revision("n7.1.5"), None);
-        assert_eq!(ffmpeg_snapshot_revision("N-"), None);
-        assert_eq!(ffmpeg_snapshot_revision(""), None);
-    }
-
-    #[test]
-    fn main_path_cut_only_before_ffmpeg_8() {
-        assert!(tap_needs_main_cut_for("6.1.1-3ubuntu5"));
-        assert!(tap_needs_main_cut_for("n7.1.5"));
-        assert!(!tap_needs_main_cut_for("8.0.1-3ubuntu2"));
-        assert!(!tap_needs_main_cut_for("9.0.1"));
-        // Git snapshots are placed by revision against the drain fix.
-        assert!(tap_needs_main_cut_for("N-117179-g0f1e2d3c"));
-        assert!(tap_needs_main_cut_for("N-120147-gabcdef12"));
-        assert!(!tap_needs_main_cut_for("N-120148-gd41bac1333"));
-        assert!(!tap_needs_main_cut_for("N-126548-g6efe500d2"));
-        // Anything else gets the cut: it costs CPU, a missing one loses
-        // the visualiser.
-        assert!(tap_needs_main_cut_for("git-deadbeef"));
-        assert!(tap_needs_main_cut_for(""));
     }
 
     #[test]
