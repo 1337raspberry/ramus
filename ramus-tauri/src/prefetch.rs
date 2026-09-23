@@ -773,14 +773,10 @@ async fn run_cycle(
     // source. Opening a competing transcode session while Plex is still feeding
     // the current track cuts the live one (Plex's ~1-transcoder cap) — the
     // cause of "9/9 cached but song 1 keeps stalling" on a slow link. Runs on
-    // every platform. Persistent downloads and cached tracks play from
-    // file:// — nothing is streaming, so waiting for a "live source" to drain
-    // would just burn the ceiling.
-    let current_uncached = player.state().current_track.as_ref().is_some_and(|t| {
-        !player.has_persistent_download(&t.rating_key)
-            && !player.with_cache(|c| c.get(&t.rating_key).is_some())
-    });
-    if current_uncached {
+    // every platform. A local file or an unmaterialised restored queue has
+    // nothing streaming, so waiting for a "live source" to drain would just
+    // burn the ceiling.
+    if player.current_track_streams_from_network() {
         wait_for_source_drain(&player, &shared_gen, my_gen).await;
         if shared_gen.load(Ordering::SeqCst) != my_gen {
             return;

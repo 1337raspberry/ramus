@@ -3363,3 +3363,52 @@ fn test_pause_reports_are_honoured_once_materialised() {
     assert!(player.handle_pause_change(false));
     assert_eq!(player.state().status, PlaybackStatus::Playing);
 }
+
+// --- Live source for the prefetch drain gate --------------------------------
+//
+// The prefetch worker holds its downloads until the current track's network
+// source has drained into mpv. Only a stream mpv is actually pulling counts:
+// anything else would make the worker sit out its full drain ceiling.
+
+#[test]
+fn test_nothing_loaded_streams_nothing() {
+    let (player, _) = make_player();
+    assert!(!player.current_track_streams_from_network());
+}
+
+#[test]
+fn test_an_uncached_current_track_streams_from_the_network() {
+    let (player, _) = make_player();
+    player.load_queue(vec![make_test_track("1"), make_test_track("2")], 0);
+    assert!(player.current_track_streams_from_network());
+}
+
+#[test]
+fn test_a_downloaded_current_track_plays_locally() {
+    let (player, _) = make_player();
+    player.register_persistent_download("1".into(), PathBuf::from("/downloads/1.flac"));
+    player.load_queue(vec![make_test_track("1")], 0);
+    assert!(!player.current_track_streams_from_network());
+}
+
+#[test]
+fn test_a_cached_current_track_plays_locally() {
+    let (player, _) = make_player();
+    player.with_cache(|cache| {
+        cache.insert("1".into(), PathBuf::from("/tmp/cached_1.flac"), 1000);
+    });
+    player.load_queue(vec![make_test_track("1")], 0);
+    assert!(!player.current_track_streams_from_network());
+}
+
+#[test]
+fn test_a_restored_queue_streams_nothing_until_it_materialises() {
+    let (player, _) = restored_player();
+    assert!(
+        !player.current_track_streams_from_network(),
+        "mpv has not been handed the restored queue, so nothing is arriving"
+    );
+
+    player.resume();
+    assert!(player.current_track_streams_from_network());
+}
