@@ -226,6 +226,13 @@ export interface RidgeLayout {
   ridgeAlpha: number;
   /** Line alpha of the back row. */
   ridgeBackAlpha: number;
+  /**
+   * Shape of the alpha fade from the front row to the back: 1 is linear;
+   * below 1 the rows hold their brightness further back and fall away
+   * toward the back row, above 1 the fade falls faster near the front and
+   * flattens toward the back.
+   */
+  ridgeFadeCurve: number;
 }
 
 export interface RidgeRowGeometry {
@@ -241,7 +248,8 @@ export interface RidgeRowGeometry {
  * Where row `k` of `rows` sits in a window `h` px tall: the front row's
  * baseline is `ridgeBottom` up from the bottom edge, the back row's is
  * `ridgeHeight` above that, and rows are spaced evenly between. Peak
- * scale and alpha ease linearly from the front values to the back ones.
+ * scale eases linearly from the front value to the back one, and alpha
+ * along `(1 - depth) ^ ridgeFadeCurve`.
  */
 export function ridgeRow(k: number, rows: number, h: number, p: RidgeLayout): RidgeRowGeometry {
   const depth = rows > 1 ? k / (rows - 1) : 0;
@@ -249,7 +257,8 @@ export function ridgeRow(k: number, rows: number, h: number, p: RidgeLayout): Ri
   return {
     baseline: front - depth * h * p.ridgeHeight,
     scale: h * p.ridgePeak * (1 + (p.ridgeDepthScale - 1) * depth),
-    alpha: p.ridgeAlpha + (p.ridgeBackAlpha - p.ridgeAlpha) * depth,
+    alpha:
+      p.ridgeBackAlpha + (p.ridgeAlpha - p.ridgeBackAlpha) * Math.pow(1 - depth, p.ridgeFadeCurve),
   };
 }
 
@@ -404,7 +413,7 @@ export function drawRidgeline(
   const scale = ctx.getTransform().a || 1;
   const halfStroke = (p.ridgeLineWidth * scale) / 2;
   const snap = (y: number) => (Math.round(y * scale - halfStroke) + halfStroke) / scale;
-  const styleKey = `${rows}|${p.ridgeAlpha}|${p.ridgeBackAlpha}|${rgb}`;
+  const styleKey = `${rows}|${p.ridgeAlpha}|${p.ridgeBackAlpha}|${p.ridgeFadeCurve}|${rgb}`;
   if (styleKey !== strokeStylesFor) {
     strokeStyles = Array.from(
       { length: rows },

@@ -63,6 +63,12 @@ export interface VisualizerParams {
   ridgeAlpha: number;
   /** Line alpha at the back row. */
   ridgeBackAlpha: number;
+  /**
+   * Shape of the alpha fade from the front row to the back: 1 is linear,
+   * below 1 holds the brightness further back, above 1 tails off
+   * gradually toward the back.
+   */
+  ridgeFadeCurve: number;
   /** Wall-clock interval between history rows, in ms. */
   ridgeRowMs: number;
   /**
@@ -105,17 +111,23 @@ export const VISUALIZER_PARAMS: VisualizerParams = {
   floorCut: 0,
   gain: 1.1,
 
-  ridgeRows: 34,
-  ridgeHeight: 0.41,
+  // Row spacing (height / (rows - 1)) and the row interval together set
+  // how fast the stack scrolls, so the rows, height and back-row scale
+  // change together: the stack runs 1.7 s deep with its rows the same
+  // distance apart as a shallower one, and the fade below carries the
+  // back of it out to nothing.
+  ridgeRows: 51,
+  ridgeHeight: 0.621,
   ridgePeak: 0.6,
-  ridgeDepthScale: 0.6,
+  ridgeDepthScale: 0.394,
   ridgeBottom: 0.01,
   ridgeSpan: 1,
   ridgeLineWidth: 1.25,
   ridgeOversample: 5,
   // Same wide-gamut allowance as the bars.
   ridgeAlpha: isHDR ? 0.6 : 0.85,
-  ridgeBackAlpha: isHDR ? 0.1 : 0.17,
+  ridgeBackAlpha: 0,
+  ridgeFadeCurve: 0.75,
   ridgeRowMs: 33,
   ridgeSpread: 1,
   ridgeSmooth: 0.1,

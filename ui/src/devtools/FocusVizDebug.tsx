@@ -6,6 +6,7 @@ import {
   TUNING_DEFAULTS,
   resetTuning,
   setTuningValue,
+  setTuningValues,
   tuningSnapshot,
   useTuning,
   type FocusVizTuning,
@@ -33,8 +34,26 @@ interface ControlSpec {
   digits: number;
 }
 
+/**
+ * A slider that drives several tuning values at once. `value` reads its
+ * position off the current values and `apply` writes every value in
+ * `keys`; double-clicking it restores all of them.
+ */
+interface LinkedSpec {
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  digits: number;
+  keys: readonly (keyof FocusVizTuning)[];
+  value: (t: FocusVizTuning) => number;
+  apply: (value: number, t: FocusVizTuning) => void;
+}
+
 interface SectionSpec {
   readonly title: string;
+  /** Shown above the section's own sliders. */
+  readonly linked?: readonly LinkedSpec[];
   readonly controls: readonly ControlSpec[];
 }
 
@@ -70,9 +89,26 @@ const SECTIONS = [
   },
   {
     title: "Ridge",
+    linked: [
+      {
+        label: "Depth",
+        min: 2,
+        max: 90,
+        step: 1,
+        digits: 0,
+        keys: ["ridgeRows", "ridgeHeight"],
+        value: (t) => t.ridgeRows,
+        // Adds or drops rows at the current spacing: the stack grows or
+        // shrinks without its rows closing up, so the scroll speed holds.
+        apply: (rows, t) => {
+          const spacing = t.ridgeHeight / Math.max(1, t.ridgeRows - 1);
+          setTuningValues({ ridgeRows: rows, ridgeHeight: spacing * (rows - 1) });
+        },
+      },
+    ],
     controls: [
-      { key: "ridgeRows", label: "Rows", min: 2, max: 60, step: 1, digits: 0 },
-      { key: "ridgeHeight", label: "Stack height", min: 0.05, max: 0.9, step: 0.01, digits: 2 },
+      { key: "ridgeRows", label: "Rows", min: 2, max: 90, step: 1, digits: 0 },
+      { key: "ridgeHeight", label: "Stack height", min: 0.05, max: 1.2, step: 0.01, digits: 2 },
       { key: "ridgePeak", label: "Peak", min: 0.02, max: 1, step: 0.01, digits: 2 },
       { key: "ridgeDepthScale", label: "Depth scale", min: 0.1, max: 1.5, step: 0.05, digits: 2 },
       { key: "ridgeBottom", label: "Bottom gap", min: 0, max: 0.4, step: 0.01, digits: 2 },
@@ -81,6 +117,7 @@ const SECTIONS = [
       { key: "ridgeOversample", label: "Oversample", min: 1, max: 8, step: 1, digits: 0 },
       { key: "ridgeAlpha", label: "Alpha", min: 0, max: 1, step: 0.01, digits: 2 },
       { key: "ridgeBackAlpha", label: "Back alpha", min: 0, max: 1, step: 0.01, digits: 2 },
+      { key: "ridgeFadeCurve", label: "Fade curve", min: 0.25, max: 4, step: 0.05, digits: 2 },
       { key: "ridgeRowMs", label: "Row ms", min: 16, max: 250, step: 1, digits: 0 },
       { key: "ridgeSpread", label: "Spread", min: 0, max: 3, step: 0.05, digits: 2 },
       { key: "ridgeSmooth", label: "Smooth", min: 0, max: 1, step: 0.01, digits: 2 },
@@ -266,6 +303,46 @@ function Host() {
   return <Panel tuning={tuning} onClose={() => setOpen(false)} />;
 }
 
+function Slider({
+  label,
+  min,
+  max,
+  step,
+  digits,
+  value,
+  changed,
+  onChange,
+  onReset,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  digits: number;
+  value: number;
+  changed: boolean;
+  onChange: (value: number) => void;
+  onReset: () => void;
+}) {
+  return (
+    <label className={`fv-debug-row${changed ? " is-changed" : ""}`}>
+      <span className="fv-debug-label">{label}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        onDoubleClick={onReset}
+      />
+      <span className="fv-debug-value">{value.toFixed(digits)}</span>
+    </label>
+  );
+}
+
+const SECTION_LIST: readonly SectionSpec[] = SECTIONS;
+
 function Panel({ tuning, onClose }: { tuning: FocusVizTuning; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
 
@@ -300,28 +377,39 @@ function Panel({ tuning, onClose }: { tuning: FocusVizTuning; onClose: () => voi
           ×
         </button>
       </div>
-      {SECTIONS.map((section) => (
+      {SECTION_LIST.map((section) => (
         <div className="fv-debug-section" key={section.title}>
           <div className="fv-debug-section-title">{section.title}</div>
-          {section.controls.map((c) => {
-            const value = tuning[c.key];
-            const isDefault = value === TUNING_DEFAULTS[c.key];
-            return (
-              <label className={`fv-debug-row${isDefault ? "" : " is-changed"}`} key={c.key}>
-                <span className="fv-debug-label">{c.label}</span>
-                <input
-                  type="range"
-                  min={c.min}
-                  max={c.max}
-                  step={c.step}
-                  value={value}
-                  onChange={(e) => setTuningValue(c.key, Number(e.target.value))}
-                  onDoubleClick={() => setTuningValue(c.key, TUNING_DEFAULTS[c.key])}
-                />
-                <span className="fv-debug-value">{value.toFixed(c.digits)}</span>
-              </label>
-            );
-          })}
+          {section.linked?.map((l) => (
+            <Slider
+              key={l.label}
+              label={l.label}
+              min={l.min}
+              max={l.max}
+              step={l.step}
+              digits={l.digits}
+              value={l.value(tuning)}
+              changed={l.keys.some((k) => tuning[k] !== TUNING_DEFAULTS[k])}
+              onChange={(v) => l.apply(v, tuning)}
+              onReset={() =>
+                setTuningValues(Object.fromEntries(l.keys.map((k) => [k, TUNING_DEFAULTS[k]])))
+              }
+            />
+          ))}
+          {section.controls.map((c) => (
+            <Slider
+              key={c.key}
+              label={c.label}
+              min={c.min}
+              max={c.max}
+              step={c.step}
+              digits={c.digits}
+              value={tuning[c.key]}
+              changed={tuning[c.key] !== TUNING_DEFAULTS[c.key]}
+              onChange={(v) => setTuningValue(c.key, v)}
+              onReset={() => setTuningValue(c.key, TUNING_DEFAULTS[c.key])}
+            />
+          ))}
         </div>
       ))}
       <div className="fv-debug-hint">` toggles · double-click a slider to reset it</div>
