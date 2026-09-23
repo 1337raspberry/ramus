@@ -109,6 +109,19 @@ export function setTuningValue(key: keyof FocusVizTuning, value: number): void {
   persist();
 }
 
+/** Set several values as one change. Non-finite numbers are ignored. */
+export function setTuningValues(values: Partial<FocusVizTuning>): void {
+  let changed = false;
+  for (const [key, value] of Object.entries(values) as [keyof FocusVizTuning, number][]) {
+    if (!Number.isFinite(value) || snapshot[key] === value) continue;
+    write(key, value);
+    changed = true;
+  }
+  if (!changed) return;
+  notify();
+  persist();
+}
+
 /** Restore the shipped values. */
 export function resetTuning(): void {
   for (const key of Object.keys(TUNING_DEFAULTS) as (keyof FocusVizTuning)[]) {
