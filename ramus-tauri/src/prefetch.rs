@@ -102,6 +102,15 @@ const STARVED_BACKOFF: Duration = Duration::from_secs(5);
 /// ticks at chunk rate (>50Hz on LAN); throttling keeps the event bus quiet.
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(250);
 
+/// Whether a mid-download progress tick should go out: throttled to
+/// [`PROGRESS_EMIT_INTERVAL`], and never to a hidden webview (each emit would
+/// wake a suspended one; the next tick after it reappears is at most one
+/// interval away). `webview_hidden` is only read once a tick is due. The
+/// start, done and failed events are not ticks and always go out.
+fn progress_tick_due(since_last: Duration, webview_hidden: impl FnOnce() -> bool) -> bool {
+    since_last >= PROGRESS_EMIT_INTERVAL && !webview_hidden()
+}
+
 // --- Public types ---
 
 /// Build a `DownloadProgressPayload` by cloning the identity fields from a
@@ -1214,7 +1223,9 @@ async fn run_user_download(
                     }
                 }
             }
-            if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL {
+            if progress_tick_due(last_emit.elapsed(), || {
+                crate::events::webview_hidden(&app_for_cb)
+            }) {
                 last_emit = Instant::now();
                 emit_download_progress(
                     &app_for_cb,
@@ -1578,4 +1589,26 @@ async fn download_http_to_file(
     // on disk while the DB row + persistent_cache pin claim it's complete.
     file.sync_all().await.map_err(|e| format!("sync: {e}"))?;
     Ok(written)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{progress_tick_due, PROGRESS_EMIT_INTERVAL};
+    use std::time::Duration;
+
+    #[test]
+    fn progress_tick_goes_out_once_the_interval_has_passed() {
+        assert!(progress_tick_due(PROGRESS_EMIT_INTERVAL, || false));
+    }
+
+    #[test]
+    fn progress_tick_waits_for_the_interval() {
+        let early = PROGRESS_EMIT_INTERVAL - Duration::from_millis(1);
+        assert!(!progress_tick_due(early, || panic!("visibility read before the tick was due")));
+    }
+
+    #[test]
+    fn progress_tick_skips_a_hidden_webview() {
+        assert!(!progress_tick_due(PROGRESS_EMIT_INTERVAL * 4, || true));
+    }
 }

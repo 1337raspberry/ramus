@@ -1,5 +1,7 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use ramus_core::cache::sync::SyncProgress;
 use ramus_core::models::Track;
@@ -44,7 +46,19 @@ pub fn emit_playback_state(app: &AppHandle, payload: PlaybackStatePayload) {
     let _ = app.emit("playback-state", payload);
 }
 
+/// Whether the frontend last reported the webview as hidden. High-rate
+/// emits check this and skip the webview (see [`WebviewVisibility`]).
+pub fn webview_hidden(app: &AppHandle) -> bool {
+    app.try_state::<crate::state::AppState>()
+        .is_some_and(|state| !state.webview_visibility.is_visible())
+}
+
+/// Skipped while the webview is hidden: position ticks arrive many times a
+/// second, and `set_webview_visible` sends a fresh one when it reappears.
 pub fn emit_playback_position(app: &AppHandle, payload: PlaybackPositionPayload) {
+    if webview_hidden(app) {
+        return;
+    }
     let _ = app.emit("playback-position", payload);
 }
 
@@ -189,4 +203,58 @@ pub struct PlaybackQualityPayload {
 
 pub fn emit_playback_quality(app: &AppHandle, payload: PlaybackQualityPayload) {
     let _ = app.emit("playback-quality", payload);
+}
+
+/// Whether the webview is on screen, as last reported by the frontend's
+/// `visibilitychange` handler. High-rate events skip the webview while it is
+/// hidden: a backgrounded WKWebView's content process is suspended, and each
+/// script evaluation wakes it, recompiles its JavaScript (suspension purged
+/// the compiled code) and sends it back to sleep through a full memory
+/// release.
+#[derive(Debug)]
+pub struct WebviewVisibility(AtomicBool);
+
+impl Default for WebviewVisibility {
+    fn default() -> Self {
+        Self(AtomicBool::new(true))
+    }
+}
+
+impl WebviewVisibility {
+    pub fn is_visible(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+
+    /// Record the webview's visibility. Returns `true` only when this call
+    /// shows a webview that was hidden, so the caller can send what it missed.
+    pub fn set(&self, visible: bool) -> bool {
+        let was_visible = self.0.swap(visible, Ordering::AcqRel);
+        visible && !was_visible
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WebviewVisibility;
+
+    #[test]
+    fn webview_starts_visible() {
+        assert!(WebviewVisibility::default().is_visible());
+    }
+
+    #[test]
+    fn hiding_the_webview_is_not_a_reopen() {
+        let v = WebviewVisibility::default();
+        assert!(!v.set(false));
+        assert!(!v.is_visible());
+    }
+
+    #[test]
+    fn showing_a_hidden_webview_reports_the_reopen_once() {
+        let v = WebviewVisibility::default();
+        v.set(false);
+        assert!(v.set(true));
+        assert!(v.is_visible());
+        assert!(!v.set(true));
+    }
 }
