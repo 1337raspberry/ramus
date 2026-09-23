@@ -404,15 +404,24 @@ export function drawRidgeline(
   if (rowY.length !== n) rowY = new Float32Array(n);
   const ys = rowY;
   // Device pixels per CSS px, read off the context's own transform, so
-  // each baseline can be put on the same sub-pixel phase: the stroke's
-  // upper edge on a device-pixel boundary. A row at rest is a straight
-  // rule, and without this each rule lands at its own fraction of a
+  // the rows can be laid on the device-pixel grid: the front row's stroke
+  // has its upper edge on a pixel boundary and every row behind it sits
+  // a whole number of pixels further up. A row at rest is a straight
+  // rule. Left off the grid, each rule lands at its own fraction of a
   // pixel and the anti-aliasing spreads it over one bright row or two
   // dim ones at random, which at a device pixel ratio of 1 reads as
-  // alternating fat and thin lines up the stack.
+  // alternating fat and thin lines up the stack. Rounding each baseline
+  // on its own is not enough: the gaps then come out at two lengths a
+  // pixel apart, and where the spacing is a hair off a whole pixel a
+  // single short gap sits alone in the stack and its rule reads as out
+  // of step with the pattern.
   const scale = ctx.getTransform().a || 1;
   const halfStroke = (p.ridgeLineWidth * scale) / 2;
-  const snap = (y: number) => (Math.round(y * scale - halfStroke) + halfStroke) / scale;
+  const frontY = ridgeRow(0, rows, h, p).baseline;
+  const backY = ridgeRow(rows - 1, rows, h, p).baseline;
+  const frontEdge = Math.round(frontY * scale - halfStroke);
+  const pitch = rows > 1 ? Math.round(((frontY - backY) / (rows - 1)) * scale) : 0;
+  const baselineOf = (k: number) => (frontEdge - k * pitch + halfStroke) / scale;
   const styleKey = `${rows}|${p.ridgeAlpha}|${p.ridgeBackAlpha}|${p.ridgeFadeCurve}|${rgb}`;
   if (styleKey !== strokeStylesFor) {
     strokeStyles = Array.from(
@@ -432,7 +441,7 @@ export function drawRidgeline(
   ctx.fillStyle = "#000";
   for (let k = rows - 1; k >= 0; k--) {
     const g = ridgeRow(k, rows, h, p);
-    const baseline = snap(g.baseline);
+    const baseline = baselineOf(k);
     const values = row(k);
     for (let i = 0; i < n; i++) ys[i] = baseline - values[i] * edge[i] * g.scale;
     const line = new Path2D();
