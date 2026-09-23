@@ -541,6 +541,28 @@ pub async fn get_debug_info(
     Ok(state.player.debug_snapshot())
 }
 
+/// Record whether the webview is on screen (the frontend's
+/// `visibilitychange` handler calls this on every edge). Showing a hidden
+/// webview re-sends the position it stopped receiving, so the seek bar is
+/// right at once — no ticks arrive to correct it while playback is paused.
+#[tauri::command]
+pub async fn set_webview_visible(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    visible: bool,
+) -> CmdResult<()> {
+    if state.webview_visibility.set(visible) {
+        crate::events::emit_playback_position(
+            &app,
+            crate::events::PlaybackPositionPayload {
+                position: state.player.position(),
+                duration: state.player.duration(),
+            },
+        );
+    }
+    Ok(())
+}
+
 /// Re-sync the frontend after the OS resumes the app (unlock, foreground
 /// switch, laptop wake). Stores are otherwise pure event replay, and a
 /// suspended webview may have dropped every emit that fired during an

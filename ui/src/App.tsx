@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { flushQueueState, foregroundResync, isAuthenticated } from "./lib/commands";
+import { flushQueueState, foregroundResync, isAuthenticated, setWebviewVisible } from "./lib/commands";
 import { clearGenreMetadataCache } from "./lib/genreMetadataCache";
 import type { SyncProgress } from "./lib/types";
 import { usePlaybackEvents } from "./lib/usePlaybackEvents";
@@ -129,17 +129,24 @@ export default function App() {
   // the app woke up offline or with playback interrupted, re-evaluate the
   // connection. Debounced: rapid hide/show flips (notification shade,
   // app-switcher peek) shouldn't hammer the IPC.
+  //
+  // Every edge also tells the backend whether the webview is on screen, so
+  // position and download-progress ticks stop while it's hidden (each one
+  // would wake a suspended webview). Not debounced: a missed "visible" would
+  // freeze the seek bar.
   useEffect(() => {
     if (authed !== true) return;
     let lastResync = 0;
     const onVisibility = () => {
       if (document.visibilityState !== "visible") {
+        setWebviewVisible(false).catch(() => {});
         // Backgrounding is the last moment we're reliably scheduled — a
         // suspended process freezes the periodic queue writer mid-interval,
         // so flush the playing position now rather than lose it.
         flushQueueState().catch(() => {});
         return;
       }
+      setWebviewVisible(true).catch(() => {});
       const now = Date.now();
       if (now - lastResync < 3000) return;
       lastResync = now;

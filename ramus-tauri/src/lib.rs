@@ -1060,6 +1060,7 @@ pub fn run() {
                 server_reachable: Arc::new(std::sync::atomic::AtomicBool::new(true)),
                 recovery_grace: recovery_grace.clone(),
                 mc_reanchor: mc_reanchor.clone(),
+                webview_visibility: Default::default(),
             };
 
             // Restore previous session. State is set synchronously (no blocking
@@ -1659,6 +1660,7 @@ pub fn run() {
             commands::playback::set_media_accent,
             commands::playback::get_debug_info,
             commands::playback::foreground_resync,
+            commands::playback::set_webview_visible,
             // spectrum (focus-mode visualiser)
             commands::spectrum::set_spectrum_tap,
             commands::spectrum::set_spectrum_tilt,

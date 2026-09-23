@@ -468,6 +468,8 @@ export const getDebugInfo = () => invoke<DebugInfo>("get_debug_info");
  * had the app asleep, and the stores are pure event replay.
  */
 export const foregroundResync = () => invoke<void>("foreground_resync");
+export const setWebviewVisible = (visible: boolean) =>
+  invoke<void>("set_webview_visible", { visible });
 
 // --- Acknowledgements / licenses ---
 

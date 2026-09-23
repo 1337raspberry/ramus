@@ -50,6 +50,9 @@ pub struct AppState {
     /// local to `setup()` so the connection callbacks can be installed from
     /// the onboarding path too (see `lib.rs::install_connection_callbacks`).
     pub mc_reanchor: Arc<AtomicBool>,
+    /// Whether the webview is on screen; high-rate events skip it while it
+    /// is hidden (see `events::WebviewVisibility`).
+    pub webview_visibility: crate::events::WebviewVisibility,
 }
 
 impl AppState {
