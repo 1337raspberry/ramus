@@ -3760,6 +3760,15 @@ body.is-fullscreen .focus-clear-player {
   display: block;
   width: 100%;
   height: 100%;
+  transition: opacity 0.4s ease;
+}
+
+/* The ridge behind the full focus layout (see FocusVisualizer's `subdued`).
+ * Opacity on the canvas rather than lower line alphas: the rows hide the
+ * ones behind them by erasing, and fading the finished layer keeps that
+ * erase exact. */
+.focus-visualizer canvas.is-subdued {
+  opacity: 0.5;
 }
 
 /* Hint layered over the canvas when audio is flowing but the live tap
