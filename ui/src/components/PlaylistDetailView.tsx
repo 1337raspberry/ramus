@@ -3,15 +3,17 @@ import { createPortal } from "react-dom";
 import { useLibraryStore } from "../stores/libraryStore";
 import { useDownloadsStore } from "../stores/downloadsStore";
 import { useToastStore } from "./Toast";
-import type { PlaylistDownloadEstimate, PlaylistItem, Track } from "../lib/types";
+import type { CrateRecipe, PlaylistDownloadEstimate, PlaylistItem, Track } from "../lib/types";
 import {
   ART_SIZE,
   appendToQueue,
   deletePlaylist,
   getAlbum,
+  getCrateRecipe,
   getPlaylistItems,
   movePlaylistItem,
   playTracks,
+  regenerateCratePlaylist,
   removePlaylistItem,
   renamePlaylist,
 } from "../lib/commands";
@@ -21,6 +23,7 @@ import { useArtUrl } from "../lib/useArtUrl";
 import { shuffleTracks } from "../lib/shuffle";
 import { formatBytes, formatDuration, formatLongDuration } from "../lib/format";
 import { IconClose, IconMoreDots, IconMusicNote, IconPlay, IconShuffle } from "./Icons";
+import CrateBuilder from "../mobile/CrateBuilder";
 
 const ROW_HEIGHT = 44;
 
@@ -45,7 +48,8 @@ function RowArt({ thumb }: { thumb: string | null }) {
  * Desktop playlist detail (main content area, driven by
  * `libraryStore.browsePlaylist`). Row click plays the playlist from that
  * entry; the `::` handle drags to reorder (regular playlists only). The
- * header `…` menu carries Download / Rename / Delete; each row's `…` menu
+ * header `…` menu carries Download / Rename / Delete, with Regenerate and
+ * Edit in place of Rename on a discovery crate; each row's `…` menu
  * carries navigation and the track favourite.
  */
 export default function PlaylistDetailView() {
@@ -59,6 +63,12 @@ export default function PlaylistDetailView() {
   const [renameValue, setRenameValue] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
   const [rowMenu, setRowMenu] = useState<number | null>(null);
+  // Non-null only for a discovery crate; drives the Regenerate and Edit
+  // actions (the title is derived from the recipe, so a crate is renamed
+  // by editing its rules).
+  const [crateRecipe, setCrateRecipe] = useState<CrateRecipe | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [editingCrate, setEditingCrate] = useState(false);
   const { artSrc, artErr, setArtErr } = useArtUrl(playlist?.thumb, ART_SIZE.MEDIUM);
 
   useEffect(() => {
@@ -68,8 +78,18 @@ export default function PlaylistDetailView() {
     setConfirmDelete(false);
     setRenaming(false);
     setRowMenu(null);
+    setCrateRecipe(null);
+    setRegenerating(false);
+    setEditingCrate(false);
     if (!playlist) return;
     let cancelled = false;
+    if (playlist.isCrate) {
+      getCrateRecipe(playlist.sourceId)
+        .then((r) => {
+          if (!cancelled) setCrateRecipe(r);
+        })
+        .catch(() => {});
+    }
     getPlaylistItems(playlist.sourceId)
       .then((list) => {
         if (!cancelled) setItems(list);
@@ -201,6 +221,25 @@ export default function PlaylistDetailView() {
       .catch(() => useToastStore.getState().show("Couldn't delete playlist"));
   };
 
+  // This view stays mounted from one playlist to the next, so the new
+  // entries land only if their crate is still the one on screen.
+  const handleRegenerate = () => {
+    if (regenerating) return;
+    const sourceId = playlist.sourceId;
+    setRegenerating(true);
+    regenerateCratePlaylist(sourceId)
+      .then((next) => {
+        useToastStore.getState().show(`Regenerated — ${next.length} tracks`);
+        if (useLibraryStore.getState().browsePlaylist?.sourceId !== sourceId) return;
+        setItems(next);
+        setMenuOpen(false);
+      })
+      .catch((e) => {
+        useToastStore.getState().show(String(e) || "Couldn't regenerate");
+      })
+      .finally(() => setRegenerating(false));
+  };
+
   const handleRename = () => {
     const trimmed = renameValue.trim();
     if (!trimmed || renameBusy) return;
@@ -248,10 +287,16 @@ export default function PlaylistDetailView() {
     );
   };
 
+  // Both figures come from the loaded entries rather than `playlist`, a
+  // snapshot from the list: regenerating a crate or removing a track
+  // changes the contents without it.
   const count = items?.length ?? playlist.trackCount;
+  const duration = items
+    ? items.reduce((total, item) => total + item.track.duration, 0)
+    : playlist.duration;
   const subtitleBits: string[] = [];
   if (count != null) subtitleBits.push(`${count} track${count === 1 ? "" : "s"}`);
-  if (playlist.duration) subtitleBits.push(formatLongDuration(playlist.duration));
+  if (duration) subtitleBits.push(formatLongDuration(duration));
   if (playlist.smart) subtitleBits.push("Smart Playlist");
 
   return (
@@ -301,6 +346,21 @@ export default function PlaylistDetailView() {
                 >
                   Download Playlist
                 </button>
+                {crateRecipe && (
+                  <button disabled={regenerating} onClick={handleRegenerate}>
+                    {regenerating ? "Regenerating…" : "Regenerate Crate"}
+                  </button>
+                )}
+                {crateRecipe && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setEditingCrate(true);
+                    }}
+                  >
+                    Edit Crate
+                  </button>
+                )}
                 {/* A crate's title is derived from its recipe, so a manual
                     rename would be overwritten by the next edit — and would
                     misdescribe the contents until then. */}
@@ -443,6 +503,23 @@ export default function PlaylistDetailView() {
             );
           })}
         </div>
+      )}
+
+      {editingCrate && crateRecipe && (
+        <CrateBuilder
+          existing={{ sourceId: playlist.sourceId, recipe: crateRecipe }}
+          onDismiss={() => setEditingCrate(false)}
+          onSaved={(update, recipe) => {
+            setEditingCrate(false);
+            setItems(update.items);
+            setCrateRecipe(recipe);
+            // The save renames the crate to match its rules: this view
+            // renders from browsePlaylist, and the sidebar list refetches
+            // on the revision bump.
+            useLibraryStore.setState({ browsePlaylist: update.playlist });
+            useLibraryStore.getState().bumpPlaylistsRevision();
+          }}
+        />
       )}
 
       {renaming &&
