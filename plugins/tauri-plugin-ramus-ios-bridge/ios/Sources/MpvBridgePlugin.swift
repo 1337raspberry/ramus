@@ -4,6 +4,9 @@ import Network
 import Tauri
 import UIKit
 import WebKit
+import os
+
+private let log = Logger(subsystem: "com.raspsoft.ramus", category: "MpvBridgePlugin")
 
 /// Main plugin class — registered with Tauri via the `@_cdecl` init at
 /// the bottom of the file. Each `@objc` method here matches a Rust-side
@@ -51,9 +54,13 @@ class MpvBridgePlugin: Plugin {
     private var recoveryGraceTask: UIBackgroundTaskIdentifier = .invalid
     private var keyboardObservers: [NSObjectProtocol] = []
     private var scrollPin: NSKeyValueObservation?
+    /// What the full-screen visualiser changed, to put back when it
+    /// closes; `nil` while it is closed. Accessed on the main queue only.
+    private var visualizerRestore: VisualizerRestore?
 
     override func load(webview: WKWebView) {
         self.webView = webview
+        setRootOrientations(Self.everydayOrientations)
         webview.scrollView.keyboardDismissMode = .interactive
         webview.overrideUserInterfaceStyle = .dark
         Self.removeInputAccessoryView()
@@ -281,6 +288,12 @@ class MpvBridgePlugin: Plugin {
             controller.onFileEnded = { [weak self] reason in
                 DispatchQueue.main.async { self?.trigger("mpvFileEnded", data: ["reason": reason]) }
             }
+            controller.onTapLines = { [weak self] lines in
+                DispatchQueue.main.async { self?.trigger("mpvTapLines", data: ["lines": lines]) }
+            }
+            controller.onAudibleChange = { [weak self] pts in
+                DispatchQueue.main.async { self?.trigger("mpvAudibleChange", data: ["position": pts]) }
+            }
             mpv = controller
         }
         invoke.resolve([:])
@@ -427,6 +440,118 @@ class MpvBridgePlugin: Plugin {
         guard recoveryGraceTask != .invalid else { return }
         UIApplication.shared.endBackgroundTask(recoveryGraceTask)
         recoveryGraceTask = .invalid
+    }
+
+    // MARK: - Visualiser presentation
+
+    /// Orientations outside the full-screen visualiser: the iPhone
+    /// interface is portrait-only; iPad turns every way. `Info.plist` also
+    /// lists landscape for iPhone, or the visualiser could never turn, so
+    /// this mask is what holds every other screen upright.
+    private static var everydayOrientations: UIInterfaceOrientationMask {
+        UIDevice.current.userInterfaceIdiom == .phone ? .portrait : .all
+    }
+
+    /// Enter or leave the visualiser's presentation: landscape only (with
+    /// rotation lock on too: iOS turns an interface whose orientation is
+    /// no longer allowed), the status bar hidden, the home indicator
+    /// auto-hidden and the idle timer held off. Leaving puts every one of
+    /// them back and turns the interface to the orientation it had.
+    @objc public func setVisualizerPresentation(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(VisualizerPresentationArgs.self)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if args.active {
+                self.enterVisualizerPresentation()
+            } else {
+                self.leaveVisualizerPresentation()
+            }
+        }
+        invoke.resolve([:])
+    }
+
+    private func enterVisualizerPresentation() {
+        guard visualizerRestore == nil, let controller = manager.viewController else { return }
+        let scene = controller.view.window?.windowScene
+        visualizerRestore = VisualizerRestore(
+            orientation: scene.map { Self.mask(for: Self.interfaceOrientation(of: $0)) },
+            statusBarHidden: controller.prefersStatusBarHidden,
+            homeIndicatorAutoHidden: controller.prefersHomeIndicatorAutoHidden
+        )
+        setRootOrientations(.landscape)
+        requestOrientations(.landscape)
+        setRootFlag("setPrefersStatusBarHidden:", true)
+        setRootFlag("setPrefersHomeIndicatorAutoHidden:", true)
+        UIApplication.shared.isIdleTimerDisabled = true
+    }
+
+    private func leaveVisualizerPresentation() {
+        guard let restore = visualizerRestore else { return }
+        visualizerRestore = nil
+        setRootOrientations(Self.everydayOrientations)
+        if let orientation = restore.orientation {
+            requestOrientations(orientation)
+        }
+        setRootFlag("setPrefersStatusBarHidden:", restore.statusBarHidden)
+        setRootFlag("setPrefersHomeIndicatorAutoHidden:", restore.homeIndicatorAutoHidden)
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    /// Set the root view controller's supported orientations. It is tao's
+    /// `TaoUIViewController`, which answers `supportedInterfaceOrientations`
+    /// from a value stored by its `setSupportedInterfaceOrientations:`
+    /// setter (the one tao's `set_valid_orientations` uses); Tauri does not
+    /// expose that call, so it is sent here directly.
+    private func setRootOrientations(_ mask: UIInterfaceOrientationMask) {
+        let setter = NSSelectorFromString("setSupportedInterfaceOrientations:")
+        guard let controller = manager.viewController, controller.responds(to: setter) else {
+            log.error("root view controller has no orientation setter; orientations are not held")
+            return
+        }
+        typealias Setter = @convention(c) (AnyObject, Selector, UInt) -> Void
+        unsafeBitCast(controller.method(for: setter), to: Setter.self)(controller, setter, mask.rawValue)
+        // Before iOS 16 the setter's own `attemptRotationToDeviceOrientation`
+        // is all there is.
+        if #available(iOS 16.0, *) {
+            controller.setNeedsUpdateOfSupportedInterfaceOrientations()
+        }
+    }
+
+    /// Ask the scene to turn to one of `mask`'s orientations now, rather
+    /// than when the device next moves.
+    private func requestOrientations(_ mask: UIInterfaceOrientationMask) {
+        guard #available(iOS 16.0, *),
+            let scene = manager.viewController?.view.window?.windowScene
+        else { return }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
+            log.warning("orientation request refused: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Set one of tao's `BOOL` view-controller properties
+    /// (`setPrefersStatusBarHidden:`, `setPrefersHomeIndicatorAutoHidden:`);
+    /// each setter also asks UIKit to re-read the property.
+    private func setRootFlag(_ selectorName: String, _ value: Bool) {
+        let setter = NSSelectorFromString(selectorName)
+        guard let controller = manager.viewController, controller.responds(to: setter) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(controller.method(for: setter), to: Setter.self)(controller, setter, value)
+    }
+
+    private static func interfaceOrientation(of scene: UIWindowScene) -> UIInterfaceOrientation {
+        if #available(iOS 16.0, *) {
+            return scene.effectiveGeometry.interfaceOrientation
+        }
+        return scene.interfaceOrientation
+    }
+
+    private static func mask(for orientation: UIInterfaceOrientation) -> UIInterfaceOrientationMask {
+        switch orientation {
+        case .portraitUpsideDown: return .portraitUpsideDown
+        case .landscapeLeft: return .landscapeLeft
+        case .landscapeRight: return .landscapeRight
+        default: return .portrait
+        }
     }
 
     // MARK: - Keyboard
@@ -653,6 +778,18 @@ class PauseArgs: Decodable {
 
 class RecoveryGraceArgs: Decodable {
     let active: Bool
+}
+
+class VisualizerPresentationArgs: Decodable {
+    let active: Bool
+}
+
+/// What `setVisualizerPresentation` puts back when the visualiser closes.
+struct VisualizerRestore {
+    /// The interface orientation before the visualiser turned it.
+    let orientation: UIInterfaceOrientationMask?
+    let statusBarHidden: Bool
+    let homeIndicatorAutoHidden: Bool
 }
 
 class VolumeArgs: Decodable {

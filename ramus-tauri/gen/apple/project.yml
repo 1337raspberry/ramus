@@ -71,8 +71,14 @@ targets:
         LSRequiresIPhoneOS: true
         UILaunchStoryboardName: LaunchScreen
         UIRequiredDeviceCapabilities: [arm64, metal]
+        # Portrait comes first and is the only orientation an iPhone shows
+        # outside the full-screen visualiser: the bridge plugin narrows the
+        # root view controller to portrait at load and to landscape while
+        # the visualiser is open. Landscape is listed so it may turn at all.
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown

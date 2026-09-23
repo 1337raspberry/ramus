@@ -23,6 +23,13 @@ final class MpvController {
     var onIdleActive: (() -> Void)?
     var onFileLoaded: (() -> Void)?
     var onFileEnded: ((String) -> Void)?
+    /// A batch of mpv's `ffmpeg` log messages, newline and all: the
+    /// spectrum tap's frame lines, decoded on the Rust side. Sent only
+    /// while the verbose log is on.
+    var onTapLines: (([String]) -> Void)?
+    /// mpv's `audio-pts`, the clock the visualiser paints against.
+    /// Observed only while the verbose log is on.
+    var onAudibleChange: ((Double) -> Void)?
 
     // MARK: - State
 
@@ -40,6 +47,7 @@ final class MpvController {
         case pause = 3
         case playlistPos = 5
         case idleActive = 9
+        case audioPts = 10
     }
 
     // MARK: - Lifecycle
@@ -222,7 +230,9 @@ final class MpvController {
 
     // The spectrum tap's frames are FFmpeg INFO messages, which mpv
     // forwards to clients at level `v`; `no` restores the default of no
-    // client log events.
+    // client log events. The tap's clock, `audio-pts`, follows the same
+    // switch: nothing reads it while the tap is out, and observing it
+    // would otherwise double the event rate of every playback session.
     func setVerboseLog(_ enabled: Bool) {
         guard let mpv else { return }
         let level = enabled ? "v" : "no"
@@ -230,6 +240,11 @@ final class MpvController {
         if err < 0 {
             let msg = String(cString: mpv_error_string(err))
             log.warning("mpv log level \(level, privacy: .public) refused: \(msg, privacy: .public)")
+        }
+        if enabled {
+            observeProperty("audio-pts", format: MPV_FORMAT_DOUBLE, id: .audioPts)
+        } else {
+            mpv_unobserve_property(mpv, ObserverID.audioPts.rawValue)
         }
     }
 
@@ -325,6 +340,12 @@ private final class WakeupContext {
     weak var owner: MpvController?
     private let lock = NSLock()
     private var _shutdown = false
+    /// `ffmpeg` log messages collected since the last flush. Touched on
+    /// the event queue only.
+    private var tapLines: [String] = []
+    /// Flush at this many messages even mid-burst: about 16 frames, so
+    /// the visualiser never waits long for a long burst to end.
+    private static let tapLineBatch = 32
 
     var isShutdown: Bool {
         lock.lock()
@@ -345,11 +366,28 @@ private final class WakeupContext {
     }
 
     func drainEvents() {
+        // The tap's lines arrive in bursts (mpv runs the filter chain when
+        // the audio output needs data). A drain ends with the queue empty,
+        // and any other event marks the end of a burst too: either way the
+        // collected lines cross to Rust as one batch.
+        defer { flushTapLines() }
         while !isShutdown {
             guard let event = mpv_wait_event(mpvHandle, 0) else { break }
             if event.pointee.event_id == MPV_EVENT_NONE { break }
+            if event.pointee.event_id != MPV_EVENT_LOG_MESSAGE { flushTapLines() }
 
             switch event.pointee.event_id {
+            case MPV_EVENT_LOG_MESSAGE:
+                // Only the tap's printers matter; the rest of the verbose
+                // stream is dropped here rather than carried to Rust.
+                guard let data = event.pointee.data else { continue }
+                let msg = data.assumingMemoryBound(to: mpv_event_log_message.self).pointee
+                guard let prefix = msg.prefix, let text = msg.text,
+                    strncmp(prefix, "ffmpeg", 6) == 0
+                else { continue }
+                tapLines.append(String(cString: text))
+                if tapLines.count >= Self.tapLineBatch { flushTapLines() }
+
             case MPV_EVENT_PROPERTY_CHANGE:
                 guard let rawProp = event.pointee.data else { continue }
                 let prop = rawProp.assumingMemoryBound(to: mpv_event_property.self).pointee
@@ -385,6 +423,13 @@ private final class WakeupContext {
         }
     }
 
+    private func flushTapLines() {
+        guard !tapLines.isEmpty else { return }
+        let batch = tapLines
+        tapLines.removeAll(keepingCapacity: true)
+        owner?.onTapLines?(batch)
+    }
+
     private func handlePropertyChange(_ prop: mpv_event_property, replyID: UInt64) {
         guard let id = MpvController.ObserverID(rawValue: replyID) else { return }
 
@@ -410,6 +455,10 @@ private final class WakeupContext {
             if data.assumingMemoryBound(to: Int32.self).pointee != 0 {
                 owner?.onIdleActive?()
             }
+
+        case .audioPts:
+            guard prop.format == MPV_FORMAT_DOUBLE, let data = prop.data else { return }
+            owner?.onAudibleChange?(data.assumingMemoryBound(to: Double.self).pointee)
         }
     }
 }

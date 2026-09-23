@@ -157,6 +157,69 @@ pub fn register_mpv_listeners<R: Runtime>(
     Ok(())
 }
 
+#[cfg(target_os = "ios")]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TapLinesPayload {
+    lines: Vec<String>,
+}
+
+/// Register the spectrum tap's two channels: the tap's log lines and the
+/// `audio-pts` clock the visualiser paints against. The Swift side sends
+/// both only while the tap is installed (its verbose log switch), and
+/// collects the lines into one batch per burst of mpv events rather than
+/// crossing the bridge per line.
+///
+/// `af_epoch` is bumped on every `af` write; the decoder starts over when
+/// it moves (see `TapBatchDecoder`).
+#[cfg(target_os = "ios")]
+pub fn register_tap_listeners<R: Runtime>(
+    app: &AppHandle<R>,
+    callbacks: Arc<MpvCallbacks>,
+    af_epoch: Arc<std::sync::atomic::AtomicU64>,
+) -> tauri_plugin_ramus_ios_bridge::Result<()> {
+    use ramus_core::playback::spectrum_tap::{TapBatchDecoder, TapConfig};
+
+    let bridge = app.ramus_ios_bridge();
+
+    {
+        let cb = callbacks.clone();
+        let decoder = parking_lot::Mutex::new(TapBatchDecoder::new(
+            TapConfig::default().normalised().bands,
+        ));
+        let channel = Channel::new(move |body| {
+            if let Ok(p) = body.deserialize::<TapLinesPayload>() {
+                let epoch = af_epoch.load(std::sync::atomic::Ordering::Acquire);
+                let frames = decoder
+                    .lock()
+                    .decode(epoch, p.lines.iter().map(String::as_str));
+                if !frames.is_empty() {
+                    if let Some(ref handler) = cb.on_spectrum_frames {
+                        handler(frames);
+                    }
+                }
+            }
+            Ok(())
+        });
+        bridge.register_listener("mpvTapLines", channel)?;
+    }
+
+    {
+        let cb = callbacks;
+        let channel = Channel::new(move |body| {
+            if let Ok(p) = body.deserialize::<PositionPayload>() {
+                if let Some(ref handler) = cb.on_audible_change {
+                    handler(p.position);
+                }
+            }
+            Ok(())
+        });
+        bridge.register_listener("mpvAudibleChange", channel)?;
+    }
+
+    Ok(())
+}
+
 /// Register the `networkPathChange` listener that drives connection
 /// failover. Called from `lib.rs::setup` AFTER `AppState` is managed —
 /// without that, the listener would have no `ConnectionMonitor` to call.

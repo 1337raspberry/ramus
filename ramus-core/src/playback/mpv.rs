@@ -191,15 +191,16 @@ pub trait MpvPlayer: Send + Sync {
     /// installed (its frames are FFmpeg INFO messages, which mpv forwards
     /// at `v`), or restore the configured level afterwards.
     ///
-    /// Default no-op for backends that don't host the tap (the mobile
-    /// bridges — their libmpv builds lack the analysis filters) and for
-    /// test doubles.
+    /// Default no-op for backends that don't host the tap (the Android
+    /// bridge — its libmpv build lacks the analysis filters) and for test
+    /// doubles.
     fn set_verbose_log(&self, _enabled: bool) {}
 
     /// Whether the spectrum tap graph must cut the main path into small
     /// frames for the tap to keep up on this libmpv's FFmpeg build (see
     /// `spectrum_tap::MAIN_FRAME_SAMPLES`). Only the desktop player can
-    /// read its FFmpeg version; everything else answers `false`.
+    /// read its FFmpeg version; everything else answers `false` (the iOS
+    /// libmpv ships FFmpeg 8, which needs no cut).
     fn tap_needs_main_cut(&self) -> bool {
         false
     }

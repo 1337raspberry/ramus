@@ -41,6 +41,13 @@ export interface VisualizerParams {
 
   /** Rows in the ridge stack, the live front row included. */
   ridgeRows: number;
+  /**
+   * Rows on the mobile full-screen visualiser, which has no controls to
+   * leave room for. The rows keep the spacing above (`ridgeHeight` over
+   * `ridgeRows - 1`), so the stack reaches further back and scrolls at the
+   * same speed.
+   */
+  ridgeFullScreenRows: number;
   /** Height of the stack (front baseline to back baseline) as a fraction of the window height. */
   ridgeHeight: number;
   /** Full-scale displacement on the front row as a fraction of the window height. */
@@ -117,6 +124,7 @@ export const VISUALIZER_PARAMS: VisualizerParams = {
   // distance apart as a shallower one, and the fade below carries the
   // back of it out to nothing.
   ridgeRows: 51,
+  ridgeFullScreenRows: 67,
   ridgeHeight: 0.621,
   ridgePeak: 0.6,
   ridgeDepthScale: 0.394,

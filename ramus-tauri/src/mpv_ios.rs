@@ -16,20 +16,26 @@ use tauri_plugin_ramus_ios_bridge::{LoadFileArgs, LoadFileAtArgs, RamusIosBridge
 
 use ramus_core::playback::mpv::{LoadMode, MpvCallbacks, MpvPlayer};
 
-use crate::mpv_mobile::register_mpv_listeners;
+use crate::mpv_mobile::{register_mpv_listeners, register_tap_listeners};
 
 pub struct IosMpvPlayer<R: Runtime> {
     app: AppHandle<R>,
     shutdown: Arc<std::sync::atomic::AtomicBool>,
     cached_volume: AtomicU64,
+    /// Bumped on every `af` write so the spectrum tap's line decoder
+    /// drops whatever the previous graph left half-parsed.
+    af_epoch: Arc<AtomicU64>,
 }
 
 impl<R: Runtime> IosMpvPlayer<R> {
     pub fn new(app: AppHandle<R>, callbacks: Arc<MpvCallbacks>) -> Result<Self, String> {
         // Register event channels BEFORE mpv_init so early property-change
         // events (e.g. idle-active during mpv_initialize) aren't dropped.
-        register_mpv_listeners(&app, callbacks)
+        let af_epoch = Arc::new(AtomicU64::new(0));
+        register_mpv_listeners(&app, callbacks.clone())
             .map_err(|e| format!("failed to register mpv listeners: {e}"))?;
+        register_tap_listeners(&app, callbacks, af_epoch.clone())
+            .map_err(|e| format!("failed to register spectrum tap listeners: {e}"))?;
 
         // mpv_initialize first, THEN AVAudioSession.setActive. Reversing
         // this makes `ao=audiounit` probe a different hardware sample rate
@@ -46,6 +52,7 @@ impl<R: Runtime> IosMpvPlayer<R> {
             app,
             shutdown,
             cached_volume: AtomicU64::new(100.0_f64.to_bits()),
+            af_epoch,
         })
     }
 
@@ -107,6 +114,7 @@ impl<R: Runtime> MpvPlayer for IosMpvPlayer<R> {
 
     fn set_audio_filters(&self, value: &str) {
         let _ = self.bridge().mpv_set_audio_filters(value);
+        self.af_epoch.fetch_add(1, Ordering::AcqRel);
     }
 
     fn set_verbose_log(&self, enabled: bool) {

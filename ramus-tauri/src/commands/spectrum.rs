@@ -15,13 +15,13 @@ use super::CmdResult;
 
 /// Install (`true`) or remove (`false`) the spectrum tap.
 ///
-/// A no-op on mobile (the bundled libmpv builds lack the analysis
-/// filters) and whenever the user has the visualiser disabled in settings
-/// — the setting vetoes the request rather than the frontend having to
-/// remember to check it.
+/// A no-op on Android (its libmpv build lacks the analysis filters) and
+/// whenever the user has the visualiser disabled in settings — the
+/// setting vetoes the request rather than the frontend having to remember
+/// to check it.
 #[tauri::command]
 pub async fn set_spectrum_tap(state: State<'_, AppState>, enabled: bool) -> CmdResult<()> {
-    #[cfg(not(mobile))]
+    #[cfg(not(target_os = "android"))]
     {
         let disabled = state.settings.read().disable_spectrum;
         let want = enabled && !disabled;
@@ -29,7 +29,7 @@ pub async fn set_spectrum_tap(state: State<'_, AppState>, enabled: bool) -> CmdR
             log::info!("spectrum tap {}", if want { "installed" } else { "removed" });
         }
     }
-    #[cfg(mobile)]
+    #[cfg(target_os = "android")]
     let _ = (&state, enabled);
     Ok(())
 }

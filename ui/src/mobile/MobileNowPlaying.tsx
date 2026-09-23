@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePlaybackStore, applyUltraBlurColors } from "../stores/playbackStore";
-import { useSettingsStore } from "../stores/settingsStore";
 import { useGenreInfoStore } from "../stores/genreInfoStore";
 import { pushBackHandler } from "../lib/backHandler";
 import type { Album } from "../lib/types";
@@ -15,7 +14,8 @@ import {
 } from "../lib/commands";
 import { extractPalette, accentFromPalette } from "../lib/vibrantColor";
 import { extractCornerColors } from "../lib/blurArt";
-import { applyAccent, DEFAULT_BLUR_COLORS, OLED_VOID_BLUR_COLORS } from "../lib/accent";
+import { applyAccent } from "../lib/accent";
+import { useBlurColors } from "../lib/useBlurColors";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
 import { useSheetDrag } from "./useSheetDrag";
@@ -44,6 +44,10 @@ import EqualizerPanel from "../components/EqualizerPanel";
 import MobileDebugPanel from "./MobileDebugPanel";
 import CollectionPickerSheet from "./CollectionPickerSheet";
 import PlaylistPickerSheet from "./PlaylistPickerSheet";
+
+/** Android's libmpv build lacks the analysis filters the visualiser's
+ * spectrum tap needs, so the menu offers the visualiser only elsewhere. */
+const VISUALIZER_AVAILABLE = !/Android/i.test(navigator.userAgent);
 
 function IconSkipBack({ size = 22 }: { size?: number }) {
   return (
@@ -88,19 +92,14 @@ export default function MobileNowPlaying({
 }: Props) {
   const status = usePlaybackStore((s) => s.status);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
-  const albumBlurColors = usePlaybackStore((s) => s.ultraBlurColors);
-  const backgroundStyle = useSettingsStore((s) => s.backgroundStyle);
-  const sheetBlurColors = useMemo(() => {
-    if (backgroundStyle === "defaultColours") return DEFAULT_BLUR_COLORS;
-    if (backgroundStyle === "oledVoid") return OLED_VOID_BLUR_COLORS;
-    return albumBlurColors ?? DEFAULT_BLUR_COLORS;
-  }, [albumBlurColors, backgroundStyle]);
+  const sheetBlurColors = useBlurColors();
   const queue = usePlaybackStore((s) => s.queue);
   const queueIndex = usePlaybackStore((s) => s.queueIndex);
   const jumpToIndex = usePlaybackStore((s) => s.jumpToIndex);
   const removeQueueItem = usePlaybackStore((s) => s.removeQueueItem);
   const moveQueueItem = usePlaybackStore((s) => s.moveQueueItem);
   const clearQueue = usePlaybackStore((s) => s.clearQueue);
+  const setMobileVisualizerOpen = usePlaybackStore((s) => s.setMobileVisualizerOpen);
 
   const {
     track,
@@ -534,6 +533,11 @@ export default function MobileNowPlaying({
                 <button onClick={() => runMenuAction(handleArtistClick)}>Go to Artist</button>
                 {nowPlayingAlbum && (
                   <button onClick={() => runMenuAction(handleAlbumClick)}>Go to Album</button>
+                )}
+                {VISUALIZER_AVAILABLE && track && (
+                  <button onClick={() => runMenuAction(() => setMobileVisualizerOpen(true))}>
+                    Visualiser
+                  </button>
                 )}
                 {nowPlayingAlbum && (
                   <button onClick={() => runMenuAction(handleAlbumFavToggle)}>

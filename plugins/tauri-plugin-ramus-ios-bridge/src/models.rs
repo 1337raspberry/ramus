@@ -74,6 +74,12 @@ pub struct RecoveryGraceArgs {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct VisualizerPresentationArgs {
+    pub active: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VolumeArgs {
     pub volume: f64,
 }
