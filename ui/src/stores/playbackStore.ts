@@ -3,18 +3,11 @@ import type { Album, LyricsResult, LyricsStatus, Track, UltraBlurColors } from "
 import { accentFromPalette, blurColorsFromPalette, type VibrantPalette } from "../lib/vibrantColor";
 import { applyAccent } from "../lib/accent";
 import { clearSpectrumRing } from "../lib/spectrumRing";
-
-/**
- * Focus-mode visualiser rendering mode.
- *
- * - `"bars"`  — one bar per tap band from the top edge, mirrored: bass centred, treble at edges
- * - `"ridge"` — a stack of spectrum-history lines rising from the bottom edge, bass left, treble right
- *
- * `toggleVisualizer` steps to the next mode and the choice is persisted,
- * so it comes back on the next launch. There is no "off" here: turning the
- * visualiser off is the `disableSpectrum` setting.
- */
-export type VisualizerMode = "bars" | "ridge";
+import {
+  nextVisualizerMode,
+  parseVisualizerMode,
+  type VisualizerMode,
+} from "../lib/visualizerMode";
 import {
   getVolume,
   setVolume as setVolumeCmd,
@@ -35,10 +28,10 @@ const VISUALIZER_STYLE_KEY = "ramus-visualizer-style";
 
 function loadPersistedVisualizerStyle(): VisualizerMode {
   try {
-    const raw = localStorage.getItem(VISUALIZER_STYLE_KEY);
-    if (raw === "bars" || raw === "ridge") return raw;
-  } catch {}
-  return "bars";
+    return parseVisualizerMode(localStorage.getItem(VISUALIZER_STYLE_KEY));
+  } catch {
+    return parseVisualizerMode(null);
+  }
 }
 
 function persistVisualizerStyle(style: VisualizerMode): void {
@@ -96,9 +89,10 @@ interface PlaybackState {
    */
   focusClear: boolean;
   /**
-   * Which visualiser the focus view paints; persisted under
-   * `ramus-visualizer-style`. Turning the visualiser off is the
-   * `disableSpectrum` setting, not a mode.
+   * The visualiser mode last chosen with the toggle; persisted under
+   * `ramus-visualizer-style`. The clear screen draws the ridge in place of
+   * off (`lib/visualizerMode.ts`), and the `disableSpectrum` setting
+   * overrides it.
    */
   visualizerMode: VisualizerMode;
 
@@ -468,9 +462,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   toggleFocusClear: () =>
     set((s) => ({ focusClear: !s.focusClear, showLyrics: s.focusClear ? s.showLyrics : false })),
 
+  // Steps from the mode on screen, so a toggle in the clear screen while
+  // the saved mode is off lands on bars, the look after the ridge it shows.
   toggleVisualizer: () =>
     set((s) => {
-      const next: VisualizerMode = s.visualizerMode === "bars" ? "ridge" : "bars";
+      const next = nextVisualizerMode(s.visualizerMode, s.focusClear);
       persistVisualizerStyle(next);
       return { visualizerMode: next };
     }),

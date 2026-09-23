@@ -13,6 +13,7 @@ import { extractPalette, accentFromPalette, blurColorsFromPalette } from "../lib
 import { extractCornerColors } from "../lib/blurArt";
 import { applyAccent } from "../lib/accent";
 import { useArtUrl } from "../lib/useArtUrl";
+import { shownVisualizerMode } from "../lib/visualizerMode";
 import { useQueuePanel } from "../lib/useQueuePanel";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
 import WaveformSeekBar from "./WaveformSeekBar";
@@ -71,8 +72,12 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
   const volume = usePlaybackStore((s) => s.volume);
   const changeVolume = usePlaybackStore((s) => s.changeVolume);
   const toggleFocusMode = usePlaybackStore((s) => s.toggleFocusMode);
-  const visualizerMode = usePlaybackStore((s) => s.visualizerMode);
   const focusClear = usePlaybackStore((s) => s.focusClear);
+  // The clear screen never shows an empty window: it draws the ridge
+  // when the saved mode is off.
+  const visualizerMode = usePlaybackStore((s) =>
+    shownVisualizerMode(s.visualizerMode, s.focusClear),
+  );
   const toggleFocusClear = usePlaybackStore((s) => s.toggleFocusClear);
   const spectrumDisabled = useSettingsStore((s) => s.disableSpectrum);
 
@@ -335,8 +340,8 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
     <div className="focus-overlay">
       {/* Visualiser is a full-window background layer behind art and
        * controls: bars drape from the top edge, the ridgeline rises from
-       * the bottom. Turning it off is the `disableSpectrum` setting, which
-       * the component honours by rendering nothing and removing the tap. */}
+       * the bottom. The off mode and the `disableSpectrum` setting both
+       * render nothing and remove the tap. */}
       <FocusVisualizer key="focus-viz" mode={visualizerMode} />
 
       <div className="focus-body">

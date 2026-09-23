@@ -375,6 +375,26 @@ export function IconRidge({ size = defaults.size, className }: IconProps) {
   );
 }
 
+/** The wave struck through: the visualiser switched off. */
+export function IconWaveOff({ size = defaults.size, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M3 12 q 3 -6 6 0 t 6 0 t 6 0" />
+      <path d="M4 4 L20 20" />
+    </svg>
+  );
+}
+
 export function IconTriangleFilled({ size = defaults.size, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
