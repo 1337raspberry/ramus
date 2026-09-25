@@ -24,6 +24,7 @@ import type {
   SearchResponse,
   Settings,
   SmartFilter,
+  SpectrumLayout,
   Track,
   UltraBlurColors,
 } from "./types";
@@ -349,6 +350,9 @@ export const setMediaAccent = (r: number, g: number, b: number) =>
 // `spectrum-frames` event. A no-op on mobile and while the visualiser is
 // disabled in settings; the backend applies that veto itself.
 export const setSpectrumTap = (enabled: boolean) => invoke<void>("set_spectrum_tap", { enabled });
+// The tap's frame layout: band count, frame rate and each band's filter
+// lag. Fixed for the life of the app.
+export const getSpectrumLayout = () => invoke<SpectrumLayout>("get_spectrum_layout");
 // Spectral tilt the backend applies to every band before mapping it to a
 // bar height, in dB per octave. A development tuning control; a release
 // build rejects it.

@@ -1,7 +1,9 @@
 /**
  * Ridgeline visualiser: a stack of horizontal lines rising from the
  * bottom of the window, each one a past moment of the spectrum drawn as
- * a mountain profile, bass on the left and treble on the right.
+ * a mountain profile, bass on the left and treble on the right, along a
+ * log frequency axis bent to give the low end more of the width
+ * (`axisSamples`).
  *
  * The front (lowest) row is the live spectrum; every `ridgeRowMs` the
  * eased front row is copied into a history and the older rows step up
@@ -312,49 +314,58 @@ export function monotoneTangents(y: Float32Array, out: Float32Array): void {
   }
 }
 
+/**
+ * Where each point of a resampled row falls on the band row it is read
+ * from: `out[j]` is a position between 0 (the lowest band) and `bands - 1`
+ * (the highest) for point `j` of `out.length`, the points spread evenly
+ * across the width. The bands are log-spaced in frequency, and `curve`
+ * bends the axis: a band's position along the range, 0..1, is drawn at
+ * that position raised to `curve`, so 1 spreads the bands evenly and
+ * below 1 widens the low end and narrows the top. The ends stay put.
+ */
+export function axisSamples(bands: number, curve: number, out: Float32Array): void {
+  const last = out.length - 1;
+  const inverse = curve > 0 ? 1 / curve : 1;
+  for (let j = 0; j <= last; j++) {
+    const x = last > 0 ? j / last : 0;
+    out[j] = Math.pow(x, inverse) * Math.max(0, bands - 1);
+  }
+}
+
 // Slope scratch for the resampler, sized to the last row seen.
 let resampleSlope = new Float32Array(0);
 
 /**
- * Resample a row to `k` points per band interval along the monotone
- * cubic through its points (`monotoneTangents`), so the curve's shape
- * survives as plain points: `out` holds `(src.length - 1) * k + 1`
- * values, every `k`-th one an original point, or is zeroed when its
- * length disagrees. `k` 1 copies `src`.
+ * Resample a row along the monotone cubic through its points
+ * (`monotoneTangents`), reading it at the band positions in `at` (from
+ * `axisSamples`), so the curve's shape survives as plain points. `out`
+ * must be as long as `at` or it is zeroed.
  */
-export function resampleRow(src: Float32Array, out: Float32Array, k: number): void {
+export function resampleRowAt(src: Float32Array, at: Float32Array, out: Float32Array): void {
   const n = src.length;
-  const steps = Math.max(1, Math.floor(k));
-  if (n === 0 || out.length !== (n - 1) * steps + 1) {
+  if (n === 0 || out.length !== at.length) {
     out.fill(0);
     return;
   }
-  if (steps === 1) {
-    out.set(src);
+  if (n === 1) {
+    out.fill(src[0]);
     return;
   }
   if (resampleSlope.length !== n) resampleSlope = new Float32Array(n);
   const m = resampleSlope;
   monotoneTangents(src, m);
-  for (let i = 0; i < n - 1; i++) {
-    const y0 = src[i];
-    const y1 = src[i + 1];
-    const m0 = m[i];
-    const m1 = m[i + 1];
-    const base = i * steps;
-    out[base] = y0;
-    for (let j = 1; j < steps; j++) {
-      const t = j / steps;
-      const t2 = t * t;
-      const t3 = t2 * t;
-      out[base + j] =
-        (2 * t3 - 3 * t2 + 1) * y0 +
-        (t3 - 2 * t2 + t) * m0 +
-        (-2 * t3 + 3 * t2) * y1 +
-        (t3 - t2) * m1;
-    }
+  for (let j = 0; j < out.length; j++) {
+    const c = Math.min(n - 1, Math.max(0, at[j]));
+    const i = Math.min(n - 2, Math.floor(c));
+    const t = c - i;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    out[j] =
+      (2 * t3 - 3 * t2 + 1) * src[i] +
+      (t3 - 2 * t2 + t) * m[i] +
+      (-2 * t3 + 3 * t2) * src[i + 1] +
+      (t3 - t2) * m[i + 1];
   }
-  out[(n - 1) * steps] = src[n - 1];
 }
 
 export interface RidgePaint extends RidgeLayout {

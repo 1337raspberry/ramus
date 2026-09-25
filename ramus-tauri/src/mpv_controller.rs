@@ -1225,6 +1225,91 @@ mod tap_probe {
         remove_tap(&h.mpv);
     }
 
+    /// `band_onset_delays` is a model of the graph's band filters; this
+    /// holds it to the real ones. Tone bursts start at known times at
+    /// several band centres, and each band's level is timed to 6 dB under
+    /// its steady level. Whatever lag the model doesn't account for must
+    /// be the same for every band (the envelope low-pass's share) to
+    /// within one frame, or a reader that looks each band up by its delay
+    /// would still see the bass land late.
+    #[test]
+    #[ignore]
+    fn tap_probe_band_onset_delays_match_the_graph() {
+        let h = harness();
+        let cfg = install_tap(&h.mpv);
+        let freqs = band_frequencies(&cfg);
+        let delays = ramus_core::playback::spectrum_tap::band_onset_delays(&cfg);
+        let bursts = [1.0, 3.0];
+        let mut unexplained = Vec::new();
+
+        for k in [0, 8, 19, 40, cfg.bands - 1] {
+            let f = freqs[k];
+            h.frames.lock().clear();
+            // Bursts at 1.0 s and 3.0 s, half a second each, starting at a
+            // zero crossing so the onset is the tone itself, not a click.
+            h.mpv.load_file(
+                &format!(
+                    "av://lavfi:aevalsrc=exprs=0.5*sin(2*PI*{f:.3}*(mod(t\\,2)-1))*gte(mod(t\\,2)\\,1)*lt(mod(t\\,2)\\,1.5):s=44100:d=4"
+                ),
+                LoadMode::Replace,
+                None,
+            );
+            let deadline = Instant::now() + Duration::from_secs(15);
+            let frames: Vec<(f64, f32)> = loop {
+                let got: Vec<(f64, f32)> = h
+                    .frames
+                    .lock()
+                    .iter()
+                    .skip_while(|x| x.pts > 0.5)
+                    .map(|x| (x.pts, x.db[k]))
+                    .collect();
+                if got.last().is_some_and(|x| x.0 >= 3.7) {
+                    break got;
+                }
+                assert!(Instant::now() < deadline, "band {k}: frames stopped at {:?}", got.last());
+                std::thread::sleep(Duration::from_millis(50));
+            };
+
+            for t0 in bursts {
+                let mut steady: Vec<f32> = frames
+                    .iter()
+                    .filter(|(p, _)| (t0 + 0.3..t0 + 0.5).contains(p))
+                    .map(|(_, d)| *d)
+                    .collect();
+                steady.sort_by(f32::total_cmp);
+                let target = steady[steady.len() / 2] - 6.0;
+                let rise = frames
+                    .windows(2)
+                    .filter(|w| w[0].0 >= t0 - 0.05)
+                    .find(|w| w[0].1 < target && w[1].1 >= target)
+                    .map(|w| {
+                        let (p0, d0) = w[0];
+                        let (p1, d1) = w[1];
+                        p0 + (p1 - p0) * f64::from((target - d0) / (d1 - d0))
+                    })
+                    .unwrap_or_else(|| panic!("band {k}: no rise through {target:.1} dB after {t0}"));
+                let lag = rise - t0;
+                log::info!(
+                    "tap_probe: band {k} ({f:.0} Hz) burst at {t0}: -6 dB after {:.1} ms, model {:.1} ms",
+                    lag * 1000.0,
+                    delays[k] * 1000.0
+                );
+                unexplained.push(lag - f64::from(delays[k]));
+            }
+        }
+
+        let lo = unexplained.iter().copied().fold(f64::INFINITY, f64::min);
+        let hi = unexplained.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let period = 1.0 / f64::from(cfg.fps);
+        assert!(
+            hi - lo < period,
+            "unexplained lag spans {:.1}..{:.1} ms, more than a frame",
+            lo * 1000.0,
+            hi * 1000.0
+        );
+        remove_tap(&h.mpv);
+    }
+
     /// Cumulative CPU time of this process in seconds, via `ps` (portable
     /// across the Unix desktops without a libc dependency). `None` where
     /// `ps` is unavailable.

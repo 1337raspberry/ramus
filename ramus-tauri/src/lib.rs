@@ -1671,6 +1671,7 @@ pub fn run() {
             // spectrum (focus-mode visualiser)
             commands::spectrum::set_spectrum_tap,
             commands::spectrum::set_spectrum_tilt,
+            commands::spectrum::get_spectrum_layout,
             // search
             commands::search::search,
             commands::search::search_albums_for_grid,
