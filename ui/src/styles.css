@@ -137,33 +137,21 @@ textarea {
 
 /* --- UltraBlur Background ---
  *
- * Four overlapping radial gradients, one per corner, with default
- * compositing (no blend mode). Colours come from
- * `UltraBlurBackground.tsx` as CSS custom properties
- * (`--ultrablur-tl` etc). The `@property` declarations below with
- * `syntax: '<color>'` enable smooth interpolation on the
- * transition — plain CSS custom properties transition as string
- * replacement (instant), not as a colour blend. This produces the
- * 0.8s album crossfade.
+ * Drawn by `components/UltraBlurBackground.tsx`: a WebGL2 canvas that
+ * renders the four-corner field in floating point with a dither, falling
+ * back to the CSS radial-gradient rendering of the same field when WebGL2
+ * is unavailable. The field itself (base colour, fade stops, layer order)
+ * and the reason CSS gradients band live in `lib/ultraBlurField.ts`.
  *
- * Do NOT reintroduce `filter: blur()` here. A prior implementation
- * used 4 circle divs inside a `filter: blur(220px)` wrapper and
- * banded catastrophically on Windows because Chromium's CSS filter
- * pipeline uses 8-bit intermediate surfaces. WKWebView on macOS
- * uses higher-precision Metal-backed intermediates plus window-
- * server dithering, which hid the issue — do not trust Mac-only
- * testing. Radial gradients go through a different render path
- * with higher precision and built-in dithering.
+ * The `@property` declarations below with `syntax: '<color>'` let the
+ * fallback's colour custom properties transition as colours; plain
+ * custom properties transition as string replacement (instant). The
+ * WebGL path crossfades in JS instead.
  *
- * LAYER ORDER IS LOAD-BEARING. `background-image` paints the
- * first-listed layer on top (front-to-back in declaration order).
- * Order: TL → TR → BR → BL. Top-left dominates wherever opaque;
- * the other three show through where TL has faded. The baked
- * BRIGHTNESS/SATURATION constants in `UltraBlurBackground.tsx`
- * were tuned against this ordering (and against the extraction-side
- * chroma cap in `lib/blurArt.ts` — see the comments at both sites).
- * Reordering or switching to a symmetric blend mode will change
- * every preset and requires a full re-tuning pass.
+ * Keep `opacity`, `filter` and scaling transforms off the canvas: the
+ * dither is per device pixel, so resampling or blurring averages it away
+ * and a separate opacity pass rounds it again. The overall dim
+ * (`--ultrablur-opacity`) is applied inside the shader instead.
  */
 
 @property --ultrablur-tl {
@@ -204,54 +192,10 @@ textarea {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background-color: #050508;
-  /* Blobs fade out by ~80% of the farthest-corner distance. At 100%
-     each gradient spans the whole surface, and because the layers stack
-     in paint order (first = topmost), the top-left/top-right colours
-     wash over the bottom corners and smother them — corners must fade
-     out before reaching the opposite quadrant to get equal weight.
-     The fade is EASED via color-mix intermediate stops: a plain
-     `color → transparent N%` falloff is linear with a slope kink at N,
-     and the eye reads that kink as a hard arc across the screen
-     (obvious on near-monochrome backgrounds). */
-  background-image:
-    radial-gradient(
-      ellipse farthest-corner at 0% 0%,
-      var(--ultrablur-tl) 0%,
-      color-mix(in srgb, var(--ultrablur-tl) 55%, transparent) 40%,
-      color-mix(in srgb, var(--ultrablur-tl) 18%, transparent) 62%,
-      transparent 80%
-    ),
-    radial-gradient(
-      ellipse farthest-corner at 100% 0%,
-      var(--ultrablur-tr) 0%,
-      color-mix(in srgb, var(--ultrablur-tr) 55%, transparent) 40%,
-      color-mix(in srgb, var(--ultrablur-tr) 18%, transparent) 62%,
-      transparent 80%
-    ),
-    radial-gradient(
-      ellipse farthest-corner at 100% 100%,
-      var(--ultrablur-br) 0%,
-      color-mix(in srgb, var(--ultrablur-br) 55%, transparent) 40%,
-      color-mix(in srgb, var(--ultrablur-br) 18%, transparent) 62%,
-      transparent 80%
-    ),
-    radial-gradient(
-      ellipse farthest-corner at 0% 100%,
-      var(--ultrablur-bl) 0%,
-      color-mix(in srgb, var(--ultrablur-bl) 55%, transparent) 40%,
-      color-mix(in srgb, var(--ultrablur-bl) 18%, transparent) 62%,
-      transparent 80%
-    );
-  /* Baked overall dim. Unlike CSS `filter:`, `opacity` does not go
-   * through Chromium's filter graph, so it will not reintroduce
-   * banding. */
+}
+
+.ultrablur-fallback {
   opacity: var(--ultrablur-opacity);
-  transition:
-    --ultrablur-tl 0.8s ease-in-out,
-    --ultrablur-tr 0.8s ease-in-out,
-    --ultrablur-bl 0.8s ease-in-out,
-    --ultrablur-br 0.8s ease-in-out;
 }
 
 /* --- Window Drag Region --- */
@@ -330,30 +274,6 @@ textarea {
   background: var(--bg-primary);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-}
-
-/* WebKitGTK's radial-gradient renderer quantises to 8-bit early and the
-   compositor underneath (X11 / Wayland) does no final-pass dithering, so
-   `.ultrablur-bg`'s four-corner gradients show stair-step banding on
-   Linux even though the same CSS looks clean on macOS (Metal-dithered)
-   and Windows (Chromium's gradient path keeps higher precision until
-   composite). Overlay a tiled SVG fractal-noise layer at low opacity to
-   break up the quantisation edges — the noise itself is imperceptible
-   at viewing distance, but the eye reads the high-frequency jitter as
-   a smooth transition instead of hard bands. `mix-blend-mode: overlay`
-   keeps the dither tied to the underlying brightness so dark regions
-   stay dark. Scoped to Linux because the other platforms don't need it
-   and the blend pass isn't free. */
-:root[data-platform="linux"] .ultrablur-bg::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.5 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-  background-size: 160px 160px;
-  background-repeat: repeat;
-  mix-blend-mode: overlay;
-  opacity: 0.22;
 }
 
 /* --- Layout --- */
