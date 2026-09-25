@@ -263,6 +263,40 @@ pub fn band_frequencies(cfg: &TapConfig) -> Vec<f32> {
         .collect()
 }
 
+/// How long each band's level trails the audio it measures, in seconds,
+/// one value per band from the lowest.
+///
+/// A band is a resonator: when a sound at its centre frequency starts,
+/// the `bandpass` biquad's output swells towards its full level with the
+/// envelope of its poles, `1 - r^n`, and the narrower the band the closer
+/// `r` sits to 1 and the longer that takes. This returns the moment the
+/// swell reaches half amplitude (6 dB under the full level), `ln 2` of
+/// the envelope's time constant, computed from the coefficients FFmpeg
+/// builds for `width_type=o` at `TAP_SAMPLE_RATE`: `a2 / a0 = r²`.
+///
+/// At the default 64 bands (Q ≈ 10.9) that is about 48 ms at 50 Hz,
+/// 23 ms at 100 Hz, 2.5 ms at 1 kHz and nothing to speak of above. The
+/// envelope low-pass adds a few milliseconds more to every band alike;
+/// that common part is the consumer's to fold into its own lead, since it
+/// is the same for all of them. A reader that looks each band up this
+/// much further on in the frame stream sees a bass note and the click
+/// that starts it land together.
+pub fn band_onset_delays(cfg: &TapConfig) -> Vec<f32> {
+    let cfg = cfg.normalised();
+    let width = f64::from(band_octave_width(&cfg));
+    let rate = f64::from(TAP_SAMPLE_RATE);
+    band_frequencies(&cfg)
+        .into_iter()
+        .map(|f| {
+            let w0 = std::f64::consts::TAU * f64::from(f) / rate;
+            let alpha = w0.sin() * (std::f64::consts::LN_2 / 2.0 * width * w0 / w0.sin()).sinh();
+            // Envelope time constant in samples: r^n = e^(-n/τ), r² = a2/a0.
+            let tau = -2.0 / ((1.0 - alpha) / (1.0 + alpha)).ln();
+            (tau * std::f64::consts::LN_2 / rate) as f32
+        })
+        .collect()
+}
+
 /// The `channel_layout` value handed to `join` for `n` mono inputs.
 ///
 /// FFmpeg's `<N>c` shorthand only parses for channel counts that have a
@@ -996,6 +1030,40 @@ mod tests {
         // Out of range clamps rather than overflowing the shift.
         assert_eq!(channel_layout_spec(200), "0xffffffffffffffff");
         assert_eq!(channel_layout_spec(0), "0x1");
+    }
+
+    #[test]
+    fn onset_delays_hold_one_value_per_band() {
+        assert_eq!(band_onset_delays(&cfg(64)).len(), 64);
+        assert_eq!(band_onset_delays(&cfg(24)).len(), 24);
+    }
+
+    #[test]
+    fn the_lowest_band_reaches_half_amplitude_about_48_ms_after_an_onset() {
+        // 64 bands put each band 0.132 octave wide (Q ≈ 10.9); the 50 Hz
+        // biquad's envelope rings with a time constant of about 69.5 ms,
+        // and half amplitude comes at ln 2 of it.
+        let delays = band_onset_delays(&TapConfig::default());
+        assert!((delays[0] - 0.0482).abs() < 0.0005, "lowest band {:.4} s", delays[0]);
+    }
+
+    #[test]
+    fn onset_delays_fall_with_frequency_to_nothing_at_the_top() {
+        let delays = band_onset_delays(&TapConfig::default());
+        assert!(delays.windows(2).all(|w| w[1] < w[0]), "{delays:?}");
+        assert!(*delays.last().unwrap() < 0.0005, "top band {:?}", delays.last());
+        // Near 1 kHz the lag is already under a tenth of a frame.
+        let freqs = band_frequencies(&TapConfig::default());
+        let k = freqs.iter().position(|&f| f >= 1000.0).unwrap();
+        assert!(delays[k] < 0.003, "band at {:.0} Hz: {:.4} s", freqs[k], delays[k]);
+    }
+
+    #[test]
+    fn narrower_bands_ring_longer() {
+        // Fewer bands over the same range means wider, faster bands.
+        let narrow = band_onset_delays(&cfg(64))[0];
+        let wide = band_onset_delays(&cfg(16))[0];
+        assert!(wide < narrow / 3.0, "16 bands {wide:.4} s vs 64 bands {narrow:.4} s");
     }
 
     #[test]

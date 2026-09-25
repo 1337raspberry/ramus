@@ -422,6 +422,20 @@ export interface SpectrumFramesPayload {
   frames: SpectrumFrame[];
 }
 
+// The tap's frame layout, from `get_spectrum_layout`. Mirrors
+// `SpectrumLayout` in ramus-tauri/src/commands/spectrum.rs.
+export interface SpectrumLayout {
+  /** Bands per channel in every frame. */
+  bandCount: number;
+  /** Frames per second the tap emits. */
+  fps: number;
+  /**
+   * How long each band's level trails the audio it measures, in seconds,
+   * the lowest band first.
+   */
+  onsetDelays: number[];
+}
+
 /// A background warm landed a metadata artefact on disk — waveform sidecar
 /// (`kind: "waveform"`, has ratingKey) or cached album art (`kind: "art"`,
 /// has thumb). Drives retry of surfaces still showing placeholders.

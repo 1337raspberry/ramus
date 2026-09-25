@@ -38,6 +38,14 @@ export interface VisualizerParams {
   floorCut: number;
   /** Level-curve multiplier; 1 is identity. */
   gain: number;
+  /**
+   * How far ahead of the audible position the bars read their frame, in
+   * ms: what a paint takes to reach the screen, plus the half frame an
+   * onset waits for the next frame, plus the paints the attack easing
+   * needs to lift a bar halfway. Each band's own filter lag comes from
+   * the backend on top of this (`get_spectrum_layout`).
+   */
+  syncLeadMs: number;
 
   /** Rows in the ridge stack, the live front row included. */
   ridgeRows: number;
@@ -102,6 +110,18 @@ export interface VisualizerParams {
   ridgeFloorCut: number;
   /** Ridge level-curve multiplier; 1 is identity. */
   ridgeGain: number;
+  /** As `syncLeadMs`, for the ridge and its own attack easing. */
+  ridgeSyncLeadMs: number;
+  /**
+   * Exponent on the ridge's frequency axis. A band's position along the
+   * log-spaced range, 0 at the lowest and 1 at the highest, is drawn at
+   * that position raised to this power across the width: 1 is the plain
+   * log axis, and below 1 gives the bass and low mids more of the width
+   * and the top octaves less. Music's energy sits low on a log axis, so
+   * the body of a mix otherwise crowds the left edge while the right
+   * third only moves for cymbals and sibilance.
+   */
+  ridgeAxisCurve: number;
 }
 
 export const VISUALIZER_PARAMS: VisualizerParams = {
@@ -117,6 +137,9 @@ export const VISUALIZER_PARAMS: VisualizerParams = {
   gamma: 2.8,
   floorCut: 0,
   gain: 1.1,
+  // About 32 ms to the screen, 8 ms of frame wait and two paints (the
+  // attack takes two to pass half height).
+  syncLeadMs: 60,
 
   // Row spacing (height / (rows - 1)) and the row interval together set
   // how fast the stack scrolls, so the rows, height and back-row scale
@@ -146,4 +169,9 @@ export const VISUALIZER_PARAMS: VisualizerParams = {
   ridgeGamma: 4,
   ridgeFloorCut: 0.6,
   ridgeGain: 1.15,
+  // As `syncLeadMs`; the ridge's attack passes half height in one paint.
+  ridgeSyncLeadMs: 45,
+  // Moves 100 Hz..1 kHz about a tenth of the width to the right, most
+  // around 300 Hz; the ends stay put.
+  ridgeAxisCurve: 0.75,
 };

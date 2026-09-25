@@ -114,16 +114,17 @@ export function setAudibleClock(epoch: number, position: number): void {
 }
 
 /**
- * Where the audio is right now, extrapolated from the last audible tick:
- * the epoch to look in and the position within it. A negative position on
- * the current epoch is still the previous stream's tail and is mapped
- * onto the end of that stream. Null until the first tick arrives, and
- * again once the last tick is stale (`AUDIBLE_CLOCK_STALE_MS`).
+ * Where the audio will be `aheadSec` after `now`, extrapolated from the
+ * last audible tick: the epoch to look in and the position within it. A
+ * negative position on the current epoch is still the previous stream's
+ * tail and is mapped onto the end of that stream. Null until the first
+ * tick arrives, and again once the last tick is stale at `now`
+ * (`AUDIBLE_CLOCK_STALE_MS`).
  */
-export function audibleTarget(now: number): { epoch: number; pos: number } | null {
+export function audibleTarget(now: number, aheadSec = 0): { epoch: number; pos: number } | null {
   if (!clock || now - clock.at > AUDIBLE_CLOCK_STALE_MS) return null;
   let epoch = clock.epoch;
-  let pos = clock.position + (now - clock.at) / 1000;
+  let pos = clock.position + (now - clock.at) / 1000 + aheadSec;
   if (pos < 0) {
     const end = epochEnd.get(epoch - 1);
     if (end !== undefined) {
@@ -146,7 +147,7 @@ export function spectrumLastPushAt(): number {
  * once per paint. The result is a ring slot the next burst may overwrite,
  * so read it within the same task.
  */
-export function pickSpectrumFrame(
+function pickSpectrumFrame(
   epoch: number | null,
   target: number,
   lagSec: number,
@@ -166,4 +167,65 @@ export function pickSpectrumFrame(
     }
   }
   return best;
+}
+
+// The frame at each step past the base frame, and the bands put together
+// from them; both reused by every read so a paint allocates nothing.
+const stepFrames: SpectrumRingFrame[] = [];
+let composite = new Uint8Array(0);
+
+/**
+ * The bands to draw for `target`: the frame `pickSpectrumFrame` finds,
+ * with each band read instead from the frame `ahead[k]` frames after it
+ * in the same stream (`periodSec` apart). A narrow bass band's level
+ * swells for tens of milliseconds after the note it measures starts, so
+ * reading it that much further on lands its onsets with the treble's.
+ * `ahead` holds one step count per band and applies on every channel; a
+ * later frame the ring doesn't hold (the stream ended, or a seek) falls
+ * back to the latest one before it that it does. Null when there is no
+ * frame near `target`. The result is scratch the next read overwrites
+ * (or, with nothing to step, a ring slot the next burst may), so read it
+ * within the same task.
+ */
+export function readSpectrumBands(
+  epoch: number | null,
+  target: number,
+  lagSec: number,
+  leadSec: number,
+  ahead: Uint8Array | null,
+  periodSec: number,
+): Uint8Array | null {
+  const base = pickSpectrumFrame(epoch, target, lagSec, leadSec);
+  if (!base) return null;
+  const width = base.bands.length;
+  const n = ahead ? ahead.length : 0;
+  if (!ahead || n === 0 || width % n !== 0 || !(periodSec > 0)) return base.bands;
+
+  let maxStep = 0;
+  for (let k = 0; k < n; k++) if (ahead[k] > maxStep) maxStep = ahead[k];
+  if (maxStep === 0) return base.bands;
+  stepFrames.length = maxStep + 1;
+  stepFrames[0] = base;
+  for (let m = 1; m <= maxStep; m++) {
+    const want = base.pos + m * periodSec;
+    let found = stepFrames[m - 1];
+    for (let i = 0; i < count; i++) {
+      const f = ring[i];
+      if (
+        f.epoch === base.epoch &&
+        f.bands.length === width &&
+        Math.abs(f.pos - want) < periodSec / 2
+      ) {
+        found = f;
+        break;
+      }
+    }
+    stepFrames[m] = found;
+  }
+
+  if (composite.length !== width) composite = new Uint8Array(width);
+  for (let c = 0; c < width; c += n) {
+    for (let k = 0; k < n; k++) composite[c + k] = stepFrames[ahead[k]].bands[c + k];
+  }
+  return composite;
 }

@@ -106,6 +106,13 @@ const SECTIONS = [
     ],
   },
   {
+    title: "Sync",
+    controls: [
+      { key: "syncLeadMs", label: "Bars lead ms", min: 0, max: 150, step: 1, digits: 0 },
+      { key: "ridgeSyncLeadMs", label: "Ridge lead ms", min: 0, max: 150, step: 1, digits: 0 },
+    ],
+  },
+  {
     title: "Ridge",
     linked: [DEPTH_SLIDER],
     controls: [
@@ -126,6 +133,7 @@ const SECTIONS = [
       { key: "ridgeSmooth", label: "Smooth", min: 0, max: 1, step: 0.01, digits: 2 },
       { key: "ridgeGrain", label: "Grain", min: 0, max: 0.05, step: 0.0005, digits: 4 },
       { key: "ridgeEdgeTaper", label: "Edge taper", min: 0, max: 0.5, step: 0.01, digits: 2 },
+      { key: "ridgeAxisCurve", label: "Axis curve", min: 0.4, max: 1.2, step: 0.01, digits: 2 },
       { key: "ridgeAttack", label: "Attack", min: 0.05, max: 1, step: 0.01, digits: 2 },
       { key: "ridgeDecay", label: "Decay", min: 0.05, max: 1, step: 0.01, digits: 2 },
     ],

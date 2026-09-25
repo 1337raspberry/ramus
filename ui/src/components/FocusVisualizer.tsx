@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { setSpectrumTap } from "../lib/commands";
+import { getSpectrumLayout, setSpectrumTap } from "../lib/commands";
 import type { VisualizerMode } from "../lib/visualizerMode";
-import { audibleTarget, pickSpectrumFrame, spectrumLastPushAt } from "../lib/spectrumRing";
+import { audibleTarget, readSpectrumBands, spectrumLastPushAt } from "../lib/spectrumRing";
 import { VISUALIZER_PARAMS } from "../lib/visualizerParams";
 import {
   RidgeHistory,
   applyGrain,
+  axisSamples,
   drawRidgeline,
   edgeWindow,
   mixBandsInto,
   rerollGrain,
-  resampleRow,
+  resampleRowAt,
   smoothRow,
   spreadRow,
   type RidgePaint,
@@ -30,13 +31,17 @@ import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
  * on screen. Frames land in `lib/spectrumRing.ts` keyed by track
  * position, up to ~0.5 s ahead of the reported playback position.
  *
- * Sync: each paint estimates where the audio is from the last audible
- * tick (`playback-audible`: mpv's `audio-pts` with its stream epoch) plus
- * the wall-clock elapsed since it, and draws the ring frame of that
- * epoch nearest the estimate. Because the frames carry mpv's own
- * timestamps and epoch, seeks, pauses, stalls and track changes need no
- * special handling here: no frame near the estimate means no bars, and
- * a gapless join keeps drawing the outgoing track until it is heard.
+ * Sync: each paint estimates where the audio will be when the paint
+ * reaches the screen, from the last audible tick (`playback-audible`:
+ * mpv's `audio-pts` with its stream epoch) plus the wall-clock elapsed
+ * since it plus a lead (`syncLeadMs` / `ridgeSyncLeadMs`), and draws the
+ * ring frame of that epoch nearest the estimate, each band read that many
+ * frames further on as its filter lags the audio (the backend's
+ * `get_spectrum_layout`), so a kick's body lands with its click. Because
+ * the frames carry mpv's own timestamps and epoch, seeks, pauses, stalls
+ * and track changes need no special handling here: no frame near the
+ * estimate means no bars, and a gapless join keeps drawing the outgoing
+ * track until it is heard.
  *
  * Rendering has two looks, chosen by the `mode` prop
  * (`lib/visualizerMode.ts`; off draws nothing):
@@ -56,7 +61,8 @@ import { currentAccent, DEFAULT_ACCENT } from "../lib/accent";
  *
  * `ridge`: the two channels averaged into N points, bass on the left and
  * treble on the right, resampled to `ridgeOversample` points per band
- * along a monotone cubic and textured, then drawn as a stack of lines
+ * along a monotone cubic over an axis that gives the low end more of the
+ * width (`ridgeAxisCurve`) and textured, then drawn as a stack of lines
  * rising from the bottom edge: the live line in front and, behind it,
  * one row per `ridgeRowMs` of history (`lib/ridgeline.ts`).
  *
@@ -143,6 +149,29 @@ function requestTap(enabled: boolean): void {
     .catch((e) => console.warn(`[spectrum] tap ${enabled ? "install" : "remove"} failed:`, e));
 }
 
+/**
+ * Per band, how many frames further on it is read (`readSpectrumBands`),
+ * and the frame spacing: from the backend's layout, fetched once. Until
+ * it arrives every band is read from the same frame.
+ */
+let bandAhead: Uint8Array | null = null;
+let framePeriodS = 0;
+let layoutRequested = false;
+function loadSpectrumLayout(): void {
+  if (layoutRequested) return;
+  layoutRequested = true;
+  getSpectrumLayout()
+    .then((layout) => {
+      const period = 1 / layout.fps;
+      bandAhead = Uint8Array.from(layout.onsetDelays, (d) => Math.round(d / period));
+      framePeriodS = period;
+    })
+    .catch((e) => {
+      layoutRequested = false;
+      console.warn("[spectrum] layout unavailable:", e);
+    });
+}
+
 // A fresh page owns no tap. A reload, or a restarted web content process,
 // runs no unmount cleanup, so a tap the previous page installed would
 // otherwise keep running (and its frames keep streaming) under a page with
@@ -181,6 +210,7 @@ export default function FocusVisualizer({ mode, subdued, fullScreen = false }: P
   // hide/show pair lands in order like any other toggle.
   useEffect(() => {
     if (!active) return;
+    loadSpectrumLayout();
     const sync = () => {
       if (!document.hidden) tapVisibleSince = performance.now();
       requestTap(!document.hidden);
@@ -333,6 +363,11 @@ function CanvasLayer({
     // every row carries its own texture. Rebuilt when a tuning value or
     // the point count changes.
     let fine = new Float32Array(0);
+    // Where each fine point reads the band row, for the axis curve it was
+    // built with.
+    let axis = new Float32Array(0);
+    let axisBands = 0;
+    let axisCurve = NaN;
     let history: RidgeHistory | null = null;
     // The full-screen stack's layout, refilled from the parameters on
     // each paint.
@@ -385,6 +420,7 @@ function CanvasLayer({
       // selector.
       const playback = usePlaybackStore.getState();
       const isPlaying = playback.status === "playing";
+      const P = VISUALIZER_PARAMS;
 
       let haveFrame = false;
       if (isPlaying) {
@@ -392,22 +428,28 @@ function CanvasLayer({
         // stream epoch), extrapolated from the last tick; ticks land
         // several times a second, which is far too coarse on its own.
         // Before the first tick, fall back to the seek-bar position.
-        const target = audibleTarget(now);
-        const frame = target
-          ? pickSpectrumFrame(
+        // Either way the estimate is for when this paint is on screen.
+        const lead = (ridge ? P.ridgeSyncLeadMs : P.syncLeadMs) / 1000;
+        const target = audibleTarget(now, lead);
+        const bands = target
+          ? readSpectrumBands(
               target.epoch,
               target.pos,
               FRAME_LAG_TOLERANCE_S,
               FRAME_LEAD_TOLERANCE_S,
+              bandAhead,
+              framePeriodS,
             )
-          : pickSpectrumFrame(
+          : readSpectrumBands(
               null,
-              playback.position + (now - playback.positionAt) / 1000,
+              playback.position + (now - playback.positionAt) / 1000 + lead,
               FRAME_LAG_TOLERANCE_S,
               FRAME_LEAD_TOLERANCE_S,
+              bandAhead,
+              framePeriodS,
             );
-        if (frame) {
-          const points = pointsFor(frame.bands.length);
+        if (bands) {
+          const points = pointsFor(bands.length);
           if (points !== current.length) {
             current = new Float32Array(points);
             scratch = new Float32Array(points);
@@ -415,8 +457,8 @@ function CanvasLayer({
             spread = new Float32Array(ridge ? points : 0);
             smoothed = new Float32Array(ridge ? points : 0);
           }
-          if (ridge) mixBandsInto(frame.bands, CHANNELS, scratch);
-          else readBandsInto(frame.bands, scratch);
+          if (ridge) mixBandsInto(bands, CHANNELS, scratch);
+          else readBandsInto(bands, scratch);
           haveFrame = true;
         }
       }
@@ -442,7 +484,6 @@ function CanvasLayer({
       // floor cut, gamma and gain here are the display-side adjustments
       // (see lib/visualizerParams.ts), one set per mode. Easing alphas
       // are computed once per frame, not per point.
-      const P = VISUALIZER_PARAMS;
       const floorCut = ridge ? P.ridgeFloorCut : P.floorCut;
       const gamma = ridge ? P.ridgeGamma : P.gamma;
       const gain = ridge ? P.ridgeGain : P.gain;
@@ -522,7 +563,17 @@ function CanvasLayer({
               taper = edgeWindow(fineCount, P.ridgeEdgeTaper);
               taperAmount = P.ridgeEdgeTaper;
             }
-            resampleRow(current, fine, perBand);
+            if (
+              axis.length !== fineCount ||
+              axisBands !== pointCount ||
+              axisCurve !== P.ridgeAxisCurve
+            ) {
+              if (axis.length !== fineCount) axis = new Float32Array(fineCount);
+              axisSamples(pointCount, P.ridgeAxisCurve, axis);
+              axisBands = pointCount;
+              axisCurve = P.ridgeAxisCurve;
+            }
+            resampleRowAt(current, axis, fine);
             // A history row is cut from the live line every `ridgeRowMs`
             // of wall-clock, so the stack scrolls at one speed whatever
             // the display's refresh rate. It keeps scrolling through a
