@@ -418,9 +418,9 @@ impl CacheDatabase {
     /// incremental sync skips any track whose `updatedAt` is unchanged —
     /// which a play does not bump. Local play state would therefore sit
     /// frozen at the last *full* sync, so a rule filtering on "unplayed"
-    /// could never see what the user just listened to. Mirrors what the
-    /// server records on a scrobble; a later full sync overwrites this with
-    /// the authoritative count.
+    /// could never see what the user just listened to. Mirrors the play the
+    /// server records from the timeline reports; a later full sync
+    /// overwrites this with the authoritative count.
     pub fn mark_track_played(&self, source_id: &str, played_at: i64) -> Result<(), CacheError> {
         let conn = self.conn.lock();
         conn.execute(

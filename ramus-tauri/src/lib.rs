@@ -146,13 +146,12 @@ fn set_recovery_grace(
 /// runs on a fresh install). Registering these separately let the onboarding
 /// path drift into a stripped-down copy, so a fresh install spent its entire
 /// first session — until the next app launch — without the client repoint,
-/// the scrobble flush, the reachability flips, or the recovered edge. Keep
+/// the reachability flips, or the recovered edge. Keep
 /// them here, together, so a new recovery mechanism can't reach one path and
 /// miss the other.
 pub(crate) fn install_connection_callbacks(app: &AppHandle, state: &crate::state::AppState) {
     let monitor_player = state.player.clone();
     let monitor_client = state.client.clone();
-    let monitor_reporter = state.session_reporter.clone();
     let monitor_reachable = state.server_reachable.clone();
     let monitor_app = app.clone();
     let monitor_settings_for_changed = state.settings.clone();
@@ -163,8 +162,8 @@ pub(crate) fn install_connection_callbacks(app: &AppHandle, state: &crate::state
     state.connection_monitor.set_on_connection_changed(std::sync::Arc::new(
         move |url, token, is_local, _is_http| {
             let is_remote = !is_local;
-            // Repoint the shared API client too — timeline reports,
-            // scrobbles, art and sync all ride it, and it otherwise keeps
+            // Repoint the shared API client too — timeline reports, art
+            // and sync all ride it, and it otherwise keeps
             // addressing the dead connection until the next full startup
             // probe.
             monitor_client.set_server_url(Some(url.clone()));
@@ -209,9 +208,6 @@ pub(crate) fn install_connection_callbacks(app: &AppHandle, state: &crate::state
                 set_recovery_grace(&monitor_app, &monitor_grace, true);
             }
             monitor_prefetch.notify_skip();
-            // The server is reachable again on a fresh address — retry any
-            // scrobbles the outage stranded.
-            monitor_reporter.flush_failed_scrobbles();
             monitor_reachable.store(true, std::sync::atomic::Ordering::Release);
             let offline_manual = monitor_settings_for_changed.read().offline_mode;
             crate::events::emit_connection_status(
@@ -251,7 +247,6 @@ pub(crate) fn install_connection_callbacks(app: &AppHandle, state: &crate::state
     // waits for a manual tap. Mirrors the changed handler minus the
     // URL/playlist swap (nothing went stale; playback just needs a kick).
     let rec_player = state.player.clone();
-    let rec_reporter = state.session_reporter.clone();
     let rec_reachable = state.server_reachable.clone();
     let rec_app = app.clone();
     let rec_settings = state.settings.clone();
@@ -278,8 +273,6 @@ pub(crate) fn install_connection_callbacks(app: &AppHandle, state: &crate::state
         // Fresh prefetch cycle: re-checks targets and clears the per-cycle
         // failure set.
         rec_prefetch.notify_skip();
-        // Back online — retry any scrobbles the outage stranded.
-        rec_reporter.flush_failed_scrobbles();
         rec_reachable.store(true, std::sync::atomic::Ordering::Release);
         let offline_manual = rec_settings.read().offline_mode;
         crate::events::emit_connection_status(
@@ -1005,7 +998,7 @@ pub fn run() {
             *prefetch_handle_ref.lock() = Some(prefetch_handle.clone());
 
             // Created here rather than inline in AppState so the session
-            // reporter can share it: a scrobble records the play locally too.
+            // reporter can share it: a finished track records the play locally.
             let cache_arc: Arc<parking_lot::Mutex<Option<ramus_core::cache::db::CacheDatabase>>> =
                 Arc::new(parking_lot::Mutex::new(None));
 

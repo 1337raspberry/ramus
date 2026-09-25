@@ -1,9 +1,11 @@
 //! Plex session timeline reporting and scrobble tracking. Determines what
-//! and when to report; actual HTTP calls are handled by the caller.
+//! and when to report; actual HTTP calls are handled by the caller. The
+//! server derives its own play count from the timeline reports, so the
+//! scrobble key only drives the local play record.
 
 use crate::models::{PlaybackStatus, Track};
 
-/// Scrobble at >= 90% progress.
+/// Record the local play at >= 90% progress.
 pub const SCROBBLE_THRESHOLD: f64 = 0.9;
 
 /// Periodic report interval in seconds.
@@ -39,7 +41,7 @@ impl TimelineState {
 ///
 /// Call methods on state transitions and periodically during playback. Use
 /// the returned `TimelineState` to send reports to Plex, and the optional
-/// scrobble key to trigger scrobble API calls.
+/// scrobble key (yielded once per track) to record the play locally.
 pub struct SessionTracker {
     active_track_key: Option<String>,
     active_session_id: Option<String>,

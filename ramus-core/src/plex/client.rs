@@ -798,6 +798,12 @@ impl PlexClient {
     }
 
     /// Report playback timeline to the server. Fire-and-forget.
+    ///
+    /// These reports are also how the server counts a play: once a track's
+    /// reported position passes about half its duration, PMS records the
+    /// play (view count, history entry, and any linked scrobbling service)
+    /// on its own. There is deliberately no separate `/:/scrobble` call — it
+    /// would record the same play a second time.
     pub async fn report_timeline(
         &self,
         rating_key: &str,
@@ -841,45 +847,6 @@ impl PlexClient {
             .header("X-Plex-Device", Self::device())
             .send()
             .await;
-    }
-
-    /// Mark an item as played on the server. Returns whether the server
-    /// acknowledged the request, so callers can retry transient failures —
-    /// a scrobble is a permanent play-count mutation, not a disposable
-    /// status ping like the timeline reports.
-    pub async fn scrobble(&self, rating_key: &str) -> bool {
-        let (base, token) = match self.read_state() {
-            Ok(s) => s,
-            Err(_) => return false,
-        };
-
-        let url = match join_path(&base, "/:/scrobble") {
-            Ok(u) => u,
-            Err(_) => return false,
-        };
-
-        let result = self
-            .http
-            .get(url)
-            .query(&[
-                ("key", format!("/library/metadata/{}", rating_key).as_str()),
-                ("identifier", "com.plexapp.plugins.library"),
-            ])
-            .header("X-Plex-Token", token.as_str())
-            .header("Accept", "application/json")
-            .header("X-Plex-Client-Identifier", &self.client_identifier)
-            .header("X-Plex-Product", "ramus")
-            .header("X-Plex-Platform", Self::platform())
-            .header("X-Plex-Device", Self::device())
-            .send()
-            .await;
-
-        // Never format the error itself: reqwest's Display includes the
-        // request URL, which carries the token in the query string.
-        match result {
-            Ok(resp) => resp.status().is_success(),
-            Err(_) => false,
-        }
     }
 
     /// Set user rating on an item. `10.0` favourites; `0.0` unfavourites.
