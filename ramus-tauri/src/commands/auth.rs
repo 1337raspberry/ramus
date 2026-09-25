@@ -304,8 +304,8 @@ pub async fn finalize_onboarding(
     // server config and so doesn't run until the next app launch. Share the
     // registration rather than keeping a second copy here: the local copy
     // this replaced had drifted into a stripped-down subset, leaving the
-    // whole first session without the client repoint, the scrobble flush,
-    // the reachability flips, or the recovered edge.
+    // whole first session without the client repoint, the reachability
+    // flips, or the recovered edge.
     let allow_http = !state.settings.read().refuse_http;
     state.connection_monitor.set_allow_http(allow_http);
     crate::install_connection_callbacks(&app, &state);

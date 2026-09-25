@@ -264,7 +264,7 @@ pub async fn get_queue(state: State<'_, AppState>) -> CmdResult<Vec<Track>> {
 /// 1. `AudioPlayer::stop` clears `current_track` and the pending-transition
 ///    snapshot before mpv goes idle, so by the time the idle handler runs it
 ///    has nothing left to close the outgoing Plex session with — the final
-///    track's stopped-at-position report and any boundary scrobble would be
+///    track's stopped-at-position report and any boundary play record would be
 ///    lost. Close it out here first, while the player still holds its
 ///    pre-stop state.
 /// 2. Android suppresses `mpvIdleActive` while the player carries an error,

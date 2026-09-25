@@ -1,7 +1,8 @@
 //! Plex session reporter. Orchestrates SessionTracker and PlexClient for
-//! periodic timeline updates, scrobble detection (at >= 90% progress, once per
-//! track), and graceful shutdown reporting. All public methods are synchronous
-//! for use from mpv callbacks.
+//! periodic timeline updates, local play recording (at >= 90% progress, once
+//! per track), and graceful shutdown reporting. The server counts the play
+//! from the timeline reports themselves (see `PlexClient::report_timeline`).
+//! All public methods are synchronous for use from mpv callbacks.
 
 use std::sync::{Arc, Weak};
 use std::time::Duration;
@@ -30,13 +31,8 @@ pub struct SessionReporter {
     /// Last rating_key reported via track_started; deduplicates the
     /// overlapping calls from play_tracks and on_playlist_pos_change.
     last_started_key: Mutex<Option<String>>,
-    /// Scrobbles whose sends failed every in-task retry. Re-attempted at the
-    /// next natural connectivity moment (track start, resume) — a scrobble is
-    /// a permanent play-count mutation, so it shouldn't be lost to the very
-    /// outage that interrupted the track it belongs to.
-    failed_scrobbles: Arc<Mutex<Vec<String>>>,
-    /// Library cache, so a scrobble can also record the play locally. `None`
-    /// until onboarding/session-restore opens the database.
+    /// Library cache, so a finished track can record the play locally.
+    /// `None` until onboarding/session-restore opens the database.
     cache: Arc<Mutex<Option<CacheDatabase>>>,
 }
 
@@ -54,7 +50,6 @@ impl SessionReporter {
             periodic_active: Arc::new(Mutex::new(false)),
             loop_spawned: Mutex::new(false),
             last_started_key: Mutex::new(None),
-            failed_scrobbles: Arc::new(Mutex::new(Vec::new())),
             cache,
         })
     }
@@ -72,9 +67,6 @@ impl SessionReporter {
         let timeline = self.tracker.lock().track_started(track, session_id);
         self.send_timeline(&timeline);
         self.start_periodic();
-        // A track starting is a natural connectivity moment — retry any
-        // scrobbles a past outage stranded.
-        self.flush_failed_scrobbles();
     }
 
     /// Close out one track and open the next in a single ordered step, using
@@ -95,16 +87,17 @@ impl SessionReporter {
         self.stop_periodic();
         *self.last_started_key.lock() = None;
 
-        let (stopped, scrobble) = {
+        let (stopped, played) = {
             let mut tracker = self.tracker.lock();
             // Guard against a desynced tracker (e.g. reporting was never
-            // started for this track): closing out would scrobble whatever
-            // stale key the tracker still holds at the wrong position.
+            // started for this track): closing out would record a play for
+            // whatever stale key the tracker still holds at the wrong
+            // position.
             if tracker.active_track_key() == Some(prev.rating_key.as_str()) {
-                let scrobble = tracker
+                let played = tracker
                     .update_position(prev_pos, prev_dur)
                     .and_then(|(_, key)| key);
-                (tracker.playback_stopped(), scrobble)
+                (tracker.playback_stopped(), played)
             } else {
                 (None, None)
             }
@@ -113,8 +106,8 @@ impl SessionReporter {
         if let Some(ref tl) = stopped {
             self.send_timeline(tl);
         }
-        if let Some(rk) = scrobble {
-            self.send_scrobble(rk);
+        if let Some(rk) = played {
+            self.record_play(&rk);
         }
         if let Some(next) = next {
             self.track_started(next, session_id);
@@ -137,8 +130,6 @@ impl SessionReporter {
             self.send_timeline(&timeline);
         }
         self.start_periodic();
-        // Resuming often follows a reconnect — retry stranded scrobbles.
-        self.flush_failed_scrobbles();
     }
 
     /// Report playback stopped (end of queue, new queue load, or user stop).
@@ -189,44 +180,13 @@ impl SessionReporter {
         let _ = self.tracker.lock().update_position(pos, dur);
     }
 
-    /// Send a scrobble with in-task retries. Transient failures back off and
-    /// re-send; a fully failed send parks the key in `failed_scrobbles` for
-    /// the next flush rather than silently dropping the play count. The
-    /// tracker's `scrobbled_key` was already marked by the caller — that
-    /// stays deliberate: unmarking on failure would let the periodic loop
-    /// re-yield the key while an earlier attempt may still land server-side,
-    /// double-counting the play.
-    pub fn send_scrobble(&self, rating_key: String) {
-        // Record the play locally too. Deliberately not conditional on the
-        // send succeeding: the user did listen to the track, and a filter
-        // like a crate's "unplayed only" reads this table, not the server.
-        // Every scrobble funnels through here, so this is the one place that
-        // has to do it.
-        self.mark_played_locally(&rating_key);
-
-        let client = self.client.clone();
-        let failed = self.failed_scrobbles.clone();
-        tauri::async_runtime::spawn(async move {
-            for delay_secs in [0u64, 2, 8] {
-                if delay_secs > 0 {
-                    tokio::time::sleep(Duration::from_secs(delay_secs)).await;
-                }
-                if client.scrobble(&rating_key).await {
-                    return;
-                }
-            }
-            log::warn!("scrobble failed after retries; queued for later flush");
-            let mut queue = failed.lock();
-            if !queue.contains(&rating_key) {
-                queue.push(rating_key);
-            }
-        });
-    }
-
-    /// Bump the local play count for a track that just scrobbled. Best
-    /// effort — a cache that isn't open yet, or a track outside the synced
-    /// library, simply has nothing to update.
-    fn mark_played_locally(&self, rating_key: &str) {
+    /// Bump the local play count for a track that just crossed the play
+    /// threshold. Called once per play: the tracker yields each track's key
+    /// a single time. A filter like a crate's "unplayed only" reads this
+    /// table, and incremental sync never refreshes play state (a play
+    /// doesn't bump `updatedAt`). Best effort — a cache that isn't open yet,
+    /// or a track outside the synced library, simply has nothing to update.
+    fn record_play(&self, rating_key: &str) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
@@ -235,16 +195,6 @@ impl SessionReporter {
             if let Err(e) = db.mark_track_played(rating_key, now) {
                 log::warn!("could not record local play state: {e}");
             }
-        }
-    }
-
-    /// Re-attempt every scrobble stranded by past send failures. Keys that
-    /// fail again re-queue themselves via `send_scrobble`, so nothing is
-    /// lost — the queue just waits for the next flush moment.
-    pub fn flush_failed_scrobbles(&self) {
-        let pending: Vec<String> = std::mem::take(&mut *self.failed_scrobbles.lock());
-        for rk in pending {
-            self.send_scrobble(rk);
         }
     }
 
@@ -311,10 +261,10 @@ async fn periodic_loop(
         let dur = reporter.player.duration();
 
         let result = reporter.tracker.lock().update_position(pos, dur);
-        if let Some((timeline, scrobble_key)) = result {
+        if let Some((timeline, played_key)) = result {
             reporter.send_timeline(&timeline);
-            if let Some(rk) = scrobble_key {
-                reporter.send_scrobble(rk);
+            if let Some(rk) = played_key {
+                reporter.record_play(&rk);
             }
         }
     }
