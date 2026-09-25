@@ -6,8 +6,10 @@
  * (`axisSamples`).
  *
  * The front (lowest) row is the live spectrum; every `ridgeRowMs` the
- * eased front row is copied into a history and the older rows step up
- * one slot, so the stack scrolls upward and fades as it ages. A row is
+ * eased front row is copied into a history, and each history row climbs
+ * one slot per `ridgeRowMs`, either gliding there on every paint or
+ * stepping a whole slot at each cut (`ridgeGlide`), so the stack scrolls
+ * upward and fades as it ages. A row is
  * resampled from one point per band to several along a monotone cubic
  * before it is textured and stored, so a peak is a run of near-equal
  * points rather than one node with two lines meeting at it. Rows are
@@ -214,6 +216,72 @@ export class RidgeHistory {
   }
 }
 
+/**
+ * Ideal time of the newest history row after a paint at `t`, the previous
+ * one having been cut at `lastCut`. Unchanged until a whole `periodMs`
+ * has passed, then one period on, so the cadence keeps its fractional
+ * credit rather than rounding up to the paint interval. After a gap of
+ * more than two periods it resyncs to `t` instead of replaying the gap as
+ * a burst of rows. A result other than `lastCut` means a row is due.
+ */
+export function nextRowCut(t: number, lastCut: number, periodMs: number): number {
+  const since = t - lastCut;
+  if (since < periodMs) return lastCut;
+  return since > 2 * periodMs ? t : lastCut + periodMs;
+}
+
+/**
+ * How far the history has climbed at `t` since its newest row was cut at
+ * `lastCut`, in slots: 0 at the cut, 1 a period later. Never negative.
+ */
+export function rowScroll(t: number, lastCut: number, periodMs: number): number {
+  return periodMs > 0 ? Math.max(0, (t - lastCut) / periodMs) : 1;
+}
+
+/**
+ * Depth of line `k` in slots behind the front at `scroll`: the live line
+ * (0) stays at the front and history row `k - 1` sits `k - 1 + scroll`
+ * back. The scroll since the last cut (`rowScroll`) glides the stack; a
+ * scroll held at 1 steps it a whole slot at each cut.
+ */
+export function ridgeLineDepth(k: number, scroll: number): number {
+  return k === 0 ? 0 : k - 1 + scroll;
+}
+
+/**
+ * Lines to paint for a stack `rows` deep at `scroll`: the live line and
+ * every history row whose depth (`ridgeLineDepth`) is at most `rows - 1`,
+ * the back row's.
+ */
+export function ridgeLineCount(rows: number, scroll: number): number {
+  return 1 + Math.max(0, Math.floor(rows - scroll));
+}
+
+/**
+ * Device pixels line `k` sits above the live line's baseline at
+ * `scroll`, for rows `pitch` device pixels apart (a whole number). The
+ * scroll's share of a slot is rounded once and shared by every history
+ * row, so the rows stay exactly `pitch` apart on the pixel grid at any
+ * scroll; rounding each row's own depth would let floating-point error
+ * put a single row a pixel out of step with the rest.
+ */
+export function ridgeLineLift(k: number, scroll: number, pitch: number): number {
+  return k === 0 ? 0 : (k - 1) * pitch + Math.round(scroll * pitch);
+}
+
+/**
+ * Alpha multiplier for line `k`, `lift` device pixels above the live
+ * line, with strokes `strokePx` device pixels wide. A history row that
+ * has just been cut starts on the live line, and two translucent strokes
+ * overlapping draw brighter than either, so the row stays hidden for the
+ * first stroke width it climbs, where it overlaps the live line's
+ * stroke, and fades in over the next. The live line is always 1.
+ */
+export function ridgeLineEmergence(k: number, lift: number, strokePx: number): number {
+  if (k === 0 || !(strokePx > 0)) return 1;
+  return Math.min(1, Math.max(0, lift / strokePx - 1));
+}
+
 /** The subset of the visualiser parameters that lay the rows out. */
 export interface RidgeLayout {
   /** Height of the stack (front baseline to back baseline) as a fraction of the window height. */
@@ -379,29 +447,34 @@ export interface RidgePaint extends RidgeLayout {
 // painted so a paint allocates nothing per row.
 let rowY = new Float32Array(0);
 
-// Stroke colour of every row for the row count, alphas and colour last
-// painted with; rebuilt only when one of those changes, so a paint builds
-// no strings.
-let strokeStyles: string[] = [];
-let strokeStylesFor = "";
+// Stroke colour for the channels last painted with, rebuilt only when
+// they change, so a paint builds no strings. Each row's own alpha goes on
+// `globalAlpha`, since a gliding row's alpha changes on every paint.
+let strokeColour = "";
+let strokeColourFor = "";
 
 /**
- * Paint `rows` rows back to front. `row(k)` returns row `k`'s levels
- * (0 = front), `edge` the per-point edge multiplier (same length), and
- * `rgb` the stroke colour's channels. Each row first erases the canvas
- * between its line and its baseline (`destination-out`, which on this
- * transparent canvas exposes the backdrop) so the rows behind it are
- * hidden where it rises, then strokes its line as straight segments;
- * the rows are already resampled finely enough for that to read as a
- * curve. The erase reaches the line's centre, not its outer edge, so up
- * to half the stroke width of a row behind can show above a row in
- * front; at hairline widths that is under a pixel.
+ * Paint a stack `rows` deep at `scroll` (see `ridgeLineDepth`), back to
+ * front. `row(k)` returns line `k`'s levels (0 = the live line, `k` = the
+ * history row `k - 1` back), `edge` the per-point edge multiplier (same
+ * length), and `rgb` the stroke colour's channels. Each row's peak scale
+ * and alpha follow its depth, fractional while the stack glides, and its
+ * baseline sits on the device-pixel grid (`ridgeLineLift`). Each row
+ * first erases the canvas between its line and its baseline
+ * (`destination-out`, which on this transparent canvas exposes the
+ * backdrop) so the rows behind it are hidden where it rises, then
+ * strokes its line as straight segments; the rows are already resampled
+ * finely enough for that to read as a curve. The erase reaches the
+ * line's centre, not its outer edge, so up to half the stroke width of a
+ * row behind can show above a row in front; at hairline widths that is
+ * under a pixel.
  */
 export function drawRidgeline(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
   rows: number,
+  scroll: number,
   row: (k: number) => Float32Array,
   edge: Float32Array,
   rgb: string,
@@ -427,20 +500,17 @@ export function drawRidgeline(
   // single short gap sits alone in the stack and its rule reads as out
   // of step with the pattern.
   const scale = ctx.getTransform().a || 1;
-  const halfStroke = (p.ridgeLineWidth * scale) / 2;
+  const strokePx = p.ridgeLineWidth * scale;
+  const halfStroke = strokePx / 2;
   const frontY = ridgeRow(0, rows, h, p).baseline;
   const backY = ridgeRow(rows - 1, rows, h, p).baseline;
   const frontEdge = Math.round(frontY * scale - halfStroke);
   const pitch = rows > 1 ? Math.round(((frontY - backY) / (rows - 1)) * scale) : 0;
-  const baselineOf = (k: number) => (frontEdge - k * pitch + halfStroke) / scale;
-  const styleKey = `${rows}|${p.ridgeAlpha}|${p.ridgeBackAlpha}|${p.ridgeFadeCurve}|${rgb}`;
-  if (styleKey !== strokeStylesFor) {
-    strokeStyles = Array.from(
-      { length: rows },
-      (_, k) => `rgba(${rgb}, ${ridgeRow(k, rows, h, p).alpha})`,
-    );
-    strokeStylesFor = styleKey;
+  if (rgb !== strokeColourFor) {
+    strokeColour = `rgb(${rgb})`;
+    strokeColourFor = rgb;
   }
+  ctx.strokeStyle = strokeColour;
   ctx.lineWidth = p.ridgeLineWidth;
   ctx.lineJoin = "round";
   // Butt caps, deliberately: CoreGraphics strokes a long path in runs of
@@ -450,9 +520,10 @@ export function drawRidgeline(
   ctx.lineCap = "butt";
   // Any opaque fill erases fully under `destination-out`.
   ctx.fillStyle = "#000";
-  for (let k = rows - 1; k >= 0; k--) {
-    const g = ridgeRow(k, rows, h, p);
-    const baseline = baselineOf(k);
+  for (let k = ridgeLineCount(rows, scroll) - 1; k >= 0; k--) {
+    const g = ridgeRow(ridgeLineDepth(k, scroll), rows, h, p);
+    const lift = ridgeLineLift(k, scroll, pitch);
+    const baseline = (frontEdge - lift + halfStroke) / scale;
     const values = row(k);
     for (let i = 0; i < n; i++) ys[i] = baseline - values[i] * edge[i] * g.scale;
     const line = new Path2D();
@@ -466,10 +537,14 @@ export function drawRidgeline(
     under.lineTo(fieldX + fieldW, baseline);
     under.lineTo(fieldX, baseline);
     under.closePath();
+    // The erase runs at full alpha: `destination-out` removes only as
+    // much as the fill's alpha.
+    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "destination-out";
     ctx.fill(under);
     ctx.globalCompositeOperation = "source-over";
-    ctx.strokeStyle = strokeStyles[k];
+    ctx.globalAlpha = g.alpha * ridgeLineEmergence(k, lift, strokePx);
     ctx.stroke(line);
   }
+  ctx.globalAlpha = 1;
 }

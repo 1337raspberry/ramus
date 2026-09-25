@@ -87,6 +87,13 @@ export interface VisualizerParams {
   /** Wall-clock interval between history rows, in ms. */
   ridgeRowMs: number;
   /**
+   * 1 glides the stack upward on every paint, each history row placed by
+   * the time since it was cut; 0 holds the rows still between cuts and
+   * steps the stack a whole slot at each one. Either way a row climbs one
+   * slot per `ridgeRowMs`.
+   */
+  ridgeGlide: number;
+  /**
    * Width in points (a bell's sigma) each ridge peak is spread into
    * without losing height; 0 is identity. Applied before `ridgeSmooth`.
    */
@@ -160,6 +167,7 @@ export const VISUALIZER_PARAMS: VisualizerParams = {
   ridgeBackAlpha: 0,
   ridgeFadeCurve: 0.75,
   ridgeRowMs: 33,
+  ridgeGlide: 1,
   ridgeSpread: 1,
   ridgeSmooth: 0.1,
   ridgeGrain: 0.03,

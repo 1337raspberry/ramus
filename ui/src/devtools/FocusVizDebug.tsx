@@ -129,6 +129,7 @@ const SECTIONS = [
       { key: "ridgeBackAlpha", label: "Back alpha", min: 0, max: 1, step: 0.01, digits: 2 },
       { key: "ridgeFadeCurve", label: "Fade curve", min: 0.25, max: 4, step: 0.05, digits: 2 },
       { key: "ridgeRowMs", label: "Row ms", min: 16, max: 250, step: 1, digits: 0 },
+      { key: "ridgeGlide", label: "Glide", min: 0, max: 1, step: 1, digits: 0 },
       { key: "ridgeSpread", label: "Spread", min: 0, max: 3, step: 0.05, digits: 2 },
       { key: "ridgeSmooth", label: "Smooth", min: 0, max: 1, step: 0.01, digits: 2 },
       { key: "ridgeGrain", label: "Grain", min: 0, max: 0.05, step: 0.0005, digits: 4 },
