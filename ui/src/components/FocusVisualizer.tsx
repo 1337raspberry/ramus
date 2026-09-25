@@ -12,8 +12,10 @@ import {
   drawRidgeline,
   edgeWindow,
   mixBandsInto,
+  nextRowCut,
   rerollGrain,
   resampleRowAt,
+  rowScroll,
   smoothRow,
   spreadRow,
   type RidgePaint,
@@ -374,7 +376,13 @@ function CanvasLayer({
     const deepLayout: RidgePaint = { ...VISUALIZER_PARAMS };
     let taper: Float32Array | null = null;
     let taperAmount = NaN;
+    // Ideal time of the newest history row, and the frame time of the
+    // previous paint, both on the animation-frame clock: the frame's own
+    // timestamp, which unlike a `performance.now()` read inside the
+    // callback carries no callback-scheduling jitter, so the gliding
+    // stack advances by an even step each frame.
     let lastRowAt = 0;
+    let lastFrameAt = 0;
     let grain = new Float32Array(0);
     let grained = new Float32Array(0);
     // Wall-clock since the live line has been flat (0 while it isn't),
@@ -405,7 +413,7 @@ function CanvasLayer({
     // alpha ≈ 1.
     const EASE_DT_CLAMP_MS = 100;
 
-    const render = () => {
+    const render = (frameAt: number) => {
       const { w, h } = resize();
       const repaintForced = wiped;
       wiped = false;
@@ -414,6 +422,8 @@ function CanvasLayer({
       const now = performance.now();
       const rawDelta = lastTs !== 0 ? now - lastTs : 0;
       lastTs = now;
+      const frameDelta = lastFrameAt !== 0 ? frameAt - lastFrameAt : 0;
+      lastFrameAt = frameAt;
 
       // Hot-path reads. Playback state gates the lookup and the seek-bar
       // position is its fallback clock — never subscribe via a React
@@ -526,7 +536,10 @@ function CanvasLayer({
 
       if (ridge) {
         const rows = Math.max(1, Math.round(fullScreen ? P.ridgeFullScreenRows : P.ridgeRows));
-        const historyRows = Math.max(1, rows - 1);
+        // One history row per slot behind the live line, and one more for
+        // the row a gliding stack carries between the last slot and the
+        // back edge.
+        const historyRows = rows;
         const perBand = Math.min(8, Math.max(1, Math.round(P.ridgeOversample)));
 
         // The live line is flat once its tallest point would rise under
@@ -575,20 +588,21 @@ function CanvasLayer({
             }
             resampleRowAt(current, axis, fine);
             // A history row is cut from the live line every `ridgeRowMs`
-            // of wall-clock, so the stack scrolls at one speed whatever
-            // the display's refresh rate. It keeps scrolling through a
-            // pause, carrying the flat line up until every row is flat;
-            // the rows never go away, a flat row is a rule at its
-            // baseline. The cut time steps by the period so the cadence
-            // keeps its fractional credit rather than rounding up to the
-            // frame rate; after a hitch longer than two periods it
-            // resyncs instead of replaying the gap as a burst of rows.
-            if (now - lastRowAt >= P.ridgeRowMs) {
+            // of wall-clock (`nextRowCut`), so the stack scrolls at one
+            // speed whatever the display's refresh rate. It keeps
+            // scrolling through a pause, carrying the flat line up until
+            // every row is flat; the rows never go away, a flat row is a
+            // rule at its baseline. Gliding, every row sits where its age
+            // since the cut puts it, so which frame a cut lands on never
+            // shows as a step.
+            const cut = nextRowCut(frameAt, lastRowAt, P.ridgeRowMs);
+            if (cut !== lastRowAt) {
               applyGrain(fine, grained, grain, P.ridgeGrain);
               history.push(grained);
               rerollGrain(grain);
-              lastRowAt = now - lastRowAt > 2 * P.ridgeRowMs ? now : lastRowAt + P.ridgeRowMs;
+              lastRowAt = cut;
             }
+            const scroll = P.ridgeGlide >= 0.5 ? rowScroll(frameAt, lastRowAt, P.ridgeRowMs) : 1;
             applyGrain(fine, grained, grain, P.ridgeGrain);
             const behind = history;
             const live = grained;
@@ -607,12 +621,18 @@ function CanvasLayer({
               w,
               h,
               rows,
+              scroll,
               (r) => (r === 0 ? live : behind.get(r - 1)),
               taper,
               RIDGE_RGB,
               layout,
             );
           }
+        } else {
+          // The picture is held, so the scroll is too: the stack resumes
+          // from where the last paint left it rather than hopping to
+          // wherever the clock has run on to.
+          lastRowAt += frameDelta;
         }
       } else {
         ctx.clearRect(0, 0, w, h);
