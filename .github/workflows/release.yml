@@ -348,27 +348,27 @@ jobs:
 
       # ── Windows ────────────────────────────────────────────────────
       # No pkg-config, no libmpv-dev package. Download the LGPL prebuilt
-      # DLL from zhongfly/mpv-winbuild and drop it where
+      # DLL built by zhongfly/mpv-winbuild and drop it where
       # tauri.windows.conf.json expects it (`ramus-tauri/windows-deps/`).
       # Tauri then bundles it as a resource so it lands next to ramus.exe
       # in the installer. `7z.exe` is preinstalled on GitHub Actions Windows runners.
       #
+      # MIRROR: zhongfly prunes its releases after about a month, so the
+      # archive is fetched from a byte-for-byte copy kept in this
+      # repository's releases, a pre-release tagged
+      # `libmpv-windows-<MPV_RELEASE_TAG>`. The URL names the repository
+      # outright so a fork's build fetches the same copy. To move to a
+      # newer build, run
+      #   scripts/mirror-windows-libmpv.sh <zhongfly tag> <asset>
+      # which checks the upstream asset against the digest GitHub reports
+      # for it, publishes the copy and prints the three values below.
+      #
       # SECURITY: tag + asset + sha256 are ALL pinned. GitHub release assets
       # are mutable (the owner can delete + re-upload a file under the same
       # tag), so tag pinning alone is not enough to defeat a supply-chain
-      # attack on that repo — the hash check is the real guarantee that the
-      # DLL matches what we audited. If you bump MPV_RELEASE_TAG / MPV_ASSET,
-      # you MUST also update MPV_ASSET_SHA256 to the new asset's SHA-256
-      # (visible on the GitHub releases page or via the GitHub API, e.g.:
-      #   gh api /repos/zhongfly/mpv-winbuild/releases/tags/<tag> \
-      #     --jq '.assets[] | select(.name=="<asset>") | .digest'
-      # which returns "sha256:<hex>").
-      #
-      # RETENTION: zhongfly prunes old releases — only roughly the last
-      # month survives, so a pin older than ~30 days 404s at download
-      # time. Expect to re-pin (tag + asset + sha256 together) as part of
-      # cutting any release; the SHA-256 check above still guards the
-      # bytes once the new pin is chosen.
+      # attack on either repository — the hash check is the real guarantee
+      # that the DLL matches what we audited. MPV_ASSET_SHA256 always moves
+      # together with MPV_RELEASE_TAG / MPV_ASSET.
       - name: Download libmpv DLL
         if: matrix.id == 'windows'
         shell: pwsh
@@ -377,7 +377,7 @@ jobs:
           MPV_ASSET: mpv-dev-lgpl-x86_64-20260914-git-0b7ed670f7.7z
           MPV_ASSET_SHA256: d6df1a133b7d60d30b49efac593fd58ff183c48a6d94bb78cd401430acd96dad
         run: |
-          $url = "https://github.com/zhongfly/mpv-winbuild/releases/download/$env:MPV_RELEASE_TAG/$env:MPV_ASSET"
+          $url = "https://github.com/1337raspberry/ramus/releases/download/libmpv-windows-$env:MPV_RELEASE_TAG/$env:MPV_ASSET"
           Write-Host "Downloading $url"
           Invoke-WebRequest -Uri $url -OutFile mpv-dev.7z
           $actual = (Get-FileHash mpv-dev.7z -Algorithm SHA256).Hash.ToLower()

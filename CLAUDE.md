@@ -21,7 +21,7 @@ ramus-tauri/  # Tauri 2 shell: commands/ (IPC), events.rs, state.rs, lib.rs (run
 plugins/tauri-plugin-ramus-ios-bridge/   # ios/ (Swift MpvController, MPVKit) AND android/ (Kotlin — misleading name)
 ui/           # React — Vite + TS + Zustand (src/lib, src/components, src/mobile, src/stores)
 scripts/      # bundle-{macos,linux}-libmpv.py, codesign-macos-main-binary.sh, regen-ios-project.sh,
-              # ios-flavor.sh, gen-dev-appicon.sh, build-ios-ipa-local.sh
+              # ios-flavor.sh, gen-dev-appicon.sh, build-ios-ipa-local.sh, mirror-windows-libmpv.sh
 ```
 
 ## Commands
@@ -38,7 +38,7 @@ cargo tauri android dev
 ./scripts/build-ios-ipa-local.sh [--stable-only|--dev-only]
 ```
 
-- **CI:** clippy `-D warnings` on both crates, all targets (`#[cfg(test)]` lints fail CI but not `test`). CI's toolchain can be newer than local — a local pass isn't a guarantee. `cargo-deny`'s license list mirrors `config/about.toml` — keep in sync; `[advisories].ignore` holds triaged RUSTSEC ids, review on `tauri`/`wry` bumps. `tauri-cli` pinned exact in `release.yml` (`--version '=2.11.1'`). **Windows libmpv pin (`MPV_RELEASE_TAG`/`MPV_ASSET`/`MPV_ASSET_SHA256`) rots: zhongfly keeps ~30 days of releases — re-pin all three before every release run.**
+- **CI:** clippy `-D warnings` on both crates, all targets (`#[cfg(test)]` lints fail CI but not `test`). CI's toolchain can be newer than local — a local pass isn't a guarantee. `cargo-deny`'s license list mirrors `config/about.toml` — keep in sync; `[advisories].ignore` holds triaged RUSTSEC ids, review on `tauri`/`wry` bumps. `tauri-cli` pinned exact in `release.yml` (`--version '=2.11.1'`). **Windows libmpv downloads from our own pre-release `libmpv-windows-<MPV_RELEASE_TAG>`, never zhongfly directly** (zhongfly prunes after ~30 days); move to a newer build with `scripts/mirror-windows-libmpv.sh <tag> <asset>`, then all three pins (`MPV_RELEASE_TAG`/`MPV_ASSET`/`MPV_ASSET_SHA256`) together.
 - **Tap probes** (`tap_probe_*`, `#[ignore]`) need an audio output and a libmpv on FFmpeg ≥ 5.1; CI's `tap-probe` job runs them on `ubuntu-24.04` (the AppImage's libmpv) with `RAMUS_TAP_PROBE_AO=null` (mpv's timed null output; a PulseAudio null sink puts `time-pos` ahead of the frames), one at a time: `cargo test -p ramus-tauri --lib -- --ignored tap_probe --test-threads=1`.
 - **Tauri version mismatch** fails `build` (warns in `dev`): raise Rust to the npm minor with `cargo update -p tauri --precise <ver>` (`--precise` required; bare update moves nothing). Re-run cargo-deny after.
 - **Frontend supply chain** (`ui/.npmrc`): `ignore-scripts=true`, `minimum-release-age=2880`, `engine-strict=true`. Don't add `pnpm.onlyBuiltDependencies` or `npx --yes`. `fsevents` won't build → vite uses `fs.watch`, fine. CI: `pnpm/action-setup` before `actions/setup-node`.
