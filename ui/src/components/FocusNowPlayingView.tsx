@@ -27,6 +27,8 @@ import FocusVisualizer from "./FocusVisualizer";
 import FocusClearPlayer from "./FocusClearPlayer";
 import VisualizerToggle from "./VisualizerToggle";
 import MarqueeText from "./MarqueeText";
+import CastingLine from "./CastingLine";
+import { useCastStore } from "../stores/castStore";
 import {
   IconStarFilled,
   IconStarEmpty,
@@ -66,6 +68,7 @@ interface Props {
  */
 export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props) {
   const status = usePlaybackStore((s) => s.status);
+  const casting = useCastStore((s) => s.player !== null);
   const toggleLyrics = usePlaybackStore((s) => s.toggleLyrics);
   const showLyrics = usePlaybackStore((s) => s.showLyrics);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
@@ -323,7 +326,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
   if (focusClear) {
     return (
       <div className="focus-overlay">
-        <FocusVisualizer key="focus-viz" mode={visualizerMode} subdued={false} />
+        <FocusVisualizer key="focus-viz" mode={casting ? "off" : visualizerMode} subdued={false} />
         <FocusClearPlayer
           title={track.title}
           artist={artistLabel}
@@ -342,7 +345,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
        * controls: bars drape from the top edge, the ridgeline rises from
        * the bottom. The off mode and the `disableSpectrum` setting both
        * render nothing and remove the tap. */}
-      <FocusVisualizer key="focus-viz" mode={visualizerMode} subdued />
+      <FocusVisualizer key="focus-viz" mode={casting ? "off" : visualizerMode} subdued />
 
       <div className="focus-body">
         <div className={`focus-art-panel${showLyrics ? " lyrics-mode" : ""}`}>
@@ -407,7 +410,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
             <PlaybackQualityNotice onOpenSettings={onOpenSettings} />
             <div className="focus-track-row">
               <MarqueeText className="focus-track-title">{track.title}</MarqueeText>
-              {onOpenEQ && (
+              {onOpenEQ && !casting && (
                 <button className="np-eq-btn" onClick={onOpenEQ} title="Equalizer">
                   <IconEqualizer />
                 </button>
@@ -459,7 +462,11 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
               </button>
             </div>
 
-            <VolumeSlider value={volume} onChange={changeVolume} />
+            {casting ? (
+              <CastingLine className="np-casting-line" />
+            ) : (
+              <VolumeSlider value={volume} onChange={changeVolume} />
+            )}
 
             <div className="focus-footer">
               <FlowLayout genres={currentGenres} onGenreClick={handleGenreClick} />

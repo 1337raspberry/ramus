@@ -14,6 +14,7 @@ import { usePlaybackStore } from "../stores/playbackStore";
 import { pushSpectrumFrames, setAudibleClock } from "./spectrumRing";
 import { useConnectionStore } from "../stores/connectionStore";
 import { usePlaybackQualityStore } from "../stores/playbackQualityStore";
+import { useCastStore } from "../stores/castStore";
 import { applyAccent } from "./accent";
 import { bumpArtRetry } from "./useArtUrl";
 
@@ -134,7 +135,9 @@ export function usePlaybackEvents(authed: boolean): void {
     // the reload gap on a failover resume) — flip on the scanning indicator.
     const watchdog = window.setInterval(() => {
       const s = usePlaybackStore.getState();
-      if (s.status !== "playing") return;
+      // A cast's position arrives by 1 s poll; the backend reports the
+      // player's own buffering instead.
+      if (s.status !== "playing" || useCastStore.getState().player) return;
       if (performance.now() - lastPositionAt > BUFFERING_STALE_MS) {
         s.setBuffering(true);
       }
@@ -152,6 +155,7 @@ export function usePlaybackEvents(authed: boolean): void {
       u2,
       useConnectionStore.getState().ensureListener(),
       usePlaybackQualityStore.getState().ensureListener(),
+      useCastStore.getState().ensureListener(),
     ]);
 
     return () => {
