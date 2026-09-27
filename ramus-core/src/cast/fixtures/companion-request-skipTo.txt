@@ -1,0 +1,3 @@
+GET /player/playback/skipTo?key=5003&type=music&commandID=6 HTTP/1.1
+Host: 192.168.1.50:32500
+X-Plex-Client-Identifier: controller-1

@@ -1,0 +1,1 @@
+<MediaContainer commandID="0"><Timeline state="stopped" time="0" type="music" volume="100" shuffle="0" repeat="0" controllable="playPause,stop,skipPrevious,skipNext,seekTo,stepBack,stepForward,shuffle,repeat"/><Timeline type="video" state="stopped"/><Timeline type="photo" state="stopped"/></MediaContainer>

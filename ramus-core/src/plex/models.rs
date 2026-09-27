@@ -249,12 +249,15 @@ pub(super) struct LevelsContainer {
     pub level: Option<Vec<LevelSample>>,
 }
 
-// plex.tv server discovery responses.
+// plex.tv resource listing: every server, player and client on the account.
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct PlexResourceResponse {
+pub struct PlexResourceResponse {
     pub name: String,
+    /// Product name ("Plex Media Server", a player app's name, …). Absent on
+    /// some entries.
+    pub product: Option<String>,
     pub provides: String,
     pub client_identifier: String,
     pub access_token: Option<String>,
@@ -264,7 +267,7 @@ pub(super) struct PlexResourceResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct PlexResourceConnectionResponse {
+pub struct PlexResourceConnectionResponse {
     pub uri: String,
     pub local: Option<bool>,
     pub relay: Option<bool>,

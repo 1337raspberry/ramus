@@ -1,0 +1,4 @@
+GET /player/playback/playMedia?providerIdentifier=com.plexapp.plugins.library&machineIdentifier=server-mid&protocol=http&address=192.168.1.20&port=32400&offset=15000&key=%2Flibrary%2Fmetadata%2F2103&type=music&containerKey=%2FplayQueues%2F9001%3Fwindow%3D100%26own%3D1&token=transient-token&commandID=5 HTTP/1.1
+Host: 192.168.1.50:32500
+X-Plex-Target-Client-Identifier: ramus-client-id
+X-Plex-Client-Identifier: controller-1

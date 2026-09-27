@@ -24,7 +24,7 @@ use super::models::*;
 /// Reverse-proxy Plex deployments (e.g. behind `/plex`) need the prefix
 /// preserved on every request, so we normalise the base to end in `/` and
 /// strip any leading `/` from the path.
-fn join_path(base: &Url, path: &str) -> Result<Url, url::ParseError> {
+pub(crate) fn join_path(base: &Url, path: &str) -> Result<Url, url::ParseError> {
     let path = path.trim_start_matches('/');
     let s = base.as_str();
     if s.ends_with('/') {
@@ -139,7 +139,7 @@ impl PlexClient {
         self.state.write().on_request_failed = callback;
     }
 
-    fn platform() -> &'static str {
+    pub fn platform() -> &'static str {
         if cfg!(target_os = "macos") {
             "macOS"
         } else if cfg!(target_os = "windows") {
@@ -153,7 +153,7 @@ impl PlexClient {
         }
     }
 
-    fn device() -> &'static str {
+    pub fn device() -> &'static str {
         if cfg!(target_os = "macos") {
             "Mac"
         } else if cfg!(target_os = "windows") {
@@ -200,7 +200,7 @@ impl PlexClient {
         e.is_timeout() || e.is_connect() || e.is_request()
     }
 
-    async fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Vec<u8>, PlexClientError> {
+    pub(super) async fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Vec<u8>, PlexClientError> {
         self.with_retry(|| async {
             let (base, token) = self.read_state()?;
             let url = join_path(&base, path).map_err(|_| PlexClientError::InvalidResponse)?;
@@ -232,7 +232,7 @@ impl PlexClient {
         .await
     }
 
-    async fn put(&self, path: &str, query: &[(&str, &str)]) -> Result<(), PlexClientError> {
+    pub(super) async fn put(&self, path: &str, query: &[(&str, &str)]) -> Result<(), PlexClientError> {
         self.with_retry(|| async {
             let (base, token) = self.read_state()?;
             let url = join_path(&base, path).map_err(|_| PlexClientError::InvalidResponse)?;
@@ -263,7 +263,7 @@ impl PlexClient {
         .await
     }
 
-    async fn post(&self, path: &str, query: &[(&str, &str)]) -> Result<Vec<u8>, PlexClientError> {
+    pub(super) async fn post(&self, path: &str, query: &[(&str, &str)]) -> Result<Vec<u8>, PlexClientError> {
         self.with_retry(|| async {
             let (base, token) = self.read_state()?;
             let url = join_path(&base, path).map_err(|_| PlexClientError::InvalidResponse)?;
@@ -299,7 +299,7 @@ impl PlexClient {
         .await
     }
 
-    async fn delete(&self, path: &str, query: &[(&str, &str)]) -> Result<(), PlexClientError> {
+    pub(super) async fn delete(&self, path: &str, query: &[(&str, &str)]) -> Result<(), PlexClientError> {
         self.with_retry(|| async {
             let (base, token) = self.read_state()?;
             let url = join_path(&base, path).map_err(|_| PlexClientError::InvalidResponse)?;
@@ -349,11 +349,12 @@ impl PlexClient {
         }
     }
 
-    /// Discover servers available to the authenticated user via plex.tv.
-    pub async fn discover_servers(
+    /// Every resource (servers, players, clients) the account can see on
+    /// plex.tv.
+    pub async fn fetch_resources(
         &self,
         auth_token: &str,
-    ) -> Result<Vec<PlexServer>, PlexClientError> {
+    ) -> Result<Vec<PlexResourceResponse>, PlexClientError> {
         let builder = self
             .http
             .get("https://plex.tv/api/v2/resources")
@@ -378,8 +379,15 @@ impl PlexClient {
             return Err(PlexClientError::InvalidResponse);
         }
 
-        let resources: Vec<PlexResourceResponse> =
-            serde_json::from_slice(&body).map_err(|_| PlexClientError::InvalidResponse)?;
+        serde_json::from_slice(&body).map_err(|_| PlexClientError::InvalidResponse)
+    }
+
+    /// Discover servers available to the authenticated user via plex.tv.
+    pub async fn discover_servers(
+        &self,
+        auth_token: &str,
+    ) -> Result<Vec<PlexServer>, PlexClientError> {
+        let resources = self.fetch_resources(auth_token).await?;
 
         Ok(resources
             .into_iter()

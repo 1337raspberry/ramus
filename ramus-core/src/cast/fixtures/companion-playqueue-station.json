@@ -1,0 +1,9 @@
+{"MediaContainer": {
+  "size": 2, "playQueueID": "9100", "playQueueVersion": "1",
+  "playQueueSelectedItemID": "7001", "playQueueSelectedItemOffset": "0",
+  "playQueueShuffled": 1,
+  "Metadata": [
+    {"playQueueItemID": "7001", "ratingKey": "2301", "title": "Radio One", "grandparentTitle": "A", "parentTitle": "B", "duration": 150000, "Media": [{"Part": [{"key": "/library/parts/4301/1/file.flac"}]}]},
+    {"playQueueItemID": "7002", "ratingKey": "2302", "title": "Radio Two", "grandparentTitle": "A", "parentTitle": "B", "duration": 150000, "Media": [{"Part": [{"key": "/library/parts/4302/1/file.flac"}]}]}
+  ]
+}}

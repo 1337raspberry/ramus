@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod cast;
 pub mod genre;
 pub mod crates;
 pub mod models;

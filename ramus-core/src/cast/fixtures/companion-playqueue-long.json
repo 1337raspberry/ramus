@@ -1,0 +1,10 @@
+{"MediaContainer": {
+  "size": 3, "playQueueID": 9002, "playQueueVersion": 1,
+  "playQueueSelectedItemID": 6001, "playQueueSelectedItemOffset": 0,
+  "playQueueTotalCount": 5, "playQueueShuffled": false,
+  "Metadata": [
+    {"playQueueItemID": 6001, "ratingKey": "2201", "title": "One", "grandparentTitle": "A", "parentTitle": "B", "duration": 100000, "Media": [{"Part": [{"key": "/library/parts/4201/1/file.flac"}]}]},
+    {"playQueueItemID": 6002, "ratingKey": "2202", "title": "Two", "grandparentTitle": "A", "parentTitle": "B", "duration": 100000, "Media": [{"Part": [{"key": "/library/parts/4202/1/file.flac"}]}]},
+    {"playQueueItemID": 6003, "ratingKey": "2203", "title": "Three", "grandparentTitle": "A", "parentTitle": "B", "duration": 100000, "Media": [{"Part": [{"key": "/library/parts/4203/1/file.flac"}]}]}
+  ]
+}}

@@ -1,0 +1,1 @@
+<MediaContainer commandID="3"><Timeline state="paused" duration="180000" time="5000" ratingKey="77" key="/library/metadata/77" type="music" volume="100" shuffle="1" repeat="2" controllable="playPause,stop,skipPrevious,skipNext,seekTo,stepBack,stepForward,shuffle,repeat"/><Timeline type="video" state="stopped"/><Timeline type="photo" state="stopped"/></MediaContainer>

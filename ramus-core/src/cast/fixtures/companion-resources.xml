@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MediaContainer>
+<Player title="ramus" protocol="plex" protocolVersion="1" protocolCapabilities="timeline,playback,navigation,playqueues" machineIdentifier="ramus-client-id" product="ramusTV" platform="tvOS" platformVersion="26.0" deviceClass="stb" state="stopped" address="192.168.1.50" port="32500" version="1.0" provides="client,player,pubsub-player">
+<Connection protocol="http" address="192.168.1.50" port="32500" uri="http://192.168.1.50:32500" local="1"/>
+</Player>
+</MediaContainer>

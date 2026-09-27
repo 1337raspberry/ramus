@@ -1,0 +1,12 @@
+{"MediaContainer": {
+  "size": 3, "identifier": "com.plexapp.plugins.library",
+  "playQueueID": 9001, "playQueueSelectedItemID": 5002, "playQueueSelectedItemOffset": 1,
+  "playQueueSelectedMetadataItemID": "2102", "playQueueShuffled": false,
+  "playQueueSourceURI": "library:///directory/%2Flibrary%2Fmetadata%2F2100%2Fchildren",
+  "playQueueTotalCount": 3, "playQueueVersion": 3,
+  "Metadata": [
+    {"playQueueItemID": 5001, "ratingKey": "2101", "key": "/library/metadata/2101", "type": "track", "title": "Opening", "grandparentTitle": "Some Artist", "parentTitle": "Some Album", "duration": 200000, "parentThumb": "/library/metadata/2100/thumb/1700000000", "Media": [{"audioCodec": "flac", "Part": [{"key": "/library/parts/3101/1600000000/file.flac"}]}]},
+    {"playQueueItemID": 5002, "ratingKey": "2102", "key": "/library/metadata/2102", "type": "track", "title": "Middle", "grandparentTitle": "Some Artist", "originalTitle": "Guest Artist", "parentTitle": "Some Album", "duration": 245123, "thumb": "/library/metadata/2102/thumb/1700000001", "parentThumb": "/library/metadata/2100/thumb/1700000000", "Media": [{"audioCodec": "flac", "Part": [{"key": "/library/parts/3102/1600000000/file.flac"}]}]},
+    {"playQueueItemID": 5003, "ratingKey": "2103", "key": "/library/metadata/2103", "type": "track", "title": "Closing", "grandparentTitle": "Some Artist", "parentTitle": "Some Album", "duration": "180000", "Media": [{"audioCodec": "mp3", "Part": [{"key": "/library/parts/3103/1600000000/file.mp3"}]}]}
+  ]
+}}
