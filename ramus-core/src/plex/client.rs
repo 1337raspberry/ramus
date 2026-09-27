@@ -382,6 +382,37 @@ impl PlexClient {
         serde_json::from_slice(&body).map_err(|_| PlexClientError::InvalidResponse)
     }
 
+    /// plex.tv's device list (`/devices.xml`), as XML. It carries per-device
+    /// tokens: parse what's needed from it and never log it.
+    pub async fn fetch_devices(&self, auth_token: &str) -> Result<String, PlexClientError> {
+        let resp = self
+            .http
+            .get("https://plex.tv/devices.xml")
+            .header("Accept", "application/xml")
+            .header("X-Plex-Client-Identifier", &self.client_identifier)
+            .header("X-Plex-Product", "ramus")
+            .header("X-Plex-Platform", Self::platform())
+            .header("X-Plex-Device", Self::device())
+            .header("X-Plex-Token", auth_token)
+            .send()
+            .await
+            .map_err(|_| PlexClientError::ConnectionFailed)?;
+
+        let status = resp.status().as_u16();
+        if !(200..300).contains(&(status as usize)) {
+            return Err(PlexClientError::ConnectionFailed);
+        }
+
+        let body = resp
+            .bytes()
+            .await
+            .map_err(|_| PlexClientError::InvalidResponse)?;
+        if body.len() > MAX_RESPONSE_BYTES {
+            return Err(PlexClientError::InvalidResponse);
+        }
+        String::from_utf8(body.to_vec()).map_err(|_| PlexClientError::InvalidResponse)
+    }
+
     /// Discover servers available to the authenticated user via plex.tv.
     pub async fn discover_servers(
         &self,

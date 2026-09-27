@@ -1,14 +1,14 @@
 use tauri::{AppHandle, State};
 
-use crate::cast::{lifecycle, CastPlayerView};
+use crate::cast::{lifecycle, CastPlayerRef};
 use crate::events::CastStatusPayload;
 use crate::state::AppState;
 
 use super::CmdResult;
 
-/// The Plex players on the account, probed; reachable ones first.
+/// The Plex players on the account that answer now.
 #[tauri::command]
-pub async fn list_cast_players(state: State<'_, AppState>) -> CmdResult<Vec<CastPlayerView>> {
+pub async fn list_cast_players(state: State<'_, AppState>) -> CmdResult<Vec<CastPlayerRef>> {
     lifecycle::list_players(&state).await
 }
 

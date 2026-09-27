@@ -6,7 +6,7 @@ import type {
   Album,
   ArtistInfo,
   CacheStats,
-  CastPlayerView,
+  CastPlayerRef,
   CastStatusPayload,
   ConnectionStatusPayload,
   DownloadsOverview,
@@ -479,7 +479,7 @@ export const setWebviewVisible = (visible: boolean) =>
 
 // --- Cast ---
 
-export const listCastPlayers = () => invoke<CastPlayerView[]>("list_cast_players");
+export const listCastPlayers = () => invoke<CastPlayerRef[]>("list_cast_players");
 
 export const startCast = (playerId: string) => invoke<void>("start_cast", { playerId });
 

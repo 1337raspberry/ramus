@@ -8968,10 +8968,6 @@ body.is-fullscreen .focus-clear-player {
   opacity: 0.6;
 }
 
-.cast-picker-list button.cast-picker-unreachable {
-  opacity: 0.45;
-}
-
 .cast-picker-error {
   white-space: normal;
 }
