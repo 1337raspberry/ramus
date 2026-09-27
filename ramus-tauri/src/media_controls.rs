@@ -18,6 +18,8 @@ use ramus_core::playback::player::AudioPlayer;
 use ramus_core::plex::client::PlexClient;
 use ramus_core::util::plex_art_url;
 
+use crate::cast::ops::RemoteAction;
+
 /// Deferred-population slot for media controls; matches `ReporterRef` and
 /// `PrefetchHandleRef`.
 pub type MediaControlsRef = Arc<parking_lot::Mutex<Option<MediaControlsHandle>>>;
@@ -269,6 +271,32 @@ pub fn create_media_controls(
     let p = player.clone();
     controls
         .attach(move |event: MediaControlEvent| {
+            // While casting, the keys drive the player (spawned: this runs on
+            // the OS media-controls thread).
+            if let Some(state) = app.try_state::<crate::state::AppState>() {
+                if state.cast.is_active() {
+                    let action = match &event {
+                        MediaControlEvent::Play => Some(RemoteAction::Play),
+                        MediaControlEvent::Pause => Some(RemoteAction::Pause),
+                        MediaControlEvent::Toggle => Some(RemoteAction::Toggle),
+                        MediaControlEvent::Next => Some(RemoteAction::Next),
+                        MediaControlEvent::Previous => Some(RemoteAction::Previous),
+                        MediaControlEvent::SetPosition(MediaPosition(dur)) => {
+                            Some(RemoteAction::Seek(dur.as_secs_f64()))
+                        }
+                        _ => None,
+                    };
+                    if let Some(action) = action {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            if let Some(state) = app.try_state::<crate::state::AppState>() {
+                                crate::cast::ops::media_action(&app, &state, action).await;
+                            }
+                        });
+                    }
+                    return;
+                }
+            }
             match event {
                 MediaControlEvent::Play => p.resume(),
                 MediaControlEvent::Pause => p.pause(),

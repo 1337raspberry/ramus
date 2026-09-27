@@ -1,4 +1,5 @@
 pub mod auto_sync;
+pub mod cast;
 pub mod commands;
 pub mod events;
 
@@ -356,6 +357,10 @@ pub fn create_mpv_player(
         on_position_change: Some(Box::new(move |pos| {
             if let Some(ref p) = *pr1.lock() {
                 p.handle_position_change(pos);
+                // Playback is on another device; its poll owns the UI.
+                if crate::cast::is_casting(&app1) {
+                    return;
+                }
                 let dur = p.duration();
                 // `p.position()` (the `position_base`-remapped value), NOT the
                 // raw callback `pos`: a transcode `offset=` resume stream is
@@ -393,6 +398,10 @@ pub fn create_mpv_player(
             if let Some(ref p) = *pr2.lock() {
                 let old_dur = p.duration();
                 p.handle_duration_change(dur);
+                // Playback is on another device; its poll owns the UI.
+                if crate::cast::is_casting(&app2) {
+                    return;
+                }
                 // Read back from the player AFTER handle_duration_change —
                 // mpv's report is rejected when we have a metadata duration
                 // (Plex tag is stable; mpv's chunked-Opus estimate flutters).
@@ -471,6 +480,10 @@ pub fn create_mpv_player(
                 if !p.handle_playlist_pos_change(pos) {
                     return;
                 }
+                // Playback is on another device; its poll owns the UI.
+                if crate::cast::is_casting(&app3) {
+                    return;
+                }
                 let state = p.state();
                 emit_playback_state(
                     &app3,
@@ -543,6 +556,10 @@ pub fn create_mpv_player(
                 if !p.handle_pause_change(paused) {
                     return;
                 }
+                // Playback is on another device; its poll owns the UI.
+                if crate::cast::is_casting(&app4) {
+                    return;
+                }
                 let state = p.state();
                 emit_playback_state(
                     &app4,
@@ -591,6 +608,10 @@ pub fn create_mpv_player(
                 // Taken only after the verdict: a declined idle must leave
                 // the snapshot for the pos-change event that consumes it.
                 let pending = p.take_pending_transition();
+                // Playback is on another device; its poll owns the UI.
+                if crate::cast::is_casting(&app5) {
+                    return;
+                }
 
                 emit_playback_state(
                     &app5,
@@ -638,7 +659,12 @@ pub fn create_mpv_player(
         })),
         on_file_ended: Some(Box::new(move |reason| {
             if let Some(ref p) = *pr7.lock() {
-                match p.handle_file_ended(reason) {
+                let outcome = p.handle_file_ended(reason);
+                // Playback is on another device; its poll owns the UI.
+                if crate::cast::is_casting(&app6) {
+                    return;
+                }
+                match outcome {
                     RecoverOutcome::Reloading(pos) => {
                         // A resume-at-position reload was issued. Freeze the OS
                         // now-playing scrubber at the resume point (rate=0) and
@@ -1061,6 +1087,7 @@ pub fn run() {
                 server_reachable: Arc::new(std::sync::atomic::AtomicBool::new(true)),
                 recovery_grace: recovery_grace.clone(),
                 mc_reanchor: mc_reanchor.clone(),
+                cast: crate::cast::CastRuntime::default(),
             };
 
             // Restore previous session. State is set synchronously (no blocking
@@ -1538,6 +1565,11 @@ pub fn run() {
 
             app.manage(state);
 
+            // Pick a cast back up if one was active when ramus last quit.
+            tauri::async_runtime::spawn(crate::cast::lifecycle::resume_on_launch(
+                app_handle.clone(),
+            ));
+
             session_reporter.ensure_loop_spawned();
 
             crate::auto_sync::spawn(
@@ -1661,6 +1693,11 @@ pub fn run() {
             commands::playback::get_debug_info,
             commands::playback::foreground_resync,
             commands::playback::set_webview_visible,
+            // cast
+            commands::cast::list_cast_players,
+            commands::cast::start_cast,
+            commands::cast::get_cast_status,
+            commands::cast::stop_cast,
             // spectrum (focus-mode visualiser)
             commands::spectrum::set_spectrum_tap,
             commands::spectrum::set_spectrum_tilt,
