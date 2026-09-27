@@ -39,7 +39,12 @@ export default function CastButton({
       >
         <IconCast size={size} />
       </button>
-      {open && (sheet ? <CastPickerSheet overSheet onDismiss={close} /> : <CastPickerModal onDismiss={close} />)}
+      {open &&
+        (sheet ? (
+          <CastPickerSheet overSheet onDismiss={close} />
+        ) : (
+          <CastPickerModal onDismiss={close} />
+        ))}
     </>
   );
 }

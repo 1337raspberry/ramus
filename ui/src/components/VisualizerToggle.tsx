@@ -1,5 +1,6 @@
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useCastStore } from "../stores/castStore";
 import {
   nextVisualizerMode,
   shownVisualizerMode,
@@ -25,14 +26,16 @@ const ICON: Record<VisualizerMode, typeof IconWave> = {
  * clear-screen corner player so a new mode lands in both at once; the
  * clear screen's cycle leaves out off (`lib/visualizerMode.ts`). Absent
  * while the visualiser is disabled in settings, since there is nothing
- * for it to switch.
+ * for it to switch, and while casting, since the visualiser analyses local
+ * audio.
  */
 export default function VisualizerToggle() {
   const mode = usePlaybackStore((s) => s.visualizerMode);
   const clear = usePlaybackStore((s) => s.focusClear);
   const toggle = usePlaybackStore((s) => s.toggleVisualizer);
   const disabled = useSettingsStore((s) => s.disableSpectrum);
-  if (disabled) return null;
+  const casting = useCastStore((s) => s.player !== null);
+  if (disabled || casting) return null;
   const shown = shownVisualizerMode(mode, clear);
   const Icon = ICON[shown];
   const title = `Visualiser: ${LABEL[shown]} — click for ${LABEL[nextVisualizerMode(mode, clear)]}`;

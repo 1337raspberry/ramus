@@ -88,6 +88,17 @@ export default function CastPickerContent({ onDone }: { onDone: () => void }) {
           </button>
         ))
       )}
+      {!error && players !== null && players.length > 0 && players.every((p) => !p.reachable) && (
+        // Usually the network, or on iPhone a Local Network permission that
+        // was still being asked for (or was refused) during the probe.
+        <>
+          <div className="mobile-collection-empty cast-picker-error">
+            None of these players answered. Check they're on and on the same network. On iPhone,
+            also check ramus has Local Network access in Settings.
+          </div>
+          <button onClick={retry}>Retry</button>
+        </>
+      )}
       {error && (
         <>
           <div className="mobile-collection-empty cast-picker-error">{error}</div>

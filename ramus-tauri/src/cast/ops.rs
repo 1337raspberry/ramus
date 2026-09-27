@@ -70,7 +70,7 @@ async fn replace_queue(
         return Ok(());
     }
     let queue = lifecycle::send_queue(state, &cast.client, &cast.server, source).await?;
-    lifecycle::adopt_queue(app, state, cast, &queue).await;
+    lifecycle::adopt_queue(app, state, cast, &queue, source).await;
     Ok(())
 }
 
@@ -100,27 +100,40 @@ pub async fn toggle(app: &AppHandle, state: &AppState) -> OpResult {
     let Some(cast) = guard.as_mut() else {
         return Ok(());
     };
-    let result = match cast.state.remote_state() {
-        Some(RemoteState::Playing | RemoteState::Buffering) => cast
-            .client
-            .send(&PlayerCommand::Pause)
+    let result = if let Some(play) = cast.state.toggle_pending() {
+        // The player hasn't reported the queue just sent: flip what was sent.
+        let command = if play {
+            PlayerCommand::Play
+        } else {
+            PlayerCommand::Pause
+        };
+        cast.client
+            .send(&command)
             .await
-            .map_err(|e| player_message(&cast.player, &e)),
-        Some(RemoteState::Paused) => cast
-            .client
-            .send(&PlayerCommand::Play)
-            .await
-            .map_err(|e| player_message(&cast.player, &e)),
-        // The player finished or dropped the queue: send it again from the
-        // track on screen.
-        _ => {
-            let source = Source {
-                tracks: cast.queue.tracks(),
-                index: cast.state.index().unwrap_or(0),
-                position: 0.0,
-                paused: false,
-            };
-            replace_queue(app, state, cast, &source).await
+            .map_err(|e| player_message(&cast.player, &e))
+    } else {
+        match cast.state.remote_state() {
+            Some(RemoteState::Playing | RemoteState::Buffering) => cast
+                .client
+                .send(&PlayerCommand::Pause)
+                .await
+                .map_err(|e| player_message(&cast.player, &e)),
+            Some(RemoteState::Paused) => cast
+                .client
+                .send(&PlayerCommand::Play)
+                .await
+                .map_err(|e| player_message(&cast.player, &e)),
+            // The player finished or dropped the queue: send it again from
+            // the track on screen.
+            _ => {
+                let source = Source {
+                    tracks: cast.queue.tracks(),
+                    index: cast.state.index().unwrap_or(0),
+                    position: 0.0,
+                    paused: false,
+                };
+                replace_queue(app, state, cast, &source).await
+            }
         }
     };
     poll::settle(app, state, &mut guard).await;

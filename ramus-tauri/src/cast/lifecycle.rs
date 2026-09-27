@@ -14,6 +14,7 @@ use ramus_core::cast::players::players_from_resources;
 use ramus_core::cast::record::{self, CastRecord};
 use ramus_core::cast::session::{CastQueue, CastState, Link, LocalResume};
 use ramus_core::models::{PlaybackStatus, Track};
+use ramus_core::playback::media_keys::MediaKeyHandler;
 use ramus_core::plex::client::{build_library_uri, PlexClientError};
 use ramus_core::plex::token_store::{TokenKey, TokenStore};
 
@@ -22,10 +23,14 @@ use crate::events::{
 };
 use crate::state::AppState;
 
-use super::{poll, ActiveCast, CastPlayerRef, CastPlayerView, ListedPlayer};
+use super::poll::{self, Ending};
+use super::{ActiveCast, CastPlayerRef, CastPlayerView, ListedPlayer};
 
 /// How long a player in the picker gets to answer its probe.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+/// How long handing back waits on the player, for its position and for the
+/// stop; a LAN player answers in milliseconds.
+const HAND_BACK_WAIT: Duration = Duration::from_secs(1);
 
 /// What a cast starts from: the local queue, or the cast being replaced.
 pub(crate) struct Source {
@@ -194,21 +199,38 @@ pub(crate) async fn send_queue(
 }
 
 /// Mirrors a freshly sent play queue and remembers the cast for relaunch.
+/// Until the player reports the queue, the cast shows (and would resume
+/// from) the point `source` was sent from.
 pub(crate) async fn adopt_queue(
     app: &AppHandle,
     state: &AppState,
     cast: &mut ActiveCast,
     sent: &PlayQueue,
+    source: &Source,
 ) {
     // The creation reply holds one window of the queue; the mirror needs all of it.
-    match state.client.play_queue(sent.id).await {
-        Ok(full) => poll::set_queue(state, cast, &full),
+    let selected = match state.client.play_queue(sent.id).await {
+        Ok(full) => {
+            poll::set_queue(state, cast, &full);
+            full.selected_item_id.or(sent.selected_item_id)
+        }
         Err(e) => {
             log::warn!("cast: play queue fetch failed, using the creation reply: {e}");
             poll::set_queue(state, cast, sent);
+            sent.selected_item_id
         }
-    }
-    cast.state.restart();
+    };
+    let pending = selected
+        .and_then(|item| cast.queue.index_of_item(item))
+        .map(|index| {
+            let position = source.position.max(0.0);
+            if source.paused {
+                LocalResume::Paused { index, position }
+            } else {
+                LocalResume::Play { index, position }
+            }
+        });
+    cast.state.restart(pending);
     let record = CastRecord {
         player_id: cast.player.id.clone(),
         player_name: cast.player.name.clone(),
@@ -292,7 +314,7 @@ pub async fn start(app: &AppHandle, state: &AppState, player_id: &str) -> Result
         queue: CastQueue::default(),
         state: CastState::new(),
     };
-    adopt_queue(app, state, &mut cast, &queue).await;
+    adopt_queue(app, state, &mut cast, &queue, &source).await;
     *guard = Some(cast);
     poll::settle(app, state, &mut guard).await;
     drop(guard);
@@ -300,7 +322,15 @@ pub async fn start(app: &AppHandle, state: &AppState, player_id: &str) -> Result
     Ok(())
 }
 
-pub(crate) fn emit_stopped(app: &AppHandle) {
+/// Takes the cast's track off the OS now-playing card.
+fn clear_os_controls(state: &AppState) {
+    if let Some(ref mc) = *state.media_controls.lock() {
+        mc.clear();
+    }
+}
+
+pub(crate) fn emit_stopped(app: &AppHandle, state: &AppState) {
+    clear_os_controls(state);
     emit_playback_state(
         app,
         PlaybackStatePayload {
@@ -324,6 +354,8 @@ pub(crate) fn resume_locally(
             crate::commands::playback::start_local_queue(app, state, tracks, index, resume_at);
         }
         LocalResume::Paused { index, position } => {
+            // Like a restored queue: no OS card until playback starts.
+            clear_os_controls(state);
             state.player.restore_queue(tracks, index, position);
             let ps = state.player.state();
             emit_playback_state(
@@ -346,26 +378,27 @@ pub(crate) fn resume_locally(
     }
 }
 
-/// Another app, or another ramus, now drives the player: playback comes
-/// back here, paused where this cast last saw it.
-pub(crate) fn finish_takeover(app: &AppHandle, state: &AppState, cast: ActiveCast) {
+/// The cast ended on the player's side: another app, or another ramus, now
+/// drives it, or it never started the queue. Playback comes back here,
+/// paused where this cast last saw it.
+pub(crate) fn finish_takeover(app: &AppHandle, state: &AppState, cast: ActiveCast, ending: Ending) {
     let resume = cast
         .state
         .local_resume(&cast.queue)
         .map(LocalResume::paused);
     let tracks = cast.queue.tracks();
     state.cast.deactivate();
-    super::emit_status(
-        app,
-        state,
-        Some(format!(
-            "{} is playing something else now",
-            cast.player.name
-        )),
-    );
+    let name = &cast.player.name;
+    let notice = match ending {
+        Ending::TakenOver => format!("{name} is playing something else now"),
+        Ending::NotStarted => {
+            format!("{name} didn't start playing. Check it can reach your Plex server")
+        }
+    };
+    super::emit_status(app, state, Some(notice));
     match resume {
         Some(resume) => resume_locally(app, state, tracks, resume),
-        None => emit_stopped(app),
+        None => emit_stopped(app, state),
     }
 }
 
@@ -377,22 +410,22 @@ pub async fn hand_back(app: &AppHandle, state: &AppState) -> Result<(), String> 
     let Some(mut cast) = guard.take() else {
         return Ok(());
     };
-    let reachable = cast.state.link() == Link::Connected;
-    if reachable {
-        let outcome = cast.client.poll().await;
-        let _ = cast.state.apply(&outcome, &cast.queue);
+    if cast.state.answering() {
+        if let Ok(outcome) = tokio::time::timeout(HAND_BACK_WAIT, cast.client.poll()).await {
+            let _ = cast.state.apply(&outcome, &cast.queue);
+        }
     }
     let resume = cast.state.local_resume(&cast.queue);
     let tracks = cast.queue.tracks();
     state.cast.deactivate();
     drop(guard);
-    if reachable {
-        let _ = cast.client.send(&PlayerCommand::Stop).await;
+    if cast.state.link() == Link::Connected {
+        let _ = tokio::time::timeout(HAND_BACK_WAIT, cast.client.send(&PlayerCommand::Stop)).await;
     }
     super::emit_status(app, state, None);
     match resume {
         Some(resume) => resume_locally(app, state, tracks, resume),
-        None => emit_stopped(app),
+        None => emit_stopped(app, state),
     }
     Ok(())
 }
@@ -410,7 +443,7 @@ pub async fn end_on_clear(app: &AppHandle, state: &AppState) -> Result<(), Strin
     let _ = cast.client.send(&PlayerCommand::Stop).await;
     super::emit_status(app, state, None);
     crate::queue_persist::forget();
-    emit_stopped(app);
+    emit_stopped(app, state);
     Ok(())
 }
 
