@@ -19,7 +19,7 @@ use crate::state::AppState;
 use super::sync::get_library_key;
 use super::{with_cache, CmdResult};
 
-pub(super) fn get_machine_identifier() -> CmdResult<String> {
+pub(crate) fn get_machine_identifier() -> CmdResult<String> {
     let token_store = TokenStore::new().map_err(|e| e.to_string())?;
     let config = auth::stored_server_config(&token_store).ok_or("No server config")?;
     Ok(config.machine_identifier)

@@ -196,6 +196,7 @@ pub async fn finalize_onboarding(
     library_key: String,
     server_url: String,
 ) -> CmdResult<()> {
+    crate::cast::lifecycle::drop_silently(&app, &state).await;
     let token_store = TokenStore::new().map_err(|e| e.to_string())?;
 
     // Look up server from discovery cache; manual connections get a minimal
@@ -331,7 +332,8 @@ pub async fn is_authenticated(state: State<'_, AppState>) -> CmdResult<bool> {
 }
 
 #[tauri::command]
-pub async fn logout(state: State<'_, AppState>) -> CmdResult<()> {
+pub async fn logout(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    crate::cast::lifecycle::drop_silently(&app, &state).await;
     state.player.stop();
     // One account's queue must never surface under the next sign-in.
     crate::queue_persist::forget();

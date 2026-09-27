@@ -12,13 +12,16 @@ use crate::state::AppState;
 
 use super::CmdResult;
 
-#[tauri::command]
-pub async fn play_tracks(
-    app: AppHandle,
-    state: State<'_, AppState>,
+/// Load `tracks` into the local player and start at `start_at`, closing the
+/// outgoing Plex session first. `resume` starts mid-track (a cast handing
+/// playback back); `None` starts from the beginning.
+pub(crate) fn start_local_queue(
+    app: &AppHandle,
+    state: &AppState,
     tracks: Vec<Track>,
     start_at: usize,
-) -> CmdResult<()> {
+    resume: Option<f64>,
+) {
     // Close the outgoing session before loading the new queue, while the
     // player still holds the old track at its true position — scrobbling it
     // if it crossed the threshold. `next` stays None: the new queue's
@@ -40,11 +43,11 @@ pub async fn play_tracks(
     // playlist-pos-change from mpv.
     state.prefetch_handle.notify_cancel();
 
-    state.player.load_queue(tracks, start_at);
+    state.player.load_queue_at(tracks, start_at, resume);
 
     let player_state = state.player.state();
     emit_playback_state(
-        &app,
+        app,
         PlaybackStatePayload {
             status: "playing".to_string(),
             current_track: player_state.current_track.clone(),
@@ -73,8 +76,20 @@ pub async fn play_tracks(
     // coalesces (only starts a new cycle when idle).
     state.prefetch_handle.notify_natural_advance();
 
-    crate::queue_persist::save_soon(&app);
+    crate::queue_persist::save_soon(app);
+}
 
+#[tauri::command]
+pub async fn play_tracks(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tracks: Vec<Track>,
+    start_at: usize,
+) -> CmdResult<()> {
+    if state.cast.is_active() {
+        return crate::cast::ops::play_tracks(&app, &state, tracks, start_at).await;
+    }
+    start_local_queue(&app, &state, tracks, start_at, None);
     Ok(())
 }
 
@@ -125,6 +140,9 @@ fn report_if_materialised(app: &AppHandle, state: &AppState) {
 
 #[tauri::command]
 pub async fn toggle_play_pause(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    if state.cast.is_active() {
+        return crate::cast::ops::toggle(&app, &state).await;
+    }
     state.player.toggle_play_pause();
     report_if_materialised(&app, &state);
     Ok(())
@@ -138,6 +156,9 @@ pub async fn toggle_play_pause(app: AppHandle, state: State<'_, AppState>) -> Cm
 
 #[tauri::command]
 pub async fn next_track(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    if state.cast.is_active() {
+        return crate::cast::ops::next(&app, &state).await;
+    }
     state.prefetch_handle.notify_skip();
     state.player.next();
     report_if_materialised(&app, &state);
@@ -147,6 +168,9 @@ pub async fn next_track(app: AppHandle, state: State<'_, AppState>) -> CmdResult
 
 #[tauri::command]
 pub async fn previous_track(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    if state.cast.is_active() {
+        return crate::cast::ops::previous(&app, &state).await;
+    }
     state.prefetch_handle.notify_skip();
     state.player.previous();
     report_if_materialised(&app, &state);
@@ -156,6 +180,9 @@ pub async fn previous_track(app: AppHandle, state: State<'_, AppState>) -> CmdRe
 
 #[tauri::command]
 pub async fn seek(app: AppHandle, state: State<'_, AppState>, position: f64) -> CmdResult<()> {
+    if state.cast.is_active() {
+        return crate::cast::ops::seek(&app, &state, position).await;
+    }
     state.player.seek(position);
     // Scrubbing a restored track materialises it — that is the play intent,
     // so the session opens here rather than on a later transport command.
@@ -186,6 +213,9 @@ pub async fn append_to_queue(
     state: State<'_, AppState>,
     tracks: Vec<Track>,
 ) -> CmdResult<()> {
+    if state.cast.is_active() {
+        return crate::cast::ops::add(&app, &state, tracks, false).await;
+    }
     state.player.append_to_queue(tracks);
     crate::queue_persist::save_soon(&app);
     Ok(())
@@ -197,6 +227,9 @@ pub async fn insert_next(
     state: State<'_, AppState>,
     tracks: Vec<Track>,
 ) -> CmdResult<()> {
+    if state.cast.is_active() {
+        return crate::cast::ops::add(&app, &state, tracks, true).await;
+    }
     state.player.insert_next(tracks);
     crate::queue_persist::save_soon(&app);
     Ok(())
@@ -208,6 +241,9 @@ pub async fn remove_from_queue(
     state: State<'_, AppState>,
     index: usize,
 ) -> CmdResult<()> {
+    if state.cast.is_active() {
+        return crate::cast::ops::remove(&app, &state, index).await;
+    }
     state.player.remove_from_queue(index);
     crate::queue_persist::save_soon(&app);
     Ok(())
@@ -222,6 +258,9 @@ pub async fn move_queue_item(
     from: usize,
     to: usize,
 ) -> CmdResult<()> {
+    if state.cast.is_active() {
+        return crate::cast::ops::move_item(&app, &state, from, to).await;
+    }
     state.player.move_queue_item(from, to);
     state.prefetch_handle.notify_skip();
     crate::queue_persist::save_soon(&app);
@@ -234,6 +273,9 @@ pub async fn jump_to_queue_index(
     state: State<'_, AppState>,
     index: usize,
 ) -> CmdResult<()> {
+    if state.cast.is_active() {
+        return crate::cast::ops::jump(&app, &state, index).await;
+    }
     state.prefetch_handle.notify_skip();
     state.player.jump_to_index(index);
     report_if_materialised(&app, &state);
@@ -253,7 +295,33 @@ pub async fn flush_queue_state(app: AppHandle) -> CmdResult<()> {
 
 #[tauri::command]
 pub async fn get_queue(state: State<'_, AppState>) -> CmdResult<Vec<Track>> {
+    if state.cast.is_active() {
+        return Ok(state.cast.view().tracks);
+    }
     Ok(state.player.state().queue)
+}
+
+/// Stop the local player: close the Plex session at the true position (see
+/// `clear_queue`), cancel prefetch, stop mpv and clear the OS controls.
+pub(crate) fn stop_local_playback(state: &AppState) {
+    let prev = state.player.state().current_track.clone();
+    if let Some(ref prev) = prev {
+        let pos = state.player.position();
+        let dur = state.player.duration();
+        let sid = state.player.play_session_id();
+        state
+            .session_reporter
+            .track_transition(prev, pos, dur, None, &sid);
+    } else {
+        state.session_reporter.playback_stopped();
+    }
+
+    state.prefetch_handle.notify_cancel();
+    state.player.stop();
+
+    if let Some(ref mc) = *state.media_controls.lock() {
+        mc.clear();
+    }
 }
 
 /// Stop playback and empty the queue.
@@ -276,25 +344,11 @@ pub async fn get_queue(state: State<'_, AppState>) -> CmdResult<Vec<Track>> {
 /// idempotent.
 #[tauri::command]
 pub async fn clear_queue(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
-    let prev = state.player.state().current_track.clone();
-    if let Some(ref prev) = prev {
-        let pos = state.player.position();
-        let dur = state.player.duration();
-        let sid = state.player.play_session_id();
-        state
-            .session_reporter
-            .track_transition(prev, pos, dur, None, &sid);
-    } else {
-        state.session_reporter.playback_stopped();
+    if state.cast.is_active() {
+        return crate::cast::lifecycle::end_on_clear(&app, &state).await;
     }
-
-    state.prefetch_handle.notify_cancel();
-    state.player.stop();
+    stop_local_playback(&state);
     crate::queue_persist::forget();
-
-    if let Some(ref mc) = *state.media_controls.lock() {
-        mc.clear();
-    }
 
     emit_playback_state(
         &app,
@@ -552,10 +606,12 @@ pub async fn set_webview_visible(
     visible: bool,
 ) -> CmdResult<()> {
     crate::events::record_webview_visibility(&app, visible, || {
-        crate::events::PlaybackPositionPayload {
-            position: state.player.position(),
-            duration: state.player.duration(),
-        }
+        let (position, duration) = if state.cast.is_active() {
+            state.cast.position()
+        } else {
+            (state.player.position(), state.player.duration())
+        };
+        crate::events::PlaybackPositionPayload { position, duration }
     });
     Ok(())
 }
@@ -579,22 +635,26 @@ pub async fn set_webview_visible(
 ///    everything is fine costs zero network traffic.
 #[tauri::command]
 pub async fn foreground_resync(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
-    let ps = state.player.state();
-    emit_playback_state(
-        &app,
-        PlaybackStatePayload {
-            status: format!("{:?}", ps.status).to_lowercase(),
-            current_track: ps.current_track.clone(),
-            queue_index: ps.queue_index,
-        },
-    );
-    crate::events::emit_playback_position(
-        &app,
-        crate::events::PlaybackPositionPayload {
-            position: state.player.position(),
-            duration: state.player.duration(),
-        },
-    );
+    if state.cast.is_active() {
+        crate::cast::ops::resync(&app, &state).await;
+    } else {
+        let ps = state.player.state();
+        emit_playback_state(
+            &app,
+            PlaybackStatePayload {
+                status: format!("{:?}", ps.status).to_lowercase(),
+                current_track: ps.current_track.clone(),
+                queue_index: ps.queue_index,
+            },
+        );
+        crate::events::emit_playback_position(
+            &app,
+            crate::events::PlaybackPositionPayload {
+                position: state.player.position(),
+                duration: state.player.duration(),
+            },
+        );
+    }
     let online = state
         .server_reachable
         .load(std::sync::atomic::Ordering::Acquire);
@@ -624,7 +684,7 @@ pub async fn foreground_resync(app: AppHandle, state: State<'_, AppState>) -> Cm
         },
     );
 
-    if !online || state.player.needs_connection_recovery() {
+    if !state.cast.is_active() && (!online || state.player.needs_connection_recovery()) {
         let monitor = std::sync::Arc::clone(&state.connection_monitor);
         let player = state.player.clone();
         let grace = state.recovery_grace.clone();

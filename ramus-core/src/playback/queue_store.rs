@@ -136,7 +136,7 @@ pub fn window(tracks: &[Track], index: usize) -> (Vec<Track>, usize) {
 /// costs a session's queue (a torn file fails to parse and restore is
 /// skipped), but rename is atomic on both POSIX and NTFS and the guarantee
 /// is three lines.
-fn write_atomic(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

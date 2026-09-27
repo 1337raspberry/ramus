@@ -5,5 +5,6 @@
 pub mod companion;
 pub mod play_queue;
 pub mod players;
+pub mod record;
 pub mod session;
 pub mod timeline;

@@ -45,6 +45,11 @@ fn snapshot(app: &AppHandle) -> Option<(Vec<Track>, usize, f64)> {
     if !state.settings.read().resume_queue_on_launch {
         return None;
     }
+    // While casting, the queue worth resuming is the one the player holds.
+    if state.cast.is_active() {
+        let view = state.cast.view();
+        return Some((view.tracks, view.index.unwrap_or(0), view.position));
+    }
     let ps = state.player.state();
     Some((ps.queue, ps.queue_index, state.player.position()))
 }
@@ -98,19 +103,27 @@ pub fn spawn(app: AppHandle) {
                 continue;
             }
 
-            // Deliberately NOT `player.state()`: that deep-clones the whole
-            // queue, which at the persisted cap is hundreds of KB copied
-            // every tick to read two values.
-            if state.player.status() != PlaybackStatus::Playing {
-                // Only a *playing* queue accumulates position worth
-                // recording. A paused or stopped player's position was
-                // already written by whichever change put it there.
-                continue;
-            }
-            let Some(rating_key) = state.player.current_track_key() else {
-                continue;
+            let (rating_key, position) = if state.cast.is_active() {
+                // The player's position as last polled.
+                let Some(playing) = state.cast.playing_position() else {
+                    continue;
+                };
+                playing
+            } else {
+                // Deliberately NOT `player.state()`: that deep-clones the
+                // whole queue, which at the persisted cap is hundreds of KB
+                // copied every tick to read two values.
+                if state.player.status() != PlaybackStatus::Playing {
+                    // Only a *playing* queue accumulates position worth
+                    // recording. A paused or stopped player's position was
+                    // already written by whichever change put it there.
+                    continue;
+                }
+                let Some(rating_key) = state.player.current_track_key() else {
+                    continue;
+                };
+                (rating_key, state.player.position())
             };
-            let position = state.player.position();
 
             // Absolute difference so a backward seek counts too.
             if last_written_pos.is_some_and(|p| (position - p).abs() < POSITION_DELTA_SECS) {

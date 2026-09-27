@@ -326,3 +326,20 @@ mod tests {
         assert!(!v.set(true));
     }
 }
+
+/// The active cast, if any: which player, whether it answers, and a
+/// revision that moves whenever the cast's queue changes (the frontend then
+/// refreshes Up Next). `notice` carries a one-off message, such as the
+/// player being taken over.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CastStatusPayload {
+    pub player: Option<crate::cast::CastPlayerRef>,
+    pub link: Option<&'static str>,
+    pub queue_revision: u64,
+    pub notice: Option<String>,
+}
+
+pub fn emit_cast_status(app: &AppHandle, payload: CastStatusPayload) {
+    let _ = app.emit("cast-status", payload);
+}
