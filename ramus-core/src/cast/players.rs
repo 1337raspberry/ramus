@@ -10,8 +10,9 @@ pub struct CastPlayer {
     pub id: String,
     pub name: String,
     pub product: Option<String>,
-    /// Addresses to try, local ones first. Relay connections are left out:
-    /// a player's Companion port isn't reachable through the relay.
+    /// Addresses to try, local ones first. Relay connections are left out
+    /// (a player's Companion port isn't reachable through the relay), and so
+    /// are plain-HTTP addresses off the local network.
     pub connections: Vec<String>,
 }
 
@@ -31,6 +32,9 @@ pub fn players_from_resources(
                 .unwrap_or_default()
                 .into_iter()
                 .filter(|c| !c.relay.unwrap_or(false))
+                // Commands carry a server token: plain HTTP only on the
+                // local network.
+                .filter(|c| c.local.unwrap_or(false) || c.uri.starts_with("https://"))
                 .collect();
             // Stable: plex.tv's order is kept within each group.
             connections.sort_by_key(|c| !c.local.unwrap_or(false));
@@ -96,10 +100,7 @@ mod tests {
         let players = players_from_resources(list, "me");
         assert_eq!(
             players[0].connections,
-            vec![
-                "http://10.0.0.7:32500".to_string(),
-                "http://82.1.2.3:32500".to_string()
-            ]
+            vec!["http://10.0.0.7:32500".to_string()]
         );
         assert_eq!(players[0].product, None);
     }
@@ -111,5 +112,23 @@ mod tests {
              "connections": [{"uri": "http://10.0.0.8:32500", "local": true}]}
         ]));
         assert!(players_from_resources(list, "me").is_empty());
+    }
+
+    #[test]
+    fn a_remote_connection_needs_https() {
+        // Commands carry a server token, so they only cross the internet
+        // encrypted; a plain-HTTP address is kept only on the local network.
+        let list = resources(serde_json::json!([
+            {"name": "Cabin", "provides": "player", "clientIdentifier": "c",
+             "connections": [
+                {"uri": "http://82.1.2.3:32500", "local": false},
+                {"uri": "https://82-1-2-3.abc.plex.direct:32500", "local": false},
+                {"uri": "http://10.0.0.7:32500"}
+             ]}
+        ]));
+        assert_eq!(
+            players_from_resources(list, "me")[0].connections,
+            vec!["https://82-1-2-3.abc.plex.direct:32500".to_string()]
+        );
     }
 }

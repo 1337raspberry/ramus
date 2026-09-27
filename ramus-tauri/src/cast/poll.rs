@@ -53,9 +53,9 @@ pub(crate) async fn settle(app: &AppHandle, state: &AppState, guard: &mut Sessio
         effects.extend(cast.state.remap(&cast.queue));
         super::emit_status(app, state, None);
     }
-    if run_effects(app, state, effects) {
+    if let Some(ending) = run_effects(app, state, effects) {
         if let Some(cast) = guard.take() {
-            lifecycle::finish_takeover(app, state, cast);
+            lifecycle::finish_takeover(app, state, cast, ending);
         }
     }
 }
@@ -92,9 +92,21 @@ pub(crate) fn set_queue(state: &AppState, cast: &mut ActiveCast, queue: &PlayQue
     });
 }
 
-/// Performs the reducer's effects. Returns whether the player was taken over.
-pub(crate) fn run_effects(app: &AppHandle, state: &AppState, effects: Vec<CastEffect>) -> bool {
-    let mut taken_over = false;
+/// How a cast ended on the player's side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Ending {
+    TakenOver,
+    NotStarted,
+}
+
+/// Performs the reducer's effects. Returns how the cast ended, when the
+/// player dropped it.
+pub(crate) fn run_effects(
+    app: &AppHandle,
+    state: &AppState,
+    effects: Vec<CastEffect>,
+) -> Option<Ending> {
+    let mut ending = None;
     let mut state_changed = false;
     for effect in effects {
         match effect {
@@ -118,11 +130,12 @@ pub(crate) fn run_effects(app: &AppHandle, state: &AppState, effects: Vec<CastEf
                 state.cast.update_view(|v| v.lost = link == Link::Lost);
                 super::emit_status(app, state, None);
             }
-            CastEffect::TakenOver => taken_over = true,
+            CastEffect::TakenOver => ending = Some(Ending::TakenOver),
+            CastEffect::NotStarted => ending = Some(Ending::NotStarted),
             CastEffect::RefetchQueue => {}
         }
     }
-    if state_changed && !taken_over {
+    if state_changed && ending.is_none() {
         let view = state.cast.view();
         let track = view.index.and_then(|i| view.tracks.get(i).cloned());
         let status = if view.status.is_empty() {
@@ -154,7 +167,7 @@ pub(crate) fn run_effects(app: &AppHandle, state: &AppState, effects: Vec<CastEf
         );
         crate::queue_persist::save_soon(app);
     }
-    taken_over
+    ending
 }
 
 /// Records a play in the local library, as local playback does at 90 %.

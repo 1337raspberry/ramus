@@ -106,6 +106,8 @@ pub enum CastEffect {
     MarkPlayed(String),
     /// The player now plays a queue this cast didn't send.
     TakenOver,
+    /// The player never reported this cast's queue: playback didn't start.
+    NotStarted,
     Link(Link),
 }
 
@@ -139,7 +141,16 @@ pub struct CastState {
     seen_ours: bool,
     foreign_polls: u32,
     taken_over: bool,
+    /// A play queue other than this cast's was reported before this cast's.
+    saw_foreign_queue: bool,
     last_timeline: Option<MusicTimeline>,
+    /// Where the sent queue starts, standing in for the player's timeline
+    /// until the player reports this cast's queue.
+    pending: Option<LocalResume>,
+    pending_shown: bool,
+    /// The (version, item) a refetch was last requested for; the same
+    /// timeline doesn't ask again.
+    refetched_for: Option<(Option<i64>, Option<i64>)>,
 }
 
 impl CastState {
@@ -147,12 +158,13 @@ impl CastState {
         Self::default()
     }
 
-    /// A new play queue was sent: forget everything about the previous one
-    /// except the link's health.
-    pub fn restart(&mut self) {
+    /// A new play queue was sent, starting at `pending`: forget everything
+    /// about the previous one except the link's health.
+    pub fn restart(&mut self, pending: Option<LocalResume>) {
         *self = Self {
             failures: self.failures,
             lost: self.lost,
+            pending,
             ..Self::default()
         };
     }
@@ -161,6 +173,7 @@ impl CastState {
     pub fn forget_emitted(&mut self) {
         self.last_status = None;
         self.buffering = false;
+        self.pending_shown = false;
     }
 
     pub fn link(&self) -> Link {
@@ -169,6 +182,29 @@ impl CastState {
         } else {
             Link::Connected
         }
+    }
+
+    /// Play/pause before the player has reported this cast's queue: flips
+    /// the sent point and returns whether it now plays. `None` once the
+    /// player's own state is known.
+    pub fn toggle_pending(&mut self) -> Option<bool> {
+        if self.seen_ours {
+            return None;
+        }
+        let flipped = match self.pending? {
+            LocalResume::Play { index, position } => LocalResume::Paused { index, position },
+            LocalResume::Paused { index, position } => LocalResume::Play { index, position },
+        };
+        self.pending = Some(flipped);
+        self.pending_shown = false;
+        Some(matches!(flipped, LocalResume::Play { .. }))
+    }
+
+    /// Whether the last poll was answered. Handing back asks the player for
+    /// its position only then, so a player that has gone quiet never holds
+    /// up local playback.
+    pub fn answering(&self) -> bool {
+        !self.lost && self.failures == 0
     }
 
     pub fn failures(&self) -> u32 {
@@ -209,8 +245,31 @@ impl CastState {
         }
     }
 
+    /// Emits the sent point once, while the player hasn't reported this
+    /// cast's queue, so the now-playing bar shows the track just sent.
+    fn show_pending(&mut self, out: &mut Vec<CastEffect>, queue: &CastQueue) {
+        if self.seen_ours || self.pending_shown {
+            return;
+        }
+        let Some(pending) = self.pending else { return };
+        let (status, index, position) = match pending {
+            LocalResume::Play { index, position } => ("playing", index, position),
+            LocalResume::Paused { index, position } => ("paused", index, position),
+        };
+        let Some(entry) = queue.entries.get(index) else {
+            return;
+        };
+        self.pending_shown = true;
+        self.push_state(out, status, Some(index));
+        out.push(CastEffect::EmitPosition {
+            position,
+            duration: entry.track.duration,
+        });
+    }
+
     pub fn apply(&mut self, outcome: &PollOutcome, queue: &CastQueue) -> Vec<CastEffect> {
         let mut out = Vec::new();
+        self.show_pending(&mut out, queue);
         let timeline = match outcome {
             PollOutcome::Failed => {
                 self.failures += 1;
@@ -236,10 +295,17 @@ impl CastState {
         } else if !self.seen_ours {
             // The player may still show what it played before this queue
             // reached it; nothing it says yet is about this cast.
+            if queue_id.is_some() {
+                self.saw_foreign_queue = true;
+            }
             self.foreign_polls += 1;
             if self.foreign_polls >= FOREIGN_GRACE_POLLS && !self.taken_over {
                 self.taken_over = true;
-                out.push(CastEffect::TakenOver);
+                out.push(if self.saw_foreign_queue {
+                    CastEffect::TakenOver
+                } else {
+                    CastEffect::NotStarted
+                });
             }
             return out;
         } else if queue_id.is_some() {
@@ -254,7 +320,9 @@ impl CastState {
         if let Some(t) = timeline {
             let unknown_item = t.play_queue_item_id.is_some() && located.is_none();
             let newer = t.play_queue_version.is_some_and(|v| v > queue.version);
-            if unknown_item || newer {
+            let asked = (t.play_queue_version, t.play_queue_item_id);
+            if (unknown_item || newer) && self.refetched_for != Some(asked) {
+                self.refetched_for = Some(asked);
                 out.push(CastEffect::RefetchQueue);
             }
             self.last_timeline = Some(t.clone());
@@ -308,9 +376,24 @@ impl CastState {
 
     /// Where local playback resumes from the last timeline seen: playing if
     /// the player was, paused where it was paused, and from the start of the
-    /// last track when it had stopped.
+    /// last track when it had stopped. Before the player reports this cast's
+    /// queue, the point the queue was sent from.
     pub fn local_resume(&self, queue: &CastQueue) -> Option<LocalResume> {
         let last = queue.entries.len().checked_sub(1)?;
+        if !self.seen_ours {
+            if let Some(pending) = self.pending {
+                return Some(match pending {
+                    LocalResume::Play { index, position } => LocalResume::Play {
+                        index: index.min(last),
+                        position,
+                    },
+                    LocalResume::Paused { index, position } => LocalResume::Paused {
+                        index: index.min(last),
+                        position,
+                    },
+                });
+            }
+        }
         let timeline = self.last_timeline.as_ref();
         let index = timeline
             .and_then(|t| self.locate(t, queue))
@@ -714,7 +797,7 @@ mod reducer_tests {
     fn restart_forgets_the_old_queue() {
         let mut s = CastState::new();
         s.apply(&at(Playing, 5001, "a", 0), &abc());
-        s.restart();
+        s.restart(None);
         // The old queue now reads as foreign, and is waited out.
         let mut next = abc();
         next.play_queue_id = 9500;
@@ -793,5 +876,133 @@ mod reducer_tests {
             std::time::Duration::from_secs(8)
         );
         assert_eq!(poll_delay(Link::Lost, 40, false), POLL_BACKOFF_MAX);
+    }
+
+    #[test]
+    fn the_sent_point_shows_until_ours_arrives() {
+        let mut s = CastState::new();
+        s.restart(Some(LocalResume::Play {
+            index: 1,
+            position: 30.0,
+        }));
+        assert_eq!(
+            s.apply(&idle(), &abc()),
+            vec![
+                CastEffect::EmitState {
+                    status: "playing",
+                    index: Some(1)
+                },
+                CastEffect::EmitPosition {
+                    position: 30.0,
+                    duration: 200.0
+                },
+            ]
+        );
+        assert!(s.apply(&foreign(), &abc()).is_empty());
+    }
+
+    #[test]
+    fn the_sent_point_shows_even_when_the_first_poll_fails() {
+        let mut s = CastState::new();
+        s.restart(Some(LocalResume::Paused {
+            index: 2,
+            position: 5.0,
+        }));
+        assert_eq!(
+            s.apply(&PollOutcome::Failed, &abc())[0],
+            CastEffect::EmitState {
+                status: "paused",
+                index: Some(2)
+            }
+        );
+    }
+
+    #[test]
+    fn local_resume_before_ours_is_the_sent_point() {
+        let mut s = CastState::new();
+        s.restart(Some(LocalResume::Play {
+            index: 1,
+            position: 30.0,
+        }));
+        s.apply(&foreign(), &abc());
+        assert_eq!(
+            s.local_resume(&abc()),
+            Some(LocalResume::Play {
+                index: 1,
+                position: 30.0
+            })
+        );
+    }
+
+    #[test]
+    fn toggle_before_ours_flips_the_sent_point() {
+        let mut s = CastState::new();
+        s.restart(Some(LocalResume::Play {
+            index: 1,
+            position: 30.0,
+        }));
+        s.apply(&idle(), &abc());
+        assert_eq!(s.toggle_pending(), Some(false));
+        assert_eq!(
+            s.local_resume(&abc()),
+            Some(LocalResume::Paused {
+                index: 1,
+                position: 30.0
+            })
+        );
+        assert_eq!(
+            s.apply(&idle(), &abc())[0],
+            CastEffect::EmitState {
+                status: "paused",
+                index: Some(1)
+            }
+        );
+        assert_eq!(s.toggle_pending(), Some(true));
+        s.apply(&at(Playing, 5002, "b", 31_000), &abc());
+        assert_eq!(s.toggle_pending(), None);
+    }
+
+    #[test]
+    fn an_unresolvable_item_is_refetched_once() {
+        let mut s = CastState::new();
+        s.apply(&at(Playing, 5002, "b", 0), &abc());
+        let refetches =
+            |e: &Vec<CastEffect>| e.iter().filter(|e| **e == CastEffect::RefetchQueue).count();
+        assert_eq!(refetches(&s.apply(&at(Playing, 5009, "x", 0), &abc())), 1);
+        assert_eq!(
+            refetches(&s.apply(&at(Playing, 5009, "x", 1_000), &abc())),
+            0
+        );
+        // A different item, or a newer version, asks again.
+        assert_eq!(refetches(&s.apply(&at(Playing, 5010, "y", 0), &abc())), 1);
+        let newer = match at(Playing, 5010, "y", 0) {
+            PollOutcome::Timeline(mut t) => {
+                t.play_queue_version = Some(9);
+                PollOutcome::Timeline(t)
+            }
+            _ => unreachable!(),
+        };
+        assert_eq!(refetches(&s.apply(&newer, &abc())), 1);
+        assert_eq!(refetches(&s.apply(&newer, &abc())), 0);
+    }
+
+    #[test]
+    fn a_failed_poll_means_hand_back_should_not_wait_on_the_player() {
+        let mut s = CastState::new();
+        assert!(s.answering());
+        s.apply(&PollOutcome::Failed, &abc());
+        assert!(!s.answering());
+        s.apply(&at(Playing, 5001, "a", 0), &abc());
+        assert!(s.answering());
+    }
+
+    #[test]
+    fn a_player_that_never_reports_a_queue_did_not_start() {
+        let mut s = CastState::new();
+        for _ in 0..FOREIGN_GRACE_POLLS - 1 {
+            assert!(s.apply(&idle(), &abc()).is_empty());
+        }
+        assert_eq!(s.apply(&idle(), &abc()), vec![CastEffect::NotStarted]);
+        assert!(s.apply(&idle(), &abc()).is_empty());
     }
 }

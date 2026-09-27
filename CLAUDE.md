@@ -107,7 +107,7 @@ cargo tauri android dev
 - **A cast is an output behind the playback commands.** Every playback/queue command in `commands/playback.rs`, and the souvlaki handler, checks `state.cast.is_active()` first and forwards to `cast/ops.rs`; the local player sits stopped. The pure logic (player list, timeline XML, Companion URLs, play-queue upload plan, the `CastState` reducer) is `ramus-core/src/cast/`, with fixtures copied from ramusTV.
 - **While casting, mpv callbacks emit nothing and report nothing.** The guard sits after each `handle_*` verdict. `CastRuntime::activate` runs before the local player stops, so the stop's idle event can't stomp the cast's state.
 - **The player reports plays; ramus only bumps local counts** (≥90 %, once per play-queue item). A player gets a delegation token (`/security/token?type=delegation`), never the long-lived one, because commands are plain HTTP. `cast.json` holds no tokens.
-- **A foreign play queue is a takeover only after ramus's own queue has been seen** (or `FOREIGN_GRACE_POLLS` pass). A player still reports its previous queue for a moment after `playMedia`.
+- **A foreign play queue is a takeover only after ramus's own queue has been seen** (or `FOREIGN_GRACE_POLLS` pass). A player still reports its previous queue for a moment after `playMedia`; until it reports ramus's, the point the queue was sent from stands in for display, play/pause and hand back.
 - **`clear_queue` while casting ends the cast.** The cast button lives on now-playing surfaces that render nothing with an empty queue.
 
 ## Search / genres
