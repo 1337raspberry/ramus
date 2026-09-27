@@ -13,10 +13,12 @@ ramus-core/   # Rust — all business logic (+ unit tests)
               #            resolve, starvation, adaptive, diagnostics, cache, eq)
               # cache/ (rusqlite WAL+FTS5, sync engine, image cache, playlist mirror)
               # search/ (engine + operator parser), genre/ (tree, mapper, markup)
+              # cast/ (Companion controller: players, timeline, play_queue, session reducer, record)
 ramus-tauri/  # Tauri 2 shell: commands/ (IPC), events.rs, state.rs, lib.rs (run())
               # mpv_ffi.rs + mpv_controller.rs (desktop), mpv_ios.rs, mpv_android.rs, mpv_mobile.rs
               # media_controls{,_ios,_android}.rs, now_playing_keeper.rs, stall_watchdog.rs,
               # prefetch.rs, session_reporter.rs, queue_persist.rs, auto_sync.rs
+              # cast/ (runtime, poll, lifecycle, ops)
   gen/apple/  # xcodegen input (project.yml, Package.resolved, assets, Podfile, entitlements); the .xcodeproj is regenerated, not committed. gen/android/ scaffold
 plugins/tauri-plugin-ramus-ios-bridge/   # ios/ (Swift MpvController, MPVKit) AND android/ (Kotlin — misleading name)
 ui/           # React — Vite + TS + Zustand (src/lib, src/components, src/mobile, src/stores)
@@ -99,6 +101,14 @@ cargo tauri android dev
 - **High-rate events skip a hidden webview.** `playback-position` and mid-download `download-progress` ticks are gated on `events::webview_hidden` (`WebviewVisibility`), set on every `visibilitychange` edge AND once on page load (`set_webview_visible`, chained, never debounced; reopening re-emits a snapshot) — an unloading page reports hidden and a fresh page sees no edge, so without the load report a reload freezes the seek bar. Each emit to a backgrounded WKWebView wakes its suspended content process, which recompiles its JS and runs a full memory release before sleeping again (~50 % of a core system-wide on a locked iPhone). A new high-rate emit needs the same gate.
 - **Foreground resync** (`visibilitychange`, 3 s debounce) re-emits playback/connection/quality snapshots; frontend stores are pure event replay. **The restore's snapshot pull awaits the `listen()` promises** (`usePlaybackEvents` + `ensureListener` promises on connection/quality stores) — never fire it from a bare effect.
 - **Deliberately NOT implemented:** prefetch pause gate; degrade auto-restore / lossless re-test; any response to a starving *lossy* source; `Never` mode buffering forever is by design.
+
+## Casting (Plex Companion controller)
+
+- **A cast is an output behind the playback commands.** Every playback/queue command in `commands/playback.rs`, and the souvlaki handler, checks `state.cast.is_active()` first and forwards to `cast/ops.rs`; the local player sits stopped. The pure logic (player list, timeline XML, Companion URLs, play-queue upload plan, the `CastState` reducer) is `ramus-core/src/cast/`, with fixtures copied from ramusTV.
+- **While casting, mpv callbacks emit nothing and report nothing.** The guard sits after each `handle_*` verdict. `CastRuntime::activate` runs before the local player stops, so the stop's idle event can't stomp the cast's state.
+- **The player reports plays; ramus only bumps local counts** (≥90 %, once per play-queue item). A player gets a delegation token (`/security/token?type=delegation`), never the long-lived one, because commands are plain HTTP. `cast.json` holds no tokens.
+- **A foreign play queue is a takeover only after ramus's own queue has been seen** (or `FOREIGN_GRACE_POLLS` pass). A player still reports its previous queue for a moment after `playMedia`.
+- **`clear_queue` while casting ends the cast.** The cast button lives on now-playing surfaces that render nothing with an empty queue.
 
 ## Search / genres
 

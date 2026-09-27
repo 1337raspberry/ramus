@@ -6,6 +6,8 @@ import type {
   Album,
   ArtistInfo,
   CacheStats,
+  CastPlayerView,
+  CastStatusPayload,
   ConnectionStatusPayload,
   DownloadsOverview,
   FilterChoice,
@@ -474,6 +476,17 @@ export const getDebugInfo = () => invoke<DebugInfo>("get_debug_info");
 export const foregroundResync = () => invoke<void>("foreground_resync");
 export const setWebviewVisible = (visible: boolean) =>
   invoke<void>("set_webview_visible", { visible });
+
+// --- Cast ---
+
+export const listCastPlayers = () => invoke<CastPlayerView[]>("list_cast_players");
+
+export const startCast = (playerId: string) => invoke<void>("start_cast", { playerId });
+
+/** Hand playback back to this device. */
+export const stopCast = () => invoke<void>("stop_cast");
+
+export const getCastStatus = () => invoke<CastStatusPayload>("get_cast_status");
 
 // --- Acknowledgements / licenses ---
 

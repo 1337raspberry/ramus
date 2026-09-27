@@ -14,6 +14,9 @@ import PlaybackQualityNotice from "./PlaybackQualityNotice";
 import NowPlayingMenu from "./NowPlayingMenu";
 import QueueView from "./QueueView";
 import MarqueeText from "./MarqueeText";
+import CastButton from "./CastButton";
+import CastingLine from "./CastingLine";
+import { useCastStore } from "../stores/castStore";
 import { togglePlayPause, nextTrack, previousTrack } from "../lib/commands";
 import {
   IconStarFilled,
@@ -46,6 +49,7 @@ export default function NowPlayingView({
   onToggleQueue,
 }: NowPlayingProps) {
   const status = usePlaybackStore((s) => s.status);
+  const casting = useCastStore((s) => s.player !== null);
   const toggleLyrics = usePlaybackStore((s) => s.toggleLyrics);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
   const volume = usePlaybackStore((s) => s.volume);
@@ -175,11 +179,15 @@ export default function NowPlayingView({
             </div>
           </div>
 
-          <VolumeSlider value={volume} onChange={changeVolume} />
+          {casting ? (
+            <CastingLine className="np-casting-line" />
+          ) : (
+            <VolumeSlider value={volume} onChange={changeVolume} />
+          )}
 
           <div className="np-track-row">
             <MarqueeText className="np-track-title">{track.title}</MarqueeText>
-            {onOpenEQ && (
+            {onOpenEQ && !casting && (
               <button className="np-eq-btn" onClick={onOpenEQ} title="Equalizer">
                 <IconEqualizer />
               </button>
@@ -193,6 +201,7 @@ export default function NowPlayingView({
             >
               {trackFav ? <IconStarFilled /> : <IconStarEmpty />}
             </button>
+            <CastButton className="np-cast-btn" />
             <NowPlayingMenu />
           </div>
 

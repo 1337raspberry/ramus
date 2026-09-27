@@ -557,3 +557,24 @@ export interface PlaybackQualityPayload {
   /** Mode is `never`, so a slow link can be reported but not acted on. */
   adaptationBlocked: boolean;
 }
+
+/** A Plex player ramus can cast to. */
+export interface CastPlayerRef {
+  id: string;
+  name: string;
+  product: string | null;
+}
+
+/** A row of the player picker. */
+export interface CastPlayerView extends CastPlayerRef {
+  reachable: boolean;
+}
+
+/** `cast-status`: the active cast, if any. `queueRevision` moves whenever
+ *  the queue being shown changes; `notice` is a one-off message. */
+export interface CastStatusPayload {
+  player: CastPlayerRef | null;
+  link: "connected" | "lost" | null;
+  queueRevision: number;
+  notice: string | null;
+}

@@ -44,6 +44,9 @@ import EqualizerPanel from "../components/EqualizerPanel";
 import MobileDebugPanel from "./MobileDebugPanel";
 import CollectionPickerSheet from "./CollectionPickerSheet";
 import PlaylistPickerSheet from "./PlaylistPickerSheet";
+import CastButton from "../components/CastButton";
+import CastingLine from "../components/CastingLine";
+import { useCastStore } from "../stores/castStore";
 
 /** Android's libmpv build lacks the analysis filters the visualiser's
  * spectrum tap needs, so the menu offers the visualiser only elsewhere. */
@@ -91,6 +94,7 @@ export default function MobileNowPlaying({
   onOpenSettings,
 }: Props) {
   const status = usePlaybackStore((s) => s.status);
+  const casting = useCastStore((s) => s.player !== null);
   const currentGenres = usePlaybackStore((s) => s.currentGenres);
   const sheetBlurColors = useBlurColors();
   const queue = usePlaybackStore((s) => s.queue);
@@ -509,16 +513,23 @@ export default function MobileNowPlaying({
                position when there is nothing queued after this track. */
             <span className="mobile-sheet-dock-spacer" aria-hidden="true" />
           )}
-          {codecBadge && <span className="mobile-sheet-badge">{codecBadge}</span>}
-          <button
-            type="button"
-            className="mobile-sheet-dock-btn"
-            onClick={() => setShowMenu(true)}
-            aria-label="More actions"
-            aria-haspopup="menu"
-          >
-            <IconMoreDots size={22} />
-          </button>
+          {casting ? (
+            <CastingLine className="mobile-sheet-badge mobile-sheet-casting" />
+          ) : (
+            codecBadge && <span className="mobile-sheet-badge">{codecBadge}</span>
+          )}
+          <div className="mobile-sheet-dock-end">
+            <CastButton className="mobile-sheet-dock-btn" size={22} sheet />
+            <button
+              type="button"
+              className="mobile-sheet-dock-btn"
+              onClick={() => setShowMenu(true)}
+              aria-label="More actions"
+              aria-haspopup="menu"
+            >
+              <IconMoreDots size={22} />
+            </button>
+          </div>
         </div>
       </div>
       {showMenu &&
@@ -535,7 +546,7 @@ export default function MobileNowPlaying({
                 {nowPlayingAlbum && (
                   <button onClick={() => runMenuAction(handleAlbumClick)}>Go to Album</button>
                 )}
-                {VISUALIZER_AVAILABLE && track && (
+                {VISUALIZER_AVAILABLE && track && !casting && (
                   <button onClick={() => runMenuAction(() => setMobileVisualizerOpen(true))}>
                     Visualiser
                   </button>
@@ -579,7 +590,9 @@ export default function MobileNowPlaying({
                     Save Queue as Playlist…
                   </button>
                 )}
-                <button onClick={() => runMenuAction(() => setShowEQ(true))}>Adjust EQ</button>
+                {!casting && (
+                  <button onClick={() => runMenuAction(() => setShowEQ(true))}>Adjust EQ</button>
+                )}
                 <button onClick={() => runMenuAction(() => setShowDebug(true))}>
                   Network Stats for Nerds
                 </button>

@@ -2507,6 +2507,7 @@ textarea {
 
 .np-eq-btn,
 .np-viz-btn,
+.np-cast-btn,
 .focus-clear-btn {
   background: none;
   border: none;
@@ -2522,6 +2523,7 @@ textarea {
 
 .np-eq-btn:hover,
 .np-viz-btn:hover,
+.np-cast-btn:hover,
 .focus-clear-btn:hover {
   color: var(--accent);
 }
@@ -8921,6 +8923,57 @@ body.is-fullscreen .focus-clear-player {
   padding: 8px 12px;
   min-height: 36px;
   cursor: pointer;
+}
+
+/* ===== Cast ===== */
+
+.np-cast-btn.active,
+.mobile-sheet-dock-btn.active {
+  color: var(--accent);
+}
+
+.np-cast-btn:disabled,
+.mobile-sheet-dock-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Sits in the volume slider's slot while casting. */
+.np-casting-line {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 6px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Sits in the codec badge's slot of the mobile dock while casting. */
+.mobile-sheet-casting {
+  max-width: 50vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-sheet-dock-end {
+  display: flex;
+  align-items: center;
+}
+
+.cast-picker-product {
+  margin-left: 8px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.cast-picker-list button.cast-picker-unreachable {
+  opacity: 0.45;
+}
+
+.cast-picker-error {
+  white-space: normal;
 }
 
 /* ===== Tablet-class touch viewports (iPad) =====
