@@ -565,11 +565,6 @@ export interface CastPlayerRef {
   product: string | null;
 }
 
-/** A row of the player picker. */
-export interface CastPlayerView extends CastPlayerRef {
-  reachable: boolean;
-}
-
 /** `cast-status`: the active cast, if any. `queueRevision` moves whenever
  *  the queue being shown changes; `notice` is a one-off message. */
 export interface CastStatusPayload {

@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { listCastPlayers, startCast, stopCast } from "../lib/commands";
-import type { CastPlayerView } from "../lib/types";
+import type { CastPlayerRef } from "../lib/types";
 import { useCastStore } from "../stores/castStore";
 import { IconCheck, IconSpinner } from "./Icons";
 
 /**
  * The player list behind the cast button, shared by the desktop modal and
  * the mobile sheet. "This device" hands playback back; a player row moves
- * the queue there. Players that didn't answer their probe are dimmed.
+ * the queue there. Only players that answer right now are listed.
  */
 export default function CastPickerContent({ onDone }: { onDone: () => void }) {
   const activeId = useCastStore((s) => s.player?.id ?? null);
-  const [players, setPlayers] = useState<CastPlayerView[] | null>(null);
+  const [players, setPlayers] = useState<CastPlayerRef[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The row being switched to: a player id, or "local" for this device.
   const [pending, setPending] = useState<string | null>(null);
@@ -71,15 +71,18 @@ export default function CastPickerContent({ onDone }: { onDone: () => void }) {
       {players === null ? (
         <div className="mobile-collection-empty">Looking for players…</div>
       ) : players.length === 0 && !error ? (
-        <div className="mobile-collection-empty">No other Plex players found</div>
+        // Usually the network, or on iPhone a Local Network permission that
+        // was still being asked for (or was refused) during the probe.
+        <>
+          <div className="mobile-collection-empty cast-picker-error">
+            No players found. Check they're on and on the same network. On iPhone, also check ramus
+            has Local Network access in Settings.
+          </div>
+          <button onClick={retry}>Retry</button>
+        </>
       ) : (
         players.map((p) => (
-          <button
-            key={p.id}
-            className={p.reachable ? undefined : "cast-picker-unreachable"}
-            disabled={pending !== null || !p.reachable}
-            onClick={() => choose(p.id)}
-          >
+          <button key={p.id} disabled={pending !== null} onClick={() => choose(p.id)}>
             <span className="mobile-collection-name">
               {p.name}
               {p.product && <span className="cast-picker-product">{p.product}</span>}
@@ -87,17 +90,6 @@ export default function CastPickerContent({ onDone }: { onDone: () => void }) {
             {mark(p.id, activeId === p.id)}
           </button>
         ))
-      )}
-      {!error && players !== null && players.length > 0 && players.every((p) => !p.reachable) && (
-        // Usually the network, or on iPhone a Local Network permission that
-        // was still being asked for (or was refused) during the probe.
-        <>
-          <div className="mobile-collection-empty cast-picker-error">
-            None of these players answered. Check they're on and on the same network. On iPhone,
-            also check ramus has Local Network access in Settings.
-          </div>
-          <button onClick={retry}>Retry</button>
-        </>
       )}
       {error && (
         <>

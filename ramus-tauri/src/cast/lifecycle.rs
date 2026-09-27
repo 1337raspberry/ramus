@@ -10,7 +10,7 @@ use ramus_core::cast::companion::{
     ServerAddress,
 };
 use ramus_core::cast::play_queue::{upload_plan, PlayQueue};
-use ramus_core::cast::players::players_from_resources;
+use ramus_core::cast::players::{merge_players, players_from_devices, players_from_resources};
 use ramus_core::cast::record::{self, CastRecord};
 use ramus_core::cast::session::{CastQueue, CastState, Link, LocalResume};
 use ramus_core::models::{PlaybackStatus, Track};
@@ -24,7 +24,7 @@ use crate::events::{
 use crate::state::AppState;
 
 use super::poll::{self, Ending};
-use super::{ActiveCast, CastPlayerRef, CastPlayerView, ListedPlayer};
+use super::{ActiveCast, CastPlayerRef, ListedPlayer};
 
 /// How long a player in the picker gets to answer its probe.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -63,8 +63,10 @@ pub(crate) fn server_message(error: PlexClientError) -> String {
     format!("The Plex server refused the change ({error})")
 }
 
-/// The players on the account, each probed; reachable ones first.
-pub async fn list_players(state: &AppState) -> Result<Vec<CastPlayerView>, String> {
+/// The players on the account that answer a probe now, in plex.tv's order.
+/// Registrations that don't answer (players switched off, uninstalled, or
+/// long gone) are left out.
+pub async fn list_players(state: &AppState) -> Result<Vec<CastPlayerRef>, String> {
     let auth_token = TokenStore::new()
         .ok()
         .and_then(|store| store.read(TokenKey::AuthToken))
@@ -75,7 +77,20 @@ pub async fn list_players(state: &AppState) -> Result<Vec<CastPlayerView>, Strin
         .fetch_resources(&auth_token)
         .await
         .map_err(|_| "Couldn't reach plex.tv".to_string())?;
-    let players = players_from_resources(resources, &state.client.client_identifier);
+    let own = &state.client.client_identifier;
+    // Some players publish their address to the device list only; the
+    // resource list leaves them out.
+    let registered = match state.client.fetch_devices(&auth_token).await {
+        Ok(xml) => players_from_devices(&xml, own).unwrap_or_else(|_| {
+            log::warn!("cast: plex.tv device list didn't parse");
+            Vec::new()
+        }),
+        Err(e) => {
+            log::warn!("cast: plex.tv device list unavailable: {e}");
+            Vec::new()
+        }
+    };
+    let players = merge_players(players_from_resources(resources, own), registered);
 
     let identity = super::identity(&state.client);
     let mut probes = tokio::task::JoinSet::new();
@@ -90,11 +105,11 @@ pub async fn list_players(state: &AppState) -> Result<Vec<CastPlayerView>, Strin
     }
     let mut found = Vec::new();
     while let Some(joined) = probes.join_next().await {
-        if let Ok(row) = joined {
-            found.push(row);
+        if let Ok((order, player, Some(uri))) = joined {
+            found.push((order, player, uri));
         }
     }
-    found.sort_by_key(|(order, _, uri)| (uri.is_none(), *order));
+    found.sort_by_key(|(order, ..)| *order);
 
     let listed: Vec<ListedPlayer> = found
         .into_iter()
@@ -107,17 +122,9 @@ pub async fn list_players(state: &AppState) -> Result<Vec<CastPlayerView>, Strin
             uri,
         })
         .collect();
-    let views = listed
-        .iter()
-        .map(|l| CastPlayerView {
-            id: l.player.id.clone(),
-            name: l.player.name.clone(),
-            product: l.player.product.clone(),
-            reachable: l.uri.is_some(),
-        })
-        .collect();
+    let players = listed.iter().map(|l| l.player.clone()).collect();
     state.cast.set_listed(listed);
-    Ok(views)
+    Ok(players)
 }
 
 pub(crate) fn server_address(state: &AppState) -> Result<ServerAddress, String> {
@@ -257,14 +264,11 @@ pub async fn start(app: &AppHandle, state: &AppState, player_id: &str) -> Result
             state
                 .cast
                 .listed(player_id)
-                .ok_or_else(|| "That player is no longer on your Plex account".to_string())?
+                .ok_or_else(|| unreachable_message("that player"))?
         }
     };
     let name = listed.player.name.clone();
-    let uri = listed
-        .uri
-        .clone()
-        .ok_or_else(|| unreachable_message(&name))?;
+    let uri = listed.uri.clone();
     let client = CompanionClient::new(
         uri,
         listed.player.id.clone(),

@@ -51,9 +51,9 @@ pub enum XmlError {
     NoPlayer,
 }
 
-type Attributes = Vec<(String, String)>;
+pub(super) type Attributes = Vec<(String, String)>;
 
-fn attributes(element: &BytesStart) -> Result<Attributes, XmlError> {
+pub(super) fn attributes(element: &BytesStart) -> Result<Attributes, XmlError> {
     let mut out = Vec::new();
     for attr in element.attributes() {
         let attr = attr.map_err(|_| XmlError::Malformed)?;
@@ -87,7 +87,7 @@ fn find_element(
     }
 }
 
-fn get<'a>(attrs: &'a Attributes, key: &str) -> Option<&'a str> {
+pub(super) fn get<'a>(attrs: &'a Attributes, key: &str) -> Option<&'a str> {
     attrs
         .iter()
         .find(|(k, _)| k == key)

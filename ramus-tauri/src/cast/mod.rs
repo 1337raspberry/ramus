@@ -33,21 +33,11 @@ pub struct CastPlayerRef {
     pub product: Option<String>,
 }
 
-/// A row of the player picker.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CastPlayerView {
-    pub id: String,
-    pub name: String,
-    pub product: Option<String>,
-    pub reachable: bool,
-}
-
 /// A player from the last listing, with the address that answered its probe.
 #[derive(Debug, Clone)]
 pub(crate) struct ListedPlayer {
     pub player: CastPlayerRef,
-    pub uri: Option<Url>,
+    pub uri: Url,
 }
 
 /// The cast in progress, behind `CastRuntime::session`.
