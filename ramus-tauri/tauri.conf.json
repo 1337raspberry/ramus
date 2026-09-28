@@ -53,15 +53,15 @@
     "iOS": {
       "minimumSystemVersion": "17.5"
     },
-    "resources": [
-      "../licenses/LICENSE",
-      "../licenses/LICENSE.LGPL-2.1",
-      "../licenses/LICENSE.LGPL-3.0",
-      "../licenses/LICENSE.GPL-3.0",
-      "../licenses/LICENSE.MPL-2.0",
-      "../licenses/NOTICE.md",
-      "../licenses/THIRD_PARTY_LICENSES.md"
-    ],
+    "resources": {
+      "../LICENSE": "licenses/LICENSE",
+      "licenses/LICENSE.LGPL-2.1": "licenses/LICENSE.LGPL-2.1",
+      "licenses/LICENSE.LGPL-3.0": "licenses/LICENSE.LGPL-3.0",
+      "licenses/LICENSE.GPL-3.0": "licenses/LICENSE.GPL-3.0",
+      "licenses/LICENSE.MPL-2.0": "licenses/LICENSE.MPL-2.0",
+      "licenses/NOTICE.md": "licenses/NOTICE.md",
+      "licenses/THIRD_PARTY_LICENSES.md": "licenses/THIRD_PARTY_LICENSES.md"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

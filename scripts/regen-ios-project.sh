@@ -36,7 +36,7 @@ cd ramus-tauri/gen/apple
 #                 xcodebuild's preBuildScript, which runs `cargo tauri
 #                 ios xcode-script` and drops libapp.a in here per-arch.
 #   assets/     — git doesn't track empty dirs; populated by `cargo
-#                 tauri build` which copies licenses into assets/_up_/.
+#                 tauri build` which copies licenses into assets/licenses/.
 #
 # Pre-create them empty so xcodegen passes spec validation; the real
 # contents land later in the build.
