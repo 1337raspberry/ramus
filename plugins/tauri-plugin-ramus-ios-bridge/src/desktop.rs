@@ -4,6 +4,7 @@
 //! depend on the plugin unconditionally without cfg gates.
 
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use tauri::{ipc::Channel, plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::*;
@@ -74,6 +75,21 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
     pub fn set_visualizer_presentation(&self, _active: bool, _keep_awake: bool) -> crate::Result<()> {
+        Ok(())
+    }
+    pub fn show_native_visualizer(&self, _args: &impl Serialize) -> crate::Result<()> {
+        Ok(())
+    }
+    pub fn update_native_visualizer(&self, _args: &impl Serialize) -> crate::Result<()> {
+        Ok(())
+    }
+    pub fn hide_native_visualizer(&self) -> crate::Result<()> {
+        Ok(())
+    }
+    pub fn push_spectrum_frames(&self, _payload: &impl Serialize) -> crate::Result<()> {
+        Ok(())
+    }
+    pub fn push_audible(&self, _payload: &impl Serialize) -> crate::Result<()> {
         Ok(())
     }
     pub fn dismiss_keyboard(&self) -> crate::Result<()> {

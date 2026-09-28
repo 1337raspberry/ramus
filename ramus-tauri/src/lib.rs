@@ -34,6 +34,7 @@ pub mod mpv_android;
 pub mod mpv_mobile;
 
 pub mod ios_backup;
+pub mod native_visualizer;
 pub mod now_playing_keeper;
 pub mod prefetch;
 pub mod queue_persist;
@@ -293,6 +294,7 @@ pub fn create_mpv_player(
     prefetch_handle_ref: PrefetchHandleRef,
     mc_reanchor: Arc<std::sync::atomic::AtomicBool>,
     recovery_grace: Arc<std::sync::atomic::AtomicBool>,
+    native_visualizer: Arc<crate::native_visualizer::NativeVisualizerLink>,
 ) -> (
     Arc<ramus_core::playback::player::AudioPlayer>,
     ReporterRef,
@@ -352,6 +354,9 @@ pub fn create_mpv_player(
 
     let ph1 = prefetch_handle_ref.clone();
     let ph2 = prefetch_handle_ref.clone();
+
+    let nv_frames = native_visualizer.clone();
+    let nv_audible = native_visualizer;
 
     let callbacks = Arc::new(MpvCallbacks {
         on_position_change: Some(Box::new(move |pos| {
@@ -435,8 +440,15 @@ pub fn create_mpv_player(
             }
         })),
         on_spectrum_frames: Some(Box::new(move |frames| {
-            // Runs on the mpv event-loop thread. Remap + quantise under one
-            // player lock, then a single emit per batch. Nothing here is
+            // Remap + quantise under one player lock, then either emit the
+            // batch to the page or, while the native visualiser is active,
+            // forward it to Swift instead — never both. On desktop this
+            // runs on the mpv event-loop thread (mpv_controller.rs's
+            // dedicated event-polling thread); on iOS, on the main thread,
+            // since Swift dispatches the `mpvTapLines` trigger there before
+            // the IPC channel calls back into this closure. Android never
+            // reaches it: its libmpv build carries none of the tap's
+            // filters, so the tap is never installed. Nothing here is
             // spawned, so the async-runtime rule for mpv callbacks doesn't
             // apply.
             if let Some(ref p) = *pr8.lock() {
@@ -444,29 +456,37 @@ pub fn create_mpv_player(
                 if mapped.is_empty() {
                     return;
                 }
-                crate::events::emit_spectrum_frames(
-                    &app7,
-                    crate::events::SpectrumFramesPayload {
-                        epoch,
-                        band_count: ramus_core::playback::spectrum_tap::TapConfig::default()
-                            .normalised()
-                            .bands as u32,
-                        channels: ramus_core::playback::spectrum_tap::TAP_CHANNELS as u32,
-                        frames: mapped,
-                    },
-                );
+                let payload = crate::events::SpectrumFramesPayload {
+                    epoch,
+                    band_count: ramus_core::playback::spectrum_tap::TapConfig::default()
+                        .normalised()
+                        .bands as u32,
+                    channels: ramus_core::playback::spectrum_tap::TAP_CHANNELS as u32,
+                    frames: mapped,
+                };
+                if nv_frames.is_active() {
+                    nv_frames.forward(
+                        crate::native_visualizer::NativeVisualizerPush::Frames(payload),
+                    );
+                } else {
+                    crate::events::emit_spectrum_frames(&app7, payload);
+                }
             }
         })),
         on_audible_change: Some(Box::new(move |pts| {
             if let Some(ref p) = *pr9.lock() {
                 if let Some(audible) = p.handle_audible_change(pts) {
-                    emit_playback_audible(
-                        &app8,
-                        PlaybackAudiblePayload {
-                            epoch: audible.epoch,
-                            position: audible.position,
-                        },
-                    );
+                    let payload = PlaybackAudiblePayload {
+                        epoch: audible.epoch,
+                        position: audible.position,
+                    };
+                    if nv_audible.is_active() {
+                        nv_audible.forward(
+                            crate::native_visualizer::NativeVisualizerPush::Audible(payload),
+                        );
+                    } else {
+                        emit_playback_audible(&app8, payload);
+                    }
                 }
             }
         })),
@@ -1007,11 +1027,15 @@ pub fn run() {
             // Whether the platform recovery-grace window is held open (iOS
             // background-task assertion while a reconnect is in flight).
             let recovery_grace = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            // Whether the native full-screen visualiser (iOS) is showing,
+            // and the queue that forwards the spectrum to it.
+            let native_visualizer = crate::native_visualizer::NativeVisualizerLink::new();
             let (player, reporter_ref, media_controls_ref) = create_mpv_player(
                 app_handle.clone(),
                 prefetch_handle_ref.clone(),
                 mc_reanchor.clone(),
                 recovery_grace.clone(),
+                native_visualizer.clone(),
             );
 
             // Spawn the long-lived prefetch worker and wire its control handle
@@ -1088,6 +1112,7 @@ pub fn run() {
                 recovery_grace: recovery_grace.clone(),
                 mc_reanchor: mc_reanchor.clone(),
                 cast: crate::cast::CastRuntime::default(),
+                native_visualizer: native_visualizer.clone(),
             };
 
             // Restore previous session. State is set synchronously (no blocking
@@ -1590,6 +1615,19 @@ pub fn run() {
                 log::warn!("failed to register network path listener: {e}");
             }
 
+            // iOS: the native visualiser's forwarding thread and its
+            // tap-to-close relay.
+            #[cfg(target_os = "ios")]
+            {
+                crate::native_visualizer::spawn_forwarder(
+                    app_handle.clone(),
+                    native_visualizer.clone(),
+                );
+                if let Err(e) = crate::native_visualizer::register_dismiss_listener(&app_handle) {
+                    log::warn!("failed to register the native visualiser listener: {e}");
+                }
+            }
+
             // Stall watchdog: if mpv reports `Playing` but no `time-pos`
             // events arrive for STALL_THRESHOLD_SECS, fire a connection
             // re-evaluation. Catches transcode hangs (where prefetch never
@@ -1726,6 +1764,9 @@ pub fn run() {
             commands::platform::show_native_search_bar,
             commands::platform::hide_native_search_bar,
             commands::platform::set_visualizer_presentation,
+            commands::visualizer::show_native_visualizer,
+            commands::visualizer::update_native_visualizer,
+            commands::visualizer::hide_native_visualizer,
             // acknowledgements / licenses
             commands::acknowledgements::get_acknowledgements_text,
             commands::acknowledgements::open_external_url,

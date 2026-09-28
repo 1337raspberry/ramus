@@ -180,6 +180,40 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
 
+    /// Show the native full-screen visualiser over the web view (iOS). An
+    /// error means it can't draw (no Metal, or its shaders failed to
+    /// compile), and the caller falls back to the page's own visualiser.
+    pub fn show_native_visualizer(&self, args: &impl Serialize) -> crate::Result<()> {
+        self.0.run_mobile_plugin::<Empty>("showNativeVisualizer", args)?;
+        Ok(())
+    }
+
+    /// Change the native visualiser's backdrop colours or play state, or
+    /// clear its frames; each field applies only when present.
+    pub fn update_native_visualizer(&self, args: &impl Serialize) -> crate::Result<()> {
+        self.0.run_mobile_plugin::<Empty>("updateNativeVisualizer", args)?;
+        Ok(())
+    }
+
+    /// Take the native visualiser down; a no-op when it isn't showing.
+    pub fn hide_native_visualizer(&self) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin::<Empty>("hideNativeVisualizer", Empty::default())?;
+        Ok(())
+    }
+
+    /// Hand a batch of decoded spectrum frames to the native visualiser.
+    pub fn push_spectrum_frames(&self, payload: &impl Serialize) -> crate::Result<()> {
+        self.0.run_mobile_plugin::<Empty>("pushSpectrumFrames", payload)?;
+        Ok(())
+    }
+
+    /// Hand an audible-clock tick to the native visualiser.
+    pub fn push_audible(&self, payload: &impl Serialize) -> crate::Result<()> {
+        self.0.run_mobile_plugin::<Empty>("pushAudible", payload)?;
+        Ok(())
+    }
+
     pub fn dismiss_keyboard(&self) -> crate::Result<()> {
         self.0
             .run_mobile_plugin::<Empty>("dismissKeyboard", Empty::default())?;
