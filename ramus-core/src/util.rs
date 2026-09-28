@@ -226,6 +226,81 @@ pub fn fold_diacritics(s: &str) -> String {
     out
 }
 
+/// A bounded queue whose `push` never blocks: when it is full the oldest
+/// item is dropped to make room. `pop` blocks until an item arrives. For
+/// handing work from a thread that must never wait (a media-engine
+/// callback) to a worker that may be slow, where fresh items matter more
+/// than old ones.
+pub struct DropOldestQueue<T> {
+    items: parking_lot::Mutex<std::collections::VecDeque<T>>,
+    ready: parking_lot::Condvar,
+    capacity: usize,
+}
+
+impl<T> DropOldestQueue<T> {
+    /// A queue holding at most `capacity` items. Panics on 0.
+    pub fn new(capacity: usize) -> Self {
+        assert!(capacity > 0, "a queue needs room for one item");
+        Self {
+            items: parking_lot::Mutex::new(std::collections::VecDeque::with_capacity(capacity)),
+            ready: parking_lot::Condvar::new(),
+            capacity,
+        }
+    }
+
+    /// Append `item`, dropping the oldest one first when full. Returns
+    /// true when an item was dropped.
+    pub fn push(&self, item: T) -> bool {
+        let mut items = self.items.lock();
+        let dropped = if items.len() >= self.capacity {
+            items.pop_front();
+            true
+        } else {
+            false
+        };
+        items.push_back(item);
+        drop(items);
+        self.ready.notify_one();
+        dropped
+    }
+
+    /// The oldest item, waiting for one if the queue is empty.
+    pub fn pop(&self) -> T {
+        let mut items = self.items.lock();
+        loop {
+            if let Some(item) = items.pop_front() {
+                return item;
+            }
+            self.ready.wait(&mut items);
+        }
+    }
+
+    /// The oldest item, waiting up to `timeout` for one.
+    pub fn pop_timeout(&self, timeout: std::time::Duration) -> Option<T> {
+        let deadline = std::time::Instant::now() + timeout;
+        let mut items = self.items.lock();
+        while items.is_empty() {
+            if self.ready.wait_until(&mut items, deadline).timed_out() {
+                break;
+            }
+        }
+        items.pop_front()
+    }
+
+    /// Drop every queued item.
+    pub fn clear(&self) {
+        self.items.lock().clear();
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.lock().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.lock().is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,5 +508,56 @@ mod tests {
         assert_eq!(exclusion_window(50, 2), 1);
         assert_eq!(exclusion_window(50, 1), 0);
         assert_eq!(exclusion_window(0, 2325), 0);
+    }
+
+    #[test]
+    fn drop_oldest_queue_keeps_order() {
+        let q = DropOldestQueue::new(4);
+        assert!(!q.push(1));
+        assert!(!q.push(2));
+        assert_eq!(q.pop(), 1);
+        assert_eq!(q.pop(), 2);
+        assert!(q.is_empty());
+    }
+
+    #[test]
+    fn drop_oldest_queue_drops_the_oldest_when_full() {
+        let q = DropOldestQueue::new(2);
+        q.push(1);
+        q.push(2);
+        assert!(q.push(3), "a full push reports the drop");
+        assert_eq!(q.len(), 2);
+        assert_eq!(q.pop(), 2);
+        assert_eq!(q.pop(), 3);
+    }
+
+    #[test]
+    fn drop_oldest_queue_pop_waits_for_a_push() {
+        let q = std::sync::Arc::new(DropOldestQueue::new(2));
+        let producer = q.clone();
+        let handle = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            producer.push(7);
+        });
+        assert_eq!(q.pop(), 7);
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn drop_oldest_queue_pop_timeout_gives_up_when_empty() {
+        let q: DropOldestQueue<u8> = DropOldestQueue::new(2);
+        assert_eq!(q.pop_timeout(std::time::Duration::from_millis(10)), None);
+        q.push(4);
+        assert_eq!(q.pop_timeout(std::time::Duration::from_millis(10)), Some(4));
+    }
+
+    #[test]
+    fn drop_oldest_queue_clear_empties_it() {
+        let q = DropOldestQueue::new(3);
+        q.push(1);
+        q.push(2);
+        q.clear();
+        assert!(q.is_empty());
+        assert_eq!(q.pop_timeout(std::time::Duration::from_millis(5)), None);
     }
 }

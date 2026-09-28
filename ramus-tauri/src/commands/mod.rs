@@ -13,6 +13,7 @@ pub mod search;
 pub mod settings;
 pub mod spectrum;
 pub mod sync;
+pub mod visualizer;
 
 /// Lock the cache DB and invoke `f`. Returns an IPC-friendly error string
 /// when the cache isn't initialised yet (pre-onboarding / pre-session-restore).

@@ -94,6 +94,12 @@ pub fn emit_playback_audible(app: &AppHandle, payload: PlaybackAudiblePayload) {
     let _ = app.emit("playback-audible", payload);
 }
 
+/// The native full-screen visualiser (iOS) was tapped: the page runs its
+/// own close for the overlay.
+pub fn emit_visualizer_dismiss(app: &AppHandle) {
+    let _ = app.emit("visualizer-dismiss", ());
+}
+
 pub fn emit_playback_buffering(app: &AppHandle, buffering: bool) {
     let _ = app.emit("playback-buffering", PlaybackBufferingPayload { buffering });
 }

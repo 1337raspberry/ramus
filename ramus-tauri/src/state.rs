@@ -52,6 +52,9 @@ pub struct AppState {
     pub mc_reanchor: Arc<AtomicBool>,
     /// The cast in progress, if playback is on another device.
     pub cast: crate::cast::CastRuntime,
+    /// Whether the native full-screen visualiser is showing, and the
+    /// queue that forwards the spectrum to it (see `native_visualizer`).
+    pub native_visualizer: Arc<crate::native_visualizer::NativeVisualizerLink>,
 }
 
 impl AppState {
