@@ -262,13 +262,13 @@ ramus is licensed under the [MIT License](LICENSE).
 
 ### Third-party software
 
-ramus links — at runtime, dynamically — against **libmpv** ([LGPL-2.1-or-later](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)) on desktop. libmpv source is available at [github.com/mpv-player/mpv](https://github.com/mpv-player/mpv); a copy is shipped under `licenses/` in every release artifact. You may substitute your own libmpv build by placing it on the dynamic library search path — the search paths are documented in [`ramus-tauri/src/mpv_ffi.rs`](ramus-tauri/src/mpv_ffi.rs). On iOS libmpv and its supporting libraries (some under LGPL-3.0-or-later) are statically linked from [MPVKit-lavfi](https://github.com/1337raspberry/MPVKit-lavfi); [NOTICE.md](licenses/NOTICE.md) lists each one and how to relink.
+ramus links — at runtime, dynamically — against **libmpv** ([LGPL-2.1-or-later](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)) on desktop. libmpv source is available at [github.com/mpv-player/mpv](https://github.com/mpv-player/mpv); a copy is shipped under `licenses/` in every release artifact. You may substitute your own libmpv build by placing it on the dynamic library search path — the search paths are documented in [`ramus-tauri/src/mpv_ffi.rs`](ramus-tauri/src/mpv_ffi.rs). On iOS libmpv and its supporting libraries (some under LGPL-3.0-or-later) are statically linked from [MPVKit-lavfi](https://github.com/1337raspberry/MPVKit-lavfi); [NOTICE.md](ramus-tauri/licenses/NOTICE.md) lists each one and how to relink.
 
-A few bundled Rust crates are distributed under [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/): the Servo-heritage CSS crates Tauri's webview layer depends on, such as [cssparser](https://github.com/servo/rust-cssparser), and [option-ext](https://github.com/soc/option-ext), reached through the `directories` crate. [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) lists every crate with its licence. MPL-2.0 is file-scope copyleft and does not affect the rest of ramus.
+A few bundled Rust crates are distributed under [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/): the Servo-heritage CSS crates Tauri's webview layer depends on, such as [cssparser](https://github.com/servo/rust-cssparser), and [option-ext](https://github.com/soc/option-ext), reached through the `directories` crate. [THIRD_PARTY_LICENSES.md](ramus-tauri/licenses/THIRD_PARTY_LICENSES.md) lists every crate with its licence. MPL-2.0 is file-scope copyleft and does not affect the rest of ramus.
 
-The bundled music genre tree (`ramus-tauri/data/open.json`) is derived from the [beets](https://github.com/beetbox/beets) project's `genres-tree.yaml` (MIT, © Adrian Sampson) and has been substantially extended. See [NOTICE.md](licenses/NOTICE.md).
+The bundled music genre tree (`ramus-tauri/data/open.json`) is derived from the [beets](https://github.com/beetbox/beets) project's `genres-tree.yaml` (MIT, © Adrian Sampson) and has been substantially extended. See [NOTICE.md](ramus-tauri/licenses/NOTICE.md).
 
-The full list of third-party Rust crates and npm packages — together with their license texts — is in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), regenerated from `Cargo.lock` and `ui/pnpm-lock.yaml` by [`scripts/generate-third-party-licenses.py`](scripts/generate-third-party-licenses.py).
+The full list of third-party Rust crates and npm packages — together with their license texts — is in [THIRD_PARTY_LICENSES.md](ramus-tauri/licenses/THIRD_PARTY_LICENSES.md), regenerated from `Cargo.lock` and `ui/pnpm-lock.yaml` by [`scripts/generate-third-party-licenses.py`](scripts/generate-third-party-licenses.py).
 
 ## Acknowledgements
 
@@ -278,4 +278,4 @@ ramus is proudly built on the open source wonders that are:
 - [Tauri](https://tauri.app/) - web frontend with minimal bloat, glorious
 - [Plex](https://www.plex.tv/) - for the media server that makes this app possible.
 - [beets](https://github.com/beetbox/beets) - for seeding the genre hierarchy (and helping me tag my music every day!)
-- The [souvlaki](https://github.com/Sinono3/souvlaki) and [rusqlite](https://github.com/rusqlite/rusqlite) maintainers - and everyone else listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+- The [souvlaki](https://github.com/Sinono3/souvlaki) and [rusqlite](https://github.com/rusqlite/rusqlite) maintainers - and everyone else listed in [THIRD_PARTY_LICENSES.md](ramus-tauri/licenses/THIRD_PARTY_LICENSES.md).

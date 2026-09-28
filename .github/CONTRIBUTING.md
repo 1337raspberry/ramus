@@ -18,10 +18,10 @@ Build instructions per platform are in [README.md](README.md). If `cargo tauri d
 ramus-core/    Rust library — all business logic. Plex client, cache (rusqlite + FTS5),
                sync engine, search, genre tree, playback core. Comprehensive unit tests.
 ramus-tauri/   Tauri 2 app shell. IPC commands, mpv FFI, media controls, mobile bridges.
+               licenses/ holds the license texts bundled into every release.
 ui/            React + Vite + Zustand. Components, stores, mobile views.
 plugins/       Tauri plugin: iOS Swift bridge (MPVKit) and Android Kotlin bridge (libmpv via Media3 SimpleBasePlayer).
 scripts/       Build helpers (bundle-libmpv, codesign, regenerate licenses, AKA merge).
-licenses/      Vendored license texts for runtime-linked native libraries (LGPL, MPL).
 ```
 
 Most business-logic changes belong in `ramus-core` with tests. Keep the Tauri layer thin — it should be IPC plumbing, not logic.

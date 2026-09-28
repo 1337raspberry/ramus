@@ -6,8 +6,8 @@ interface Props {
 }
 
 const REPO_BASE = "https://github.com/1337raspberry/ramus/blob/main";
-const THIRD_PARTY_URL = `${REPO_BASE}/THIRD_PARTY_LICENSES.md`;
-const NOTICE_URL = `${REPO_BASE}/licenses/NOTICE.md`;
+const THIRD_PARTY_URL = `${REPO_BASE}/ramus-tauri/licenses/THIRD_PARTY_LICENSES.md`;
+const NOTICE_URL = `${REPO_BASE}/ramus-tauri/licenses/NOTICE.md`;
 const LICENSE_URL = `${REPO_BASE}/LICENSE`;
 
 interface KeyComponent {
@@ -109,7 +109,7 @@ export default function AcknowledgementsPanel({ onDismiss }: Props) {
             <h3>Full third-party license list</h3>
             <p className="acknowledgements-section-body">
               The complete dependency manifest with full license texts is regenerated from
-              <code> Cargo.lock</code> and <code>ui/package-lock.json</code> on every release; CI
+              <code> Cargo.lock</code> and <code>ui/pnpm-lock.yaml</code> on every release; CI
               fails the build if it drifts. The same files are bundled with the installed app for
               offline reference.
             </p>

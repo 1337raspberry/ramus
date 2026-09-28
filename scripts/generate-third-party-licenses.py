@@ -16,9 +16,9 @@ Runs two tools back-to-back and concatenates their output:
    fetched a remote tool on every run, exactly the supply-chain pattern
    the migration was meant to harden against.
 
-Output is written to /THIRD_PARTY_LICENSES.md at the repo root, plus a
-copy at /licenses/THIRD_PARTY_LICENSES.md so the bundled licenses
-directory is self-contained for Tauri's bundle.resources.
+Output is written to ramus-tauri/licenses/THIRD_PARTY_LICENSES.md,
+beside the other license texts Tauri's bundle.resources ships with the
+app.
 
 CI runs this script on every PR and diffs the output against the
 committed copy; drift fails the build with a loud remediation message
@@ -31,7 +31,6 @@ script goes via JSON and does its own canonical rendering.
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import sys
 from collections import defaultdict
@@ -40,8 +39,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
 UI = ROOT / "ui"
-OUT = ROOT / "THIRD_PARTY_LICENSES.md"
-BUNDLED_COPY = ROOT / "licenses" / "THIRD_PARTY_LICENSES.md"
+OUT = ROOT / "ramus-tauri" / "licenses" / "THIRD_PARTY_LICENSES.md"
 
 
 def run_cargo_about_json() -> dict:
@@ -357,7 +355,7 @@ def main() -> int:
         "hand** — CI diffs this file on every PR and fails if it's "
         "stale; run the script locally and commit the result.\n\n"
         "See `LICENSE` for the ramus license itself (MIT) and "
-        "`licenses/NOTICE.md` for attribution of bundled data files and "
+        "`NOTICE.md` beside this file for attribution of bundled data files and "
         "runtime-linked native libraries (libmpv on every platform, plus "
         "the supporting libraries — ffmpeg, libplacebo, libass, etc — "
         "shipped inside the Android AAR).\n\n"
@@ -367,10 +365,6 @@ def main() -> int:
     combined = header + rust_md + "\n---\n\n" + npm_md
     OUT.write_text(combined, encoding="utf-8")
     print(f"wrote {OUT} ({len(combined)} bytes)")
-
-    BUNDLED_COPY.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(OUT, BUNDLED_COPY)
-    print(f"copied to {BUNDLED_COPY}")
 
     return 0
 

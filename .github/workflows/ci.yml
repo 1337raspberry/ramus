@@ -12,7 +12,7 @@ on:
     paths-ignore:
       - '**.md'
       - 'LICENSE*'
-      - 'licenses/**'
+      - 'ramus-tauri/licenses/**'
       - 'docs/**'
       - '.github/ISSUE_TEMPLATE/**'
       - '.github/PULL_REQUEST_TEMPLATE.md'
@@ -23,7 +23,7 @@ on:
     paths-ignore:
       - '**.md'
       - 'LICENSE*'
-      - 'licenses/**'
+      - 'ramus-tauri/licenses/**'
       - 'docs/**'
       - '.github/ISSUE_TEMPLATE/**'
       - '.github/PULL_REQUEST_TEMPLATE.md'
@@ -305,7 +305,7 @@ jobs:
       #   - ui/pnpm-lock.yaml                       (added/removed/bumped JS packages)
       #   - config/about.toml                       (license policy / accept list)
       #   - scripts/generate-third-party-licenses.py (renderer behaviour)
-      #   - THIRD_PARTY_LICENSES.md / licenses/…    (someone touched the output directly)
+      #   - ramus-tauri/licenses/THIRD_PARTY_LICENSES.md (someone touched the output directly)
       # Non-PR events (push to main, manual dispatch) always run — we
       # want main builds to keep verifying, and manual dispatch is the
       # whole point of an on-demand check. Trigger inputs are passed via
@@ -327,7 +327,7 @@ jobs:
           echo "Changed files in this PR:"
           echo "$CHANGED"
           echo "------------------------------------------------------------"
-          if echo "$CHANGED" | grep -qE '^(Cargo\.lock|ui/pnpm-lock\.yaml|config/about\.toml|scripts/generate-third-party-licenses\.py|THIRD_PARTY_LICENSES\.md|licenses/THIRD_PARTY_LICENSES\.md)$'; then
+          if echo "$CHANGED" | grep -qE '^(Cargo\.lock|ui/pnpm-lock\.yaml|config/about\.toml|scripts/generate-third-party-licenses\.py|ramus-tauri/licenses/THIRD_PARTY_LICENSES\.md)$'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
             echo "Dependency-affecting paths changed — running drift check."
           else
@@ -423,7 +423,7 @@ jobs:
         if: steps.changes.outputs.run == 'true'
         continue-on-error: true
         run: |
-          if git diff --exit-code THIRD_PARTY_LICENSES.md licenses/THIRD_PARTY_LICENSES.md; then
+          if git diff --exit-code ramus-tauri/licenses/THIRD_PARTY_LICENSES.md; then
             echo "THIRD_PARTY_LICENSES.md is in sync with dependencies."
             exit 0
           fi
@@ -441,11 +441,11 @@ jobs:
           echo "to keep the in-app Acknowledgements panel accurate:"
           echo ""
           echo "  python3 scripts/generate-third-party-licenses.py"
-          echo "  git add THIRD_PARTY_LICENSES.md licenses/THIRD_PARTY_LICENSES.md"
+          echo "  git add ramus-tauri/licenses/THIRD_PARTY_LICENSES.md"
           echo "  git commit -m 'regen third-party licenses'"
           echo ""
           echo "Diff CI computed:"
           echo "------------------------------------------------------------"
-          git diff THIRD_PARTY_LICENSES.md licenses/THIRD_PARTY_LICENSES.md | head -200
+          git diff ramus-tauri/licenses/THIRD_PARTY_LICENSES.md | head -200
           echo "------------------------------------------------------------"
           exit 1
