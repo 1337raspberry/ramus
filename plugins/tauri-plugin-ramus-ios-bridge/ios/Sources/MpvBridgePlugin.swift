@@ -1,6 +1,7 @@
 import AVFoundation
 import MediaPlayer
 import Network
+import RamusVisualiser
 import Tauri
 import UIKit
 import WebKit
@@ -57,6 +58,12 @@ class MpvBridgePlugin: Plugin {
     /// What the full-screen visualiser changed, to put back when it
     /// closes; `nil` while it is closed. Accessed on the main queue only.
     private var visualizerRestore: VisualizerRestore?
+    /// The native full-screen visualiser while it is shown. Main queue only.
+    private var nativeVisualizer: NativeVisualizerView?
+    /// Its feed, written from Tauri's command queue by the frame and clock
+    /// pushes; guarded by `nativeFeedLock`.
+    private var nativeFeed: NativeVisualizerFeed?
+    private let nativeFeedLock = NSLock()
 
     override func load(webview: WKWebView) {
         self.webView = webview
@@ -595,6 +602,113 @@ class MpvBridgePlugin: Plugin {
         case .landscapeRight: return .landscapeRight
         default: return .portrait
         }
+    }
+
+    // MARK: - Native visualiser
+
+    /// Show the native full-screen visualiser directly above the web view.
+    /// The shaders are compiled here, on the command queue, before the view
+    /// is built on the main queue. Building the two Metal renderers is part
+    /// of that same off-main work: each does a handful of
+    /// `makeRenderPipelineState` calls, which would otherwise stall the
+    /// main thread on every open. Rejects when Metal or the shaders are
+    /// unavailable, and the page then draws its own visualiser.
+    @objc public func showNativeVisualizer(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(NativeVisualizerShowArgs.self)
+        do {
+            try VisualiserShaders.prepare()
+        } catch {
+            log.error("native visualiser shaders unavailable: \(String(describing: error), privacy: .public)")
+            invoke.reject("native visualiser unavailable")
+            return
+        }
+        guard let renderers = NativeVisualizerRenderers() else {
+            log.error("native visualiser unavailable: no Metal renderer")
+            invoke.reject("native visualiser unavailable")
+            return
+        }
+        let feed = NativeVisualizerFeed(layout: args.layout, playing: args.playing)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let webView = self.webView, let parent = webView.superview else {
+                invoke.reject("no web view to cover")
+                return
+            }
+            let view = NativeVisualizerView(args: args, feed: feed, renderers: renderers)
+            self.removeNativeVisualizer()
+            view.onDismiss = { [weak self] in
+                self?.trigger("nativeVisualizerDismiss", data: [:])
+            }
+            view.translatesAutoresizingMaskIntoConstraints = false
+            parent.insertSubview(view, aboveSubview: webView)
+            NSLayoutConstraint.activate([
+                view.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
+                view.trailingAnchor.constraint(equalTo: parent.trailingAnchor),
+                view.topAnchor.constraint(equalTo: parent.topAnchor),
+                view.bottomAnchor.constraint(equalTo: parent.bottomAnchor),
+            ])
+            self.setNativeFeed(feed)
+            self.nativeVisualizer = view
+            view.start()
+            invoke.resolve([:])
+        }
+    }
+
+    /// Apply the page's changes: colours crossfade on the main queue; the
+    /// play state and a frame clear go straight to the feed.
+    @objc public func updateNativeVisualizer(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(NativeVisualizerUpdateArgs.self)
+        if let feed = currentNativeFeed() {
+            if let playing = args.playing { feed.isPlaying = playing }
+            if args.clearFrames == true { feed.clearFrames() }
+        }
+        if let backdrop = args.backdrop {
+            DispatchQueue.main.async { [weak self] in
+                self?.nativeVisualizer?.setBackdrop(backdrop)
+            }
+        }
+        invoke.resolve([:])
+    }
+
+    /// Take the native visualiser down. Pushes stop reaching it at once.
+    @objc public func hideNativeVisualizer(_ invoke: Invoke) throws {
+        setNativeFeed(nil)
+        DispatchQueue.main.async { [weak self] in
+            self?.removeNativeVisualizer()
+        }
+        invoke.resolve([:])
+    }
+
+    /// A batch of decoded spectrum frames from Rust.
+    @objc public func pushSpectrumFrames(_ invoke: Invoke) throws {
+        let batch = try invoke.parseArgs(NativeSpectrumBatch.self)
+        currentNativeFeed()?.push(batch)
+        invoke.resolve([:])
+    }
+
+    /// An audible-clock tick from Rust.
+    @objc public func pushAudible(_ invoke: Invoke) throws {
+        let tick = try invoke.parseArgs(NativeAudibleTick.self)
+        currentNativeFeed()?.setAudible(tick)
+        invoke.resolve([:])
+    }
+
+    private func setNativeFeed(_ feed: NativeVisualizerFeed?) {
+        nativeFeedLock.lock()
+        nativeFeed = feed
+        nativeFeedLock.unlock()
+    }
+
+    private func currentNativeFeed() -> NativeVisualizerFeed? {
+        nativeFeedLock.lock()
+        defer { nativeFeedLock.unlock() }
+        return nativeFeed
+    }
+
+    /// Main queue only.
+    private func removeNativeVisualizer() {
+        nativeVisualizer?.stop()
+        nativeVisualizer?.removeFromSuperview()
+        nativeVisualizer = nil
     }
 
     // MARK: - Keyboard
