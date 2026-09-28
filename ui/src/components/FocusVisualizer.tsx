@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { getSpectrumLayout, setSpectrumTap } from "../lib/commands";
+import { getSpectrumLayout } from "../lib/commands";
+import { tapVisibleSince, useSpectrumTap } from "../lib/useSpectrumTap";
 import type { VisualizerMode } from "../lib/visualizerMode";
 import { audibleTarget, readSpectrumBands, spectrumLastPushAt } from "../lib/spectrumRing";
 import { VISUALIZER_PARAMS } from "../lib/visualizerParams";
@@ -131,27 +132,6 @@ function readBandsInto(bands: Uint8Array, out: Float32Array): void {
 }
 
 /**
- * Install and remove requests are chained so they reach the backend in
- * mount order, one at a time. A remount issues remove-then-install with no
- * gap (React runs an effect's cleanup and re-run back to back in
- * StrictMode, and a fast toggle does the same), and each command runs on
- * its own backend task, so unchained requests could complete in the
- * opposite order and leave the tap off while the visualiser is mounted.
- */
-let tapRequests: Promise<void> = Promise.resolve();
-/**
- * `performance.now()` when the document last became visible. The paint
- * loop's no-frames hint must not count a hidden stretch, when the tap was
- * deliberately removed.
- */
-let tapVisibleSince = 0;
-function requestTap(enabled: boolean): void {
-  tapRequests = tapRequests
-    .then(() => setSpectrumTap(enabled))
-    .catch((e) => console.warn(`[spectrum] tap ${enabled ? "install" : "remove"} failed:`, e));
-}
-
-/**
  * Per band, how many frames further on it is read (`readSpectrumBands`),
  * and the frame spacing: from the backend's layout, fetched once. Until
  * it arrives every band is read from the same frame.
@@ -173,12 +153,6 @@ function loadSpectrumLayout(): void {
       console.warn("[spectrum] layout unavailable:", e);
     });
 }
-
-// A fresh page owns no tap. A reload, or a restarted web content process,
-// runs no unmount cleanup, so a tap the previous page installed would
-// otherwise keep running (and its frames keep streaming) under a page with
-// no visualiser mounted. Removing a tap that is not installed is a no-op.
-requestTap(false);
 
 interface Props {
   /** Which look to paint; off paints nothing and removes the tap. */
@@ -202,27 +176,12 @@ export default function FocusVisualizer({ mode, subdued, fullScreen = false }: P
   const active = !disabled && mode !== "off";
 
   // The tap is installed for exactly as long as this component is mounted
-  // with a look to paint AND the document is visible: the paint loop
-  // stops while the window is hidden, so frames measured then would cost
-  // the tap's CPU for nothing. Switching off, or disabling the visualiser
-  // in settings, while mounted runs the cleanup, which removes the tap;
-  // the backend applies the settings veto on its side too, so a stale
-  // install request can't slip through. Switching between the two looks
-  // keeps it installed. Every request goes through the chain, so a
-  // hide/show pair lands in order like any other toggle.
+  // with a look to paint AND the document is visible (`useSpectrumTap`);
+  // switching off, or disabling the visualiser in settings, removes it.
+  // Switching between the two looks keeps it installed.
+  useSpectrumTap(active);
   useEffect(() => {
-    if (!active) return;
-    loadSpectrumLayout();
-    const sync = () => {
-      if (!document.hidden) tapVisibleSince = performance.now();
-      requestTap(!document.hidden);
-    };
-    sync();
-    document.addEventListener("visibilitychange", sync);
-    return () => {
-      document.removeEventListener("visibilitychange", sync);
-      requestTap(false);
-    };
+    if (active) loadSpectrumLayout();
   }, [active]);
 
   if (!active) return null;
@@ -483,7 +442,7 @@ function CanvasLayer({
       const starvedNow =
         isPlaying &&
         !playback.isBuffering &&
-        now - Math.max(spectrumLastPushAt(), mountedAt, tapVisibleSince) > NO_FRAMES_HINT_MS;
+        now - Math.max(spectrumLastPushAt(), mountedAt, tapVisibleSince()) > NO_FRAMES_HINT_MS;
       if (starvedNow !== starvedRef.current) {
         starvedRef.current = starvedNow;
         setStarved(starvedNow);

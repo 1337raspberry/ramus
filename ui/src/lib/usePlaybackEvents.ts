@@ -17,6 +17,7 @@ import { usePlaybackQualityStore } from "../stores/playbackQualityStore";
 import { useCastStore } from "../stores/castStore";
 import { applyAccent } from "./accent";
 import { bumpArtRetry } from "./useArtUrl";
+import { positionTicksHeld, positionTicksResumedAt } from "./webviewVisibility";
 
 /**
  * Subscribe to Tauri playback events (accent-color, playback-state,
@@ -133,12 +134,17 @@ export function usePlaybackEvents(authed: boolean): void {
     // While playing, if position events stop arriving for BUFFERING_STALE_MS
     // the audio has stalled (initial buffer, a mid-track network hiccup, or
     // the reload gap on a failover resume) — flip on the scanning indicator.
+    // Not while the backend holds ticks back from a hidden or covered page:
+    // their absence is deliberate, and the scanner's per-frame redraw would
+    // run under a view that hides it. `playback-buffering` still arrives.
     const watchdog = window.setInterval(() => {
       const s = usePlaybackStore.getState();
       // A cast's position arrives by 1 s poll; the backend reports the
       // player's own buffering instead.
       if (s.status !== "playing" || useCastStore.getState().player) return;
-      if (performance.now() - lastPositionAt > BUFFERING_STALE_MS) {
+      if (positionTicksHeld()) return;
+      const since = Math.max(lastPositionAt, positionTicksResumedAt());
+      if (performance.now() - since > BUFFERING_STALE_MS) {
         s.setBuffering(true);
       }
     }, 250);
