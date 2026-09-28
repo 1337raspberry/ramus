@@ -74,6 +74,9 @@ targets:
         LSRequiresIPhoneOS: true
         UILaunchStoryboardName: LaunchScreen
         UIRequiredDeviceCapabilities: [arm64, metal]
+        # Lets CADisplayLink run above 60 Hz on ProMotion iPhones; the
+        # native visualiser's 120 fps switch depends on it.
+        CADisableMinimumFrameDurationOnPhone: true
         # Portrait comes first and is the only orientation an iPhone shows
         # outside the full-screen visualiser: the bridge plugin narrows the
         # root view controller to portrait at load and to landscape while
