@@ -3,6 +3,7 @@ import type { Album, LyricsResult, LyricsStatus, Track, UltraBlurColors } from "
 import { accentFromPalette, blurColorsFromPalette, type VibrantPalette } from "../lib/vibrantColor";
 import { applyAccent } from "../lib/accent";
 import { clearSpectrumRing } from "../lib/spectrumRing";
+import { clearNativeVisualizerFrames } from "../lib/nativeVisualizer";
 import {
   nextVisualizerMode,
   parseVisualizerMode,
@@ -351,6 +352,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       // go too, or the next play would briefly look up the old stream's
       // frames against a stale clock.
       clearSpectrumRing();
+      clearNativeVisualizerFrames();
       set({
         lyrics: null,
         lyricsStatus: null,
@@ -506,6 +508,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     // Same reset the `!track` branch of onPlaybackState performs, applied up
     // front so the UI empties on the tap rather than on the IPC round-trip.
     clearSpectrumRing();
+    clearNativeVisualizerFrames();
     lyricsGen += 1;
     resetUltraBlurGate();
     set({

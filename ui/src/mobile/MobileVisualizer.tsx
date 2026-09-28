@@ -1,8 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { listen } from "@tauri-apps/api/event";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { setVisualizerPresentation } from "../lib/commands";
 import { useBlurColors } from "../lib/useBlurColors";
+import { useSpectrumTap } from "../lib/useSpectrumTap";
+import {
+  closeNativeVisualizer,
+  nativeBackdrop,
+  openNativeVisualizer,
+  updateNativeVisualizerState,
+} from "../lib/nativeVisualizer";
 import UltraBlurBackground from "../components/UltraBlurBackground";
 import FocusVisualizer from "../components/FocusVisualizer";
 
@@ -12,14 +21,21 @@ import FocusVisualizer from "../components/FocusVisualizer";
  * now-playing menu (`playbackStore.mobileVisualizerOpen`); a tap anywhere
  * (or Escape on a hardware keyboard) closes it.
  *
+ * On iOS the backdrop and ridge are drawn natively, by a Metal view the
+ * plugin places over the page (`lib/nativeVisualizer.ts`); this overlay
+ * stays mounted underneath to own the presentation, the turns and the
+ * close, and a tap on the native view reaches it as `visualizer-dismiss`.
+ * Where the native view can't draw, the overlay draws its own layers.
+ *
  * While it is mounted the native side holds its presentation
  * (`setVisualizerPresentation`): on iOS the interface turns to landscape
  * whatever the rotation lock says, and the screen stays awake while music
  * plays (a finished album or a pause lets the phone lock as usual).
  * Closing asks it to turn back and keeps the overlay up until the viewport
  * is portrait again, so the app behind it is never seen sideways. The
- * spectrum tap is `FocusVisualizer`'s: installed while this is on screen,
- * removed when it closes or the app is hidden.
+ * spectrum tap is installed while the visualiser is on screen (by
+ * `FocusVisualizer`, or here for the native view) and removed when it
+ * closes or the app is hidden.
  */
 
 /** Longest the overlay waits for either turn before carrying on anyway. */
@@ -60,6 +76,45 @@ export default function MobileVisualizer() {
   // portrait, unmount at once and show the app behind turning sideways
   // and back.
   const [turned, setTurned] = useState(!openedPortrait);
+
+  const spectrumDisabled = useSettingsStore((s) => s.disableSpectrum);
+  // Which layers draw: the native view (iOS), the page's own, or neither
+  // while the native open is in flight.
+  const [renderer, setRenderer] = useState<"pending" | "native" | "web">("pending");
+  const colorsRef = useRef(colors);
+  colorsRef.current = colors;
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+
+  useEffect(() => {
+    let live = true;
+    openNativeVisualizer(colorsRef.current, playingRef.current).then((ok) => {
+      if (live) setRenderer(ok ? "native" : "web");
+    });
+    return () => {
+      live = false;
+      closeNativeVisualizer();
+    };
+  }, []);
+
+  // Keyed on `renderer` too so a colour or play-state change made while the
+  // native open was still pending is re-sent once the native view is up.
+  useEffect(() => {
+    if (renderer === "native") updateNativeVisualizerState({ backdrop: nativeBackdrop(colors) });
+  }, [renderer, colors]);
+
+  useEffect(() => {
+    if (renderer === "native") updateNativeVisualizerState({ playing });
+  }, [renderer, playing]);
+
+  useSpectrumTap(renderer === "native" && !spectrumDisabled);
+
+  useEffect(() => {
+    const unlisten = listen("visualizer-dismiss", () => setClosing(true));
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => () => requestPresentation(false), []);
 
@@ -123,8 +178,12 @@ export default function MobileVisualizer() {
       aria-label="Close visualiser"
       onClick={() => setClosing(true)}
     >
-      <UltraBlurBackground colors={colors} />
-      <FocusVisualizer mode="ridge" subdued={false} fullScreen />
+      {renderer === "web" && (
+        <>
+          <UltraBlurBackground colors={colors} />
+          <FocusVisualizer mode="ridge" subdued={false} fullScreen />
+        </>
+      )}
     </div>,
     document.body,
   );

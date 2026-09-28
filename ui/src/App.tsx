@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import {
-  flushQueueState,
-  foregroundResync,
-  isAuthenticated,
-  setWebviewVisible,
-} from "./lib/commands";
+import { flushQueueState, foregroundResync, isAuthenticated } from "./lib/commands";
 import { clearGenreMetadataCache } from "./lib/genreMetadataCache";
 import type { SyncProgress } from "./lib/types";
 import { usePlaybackEvents } from "./lib/usePlaybackEvents";
@@ -44,19 +39,9 @@ import { applyAccent, DEFAULT_ACCENT } from "./lib/accent";
 import { useBlurColors } from "./lib/useBlurColors";
 import { accentFromPalette } from "./lib/vibrantColor";
 import { handleAndroidBack, pushBackHandler } from "./lib/backHandler";
+import { reportPageVisible } from "./lib/webviewVisibility";
 
 applyAccent(...DEFAULT_ACCENT);
-
-/**
- * Visibility reports are chained so they reach the backend in the order they
- * happened: each command runs on its own backend task, and a quick hide/show
- * pair landing reversed would leave the backend holding back position ticks
- * from a page that is on screen.
- */
-let visibilityReports: Promise<void> = Promise.resolve();
-function reportWebviewVisible(visible: boolean): void {
-  visibilityReports = visibilityReports.then(() => setWebviewVisible(visible)).catch(() => {});
-}
 
 export default function App() {
   const isMobile = useIsMobile();
@@ -145,20 +130,21 @@ export default function App() {
   // freeze the seek bar. The page also reports where it stands on load: the
   // page it replaced (a reload, or a restarted web content process) reported
   // "hidden" as it unloaded, and a page that starts visible sees no edge.
+  // `webviewVisibility.ts` combines these reports with native-view coverage.
   useEffect(() => {
     if (authed !== true) return;
-    reportWebviewVisible(document.visibilityState === "visible");
+    reportPageVisible(document.visibilityState === "visible");
     let lastResync = 0;
     const onVisibility = () => {
       if (document.visibilityState !== "visible") {
-        reportWebviewVisible(false);
+        reportPageVisible(false);
         // Backgrounding is the last moment we're reliably scheduled — a
         // suspended process freezes the periodic queue writer mid-interval,
         // so flush the playing position now rather than lose it.
         flushQueueState().catch(() => {});
         return;
       }
-      reportWebviewVisible(true);
+      reportPageVisible(true);
       const now = Date.now();
       if (now - lastResync < 3000) return;
       lastResync = now;

@@ -506,6 +506,35 @@ export const dismissKeyboard = () => invoke<void>("dismiss_keyboard");
 export const setVisualizerPresentation = (active: boolean, keepAwake: boolean) =>
   invoke<void>("set_visualizer_presentation", { active, keepAwake });
 
+/** The backdrop sent to the native visualiser: each corner `[r, g, b]`,
+ * already toned (`adjustedRgb`), and the dim (`--ultrablur-opacity`). */
+export interface NativeBackdropPayload {
+  topLeft: readonly [number, number, number];
+  topRight: readonly [number, number, number];
+  bottomLeft: readonly [number, number, number];
+  bottomRight: readonly [number, number, number];
+  opacity: number;
+}
+
+/** Show the full-screen visualiser natively (iOS). Rejects where it can't
+ * draw (other platforms, no Metal), and the page draws its own instead. */
+export const showNativeVisualizer = (
+  params: object,
+  backdrop: NativeBackdropPayload,
+  playing: boolean,
+) => invoke<void>("show_native_visualizer", { params, backdrop, playing });
+
+/** Change the native visualiser's colours or play state, or clear its
+ * frames; a no-op while it isn't showing. */
+export const updateNativeVisualizer = (update: {
+  backdrop?: NativeBackdropPayload;
+  playing?: boolean;
+  clearFrames?: boolean;
+}) => invoke<void>("update_native_visualizer", update);
+
+/** Take the native visualiser down; a no-op when it isn't showing. */
+export const hideNativeVisualizer = () => invoke<void>("hide_native_visualizer");
+
 // The native search bar's show/hide commands are serialised. Each is an
 // async command handled on its own runtime task, so a show issued straight
 // after a hide (a remount of the search view) could otherwise be processed
