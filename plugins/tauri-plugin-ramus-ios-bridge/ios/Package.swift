@@ -15,11 +15,9 @@ let package = Package(
         // the minimum here has to satisfy MPVKit's (v12) too, otherwise
         // SPM rejects the dependency resolution.
         .macOS(.v12),
-        // Matches the app's Info.plist deployment target in project.yml.
-        // iOS 15 is the first version where Swift concurrency ships in
-        // the OS; older targets make Xcode back-deploy concurrency into
-        // the app bundle which broke launch on iOS 26 devices.
-        .iOS(.v15),
+        // The app's deployment target is 17.5 (project.yml); the visualiser
+        // views use iOS 17 trait-change registration.
+        .iOS(.v17),
     ],
     products: [
         .library(
@@ -35,11 +33,23 @@ let package = Package(
         .package(url: "https://github.com/1337raspberry/MPVKit-lavfi.git", exact: "1.0.0"),
     ],
     targets: [
+        // The native full-screen visualiser: ridge and backdrop renderers,
+        // the frame ring they read, and the view the plugin shows over the
+        // web view. No Tauri or MPVKit dependency, so it tests on its own.
+        .target(
+            name: "RamusVisualiser",
+            path: "RamusVisualiser",
+            linkerSettings: [
+                .linkedFramework("Metal"),
+                .linkedFramework("QuartzCore"),
+            ]
+        ),
         .target(
             name: "tauri-plugin-ramus-ios-bridge",
             dependencies: [
                 .byName(name: "Tauri"),
                 .product(name: "MPVKit", package: "MPVKit-lavfi"),
+                "RamusVisualiser",
             ],
             path: "Sources",
             linkerSettings: [
@@ -47,6 +57,12 @@ let package = Package(
                 .linkedFramework("MediaPlayer"),
                 .linkedFramework("Security"),
             ]
-        )
+        ),
+        .testTarget(
+            name: "RamusVisualiserTests",
+            dependencies: ["RamusVisualiser"],
+            path: "RamusVisualiserTests",
+            resources: [.copy("Fixtures")]
+        ),
     ]
 )
