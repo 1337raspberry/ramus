@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { VISUALIZER_PARAMS, type VisualizerParams } from "../lib/visualizerParams";
+import { SINGALONG_PARAMS } from "../lib/singalong";
 
 /**
  * Live tuning state behind the development-only visualiser panel.
@@ -8,9 +9,11 @@ import { VISUALIZER_PARAMS, type VisualizerParams } from "../lib/visualizerParam
  * paint loop reads, so a slider drag changes the next frame without a
  * React render. Art values have no production-side object: `FocusVizDebug`
  * applies them through an injected stylesheet, and the tap value is pushed
- * to the backend over a command. All persist to `localStorage` so a tuning
- * pass survives reloads. This module is only ever loaded in development
- * builds.
+ * to the backend over a command. Lyrics-strip values are held here and
+ * applied by `FocusVizDebug`, partly to `SINGALONG_PARAMS` and partly
+ * through an injected stylesheet. All persist to `localStorage` so a
+ * tuning pass survives reloads. This module is only ever loaded in
+ * development builds.
  */
 
 /** Art layout values; production reads the equivalents from styles.css. */
@@ -31,7 +34,32 @@ export interface TapTuning {
   tapTilt: number;
 }
 
-export type FocusVizTuning = VisualizerParams & ArtTuning & TapTuning;
+/**
+ * Clear-screen lyrics strip values. The first five override styles.css
+ * (`.focus-singalong` and its lines); the offsets are margins, so they
+ * add to the strip's position in every layout (windowed, full screen,
+ * narrow). The rest mirror `SINGALONG_PARAMS`.
+ */
+export interface LyricsTuning {
+  /** Preferred type size of the focus line, in vw (the clamp's middle term). */
+  lyricsSizeVw: number;
+  /** Smallest the focus line's type gets, in px. */
+  lyricsMinPx: number;
+  /** Largest the focus line's type gets, in px. */
+  lyricsMaxPx: number;
+  /** Moves the strip down (positive) or up, in px. */
+  lyricsTopPx: number;
+  /** Moves the strip's left edge in (positive) or out, in px. */
+  lyricsLeftPx: number;
+  /** Moves the strip's right edge in (positive) or out, in px. */
+  lyricsRightPx: number;
+  lyricsNeighbourScale: number;
+  lyricsNeighbourOpacity: number;
+  lyricsGapPx: number;
+  lyricsLeadS: number;
+}
+
+export type FocusVizTuning = VisualizerParams & ArtTuning & TapTuning & LyricsTuning;
 
 /**
  * The shipped art layout, mirrored from styles.css: `--art-scale` on
@@ -50,20 +78,40 @@ const TAP_DEFAULTS: Readonly<TapTuning> = Object.freeze({
   tapTilt: 1.0,
 });
 
+/**
+ * The shipped lyrics-strip values: the type clamp mirrored from
+ * `.focus-singalong-line` in styles.css, and `SINGALONG_PARAMS` captured
+ * before `FocusVizDebug` writes to it.
+ */
+const LYRICS_DEFAULTS: Readonly<LyricsTuning> = Object.freeze({
+  lyricsSizeVw: 3.3,
+  lyricsMinPx: 34,
+  lyricsMaxPx: 68,
+  lyricsTopPx: 0,
+  lyricsLeftPx: 0,
+  lyricsRightPx: 0,
+  lyricsNeighbourScale: SINGALONG_PARAMS.neighbourScale,
+  lyricsNeighbourOpacity: SINGALONG_PARAMS.neighbourOpacity,
+  lyricsGapPx: SINGALONG_PARAMS.gapPx,
+  lyricsLeadS: SINGALONG_PARAMS.leadS,
+});
+
 /** Shipped values, captured before anything here touches the params. */
 export const TUNING_DEFAULTS: Readonly<FocusVizTuning> = Object.freeze({
   ...VISUALIZER_PARAMS,
   ...ART_DEFAULTS,
   ...TAP_DEFAULTS,
+  ...LYRICS_DEFAULTS,
 });
 
 const STORAGE_KEY = "ramus.dev.focusVizTuning";
 
 const art: ArtTuning = { ...ART_DEFAULTS };
 const tap: TapTuning = { ...TAP_DEFAULTS };
+const lyrics: LyricsTuning = { ...LYRICS_DEFAULTS };
 
 function current(): FocusVizTuning {
-  return { ...VISUALIZER_PARAMS, ...art, ...tap };
+  return { ...VISUALIZER_PARAMS, ...art, ...tap, ...lyrics };
 }
 
 /** Immutable copy replaced on every change, for `useSyncExternalStore`. */
@@ -78,11 +126,17 @@ function isTapKey(key: keyof FocusVizTuning): key is keyof TapTuning {
   return key in TAP_DEFAULTS;
 }
 
+function isLyricsKey(key: keyof FocusVizTuning): key is keyof LyricsTuning {
+  return key in LYRICS_DEFAULTS;
+}
+
 function write(key: keyof FocusVizTuning, value: number): void {
   if (isArtKey(key)) {
     art[key] = value;
   } else if (isTapKey(key)) {
     tap[key] = value;
+  } else if (isLyricsKey(key)) {
+    lyrics[key] = value;
   } else {
     VISUALIZER_PARAMS[key] = value;
   }

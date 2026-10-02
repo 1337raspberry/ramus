@@ -1,5 +1,9 @@
 import { usePlaybackStore } from "../stores/playbackStore";
 import { togglePlayPause, nextTrack, previousTrack } from "../lib/commands";
+import { lyricsEmptyMessage } from "../lib/lyricsStatus";
+import { shownVisualizerMode } from "../lib/visualizerMode";
+import { SINGALONG_QUERY } from "../lib/singalong";
+import { useMediaQuery } from "../lib/useMediaQuery";
 import WaveformSeekBar from "./WaveformSeekBar";
 import MarqueeText from "./MarqueeText";
 import VisualizerToggle from "./VisualizerToggle";
@@ -10,7 +14,53 @@ import {
   IconPlay,
   IconNext,
   IconExpandCorner,
+  IconLyrics,
 } from "./Icons";
+
+/**
+ * Switches the timed-lyrics strip (`FocusSingalong`) on and off. Lit
+ * while on; dimmed while on with nothing to show for the track (no
+ * lyrics, or lyrics without timestamps), with the reason in the tooltip.
+ * Absent while the bars are drawn or the window is too narrow, since the
+ * strip shows in neither.
+ */
+function SingalongToggle() {
+  const on = usePlaybackStore((s) => s.clearLyrics);
+  const toggle = usePlaybackStore((s) => s.toggleClearLyrics);
+  const ridge = usePlaybackStore(
+    (s) => shownVisualizerMode(s.visualizerMode, s.focusClear) === "ridge",
+  );
+  const lyrics = usePlaybackStore((s) => s.lyrics);
+  const loading = usePlaybackStore((s) => s.lyricsLoading);
+  const status = usePlaybackStore((s) => s.lyricsStatus);
+  const wide = useMediaQuery(SINGALONG_QUERY);
+  if (!ridge || !wide) return null;
+
+  let state = "Lyrics on";
+  let unavailable = false;
+  if (loading || (!lyrics && status === null)) {
+    state = "Loading lyrics";
+  } else if (!lyrics) {
+    state = lyricsEmptyMessage(status);
+    unavailable = true;
+  } else if (!lyrics.isSynced) {
+    state = "No timed lyrics for this track";
+    unavailable = true;
+  }
+  const title = on ? `${state} — click to hide lyrics` : "Show lyrics";
+
+  return (
+    <button
+      className={`np-viz-btn focus-lyrics-btn${on ? " active" : ""}${on && unavailable ? " unavailable" : ""}`}
+      onClick={toggle}
+      title={title}
+      aria-label={title}
+      aria-pressed={on}
+    >
+      <IconLyrics />
+    </button>
+  );
+}
 
 interface Props {
   title: string;
@@ -26,9 +76,10 @@ interface Props {
 /**
  * The corner player shown in focus mode's clear screen: a small cluster
  * at the top right, with no panel behind it, holding the art thumbnail,
- * title and artist, transport, the visualiser mode button, the seek bar
- * and a button back to the full layout. Everything else in focus mode is
- * unmounted while it shows, so the visualiser has the window to itself.
+ * title and artist, transport, the visualiser mode and lyrics buttons,
+ * the seek bar and a button back to the full layout. Everything else in
+ * focus mode is unmounted while it shows, so the visualiser has the
+ * window to itself.
  */
 export default function FocusClearPlayer({
   title,
@@ -70,6 +121,7 @@ export default function FocusClearPlayer({
           </button>
         </div>
         <VisualizerToggle />
+        <SingalongToggle />
         <button className="focus-close-btn" onClick={onExit} title="Leave clear screen (Esc)">
           <IconExpandCorner size={16} />
         </button>
