@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { setSpectrumTilt } from "../lib/commands";
+import { SINGALONG_PARAMS, placeSingalongLines } from "../lib/singalong";
 import {
   TUNING_DEFAULTS,
   resetTuning,
@@ -21,7 +22,9 @@ import {
  * object the paint loop reads (see ./focusVizTuning); art values are
  * applied by an injected stylesheet that overrides the focus-mode rules,
  * and the panel's own styles are injected the same way, so styles.css
- * carries nothing for this either.
+ * carries nothing for this either. Lyrics-strip values go partly to
+ * `SINGALONG_PARAMS` and partly to an injected stylesheet, after which
+ * the strip's lines are placed again.
  */
 
 interface ControlSpec {
@@ -76,6 +79,28 @@ const DEPTH_SLIDER: LinkedSpec = {
 };
 
 const SECTIONS = [
+  {
+    title: "Lyrics strip",
+    controls: [
+      { key: "lyricsSizeVw", label: "Size vw", min: 1, max: 6, step: 0.05, digits: 2 },
+      { key: "lyricsMinPx", label: "Min px", min: 12, max: 80, step: 1, digits: 0 },
+      { key: "lyricsMaxPx", label: "Max px", min: 20, max: 140, step: 1, digits: 0 },
+      { key: "lyricsTopPx", label: "Down px", min: -200, max: 300, step: 1, digits: 0 },
+      { key: "lyricsLeftPx", label: "Left in px", min: -48, max: 600, step: 1, digits: 0 },
+      { key: "lyricsRightPx", label: "Right in px", min: -300, max: 600, step: 1, digits: 0 },
+      { key: "lyricsNeighbourScale", label: "Side size", min: 0.3, max: 1, step: 0.01, digits: 2 },
+      {
+        key: "lyricsNeighbourOpacity",
+        label: "Side opacity",
+        min: 0,
+        max: 1,
+        step: 0.01,
+        digits: 2,
+      },
+      { key: "lyricsGapPx", label: "Gap px", min: -30, max: 60, step: 1, digits: 0 },
+      { key: "lyricsLeadS", label: "Lead s", min: -0.5, max: 1.5, step: 0.01, digits: 2 },
+    ],
+  },
   {
     title: "Album art",
     controls: [
@@ -284,6 +309,22 @@ function artCss(t: FocusVizTuning): string {
 `;
 }
 
+/**
+ * Overrides for the lyrics strip rules in styles.css. The offsets are
+ * margins on the absolutely positioned strip, so they add to its `top`,
+ * `left` and `right` in every layout rather than replacing them.
+ */
+function lyricsCss(t: FocusVizTuning): string {
+  return `
+.focus-singalong {
+  margin: ${t.lyricsTopPx}px ${t.lyricsRightPx}px 0 ${t.lyricsLeftPx}px !important;
+}
+.focus-singalong-line {
+  font-size: clamp(${t.lyricsMinPx}px, ${t.lyricsSizeVw}vw, ${t.lyricsMaxPx}px) !important;
+}
+`;
+}
+
 function styleElement(id: string): HTMLStyleElement {
   let el = document.getElementById(id) as HTMLStyleElement | null;
   if (!el) {
@@ -312,6 +353,18 @@ function Host() {
   // so a saved tuning applies as soon as focus mode opens.
   useEffect(() => {
     styleElement("fv-debug-art").textContent = artCss(tuning);
+  }, [tuning]);
+
+  // Lyrics-strip values: the placement parameters, then the type and
+  // position overrides, then a re-place so the lines move now rather than
+  // at the next line change.
+  useEffect(() => {
+    SINGALONG_PARAMS.neighbourScale = tuning.lyricsNeighbourScale;
+    SINGALONG_PARAMS.neighbourOpacity = tuning.lyricsNeighbourOpacity;
+    SINGALONG_PARAMS.gapPx = tuning.lyricsGapPx;
+    SINGALONG_PARAMS.leadS = tuning.lyricsLeadS;
+    styleElement("fv-debug-lyrics").textContent = lyricsCss(tuning);
+    document.querySelectorAll<HTMLElement>(".focus-singalong").forEach(placeSingalongLines);
   }, [tuning]);
 
   // The tap tilt lives in the backend: push it on every change, and once

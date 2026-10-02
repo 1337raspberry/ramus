@@ -1,21 +1,7 @@
-import type { LyricsStatus } from "../lib/types";
 import { usePlaybackStore } from "../stores/playbackStore";
+import { lyricsEmptyMessage } from "../lib/lyricsStatus";
 import LyricsView from "./LyricsView";
 import { IconClose } from "./Icons";
-
-/** Honest empty-state copy for a finished fetch that produced no lyrics. */
-function emptyMessage(status: LyricsStatus | null): string {
-  switch (status) {
-    case "offline":
-      return "Network unavailable";
-    case "unreachable":
-      return "Couldn't reach lyrics server";
-    case "notFound":
-      return "No lyrics found";
-    default:
-      return "No lyrics available";
-  }
-}
 
 /**
  * Shared lyrics overlay for Now Playing surfaces. Reads state directly
@@ -59,7 +45,7 @@ export default function LyricsOverlay() {
       ) : lyricsLoading ? (
         <div className="lyrics-loading">loading lyrics...</div>
       ) : (
-        <div className="lyrics-empty">{emptyMessage(lyricsStatus)}</div>
+        <div className="lyrics-empty">{lyricsEmptyMessage(lyricsStatus)}</div>
       )}
     </div>
   );

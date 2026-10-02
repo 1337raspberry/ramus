@@ -41,6 +41,22 @@ function persistVisualizerStyle(style: VisualizerMode): void {
   } catch {}
 }
 
+const CLEAR_LYRICS_KEY = "ramus-clear-lyrics";
+
+function loadPersistedClearLyrics(): boolean {
+  try {
+    return localStorage.getItem(CLEAR_LYRICS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistClearLyrics(on: boolean): void {
+  try {
+    localStorage.setItem(CLEAR_LYRICS_KEY, on ? "1" : "0");
+  } catch {}
+}
+
 interface PlaybackState {
   // --- Playback ---
   status: "stopped" | "playing" | "paused";
@@ -97,6 +113,12 @@ interface PlaybackState {
    */
   visualizerMode: VisualizerMode;
   /**
+   * The clear screen's timed-lyrics singalong is switched on; persisted
+   * under `ramus-clear-lyrics`. Independent of `showLyrics`: the clear
+   * screen never shows the lyrics panel, and this survives leaving it.
+   */
+  clearLyrics: boolean;
+  /**
    * The mobile full-screen visualiser (`mobile/MobileVisualizer.tsx`) is
    * open. Opened from the now-playing menu; the overlay closes itself.
    */
@@ -137,6 +159,7 @@ interface PlaybackState {
   exitFocusMode: () => void;
   toggleFocusClear: () => void;
   toggleVisualizer: () => void;
+  toggleClearLyrics: () => void;
   setMobileVisualizerOpen: (open: boolean) => void;
   removeQueueItem: (index: number) => void;
   /// Drag reorder: move the entry at `from` to position `to` (absolute
@@ -164,6 +187,21 @@ function activeLineIndex(lyrics: LyricsResult, position: number): number {
 }
 
 export { activeLineIndex };
+
+/** Whether a lyrics surface is showing: the lyrics panel, or the clear screen's singalong. */
+function lyricsWanted(s: PlaybackState): boolean {
+  return s.showLyrics || (s.focusClear && s.clearLyrics);
+}
+
+/**
+ * Whether the current track still lacks an answer worth fetching: nothing
+ * loaded or in flight, and no "notFound". That one is definitive for the
+ * track, so reopening a surface doesn't re-ping LRCLIB; "offline" and
+ * "unreachable" are worth retrying, since the connection may be back.
+ */
+function lyricsNeedFetch(s: PlaybackState): boolean {
+  return !!s.currentTrack && !s.lyrics && !s.lyricsLoading && s.lyricsStatus !== "notFound";
+}
 
 // Generation counter for lyrics: a slow `fetchLyrics` (now with retries)
 // for the outgoing track must not overwrite the incoming track's lyrics.
@@ -245,6 +283,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   isFocusMode: false,
   focusClear: false,
   visualizerMode: loadPersistedVisualizerStyle(),
+  clearLyrics: loadPersistedClearLyrics(),
   mobileVisualizerOpen: false,
   positionAt: 0,
 
@@ -337,8 +376,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       }
 
       // The panel is "always pinned": if it's open, refetch lyrics for the
-      // new track and keep it open.
-      if (get().showLyrics) {
+      // new track and keep it open. The clear screen's singalong follows
+      // the track the same way.
+      if (lyricsWanted(get())) {
         get().loadLyrics(track.ratingKey);
       }
 
@@ -437,16 +477,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   },
 
   toggleLyrics: () => {
-    const { showLyrics, lyrics, lyricsLoading, lyricsStatus, currentTrack } = get();
-    // Fetch on open only when we lack a definitive answer. A "notFound" is
-    // definitive for the session (no re-pinging LRCLIB on every reopen);
-    // "offline"/"unreachable" are worth retrying — the user may have reconnected.
-    const needsFetch = !lyrics && lyricsStatus !== "notFound";
-    if (!showLyrics && needsFetch && !lyricsLoading && currentTrack) {
-      set({ showLyrics: true });
-      get().loadLyrics(currentTrack.ratingKey);
-    } else {
-      set({ showLyrics: !showLyrics });
+    const opening = !get().showLyrics;
+    set({ showLyrics: opening });
+    const s = get();
+    if (opening && s.currentTrack && lyricsNeedFetch(s)) {
+      get().loadLyrics(s.currentTrack.ratingKey);
     }
   },
 
@@ -468,8 +503,23 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   // Entering the clear screen closes the lyrics takeover: the clear
   // layout never shows it, and leaving the flag set would make the first
   // Escape close an overlay nobody can see.
-  toggleFocusClear: () =>
-    set((s) => ({ focusClear: !s.focusClear, showLyrics: s.focusClear ? s.showLyrics : false })),
+  toggleFocusClear: () => {
+    set((s) => ({ focusClear: !s.focusClear, showLyrics: s.focusClear ? s.showLyrics : false }));
+    const s = get();
+    if (s.currentTrack && lyricsWanted(s) && lyricsNeedFetch(s)) {
+      get().loadLyrics(s.currentTrack.ratingKey);
+    }
+  },
+
+  toggleClearLyrics: () => {
+    const on = !get().clearLyrics;
+    persistClearLyrics(on);
+    set({ clearLyrics: on });
+    const s = get();
+    if (s.currentTrack && lyricsWanted(s) && lyricsNeedFetch(s)) {
+      get().loadLyrics(s.currentTrack.ratingKey);
+    }
+  },
 
   // Steps from the mode on screen, so a toggle in the clear screen while
   // the saved mode is off lands on bars, the look after the ridge it shows.

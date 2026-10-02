@@ -3652,6 +3652,10 @@ body.is-fullscreen .focus-clear-player {
   top: 12px;
 }
 
+body.is-fullscreen .focus-singalong {
+  top: -29px;
+}
+
 .focus-overlay {
   position: fixed;
   inset: 0; /* full window so the visualiser can paint behind the drag region */
@@ -4065,6 +4069,52 @@ body.is-fullscreen .focus-clear-player {
 
 .focus-clear-player .waveform-canvas-wrap {
   height: 22px;
+}
+
+.focus-lyrics-btn.active {
+  color: var(--accent);
+}
+
+.focus-lyrics-btn.unavailable {
+  opacity: 0.45;
+}
+
+/* --- Clear screen: timed-lyrics strip ---
+   Sits above the ridge and left of the corner player (440 px wide, 32 px
+   in from the right edge); narrower windows don't render it at all
+   (`SINGALONG_QUERY` in lib/singalong.ts). Each line is placed and sized by a transform
+   written in FocusSingalong.tsx, so a line change animates as one roll;
+   every line is laid out at the focus size, so its wrap points don't
+   change as it moves between slots. */
+
+.focus-singalong {
+  position: absolute;
+  top: -5px;
+  left: 48px;
+  right: 520px;
+  z-index: 1;
+  height: clamp(170px, 22vh, 250px);
+  pointer-events: none;
+}
+
+.focus-singalong-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  text-wrap: balance;
+  font-size: clamp(34px, 3.3vw, 68px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.35);
+  transform-origin: center top;
+  opacity: 0;
+  transition:
+    transform 0.32s cubic-bezier(0.33, 1, 0.68, 1),
+    opacity 0.32s ease;
 }
 
 /* --- Right panel: controls + expandable queue --- */

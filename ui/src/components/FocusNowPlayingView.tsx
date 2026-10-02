@@ -25,6 +25,7 @@ import PlaybackQualityNotice from "./PlaybackQualityNotice";
 import QueueView from "./QueueView";
 import FocusVisualizer from "./FocusVisualizer";
 import FocusClearPlayer from "./FocusClearPlayer";
+import FocusSingalong from "./FocusSingalong";
 import VisualizerToggle from "./VisualizerToggle";
 import MarqueeText from "./MarqueeText";
 import CastingLine from "./CastingLine";
@@ -317,9 +318,10 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
   const artistName = track.artistName;
   const artistLabel = hasTrackArtist ? `${artistName} (${track.trackArtist})` : artistName;
 
-  // Clear screen: the visualiser and the corner player, nothing else. The
-  // full layout below is unmounted rather than hidden so its queue panel
-  // and lyrics overlay don't render behind the visuals. The visualiser
+  // Clear screen: the visualiser, the timed-lyrics strip when switched
+  // on, and the corner player, nothing else. The full layout below is
+  // unmounted rather than hidden so its queue panel and lyrics overlay
+  // don't render behind the visuals. The visualiser
   // carries the same key in both layouts so React keeps the one instance
   // across the switch: a remount would reinstall the tap and drop the
   // ridge history.
@@ -327,6 +329,7 @@ export default function FocusNowPlayingView({ onOpenEQ, onOpenSettings }: Props)
     return (
       <div className="focus-overlay">
         <FocusVisualizer key="focus-viz" mode={casting ? "off" : visualizerMode} subdued={false} />
+        <FocusSingalong />
         <FocusClearPlayer
           title={track.title}
           artist={artistLabel}
