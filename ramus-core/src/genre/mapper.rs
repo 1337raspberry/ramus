@@ -82,7 +82,8 @@ pub struct GenreMapper {
     aka_lookup: HashMap<String, Vec<String>>,
     /// Fuzzy search candidate pool: (lowercased text, canonical lower).
     /// Includes every canonical name and every AKA so a typo in either
-    /// (e.g. "altrok") still resolves to the right canonical.
+    /// (e.g. "altrok") still resolves to the right canonical. Sorted into
+    /// tie-break order (see `from_json_bytes`); `match_all` relies on it.
     fuzzy_pool: Vec<(String, String)>,
     /// Jaro-Winkler threshold for fuzzy fallback (f64 bits stored atomically
     /// for lock-free reads). Updated via `set_threshold`; a value ≥1.0
@@ -142,6 +143,22 @@ impl GenreMapper {
                 fuzzy_pool.push((aka_lower.clone(), c.clone()));
             }
         }
+        // Both maps iterate in a randomly seeded order, so the pool is sorted
+        // into a fixed preference order. `match_all` keeps the first
+        // candidate that reaches the best score, which makes this order the
+        // rule for exact ties. Jaro-Winkler produces those readily: the score
+        // depends only on the two lengths, the number of matching characters,
+        // transpositions and a common prefix of at most four characters, so
+        // "country folk" scores the same against "country rock" and
+        // "country soul". Among equal scores:
+        //   1. a canonical name beats an AKA (an entry whose text differs
+        //      from its canonical), because the canonical is the name the
+        //      tree displays, so the reason for the match stays visible;
+        //   2. then the alphabetically first canonical wins, so the outcome
+        //      doesn't depend on where a genre sits in the file.
+        fuzzy_pool.sort_by(|(text_a, canon_a), (text_b, canon_b)| {
+            (text_a != canon_a, canon_a, text_a).cmp(&(text_b != canon_b, canon_b, text_b))
+        });
 
         Ok(Self {
             root_nodes: nodes,
@@ -176,16 +193,21 @@ impl GenreMapper {
         f64::from_bits(self.threshold_bits.load(Ordering::Relaxed))
     }
 
-    /// Lowercased AKAs that resolve to the given canonical name. Used by the
-    /// genre-filter autocomplete to match user-typed AKAs (e.g. "alt rock")
-    /// against canonical names ("Alternative Rock") that exist in the library.
+    /// Lowercased AKAs that resolve to the given canonical name, sorted. Used
+    /// by the genre-filter autocomplete to match user-typed AKAs (e.g. "alt
+    /// rock") against canonical names ("Alternative Rock") that exist in the
+    /// library.
     pub fn akas_for_canonical(&self, canonical: &str) -> Vec<String> {
         let canonical_lower = canonical.to_lowercase();
-        self.aka_lookup
+        let mut akas: Vec<String> = self
+            .aka_lookup
             .iter()
             .filter(|(_, canonicals)| canonicals.iter().any(|c| c == &canonical_lower))
             .map(|(aka, _)| aka.clone())
-            .collect()
+            .collect();
+        // `aka_lookup` iterates in a randomly seeded order.
+        akas.sort_unstable();
+        akas
     }
 
     /// Match a Plex genre string to the genre hierarchy.
@@ -201,7 +223,8 @@ impl GenreMapper {
 
     /// Match a Plex genre string to every canonical node it resolves to —
     /// via exact name (case-insensitive), then exact AKA, then fuzzy
-    /// (Jaro-Winkler ≥0.8) over canonicals + AKAs. Returns empty on miss.
+    /// (Jaro-Winkler above the threshold) over canonicals + AKAs. Returns
+    /// empty on miss.
     /// Pub because callers like `build_display_tree` and `get_albums_for_genre`
     /// need access to the full match set, not just the first hit.
     pub fn match_all(&self, plex_genre: &str) -> Vec<GenreNode> {
@@ -242,6 +265,8 @@ impl GenreMapper {
 
         // 3. Fuzzy fallback via strsim (expensive — runs outside lock).
         //    Pool covers canonicals + AKAs, so a typo against either resolves.
+        //    The strict `>` keeps the earliest of equally scored candidates;
+        //    the pool is sorted so that is the preferred one.
         let mut best_score = 0.0_f64;
         let mut best_canonical: Option<&str> = None;
         for (text, canonical) in &self.fuzzy_pool {
@@ -252,7 +277,7 @@ impl GenreMapper {
             }
         }
 
-        // Threshold tunable at runtime. Default 0.8 ~ 0.4 Fuse threshold.
+        // Threshold tunable at runtime (default `DEFAULT_GENRE_FUZZY_THRESHOLD`).
         // ≥1.0 disables fuzzy entirely (no JW score exceeds 1.0).
         let threshold = self.threshold();
         if best_score > threshold {
@@ -384,7 +409,10 @@ impl GenreMapper {
                     )
                 })
                 .collect();
-            other_children.sort_by_key(|c| c.name.to_lowercase());
+            // The exact name breaks ties between tags that share a lowercase
+            // form (SQLite's NOCASE folds ASCII only); a stable sort on the
+            // lowercase key alone would leave such a pair in HashMap order.
+            other_children.sort_by_cached_key(|c| (c.name.to_lowercase(), c.name.clone()));
 
             let other_union: HashSet<i64> = unmatched
                 .values()
@@ -783,6 +811,55 @@ mod tests {
         assert!(node.is_none(), "Completely unrelated genre should not match");
     }
 
+    #[test]
+    fn test_fuzzy_tie_between_canonicals_picks_alphabetically_first() {
+        // Country Soul is listed first so that resolving ties by file order
+        // would also fail this test.
+        let json = r#"{
+          "genres": [
+            {
+              "name": "Country",
+              "children": [
+                { "name": "Country Soul", "children": [] },
+                { "name": "Country Rock", "children": [] }
+              ]
+            }
+          ]
+        }"#;
+        assert_eq!(
+            strsim::jaro_winkler("country rock", "country folk"),
+            strsim::jaro_winkler("country soul", "country folk"),
+            "fixture must be an exact score tie"
+        );
+        // Every mapper gets freshly seeded HashMaps, so a winner that
+        // depended on map iteration order would flip within a few rounds.
+        for _ in 0..64 {
+            let mapper = make_mapper(json);
+            let names: Vec<String> = mapper
+                .match_all("Country Folk")
+                .into_iter()
+                .map(|n| n.name)
+                .collect();
+            assert_eq!(names, ["Country Rock"]);
+        }
+    }
+
+    #[test]
+    fn test_fuzzy_tie_prefers_canonical_name_over_aka() {
+        // "country soul" is an AKA of a genre that sorts before
+        // "Country Rock", so the alphabetical rule alone would pick Americana.
+        let json = r#"{
+          "genres": [
+            { "name": "Americana", "aka": ["country soul"], "children": [] },
+            { "name": "Country Rock", "children": [] }
+          ]
+        }"#;
+        for _ in 0..64 {
+            let mapper = make_mapper(json);
+            assert_eq!(mapper.match_genre("Country Folk").unwrap().name, "Country Rock");
+        }
+    }
+
     // --- Display Tree & Pruning ---
 
     #[test]
@@ -1011,6 +1088,17 @@ mod tests {
     }
 
     #[test]
+    fn test_akas_for_canonical_is_sorted() {
+        for _ in 0..64 {
+            let mapper = make_mapper(SAMPLE_JSON_WITH_AKAS);
+            assert_eq!(
+                mapper.akas_for_canonical("Alternative Rock"),
+                ["alt rock", "alt-rock", "altrock"]
+            );
+        }
+    }
+
+    #[test]
     fn test_aka_on_nested_node_works() {
         let mapper = make_mapper(SAMPLE_JSON_WITH_AKAS);
         let node = mapper.match_genre("brit-pop");
@@ -1081,6 +1169,29 @@ mod tests {
         let kids = other.children.as_ref().unwrap();
         assert_eq!(kids.len(), 1);
         assert_eq!(kids[0].name, "ZZZ Made Up Genre");
+    }
+
+    #[test]
+    fn test_build_display_tree_other_order_is_stable_for_case_variants() {
+        // SQLite's NOCASE folds ASCII letters only, so the library can hold
+        // two tags that differ only in the case of a non-ASCII letter. Both
+        // lowercase to the same sort key; their order must still be fixed.
+        let mapper = make_mapper(r#"{ "genres": [{ "name": "Rock", "children": [] }] }"#);
+        for _ in 0..64 {
+            let mut sets: HashMap<String, HashSet<i64>> = HashMap::new();
+            sets.insert("électronique".into(), [1].into());
+            sets.insert("Électronique".into(), [2].into());
+            let tree = mapper.build_display_tree(&sets);
+            let other = tree.iter().find(|n| n.name == "Other").unwrap();
+            let names: Vec<&str> = other
+                .children
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect();
+            assert_eq!(names, ["Électronique", "électronique"]);
+        }
     }
 
     #[test]
