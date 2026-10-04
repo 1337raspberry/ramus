@@ -1310,6 +1310,17 @@
           "children": []
         },
         {
+          "name": "Country Folk",
+          "short_summary": null,
+          "aka": [
+            "folk country",
+            "country-folk",
+            "folk-country",
+            "countryfolk"
+          ],
+          "children": []
+        },
+        {
           "name": "Country Pop",
           "short_summary": null,
           "aka": [
@@ -6036,6 +6047,17 @@
               ]
             }
           ]
+        },
+        {
+          "name": "Country Folk",
+          "short_summary": null,
+          "aka": [
+            "folk country",
+            "country-folk",
+            "folk-country",
+            "countryfolk"
+          ],
+          "children": []
         },
         {
           "name": "Dark Folk",
