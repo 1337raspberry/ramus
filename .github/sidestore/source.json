@@ -18,12 +18,20 @@
       "tintColor": "A405FA",
       "category": "music",
       "screenshotURLs": [],
-      "version": "2.0.0",
-      "versionDate": "2026-09-14T00:00:00Z",
-      "versionDescription": "big update, too much to mention here, check https://github.com/1337raspberry/ramus/releases/tag/v2.0.0",
-      "size": 21320466,
-      "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v2.0.0/ramus_2.0.0_ios-adhoc.ipa",
+      "version": "2.1.0",
+      "versionDate": "2026-10-08T00:00:00Z",
+      "versionDescription": "live visualiser (native on iPhone), cast to other Plex players, and plenty of fixes. full notes: https://github.com/1337raspberry/ramus/releases/tag/v2.1.0",
+      "size": 21245702,
+      "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v2.1.0/ramus_2.1.0_ios-adhoc.ipa",
       "versions": [
+        {
+          "version": "2.1.0",
+          "date": "2026-10-08T00:00:00Z",
+          "localizedDescription": "live visualiser (native on iPhone), cast to other Plex players, and plenty of fixes. full notes: https://github.com/1337raspberry/ramus/releases/tag/v2.1.0",
+          "downloadURL": "https://github.com/1337raspberry/ramus/releases/download/v2.1.0/ramus_2.1.0_ios-adhoc.ipa",
+          "size": 21245702,
+          "minOSVersion": "17.5"
+        },
         {
           "version": "2.0.0",
           "date": "2026-09-14T00:00:00Z",
