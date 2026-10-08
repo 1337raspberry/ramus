@@ -48,9 +48,10 @@ import CastButton from "../components/CastButton";
 import CastingLine from "../components/CastingLine";
 import { useCastStore } from "../stores/castStore";
 
-/** Android's libmpv build lacks the analysis filters the visualiser's
- * spectrum tap needs, so the menu offers the visualiser only elsewhere. */
-const VISUALIZER_AVAILABLE = !/Android/i.test(navigator.userAgent);
+/** Android's libmpv build ships without FFmpeg's audio filters, so neither
+ * the visualiser's spectrum tap nor the equalizer can run there; the menu
+ * offers both only elsewhere. */
+const AUDIO_FILTERS_AVAILABLE = !/Android/i.test(navigator.userAgent);
 
 function IconSkipBack({ size = 22 }: { size?: number }) {
   return (
@@ -546,7 +547,7 @@ export default function MobileNowPlaying({
                 {nowPlayingAlbum && (
                   <button onClick={() => runMenuAction(handleAlbumClick)}>Go to Album</button>
                 )}
-                {VISUALIZER_AVAILABLE && track && !casting && (
+                {AUDIO_FILTERS_AVAILABLE && track && !casting && (
                   <button onClick={() => runMenuAction(() => setMobileVisualizerOpen(true))}>
                     Visualiser
                   </button>
@@ -590,7 +591,7 @@ export default function MobileNowPlaying({
                     Save Queue as Playlist…
                   </button>
                 )}
-                {!casting && (
+                {AUDIO_FILTERS_AVAILABLE && !casting && (
                   <button onClick={() => runMenuAction(() => setShowEQ(true))}>Adjust EQ</button>
                 )}
                 <button onClick={() => runMenuAction(() => setShowDebug(true))}>

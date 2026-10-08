@@ -1063,14 +1063,17 @@ pub fn run() {
             #[allow(unused_mut)]
             let mut saved_settings = ramus_core::settings::load();
             // Touch devices have no visualiser toggle, so the setting is
-            // decided here. Android's libmpv build lacks the lavfi analysis
-            // filters the tap needs: always off. iOS runs the visualiser only
-            // when it is opened from the now-playing menu: always on, which
-            // also clears the `true` earlier builds forced into saved
-            // settings.
+            // decided here. Android's libmpv build lacks the lavfi filters
+            // both the tap and the equalizer need: the visualiser is always
+            // off there, and so is the EQ (the UI hides it, so a value saved
+            // by an earlier build could never be switched off again).
+            // iOS runs the visualiser only when it is opened from the
+            // now-playing menu: always on, which also clears the `true`
+            // earlier builds forced into saved settings.
             #[cfg(target_os = "android")]
             {
                 saved_settings.disable_spectrum = true;
+                saved_settings.eq_enabled = false;
             }
             #[cfg(target_os = "ios")]
             {
