@@ -55,8 +55,6 @@
   <img src="docs/screenshots/mobile-np.webp" alt="Mobile Now Playing" width="270" />
 </p>
 
-<!-- ROBOT: focus.webp in the table below still shows the old bars visualiser; worth retaking with the pulsar. -->
-
 <details>
 <summary>Click for some mobile and desktop screenies of the key ramus features</summary>
 <table>
