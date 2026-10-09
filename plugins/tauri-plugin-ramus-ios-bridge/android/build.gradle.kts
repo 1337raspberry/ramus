@@ -56,6 +56,8 @@ dependencies {
 
     // libmpv for Android — universal AAR (arm64-v8a, armeabi-v7a, x86,
     // x86_64). Bundles mpv 0.41 + FFmpeg 8.1 + libass + libplacebo +
-    // mbedtls. LGPL — dynamically linked, source available upstream.
+    // mbedtls. A GPL build (FFmpeg `--enable-gpl --enable-version3`, mpv's
+    // `gpl` feature), so the APK is GPL-3.0-or-later as a whole; source and
+    // build scripts are upstream. See ramus-tauri/licenses/NOTICE.md.
     implementation("dev.jdtech.mpv:libmpv:1.0.0")
 }

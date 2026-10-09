@@ -18,9 +18,19 @@ Run from CI before invoking tauri-action. The script:
    other inside the .app's `Contents/Frameworks/` dir, the dynamic linker
    resolves them via `@loader_path` without any absolute paths to
    /opt/homebrew.
-4. Writes `ramus-tauri/tauri.macos.conf.json` with the resulting frameworks
-   list. Tauri 2 auto-merges platform-conf.json files at build time, so
-   the dylibs land in `<app>.app/Contents/Frameworks/`.
+4. Collects the licence of every bundled library into
+   `ramus-tauri/macos-licenses/`: a `NATIVE_LIBRARIES.md` manifest (file,
+   Homebrew formula, version, licence, source) and, per formula, the
+   licence files Homebrew installed at the keg root. Homebrew builds
+   FFmpeg with `--enable-gpl --enable-version3` and bundles GPL libraries
+   (x264, x265, rubberband), so the shipped app is GPL-3.0-or-later as a
+   whole and has to carry each library's notices and a pointer to its
+   exact source.
+5. Writes `ramus-tauri/tauri.macos.conf.json` with the resulting frameworks
+   list and a resource entry that copies `macos-licenses/` to
+   `Contents/Resources/licenses/native/`. Tauri 2 auto-merges
+   platform-conf.json files at build time, so the dylibs land in
+   `<app>.app/Contents/Frameworks/`.
 
 At runtime, `MpvLib::load()` (in `ramus-tauri/src/mpv_ffi.rs`) searches
 `<app>/Contents/Frameworks/libmpv.2.dylib` as one of its candidate paths.
@@ -40,6 +50,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -50,8 +61,32 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 TAURI_DIR = PROJECT_ROOT / "ramus-tauri"
 WORKDIR = TAURI_DIR / "macos-frameworks"
+LICENSES_DIR = TAURI_DIR / "macos-licenses"
 CONFIG_OUT = TAURI_DIR / "tauri.macos.conf.json"
 TAURI_CONF = TAURI_DIR / "tauri.conf.json"
+
+# Licence files Homebrew copies from a formula's source tree into the keg
+# root (COPYING, LICENSE.md, COPYING.LGPLv2.1, Copyright, ...).
+LICENSE_FILE_RE = re.compile(
+    r"^(licen[cs]e|copying|copyright|notice|unlicense)([._-].*)?$", re.IGNORECASE
+)
+NOT_LICENSE_SUFFIXES = (".cfg", ".json", ".py", ".sh")
+# Licence texts tauri.conf.json already ships in `licenses/`, one folder up
+# from the manifest; cited when a keg carries no licence file of its own.
+SHIPPED_TEXTS = {
+    "LGPL-2.1": "LICENSE.LGPL-2.1",
+    "LGPL-3.0": "LICENSE.LGPL-3.0",
+    "GPL-3.0": "LICENSE.GPL-3.0",
+    "MPL-2.0": "LICENSE.MPL-2.0",
+}
+
+
+def shipped_texts_for(license_expr: str) -> list[str]:
+    ids = {
+        re.sub(r"(-or-later|-only|\+)$", "", tok)
+        for tok in re.split(r"[\s()]+", license_expr)
+    }
+    return [f"../{text}" for spdx, text in SHIPPED_TEXTS.items() if spdx in ids]
 
 # Install names from macOS itself are never bundled — they exist on every
 # Mac and bundling them risks version conflicts with the loader.
@@ -258,6 +293,108 @@ def install_name_tool(*args: str) -> None:
     subprocess.run(["install_name_tool", *args], check=True)
 
 
+def keg_of(real: Path) -> tuple[str, str, Path] | None:
+    """(formula, version, keg root) for a file inside the Homebrew Cellar."""
+    parts = real.parts
+    if "Cellar" not in parts:
+        return None
+    i = parts.index("Cellar")
+    if i + 2 >= len(parts):
+        return None
+    return parts[i + 1], parts[i + 2], Path(*parts[: i + 3])
+
+
+def source_of(formula: dict) -> str:
+    """The formula's stable source: a tarball URL, or a git URL plus tag."""
+    stable = (formula.get("urls") or {}).get("stable") or {}
+    url = stable.get("url") or formula.get("homepage") or "unknown"
+    ref = stable.get("tag") or stable.get("revision")
+    return f"{url} ({ref})" if ref else url
+
+
+def collect_licenses(real_to_target: dict[Path, str]) -> int:
+    """Write `macos-licenses/`: a manifest of every bundled library and,
+    per Homebrew formula, the licence files from its keg root. Returns the
+    number of bundled files whose formula could not be determined."""
+    if LICENSES_DIR.exists():
+        shutil.rmtree(LICENSES_DIR)
+    LICENSES_DIR.mkdir(parents=True)
+
+    kegs: dict[str, tuple[str, Path, list[str]]] = {}
+    unknown: list[str] = []
+    for real, target in sorted(real_to_target.items(), key=lambda kv: kv[1]):
+        keg = keg_of(real)
+        if keg is None:
+            unknown.append(target)
+            continue
+        formula, version, root = keg
+        kegs.setdefault(formula, (version, root, []))[2].append(target)
+
+    info = json.loads(
+        subprocess.check_output(["brew", "info", "--json=v2", *sorted(kegs)], text=True)
+    )
+    meta = {f["name"]: f for f in info["formulae"]}
+
+    rows = []
+    for formula in sorted(kegs):
+        version, root, files = kegs[formula]
+        f = meta.get(formula, {})
+        copied = []
+        for entry in sorted(root.iterdir()):
+            if (
+                entry.is_file()
+                and LICENSE_FILE_RE.match(entry.name)
+                and not entry.name.lower().endswith(NOT_LICENSE_SUFFIXES)
+            ):
+                (LICENSES_DIR / formula).mkdir(exist_ok=True)
+                shutil.copy2(entry, LICENSES_DIR / formula / entry.name)
+                copied.append(entry.name)
+        license_expr = f.get("license") or "unknown"
+        texts = [f"`{formula}/{c}`" for c in copied]
+        if not texts:
+            print(f"warn: no licence file in the {formula} keg", file=sys.stderr)
+            texts = [f"`{t}`" for t in shipped_texts_for(license_expr)] or ["none"]
+        source = source_of(f)
+        # The keg's version carries Homebrew's rebuild suffix (`0.41.0_8`).
+        stable = ((f.get("versions") or {}).get("stable")) or ""
+        if stable and version.split("_")[0] != stable:
+            print(
+                f"warn: {formula} {version} is installed but the formula is at "
+                f"{stable}; its source link is for {stable}",
+                file=sys.stderr,
+            )
+            source += f" (formula now at {stable}; the bundled build is {version})"
+        rows.append(
+            f"| {', '.join(files)} | {formula} | {version} | "
+            f"{license_expr} | {source} | {', '.join(texts)} |"
+        )
+    for target in unknown:
+        print(f"warn: {target} is not from the Homebrew Cellar", file=sys.stderr)
+        rows.append(f"| {target} | unknown | | unknown | | |")
+
+    manifest = [
+        "# Native libraries bundled in the macOS app",
+        "",
+        "Generated by `scripts/bundle-macos-libmpv.py` from the Homebrew packages",
+        "on the machine that built this release. Each library keeps its own",
+        "licence; the licence files Homebrew installed with each package are in",
+        "the folder named after it beside this file. Homebrew builds FFmpeg with",
+        "`--enable-gpl --enable-version3` and mpv with its `gpl` feature, so this",
+        "app as a whole is distributed under the GNU GPL version 3 or later",
+        "(`LICENSE.GPL-3.0` one folder up). The source for each library is at",
+        "the link given; ramus's own source is the matching release tag at",
+        "https://github.com/1337raspberry/ramus.",
+        "",
+        "| Bundled files | Homebrew formula | Version | Licence | Source | Licence files |",
+        "| --- | --- | --- | --- | --- | --- |",
+        *rows,
+        "",
+    ]
+    (LICENSES_DIR / "NATIVE_LIBRARIES.md").write_text("\n".join(manifest))
+    print(f"wrote licences for {len(kegs)} formulae to {LICENSES_DIR}")
+    return len(unknown)
+
+
 def main() -> int:
     libmpv = brew_prefix("mpv") / "lib" / "libmpv.2.dylib"
     if not libmpv.exists():
@@ -419,10 +556,23 @@ def main() -> int:
 
     # Generate tauri.macos.conf.json — Tauri auto-merges this when
     # building for macOS. Paths are relative to tauri.conf.json's dir.
+    if collect_licenses(real_to_target) and os.environ.get("CI") == "true":
+        print(
+            "ERROR: some bundled libraries have no Homebrew formula, so their "
+            "licence can't be recorded (see the warnings above).",
+            file=sys.stderr,
+        )
+        return 1
+
     rel_paths = sorted({f"macos-frameworks/{b}" for b in real_to_target.values()})
     config = {
         "$schema": "https://schema.tauri.app/config/2",
-        "bundle": {"macOS": {"frameworks": rel_paths}},
+        "bundle": {
+            "macOS": {"frameworks": rel_paths},
+            # Merged into tauri.conf.json's resources map, beside the
+            # project's own licence texts.
+            "resources": {"macos-licenses": "licenses/native"},
+        },
     }
     CONFIG_OUT.write_text(json.dumps(config, indent=2) + "\n")
     print(f"wrote {CONFIG_OUT}")

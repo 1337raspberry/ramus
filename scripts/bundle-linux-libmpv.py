@@ -29,9 +29,18 @@ Run from CI before invoking tauri-action on the Linux runner. The script:
 4. Runs `patchelf --set-rpath '$ORIGIN'` on each copy so the bundled libs
    resolve their own NEEDED deps relative to their runtime location (the
    AppImage's mounted /usr/lib dir).
-5. Writes `ramus-tauri/tauri.linux.conf.json` with
+5. Collects the licence of every bundled lib into
+   `ramus-tauri/linux-licenses/`: a `NATIVE_LIBRARIES.md` manifest (lib,
+   dpkg package, version, licence, source package) and each package's
+   `/usr/share/doc/<pkg>/copyright`. Ubuntu builds FFmpeg with
+   `--enable-gpl` and libmpv links GPL-3.0-or-later libcdio, so the
+   AppImage is GPL-3.0-or-later as a whole and has to carry each lib's
+   notices and a pointer to its exact source.
+6. Writes `ramus-tauri/tauri.linux.conf.json` with
    `bundle.linux.appimage.files` mapping each lib to `/usr/lib/<soname>`
-   in the AppImage. Tauri auto-merges this platform-conf at build time.
+   and each licence file to `/usr/lib/ramus/licenses/native/` (beside the
+   licence texts from `bundle.resources`) in the AppImage. Tauri
+   auto-merges this platform-conf at build time.
 
 At runtime, AppImage extracts to /tmp/.mount_xxx/, and the binary lives
 at /tmp/.mount_xxx/usr/bin/ramus. `MpvLib::load()` searches for libmpv at
@@ -47,6 +56,8 @@ which is portable across distros, gets the bundled libs.
 from __future__ import annotations
 
 import json
+import os
+import platform
 import re
 import shutil
 import subprocess
@@ -57,7 +68,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 TAURI_DIR = PROJECT_ROOT / "ramus-tauri"
 WORKDIR = TAURI_DIR / "linux-libs"
+LICENSES_DIR = TAURI_DIR / "linux-licenses"
 CONFIG_OUT = TAURI_DIR / "tauri.linux.conf.json"
+# Tauri installs `bundle.resources` under /usr/lib/<productName>/ in the
+# AppImage, so this sits beside the project's own licence texts.
+LICENSES_DEST = "/usr/lib/ramus/licenses/native"
 
 # glibc-family + loader libs — never bundled in an AppImage. They are
 # tied to the target system's loader/glibc version and bundling them
@@ -191,6 +206,121 @@ def walk_transitive(root: Path) -> list[Path]:
     return bundled
 
 
+def owning_package(path: Path) -> str | None:
+    """The dpkg package (`name:arch`) that installed `path`, if any."""
+    candidates = [path]
+    # Packages not yet moved to /usr still record their files under /lib,
+    # which the merged-/usr layout resolves to /usr/lib.
+    if str(path).startswith("/usr/lib/"):
+        candidates.append(Path(str(path)[len("/usr") :]))
+    for candidate in candidates:
+        result = subprocess.run(
+            ["dpkg-query", "-S", str(candidate)], capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            continue
+        for line in result.stdout.splitlines():
+            if line.startswith("diversion "):
+                continue
+            # `libavcodec60:amd64: /usr/lib/...`; shared paths list several
+            # packages, comma-separated.
+            return line.partition(": ")[0].split(",")[0].strip()
+    return None
+
+
+def dep5_license(text: str) -> str | None:
+    """The `Files: *` licence of a machine-readable Debian copyright file."""
+    if not text.startswith("Format:"):
+        return None
+    for para in re.split(r"\n\s*\n", text):
+        if re.search(r"^Files:\s*\*\s*$", para, re.MULTILINE):
+            m = re.search(r"^License:\s*(.+)$", para, re.MULTILINE)
+            return m.group(1).strip() if m else None
+    return None
+
+
+def source_link(src: str, srcver: str) -> str:
+    os_id = platform.freedesktop_os_release().get("ID", "")
+    if os_id == "ubuntu":
+        return f"https://launchpad.net/ubuntu/+source/{src}/{srcver}"
+    if os_id == "debian":
+        return f"https://snapshot.debian.org/package/{src}/{srcver}/"
+    return f"source package {src} {srcver}"
+
+
+def collect_licenses(bundled: dict[Path, str]) -> tuple[dict[str, str], int]:
+    """Write `linux-licenses/`: a manifest of every bundled lib and each
+    owning package's Debian copyright file. Returns the AppImage file
+    mappings for them, and the number of libs no package claimed."""
+    if LICENSES_DIR.exists():
+        shutil.rmtree(LICENSES_DIR)
+    LICENSES_DIR.mkdir(parents=True)
+
+    packages: dict[str, list[str]] = {}
+    unknown: list[str] = []
+    for src, soname in sorted(bundled.items(), key=lambda kv: kv[1]):
+        pkg = owning_package(src)
+        if pkg is None:
+            unknown.append(soname)
+        else:
+            packages.setdefault(pkg, []).append(soname)
+
+    rows = []
+    for pkg in sorted(packages):
+        version, src, srcver = subprocess.check_output(
+            [
+                "dpkg-query", "-W",
+                "-f=${Version}\t${source:Package}\t${source:Version}", pkg,
+            ],
+            text=True,
+        ).split("\t")
+        name = pkg.split(":")[0]
+        copyright_file = Path("/usr/share/doc") / name / "copyright"
+        if copyright_file.is_file():
+            text = copyright_file.read_text(errors="replace")
+            shutil.copyfile(copyright_file, LICENSES_DIR / f"{name}.copyright")
+            license_expr = dep5_license(text) or "see copyright file"
+            notice = f"`{name}.copyright`"
+        else:
+            print(f"warn: {copyright_file} not found", file=sys.stderr)
+            license_expr, notice = "unknown", "none"
+        rows.append(
+            f"| {', '.join(packages[pkg])} | {name} | {version} | {license_expr} | "
+            f"{source_link(src, srcver)} | {notice} |"
+        )
+    for soname in unknown:
+        print(f"warn: no dpkg package owns {soname}", file=sys.stderr)
+        rows.append(f"| {soname} | unknown | | unknown | | |")
+
+    manifest = [
+        "# Native libraries bundled in the AppImage",
+        "",
+        "Generated by `scripts/bundle-linux-libmpv.py` from the distribution",
+        "packages on the machine that built this release. Each library keeps",
+        "its own licence; each package's copyright file is beside this file.",
+        "The distribution builds FFmpeg with `--enable-gpl` and mpv with its",
+        "`gpl` feature, and libmpv links libcdio (GPL-3.0-or-later), so this",
+        "AppImage as a whole is distributed under the GNU GPL version 3 or later",
+        "(`LICENSE.GPL-3.0` one folder up). The licence column is the default",
+        "licence of each package's source as its copyright file states it",
+        "(`Files: *`); a build can be stricter, as FFmpeg's and mpv's are here.",
+        "The source for each package is at the link given; ramus's own source is",
+        "the matching release tag at https://github.com/1337raspberry/ramus.",
+        "",
+        "| Bundled files | Package | Version | Source licence (`Files: *`) | Source | Copyright file |",
+        "| --- | --- | --- | --- | --- | --- |",
+        *rows,
+        "",
+    ]
+    (LICENSES_DIR / "NATIVE_LIBRARIES.md").write_text("\n".join(manifest))
+    print(f"wrote licences for {len(packages)} packages to {LICENSES_DIR}")
+    files = {
+        f"{LICENSES_DEST}/{f.name}": f"linux-licenses/{f.name}"
+        for f in sorted(LICENSES_DIR.iterdir())
+    }
+    return files, len(unknown)
+
+
 def find_libmpv() -> Path | None:
     """Find the libmpv soname symlink on the build runner.
 
@@ -240,6 +370,7 @@ def main() -> int:
     # `/usr/lib/libfoo.so.2`). Fail loudly rather than silently overwrite
     # and ship whichever one happened to be last in BFS order.
     used_sonames: dict[str, Path] = {}
+    bundled: dict[Path, str] = {}
     for src in libs:
         soname = get_soname(src)
         dst = WORKDIR / soname
@@ -269,6 +400,17 @@ def main() -> int:
         # `bundle.linux.appimage.files` map keys are absolute paths inside
         # the AppImage; values are paths relative to tauri.conf.json.
         files_config[f"/usr/lib/{soname}"] = f"linux-libs/{soname}"
+        bundled[src] = soname
+
+    license_files, unknown = collect_licenses(bundled)
+    if unknown and os.environ.get("CI") == "true":
+        print(
+            "ERROR: some bundled libs belong to no dpkg package, so their "
+            "licence can't be recorded (see the warnings above).",
+            file=sys.stderr,
+        )
+        return 1
+    files_config.update(license_files)
 
     config = {
         "$schema": "https://schema.tauri.app/config/2",

@@ -1,7 +1,10 @@
 # Third-Party Notices
 
-ramus is distributed under the MIT License (see `LICENSE` at the
-repository root). It incorporates the following third-party components.
+ramus's own source code is distributed under the MIT License (see
+`LICENSE` at the repository root). It incorporates the following
+third-party components. Some releases bundle GPL builds of libmpv and
+FFmpeg; those releases are distributed as a whole under the GNU GPL
+version 3 or later (see "Native libraries" below).
 
 ## Music genre hierarchy data (`ramus-tauri/data/open.json`)
 
@@ -20,16 +23,49 @@ of the original beets source.
 The original beets hierarchy was compiled primarily from Wikipedia;
 Wikipedia text content is available under CC BY-SA 3.0.
 
-## Native library: libmpv
+## Native libraries: libmpv, FFmpeg and their dependencies
 
-ramus uses libmpv for audio playback on every platform (desktop, iOS,
-Android). libmpv is distributed under LGPL-2.1-or-later.
+ramus plays audio through libmpv (https://github.com/mpv-player/mpv) on
+every platform, and each release ships a libmpv build together with
+FFmpeg and their supporting libraries. Whether that build is GPL or LGPL
+depends on where it comes from:
 
-- Upstream: https://github.com/mpv-player/mpv
-- License text: `licenses/LICENSE.LGPL-2.1` in the installed application,
-  or https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt
+| Release | libmpv build | Licence |
+| ------- | ------------ | ------- |
+| macOS `.dmg` | Homebrew's `mpv`, `ffmpeg` and their dependencies, bundled by `scripts/bundle-macos-libmpv.py` | GPL-3.0-or-later as a whole: FFmpeg is configured with `--enable-gpl --enable-version3`, mpv with its `gpl` feature, and x264, x265 and rubberband are GPL |
+| Linux AppImage | Ubuntu 24.04's `libmpv2` and its dependencies, bundled by `scripts/bundle-linux-libmpv.py` | GPL-3.0-or-later as a whole: FFmpeg is configured with `--enable-gpl`, libmpv links libcdio (GPL-3.0-or-later), and x264, x265 and xvid are GPL |
+| Linux `.deb` / `.rpm` | the distribution's own libmpv package, installed as a dependency | not shipped by ramus |
+| Windows installers | `libmpv-2.dll` from the LGPL build of [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild), mirrored in this repository's `libmpv-windows-*` pre-release and pinned by SHA-256 in `.github/workflows/release.yml` | LGPL: mpv is built with `-Dgpl=false` (LGPL-2.1-or-later) and FFmpeg without `--enable-gpl` but with `--enable-version3` (LGPL-3.0-or-later) |
+| iOS `.ipa` | [MPVKit-lavfi](https://github.com/1337raspberry/MPVKit-lavfi), statically linked | LGPL; the components are listed below |
+| Android `.apk` | the [`dev.jdtech.mpv:libmpv`](https://github.com/jarnedemeulemeester/libmpv-android) AAR | GPL-3.0-or-later as a whole: FFmpeg is configured with `--enable-gpl --enable-version3` and mpv with its `gpl` feature |
 
-Source code for libmpv can be obtained from https://github.com/mpv-player/mpv.
+A release that bundles a GPL build is distributed as a whole under the
+GNU GPL version 3 or later (`licenses/LICENSE.GPL-3.0`); ramus's own MIT
+code is GPL-compatible and keeps its MIT licence. The LGPL texts are at
+`licenses/LICENSE.LGPL-2.1` and `licenses/LICENSE.LGPL-3.0`. The
+corresponding source for ramus itself is the matching release tag at
+https://github.com/1337raspberry/ramus; the source for each bundled
+library is listed below or in the generated manifest.
+
+### macOS and the Linux AppImage
+
+The bundled set comes from the package manager on the build machine and
+changes from build to build, so the bundle scripts record it at build
+time. Each macOS app and AppImage carries
+`licenses/native/NATIVE_LIBRARIES.md`, listing every bundled library file
+with its package, version, licence and a link to its source, and beside
+it the licence or copyright file of each package.
+
+### Windows
+
+`libmpv-2.dll` is a single library with FFmpeg and libmpv's other
+dependencies linked in statically. The package list and build scripts
+are in [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild)
+(its `compile-lgpl-libmpv.patch` produces the LGPL build) and the
+[mpv-winbuild-cmake](https://github.com/shinchiro/mpv-winbuild-cmake)
+tree it patches.
+
+### Replacing libmpv
 
 On desktop and Android libmpv is loaded dynamically, and the user may
 substitute their own copy. On iOS it is statically linked, together with
@@ -63,8 +99,8 @@ retains its own upstream license:
 
 | Library     | Version  | License                            | Upstream                                                   |
 | ----------- | -------- | ---------------------------------- | ---------------------------------------------------------- |
-| mpv (libmpv)| 0.41.0   | LGPL-2.1-or-later                  | https://github.com/mpv-player/mpv                          |
-| ffmpeg      | 8.1      | LGPL-2.1-or-later (non-GPL build)  | https://ffmpeg.org/                                         |
+| mpv (libmpv)| 0.41.0   | GPL-2.0-or-later (`gpl` feature)   | https://github.com/mpv-player/mpv                          |
+| ffmpeg      | 8.1      | GPL-3.0-or-later (`--enable-gpl --enable-version3`) | https://ffmpeg.org/                        |
 | libplacebo  | 7.360.1  | LGPL-2.1-or-later                  | https://code.videolan.org/videolan/libplacebo              |
 | fribidi     | 1.0.16   | LGPL-2.1-or-later                  | https://github.com/fribidi/fribidi                         |
 | libunibreak | 6.1      | LGPL-2.1-or-later / Apache-2.0     | https://github.com/adah1972/libunibreak                    |
@@ -77,13 +113,15 @@ retains its own upstream license:
 | libxml2     | 2.15.2   | MIT                                | https://gitlab.gnome.org/GNOME/libxml2                     |
 | lua         | 5.2.4    | MIT                                | https://www.lua.org/                                       |
 
-For the LGPL-2.1-or-later components, source code is available at each
-upstream listed above; the LGPL license text shipped at
-`licenses/LICENSE.LGPL-2.1` (and bundled into every ramus release)
-applies. The libmpv-android packaging itself is the work of
+Because FFmpeg and mpv are GPL builds here, the Android APK as a whole
+is distributed under GPL-3.0-or-later (`licenses/LICENSE.GPL-3.0`); the
+LGPL-2.1-or-later components keep their licence, whose text is at
+`licenses/LICENSE.LGPL-2.1`. Source code is available at each upstream
+listed above. The libmpv-android packaging itself is the work of
 [jarnedemeulemeester](https://github.com/jarnedemeulemeester/libmpv-android);
-the exact build configuration used for each AAR version is in that
-repository.
+the exact build configuration used for each AAR version, which
+reproduces the bundled libraries, is in that repository at the matching
+tag (`v1.0.0`).
 
 ### Native libraries statically linked into the iOS app
 
