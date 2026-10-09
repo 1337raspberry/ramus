@@ -3,36 +3,59 @@
 <img title="" src="docs/ramuslogo.png" alt="ramus" width="160" height="160" data-align="center">
 
 <h1 align="center">ramus</h1>
-<p align="center"><sub>ramus | ra·​mus | a projecting part, elongated process, or branch</sub></p>
+
+<!-- ROBOT: the dictionary line lived here; the video's poster frame carries it now. If you want a hook line under the title instead, the film has one in your words: "you've got thousands of albums, but you're stuck replaying your favs". -->
 
 [![CI](https://github.com/1337raspberry/ramus/actions/workflows/ci.yml/badge.svg)](https://github.com/1337raspberry/ramus/actions/workflows/ci.yml)
 [![Release](https://github.com/1337raspberry/ramus/actions/workflows/release.yml/badge.svg)](https://github.com/1337raspberry/ramus/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/1337raspberry/ramus?display_name=tag&include_prereleases)](https://github.com/1337raspberry/ramus/releases)
+[![Latest release](https://img.shields.io/github/v/release/1337raspberry/ramus?display_name=tag)](https://github.com/1337raspberry/ramus/releases/latest)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20iOS%20%7C%20Android-lightgrey)](#download)
+
+[Download](#download) · [Features](#features) · [Screenshots](#screenshots) · [Building From Source](#building-from-source)
 
 </div>
 
-<p align="center">
-  <img src="docs/screenshots/hero.webp" alt="ramus main view" width="800" />
-</p>
+<!-- ROBOT: VIDEO goes here. Drag ramus.mp4 (the 9.4 MB README cut, under GitHub's 10 MB free-plan limit) into this file in GitHub's web editor, or into any issue comment box, then paste the https://github.com/user-attachments/assets/... link it gives you on a line of its own here, with a blank line either side. GitHub renders that line as a player; its first frame is the title card. -->
 
 ## About
 
 **ramus** is a genre-first music client for [Plex](https://www.plex.tv/en-gb/media-server-downloads/) focused on discovering and exploring your existing library. Out of the box It's designed to function with the Genre and Style metadata plex already fetches for your albums to give you a rich hierarchical tree-like view of your library, while genre-obsessives and taxonomy purists can use their own curated genre tags and a custom built hierarchy to get as specific as they like.
 
+<p align="center">
+  <img src="docs/screenshots/hero.webp" alt="ramus main view" width="800" />
+</p>
+
 ## Features
 
 - **Hierarchical browsing** - ramus features a tree-like genre browser that automatically matches your existing library. It comes with a custom and rich genre hierarchy by default, but you can build and supply your own, or even download a custom setup built by somebody else
-- **Instant locally cached search** - Ctrl+F > "free b" > Enter and you're listening to Free Bird. Or just "wonrederwall" and it knows you meant Wonderwall. Also features search operators and shortcuts for power users eg `/Dream-Pop AND year:>2013`
-- **Library filters** - Save a custom view and recall it later as an easy-reach bookmark, or download the results to cache for offline listening (with no file size limit). Save all your favourite albums in the `dubstep` genre as "workout tunes" and download the whole thing for your gym with the dodgy wifi. Or all your favourite tracks in the `Showtunes` genre in a "Guilty Pleasures" download for your roadtrip.
+
+  <img src="docs/loops/genre-tree.webp" alt="Hierarchical browsing" width="800" />
+
+- **Instant locally cached search** - Ctrl/CMD+F > "free b" > Enter and you're listening to Free Bird. Or just "wonrederwall" and it knows you meant Wonderwall. Also features search operators and shortcuts for power users eg `/Dream-Pop AND year:>2013`
+- **Smart filters** - Save a custom view and recall it later as an easy-reach bookmark, or download the results to cache for offline listening (with no file size limit). Save all your favourite albums in the `dubstep` genre as "workout tunes" and download the whole thing for your gym with the dodgy wifi. Or all your favourite tracks in the `Showtunes` genre in a "Guilty Pleasures" download for your roadtrip.
+
+  <img src="docs/loops/filters.webp" alt="Library filters" width="800" />
+
 - **Album-Art focused** - Browse by an album art grid instead of boring ol' text lists, and enjoy auto-extracted background and accent colours across the whole interface, making your entire music listening experience cohesive and _aesthetic_
 - **Waveform Seeking** - If you have Sonic Analysis enabled on your server, you already have all this wonderful data. Skip past the 6 minute ambient intro straight to the good stuff.
-- **Track popularity data** - See the top tracks in an album based on crowdsourced popularity data supplied directly via Plex and obtained via users starring their own libraries, or see a unique popularity chart over an albums track listing to get the full picture. 
-- **A good ol fashioned visualiser and full screen oriented "focus mode"** - Watch your music bounce like it's 2003 and you just discovered visualiser plugins.
+- **Track popularity data** - See the top tracks in an album based on crowdsourced popularity data supplied directly via Plex and obtained via users starring their own libraries, or see a unique popularity chart over an albums track listing to get the full picture.
+- **A sweet pulsar themed visualiser and full screen oriented "focus mode"** - Watch your music bounce like it's 2003 and you just discovered visualiser plugins. It's super smooth and works everywhere (besides android, sorry android, working on it)
+
+  <img src="docs/loops/pulsar.webp" alt="visualiser" width="800" />
+
 - **Lyrics courtesy of lrclib** - No account needed, open source and a huge number of the lyrics are synced too. [All credits to lrclib, support them if you can](https://lrclib.net/)
+- **Discovery Crates** - Pick a specific genre (sub-genres included or not), and get what Plex has as the "hottest" tracks in that genre for you to listen to, in a pseudo playlist that syncs back to your server.
+
 
 ## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/mobile-library.webp" alt="Mobile library" width="270" />
+  <img src="docs/screenshots/mobile-np.webp" alt="Mobile Now Playing" width="270" />
+</p>
+
+<!-- ROBOT: focus.webp in the table below still shows the old bars visualiser; worth retaking with the pulsar. -->
 
 <details>
 <summary>Click for some mobile and desktop screenies of the key ramus features</summary>
@@ -50,6 +73,66 @@
     <td><img src="docs/screenshots/filters.webp" alt="filters" width="450"/><br><p align ="center">Library Filters</p></td>
   </tr>
 </table>
+</details>
+
+---
+
+## Download
+
+Pre-built installers are produced by [GitHub Actions](https://github.com/1337raspberry/ramus/actions/workflows/release.yml) and attached to each [Release](https://github.com/1337raspberry/ramus/releases).
+
+| Platform                          | Artifact                                                                  | Notes                                                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **macOS** (Apple Silicon)         | `ramus_<version>_aarch64.dmg`                                             | libmpv + ffmpeg/codec stack bundled inside the `.app`.                                                |
+| **Windows 10/11 (x64)**           | `ramus_<version>_x64-setup.exe` (NSIS) or `ramus_<version>_x64_en-US.msi` | `libmpv-2.dll` ships next to the executable.                                                          |
+| **Linux (x86_64)**                | `ramus_<version>_<amd64>/<x86_64>.AppImage` / `.deb` / `.rpm`             | The AppImage bundles libmpv. The `.deb` / `.rpm` depend on the system `libmpv2` / `mpv-libs` package. |
+| **Linux (ARM)**                   | `ramus_<version>_<aarch64>/<arm64>.AppImage` / `.deb` / `.rpm`            | The AppImage bundles libmpv. The `.deb` / `.rpm` depend on the system `libmpv2` / `mpv-libs` package. |
+| **iOS**                           | `ramus_<version>_ios-adhoc.ipa`                                           | Ad-hoc signed for manual self side-loading. SideStore install also available via the source below. |
+| **Android**                       | `ramus_<version>_universal.apk`                                           | Signed multi-ABI APK (`arm64-v8a` + `armeabi-v7a`). libmpv + ffmpeg/codec stack bundled inside the APK. Sideload via `adb install` or your file manager.  |
+
+**SideStore source:**
+
+```
+https://1337raspberry.github.io/ramus.json
+```
+
+<!-- ROBOT: since f841b0d the .app carries a valid ad-hoc signature, so Gatekeeper should now say it can't verify the app rather than call it "damaged"; worth checking on a downloaded build before rewording the warning below. -->
+
+> ⚠️ **Releases are currently unsigned or self-signed.** As with many open source projects, macOS gatekeeper will quarantine the `.app` and tell you it's damaged or untrusted; Windows SmartScreen will whine that it's unrecognised, and Android Play Protect will ask to scan it first. The [Releases](https://github.com/1337raspberry/ramus/releases) listing will have more specifics on how to deal with these annoyances
+
+### Requirements
+
+- **macOS** 15 (Sequoia) or newer, on Apple Silicon. Intel Macs aren't supported.
+- **Windows** 10 (x64) or newer; WebView2 runtime (preinstalled on Windows 11; the installer pulls it in on Windows 10).
+- **Linux** with WebKitGTK 4.1 (most current distributions, ubuntu 24+ debian 13+). The `.deb` / `.rpm` need `libmpv2` (or `mpv-libs`) installed; the AppImage doesn't.
+- **iOS** 17.5 or newer.
+- **Android** 8.0 Oreo (API 26) or newer.
+- A **Plex Media Server** you can sign into that has a music library.
+
+## Custom Hierarchy Tool
+
+ramus ships with a small local web UI based tool in [`tools/genre-editor/`](tools/genre-editor/) for working on genre trees outside the app. It's standard Python with no extra dependencies needed, just run `python3 tools/genre-editor/server.py` from the project root and open the link it prints in your web browser.
+
+With it you can:
+
+- **Edit the bundled tree** - tweak the default `open.json` (rename, add AKAs, drag genres around, add/remove children). Useful if you're building from source or forking. Or if you wanna suggest improvements/changes to our built in genre tree - very open to that. 
+- **Build your own from scratch** - start empty and grow a hierarchy that matches how you think about music. Before i started tagging all my music "properly", this is how I did things. I put things into conceptual high level buckets that made sense to me and then drilled down from there. Even if yknow, strictly speaking it was in entirely the wrong place.
+- **Share with other people** - export the current tree as a plain `.txt` file in the same format ramus's in-app importer accepts (Settings > Genres > Import). Anyone you send it to can import it, edit it, and export their own version back out. Round-trip preserves AKAs and descriptions. Useful if you maybe wanted to share a specific hierarchy that you've made with a community or tool that has a set genre list, that you and others tag from (eg [metal-archives](https://www.metal-archives.com/)) 
+
+See [`tools/genre-editor/README.md`](tools/genre-editor/README.md) for the full feature list, keyboard shortcuts, and the `.txt` format spec.
+
+## Limitations, Known Issues & Planned Improvements
+
+<details><summary>Click for wall of shame</summary>
+
+- Because Plex only exposes minimal genre and style data on a standard broad api call, we need to maintain a local db with an initial cache/sync setup phase and deep sync on all albums. Without this we'd lack the data to make the app do the cool stuff it was built to do! This gives us the ability to do our super fast locally cached search as well which is great, and even on massive libraries, connected remotely, the initial sync is only a few minutes. Worth the trade off I think. Incremental syncs after that are genuinely incremental and if nothing changes in your library, are essentially a no-op. If plex ever changes what they serve out by default, we can reconsider this. 
+
+- Album matching in search is limited to 50k. I'll fix it properly one day but for now if you have a library over 50k albums 1) nice 2) you might see inconsistencies in search.
+
+- No EQ or visualisers on Android. I'll get to it. I don't have an android device to test so this is trickier for me.
+
+- I want to implement the new JWT short-lived token auth system that plex has recently rolled out, but as far as I can tell it only applies to plex.tv auth, not PMS server auth, so that token is always going to be perma and long standing. Mixing the two isn't ideal and is only really half a solution and requires different approaches to auth depending on what token we are talking about, so when that _is_ fully baked into PMS, i would like to roll that out. No harm in extra hardening. 
+  
 </details>
 
 ## Notes on AI assisted development
@@ -72,35 +155,11 @@ Skip forward some more and thanks to rapid recent advancements in genAI coding a
 I however have absolutely zero interest in its existence or use in any other creativity etc (not that software development isnt creative but you know what I mean) so all design decisions here were me and if you can't tell by my godawful rambling writing style, so were the docs (mostly, save for the dry architectural stuff). And the logo. All 8 points on that path in illustrator and that one gradient oh yeah that year of graphic design at university is paying off big time.
 </details>
 
-## Download
-
-Pre-built installers are produced by [GitHub Actions](https://github.com/1337raspberry/ramus/actions/workflows/release.yml) and attached to each [Release](https://github.com/1337raspberry/ramus/releases).
-
-| Platform                          | Artifact                                                                  | Notes                                                                                                 |
-| --------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| **macOS** (Apple Silicon + Intel) | `ramus_<version>_universal.dmg`                                           | Universal binary. libmpv + ffmpeg/codec stack bundled inside the `.app`.                              |
-| **Windows 10/11 (x64)**           | `ramus_<version>_x64-setup.exe` (NSIS) or `ramus_<version>_x64_en-US.msi` | `libmpv-2.dll` ships next to the executable.                                                          |
-| **Linux (x86_64)**                | `ramus_<version>_<amd64>/<x86_64>.AppImage` / `.deb` / `.rpm`             | The AppImage bundles libmpv. The `.deb` / `.rpm` depend on the system `libmpv2` / `mpv-libs` package. |
-| **Linux (ARM)**                   | `ramus_<version>_<aarch64>/<arm64>.AppImage` / `.deb` / `.rpm`            | The AppImage bundles libmpv. The `.deb` / `.rpm` depend on the system `libmpv2` / `mpv-libs` package. |
-| **iOS**                           | `ramus_<version>_ios-adhoc.ipa`                                           | Ad-hoc signed for manual self side-loading. SideStore install also available via source `https://1337raspberry.github.io/ramus.json` |
-| **Android**                       | `ramus_<version>_universal.apk`                                           | Signed multi-ABI APK (`arm64-v8a` + `armeabi-v7a`). libmpv + ffmpeg/codec stack bundled inside the APK. Sideload via `adb install` or your file manager.  |
-
-> ⚠️ **Releases are currently unsigned or self-signed.** As with many open source projects, macOS gatekeeper will quarantine the `.app` and tell you it's damaged or untrusted; Windows SmartScreen will whine that it's unrecognised, and Android Play Protect will ask to scan it first. The [Releases](https://github.com/1337raspberry/ramus/releases) listing will have more specifics on how to deal with these annoyances
-
-### Requirements
-
-- **macOS** - the bundle is built around a theoretical minimum of **10.13 (High Sierra)**, but the only versions I've actually run it on are **macOS 15 (Sequoia)** and newer. Anything older may work, may not - no promises.
-- **Windows** 10 (x64) or newer; WebView2 runtime (preinstalled on Windows 11; the installer pulls it in on Windows 10).
-- **Linux** with WebKitGTK 4.1 (most current distributions). The `.deb` / `.rpm` need `libmpv2` (or `mpv-libs`) installed; the AppImage doesn't.
-- **iOS** 17.5 or newer.
-- **Android** 8.0 Oreo (API 26) or newer.
-- A **Plex Media Server** you can sign into that has a music library.
-
 ---
 
 ## Building From Source
 
-<details>
+<details><summary>Full instructions</summary>
 You'll need:
 
 - **Rust** stable (`rustup install stable`).
@@ -110,7 +169,7 @@ You'll need:
   - macOS: `brew install mpv` (provides `libmpv.dylib`).
   - Linux (Debian/Ubuntu): `libmpv-dev libwebkit2gtk-4.1-dev libgtk-3-dev` (and `build-essential pkg-config` if you don't have them already).
   - Linux (Fedora): `mpv-devel webkit2gtk4.1-devel gtk3-devel`.
-  - Windows: the build script downloads a prebuilt LGPL DLL; nothing to install manually.
+  - Windows: download the `mpv-dev-lgpl-x86_64-*.7z` archive from this repo's [`libmpv-windows-*` pre-release](https://github.com/1337raspberry/ramus/releases?q=libmpv-windows) (the build `release.yml` pins) and extract `libmpv-2.dll` into `ramus-tauri/windows-deps/`. The Windows build bundles it from there and fails without it; `cargo tauri dev` copies it next to the debug binary.
 - **For mobile**:
   - **iOS — building**: Xcode + `xcodegen` + `cocoapods`. That's enough for `cargo tauri ios build`.
   - **iOS — deploying to a tethered device** (`cargo tauri ios dev`): also `libimobiledevice` + `ios-deploy` (`brew install libimobiledevice ios-deploy`).
@@ -170,12 +229,12 @@ ramus-tauri/   Tauri 2 app shell.
 ui/            React + Vite + Zustand + TypeScript.
 plugins/       Tauri plugin: iOS Swift bridge (MPVKit) and
                Android Kotlin bridge (libmpv via Media3 SimpleBasePlayer).
-scripts/       Build helpers (libmpv bundling, codesigning,
+scripts/       Build helpers (libmpv bundling,
                license regeneration).
 ```
 
 - **Backend** - [Rust](https://www.rust-lang.org/), [Tauri 2](https://tauri.app/), [rusqlite](https://github.com/rusqlite/rusqlite) with WAL + FTS5, [reqwest](https://github.com/seanmonstar/reqwest), [tokio](https://tokio.rs/).
-- **Audio** - [libmpv](https://mpv.io/) on every platform: loaded dynamically via [libloading](https://github.com/nagisa/rust_libloading) on desktop, [MPVKit](https://github.com/mpvkit/MPVKit) on iOS (rebuilt as [MPVKit-lavfi](https://github.com/1337raspberry/MPVKit-lavfi) with the extra FFmpeg audio filters the visualiser needs), and the [`dev.jdtech.mpv:libmpv`](https://github.com/jarnedemeulemeester/libmpv-android) AAR wrapped behind a [Media3](https://developer.android.com/media/media3) `SimpleBasePlayer` on Android. Single audio engine, identical behaviour across all five targets.
+- **Audio** - [libmpv](https://mpv.io/) on every platform: loaded dynamically via [libloading](https://github.com/nagisa/rust_libloading) on desktop, [MPVKit](https://github.com/mpvkit/MPVKit) on iOS (rebuilt as [MPVKit-lavfi](https://github.com/1337raspberry/MPVKit-lavfi) with the extra FFmpeg audio filters the visualiser needs), and the [`dev.jdtech.mpv:libmpv`](https://github.com/jarnedemeulemeester/libmpv-android) AAR wrapped behind a [Media3](https://developer.android.com/media/media3) `SimpleBasePlayer` on Android. Single audio engine, identical behaviour across all five targets (ish, see current issues.)
 - **Visualiser** - a [libavfilter](https://ffmpeg.org/libavfilter.html) graph hosted in libmpv's own audio filter chain feeds the focus mode spectrum on desktop and the full-screen visualiser on iOS, straight from the decoded audio. No second decoder, no extra DSP dependency.
 - **System integration** - [souvlaki](https://github.com/Sinono3/souvlaki) for desktop media keys / Now Playing; `MPRemoteCommandCenter` on iOS; `MediaSession` + `MediaSessionService` on Android.
 - **Frontend** - [React 19](https://react.dev/) + [Vite](https://vite.dev/) + [TypeScript](https://www.typescriptlang.org/), [Zustand](https://github.com/pmndrs/zustand) for state, [@tanstack/react-virtual](https://tanstack.com/virtual) for the long lists.
@@ -197,9 +256,9 @@ Most behaviour lives in `ramus-core` and is unit-tested. The Tauri layer is inte
   
   The encrypted blob (`tokens.enc`) lives in the platform's standard app-data directory and is written atomically (tmp + `fsync` + `rename`) with `0o600` permissions on Unix. The threat defense model is "render the file inert if arbitrarily exfiltrated to another machine" - not protection against a local attacker who already has root on the same device. This is the same model (or in some cases, being encrypted is one step better) that most plex clients or even the official plex clients, operate on. 
 
-- **No telemetry, no analytics, no crash reporters, no auto-updaters. Not ever.** ramus only talks to your Plex Media Server and plex.tv (for OAuth + server discovery). No other connections anywhere.
+- **No telemetry, no analytics, no crash reporters, no auto-updaters. Not ever.** ramus only talks to what it needs to do its job: Your Plex Media Server and plex.tv (for OAuth + server discovery). lrclib.net for lyrics (if you ask for them), and any other local plex players on your network if you try and cast to them. 
 
-- **Server auth tokens are kept out of logs and UI.** Plex authenticates by query string (`?X-Plex-Token=…`), and reqwest's error formatter includes the failing URL. ramus redacts both: track URLs are never logged in full (only `ratingKey` / part-key), and `prefetch.rs::redact_reqwest_err()` peels the underlying error so download failures don't leak the token in logs. The mobile debug panel (long-press the EQ button) masks `X-Plex-Token=` and `X-Plex-Headers=` before rendering anything.
+- **Server auth tokens are kept out of logs and UI.** Plex authenticates by query string (`?X-Plex-Token=…`), and reqwest's error formatter includes the failing URL. ramus redacts both: track URLs are never logged in full (only `ratingKey` / part-key), and `prefetch.rs::redact_reqwest_err()` peels the underlying error so download failures don't leak the token in logs. The mobile debug panel masks `X-Plex-Token=` and `X-Plex-Headers=` before rendering anything. 
 
 - **Local databases** (cache, image cache, audio cache, downloads) live in your platform's standard app-data directory:
   
@@ -220,41 +279,9 @@ If you've found a vulnerability, please **don't open a public issue**. See [SECU
 
 ---
 
-## Limitations, Known Issues & Planned Improvements
-
-<details>
-
-- Because Plex only exposes minimal genre and style data on a standard broad api call, we need to maintain a local db with an initial cache/sync setup phase and deep sync on all albums. Without this we'd lack the data to make the app do the cool stuff it was built to do! This gives us the ability to do our super fast locally cached search as well which is great, and even on massive libraries, connected remotely, the initial sync is only a few minutes. Worth the trade off I think. Incremental syncs after that are genuinely incremental and if nothing changes in your library, are essentially a no-op. If plex ever changes what they serve out by default, we can reconsider this. 
-
-- No playlist support - currently on the fence about if i even want to add this. Depends on demand i suppose.
-
-- Speaking of colour, because we're using tauri, each individual platform uses it's own native webview/kit/etc and each one treats the 4 way background gradient (and dithering/banding reduction of it) differently. Looks great on apple, pretty good on windows, but Webkitgtk on linux is particularly poor tbh. We've got a manual dither pattern only on linux to try and cover that up a bit but its not perfect. How much it bothers you may vary.
-
-- Album matching in search is limited to 50k. I'll fix it properly one day but for now if you have a library over 50k albums 1) nice 2) you might see inconsistencies in search.
-
-- I want to implement the new JWT short-lived token auth system that plex has recently rolled out, but as far as I can tell it only applies to plex.tv auth, not PMS server auth, so that token is always going to be perma and long standing. Mixing the two isn't ideal and is only really half a solution and requires different approaches to auth depending on what token we are talking about, so when that _is_ fully baked into PMS, i would like to roll that out. No harm in extra hardening. 
-  
-  </details>
-
 ## Trademarks & affiliation
 
 ramus is an **independent third-party client**. It is not affiliated with, endorsed by, or sponsored by Plex or any of the upstream projects it builds on.
-
----
-
-## Custom Hierarchy Tool
-
-ramus ships with a small local web UI based tool in [`tools/genre-editor/`](tools/genre-editor/) for working on genre trees outside the app. It's standard Python with no extra dependencies needed, just run `python3 tools/genre-editor/server.py` from the project root and open the link it prints in your web browser.
-
-With it you can::
-
-- **Edit the bundled tree** - tweak the default `open.json` (rename, add AKAs, drag genres around, add/remove children). Useful if you're building from source or forking. Or if you wanna suggest improvements/changes to our built in genre tree - very open to that. 
-- **Build your own from scratch** - start empty and grow a hierarchy that matches how you think about music. Before i started tagging all my music "properly", this is how I did things. I put things into conceptual high level buckets that made sense to me and then drilled down from there. Even if yknow, strictly speaking it was in entirely the wrong place.
-- **Share with other people** - export the current tree as a plain `.txt` file in the same format ramus's in-app importer accepts (Settings > Genres > Import). Anyone you send it to can import it, edit it, and export their own version back out. Round-trip preserves AKAs and descriptions. Useful if you maybe wanted to share a specific hierarchy that you've made with a community or tool that has a set genre list, that you and others tag from (eg [metal-archives](https://www.metal-archives.com/)) 
-
-See [`tools/genre-editor/README.md`](tools/genre-editor/README.md) for the full feature list, keyboard shortcuts, and the `.txt` format spec.
-
----
 
 ## License
 
