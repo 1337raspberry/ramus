@@ -16,6 +16,10 @@
 
 </div>
 
+<p align="center">
+  <a href="https://1337raspberry.github.io/ramus/"><img src="docs/video-cover.webp" alt="ramus launch video: watch the video, 1:00, sound on" width="800" /></a>
+</p>
+
 ## About
 
 **ramus** is a genre-first music client for [Plex](https://www.plex.tv/en-gb/media-server-downloads/) focused on discovering and exploring your existing library. Out of the box It's designed to function with the Genre and Style metadata plex already fetches for your albums to give you a rich hierarchical tree-like view of your library, while genre-obsessives and taxonomy purists can use their own curated genre tags and a custom built hierarchy to get as specific as they like.
