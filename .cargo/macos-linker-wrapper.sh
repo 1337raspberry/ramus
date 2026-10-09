@@ -3,20 +3,20 @@
 #
 # Runs rustc's real linker (cc, which on macOS resolves to clang), then
 # re-signs the output with `codesign --force --sign -` to strip the
-# `linker-signed` flag ld automatically adds to ad-hoc signatures.
+# `linker-signed` flag ld automatically adds to ad-hoc signatures
+# (flags 0x20002 become a plain 0x2).
 #
-# On macOS 26, ad-hoc signed binaries carrying the linker-signed flag
-# (flags 0x20002 instead of plain 0x2) running from untrusted locations —
-# anything outside /Applications/, including target/debug/ and
-# target/release/ — get killed by the in-kernel code signing monitor the
-# moment they try to `dlopen` an ad-hoc dylib from a brew-style path like
-# /opt/homebrew/. The error is `CODESIGNING / Invalid Page` on the first
-# page read of the mapped library. Re-signing with `codesign --force
-# --sign -` replaces the signature with a plain ad-hoc one the kernel
-# accepts.
+# Early macOS 26 releases killed linker-signed binaries running outside
+# /Applications/ (`CODESIGNING / Invalid Page`) when they dlopen-ed an
+# ad-hoc dylib such as Homebrew's libmpv. macOS 26.6.2 no longer does: a
+# linker-signed release binary loads its bundled libmpv from any location.
 #
-# The same binary running from /Applications/ loads fine. See CLAUDE.md
-# "macOS code signing gotcha" for the full diagnosis.
+# Only unstripped outputs keep this signature, which in practice means
+# dev-profile builds. Cargo's release profile defaults to
+# `strip = "debuginfo"`, and rustc strips after the linker returns using
+# its bundled rust-objcopy, which writes a fresh linker-signed signature.
+# Release bundles get their plain ad-hoc signature from the Tauri bundler
+# instead (`bundle.macOS.signingIdentity` in ramus-tauri/tauri.conf.json).
 #
 # Codesign errors are swallowed because some rustc link invocations produce
 # non-Mach-O outputs that codesign refuses to touch. The real linker has

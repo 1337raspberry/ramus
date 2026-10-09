@@ -22,7 +22,7 @@ ramus-tauri/  # Tauri 2 shell: commands/ (IPC), events.rs, state.rs, lib.rs (run
   gen/apple/  # xcodegen input (project.yml, Package.resolved, assets, Podfile, entitlements); the .xcodeproj is regenerated, not committed. gen/android/ scaffold
 plugins/tauri-plugin-ramus-ios-bridge/   # ios/ (Swift MpvController, MPVKit) AND android/ (Kotlin — misleading name)
 ui/           # React — Vite + TS + Zustand (src/lib, src/components, src/mobile, src/stores)
-scripts/      # bundle-{macos,linux}-libmpv.py, codesign-macos-main-binary.sh, regen-ios-project.sh,
+scripts/      # bundle-{macos,linux}-libmpv.py, regen-ios-project.sh,
               # ios-flavor.sh, gen-dev-appicon.sh, build-ios-ipa-local.sh, mirror-windows-libmpv.sh
 ```
 
@@ -147,7 +147,7 @@ cargo tauri android dev
 
 ## Platform / packaging
 
-- **macOS:** `decorations: false` needs the `NSWindowCollectionBehaviorFullScreenPrimary` flip in `lib.rs` `setup()` (`main.rs` is a stub). **`set_shadow(false)` in the same block is load-bearing** (macOS 26 re-blurs a borderless window's shadow every refresh: ~45% GPU idle). `transparent: true` is inert without `macOSPrivateApi`. Idle GPU: `ioreg -r -d 1 -c IOAccelerator`, not WindowServer CPU. macOS 26 kills ad-hoc-signed processes on `dlopen` — `.cargo/macos-linker-wrapper.sh` + `codesign-macos-main-binary.sh` strip the `linker-signed` flag from the binary and `bundle-macos-libmpv.py` re-signs the dylibs; don't drop any of the three. Screen-capturing or automating the dev app needs a `.app` wrapper with its own bundle id (bare Mach-O is invisible to screen capture); `codesign` breaks the hardlink, re-copy after Rust rebuilds; carry `MPV_LIB_PATH` in `LSEnvironment`.
+- **macOS:** `decorations: false` needs the `NSWindowCollectionBehaviorFullScreenPrimary` flip in `lib.rs` `setup()` (`main.rs` is a stub). **`set_shadow(false)` in the same block is load-bearing** (macOS 26 re-blurs a borderless window's shadow every refresh: ~45% GPU idle). `transparent: true` is inert without `macOSPrivateApi`. Idle GPU: `ioreg -r -d 1 -c IOAccelerator`, not WindowServer CPU. **Tauri ad-hoc signs the whole `.app` (`signingIdentity: "-"`) with `hardenedRuntime: false`** — hardened runtime's library validation refuses the ad-hoc Frameworks dylibs ("different Team IDs"); turn it back on only with a real certificate. `bundle-macos-libmpv.py`'s re-sign pass stays (`install_name_tool` breaks the dylib signatures). rustc's release strip re-adds `linker-signed` after `.cargo/macos-linker-wrapper.sh`, so the wrapper only reaches dev builds. Screen-capturing or automating the dev app needs a `.app` wrapper with its own bundle id (bare Mach-O is invisible to screen capture); `codesign` breaks the hardlink, re-copy after Rust rebuilds; carry `MPV_LIB_PATH` in `LSEnvironment`.
 - **Keep `[[bin]] name = "ramus"`** (Linux bundler + codesign script). Windows asset-protocol scope targets `raspsoft\ramus\`, not `$APPDATA`. Use `bundle.license`, not `licenseFile`.
 - **Only `LICENSE` at the repo root may look like a licence** (GitHub's About sidebar lists every licence-named root file and anything in a root `licenses/` dir). Bundled legal texts live in `ramus-tauri/licenses/`; the root `LICENSE` is bundled through the map form of `bundle.resources`, never copied under `ramus-tauri/` (cargo-about reads it as the crate's own text and renumbers the whole list).
 - **`cfg(desktop)` works in `.rs`, not Cargo.toml** — spell out `not(any(ios, android))`. Desktop-only permissions in `capabilities/desktop.json`.
