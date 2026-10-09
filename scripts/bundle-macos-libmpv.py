@@ -10,6 +10,9 @@ Run from CI before invoking tauri-action. The script:
    Framework binaries (e.g. `Python.framework/Versions/3.14/Python`) are
    renamed to `lib<name_lowercase>.dylib` because Tauri's
    `bundle.macOS.frameworks` rejects files without a `.dylib` extension.
+   Checks that no copied file targets a newer macOS than
+   `bundle.macOS.minimumSystemVersion` in `tauri.conf.json` (an error in
+   CI, a warning elsewhere).
 3. Rewrites every bundled dylib's own install ID and its references to
    peers using `@loader_path/<basename>`. Once they all live next to each
    other inside the .app's `Contents/Frameworks/` dir, the dynamic linker
@@ -36,6 +39,7 @@ symbol resolution.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -47,6 +51,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 TAURI_DIR = PROJECT_ROOT / "ramus-tauri"
 WORKDIR = TAURI_DIR / "macos-frameworks"
 CONFIG_OUT = TAURI_DIR / "tauri.macos.conf.json"
+TAURI_CONF = TAURI_DIR / "tauri.conf.json"
 
 # Install names from macOS itself are never bundled — they exist on every
 # Mac and bundling them risks version conflicts with the loader.
@@ -109,6 +114,51 @@ def otool_rpaths(path: Path) -> list[str]:
                     break
         i += 1
     return rpaths
+
+
+def otool_minos(path: Path) -> str | None:
+    """Return the minimum macOS version `path` was built for.
+
+    Modern binaries carry it as `minos` in `LC_BUILD_VERSION`; binaries
+    targeting macOS 10.13 or older use `version` in the legacy
+    `LC_VERSION_MIN_MACOSX` instead:
+              cmd LC_BUILD_VERSION
+          cmdsize 32
+         platform 1
+            minos 14.0
+    """
+    out = subprocess.check_output(["otool", "-l", str(path)], text=True)
+    lines = out.splitlines()
+    for i, line in enumerate(lines):
+        cmd = line.strip()
+        if cmd == "cmd LC_BUILD_VERSION":
+            key = "minos "
+        elif cmd == "cmd LC_VERSION_MIN_MACOSX":
+            key = "version "
+        else:
+            continue
+        for j in range(i + 1, min(i + 6, len(lines))):
+            stripped = lines[j].strip()
+            if stripped.startswith(key):
+                return stripped[len(key):].strip()
+    return None
+
+
+def version_tuple(version: str) -> tuple[int, ...]:
+    """`"15"` and `"15.0"` compare equal: pad to three components."""
+    parts = [int(p) for p in version.split(".")]
+    return tuple(parts + [0] * (3 - len(parts)))
+
+
+def minimum_system_version() -> str:
+    """The app's declared minimum macOS (Info.plist `LSMinimumSystemVersion`).
+
+    Falls back to Tauri's own default when the config leaves it unset.
+    """
+    config = json.loads(TAURI_CONF.read_text())
+    return config.get("bundle", {}).get("macOS", {}).get(
+        "minimumSystemVersion", "10.13"
+    )
 
 
 def resolve_dep(install_name: str, containing: Path) -> Path | None:
@@ -283,6 +333,35 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+    # Homebrew bottles are built for the macOS version of the machine that
+    # poured them. If that is newer than the app's declared minimum, macOS
+    # launches the app on an older system where libmpv then fails to load.
+    # The fix is to raise `minimumSystemVersion` or move CI to an older
+    # runner image.
+    min_system = minimum_system_version()
+    too_new: list[tuple[str, str]] = []
+    for target_basename in real_to_target.values():
+        minos = otool_minos(WORKDIR / target_basename)
+        if minos is not None and version_tuple(minos) > version_tuple(min_system):
+            too_new.append((target_basename, minos))
+    if too_new:
+        strict = os.environ.get("CI") == "true"
+        label = "ERROR" if strict else "WARN"
+        print(
+            f"{label}: bundled dylibs target a newer macOS than "
+            f"bundle.macOS.minimumSystemVersion ({min_system}):",
+            file=sys.stderr,
+        )
+        for binary, minos in sorted(too_new):
+            print(f"  {binary}: minos {minos}", file=sys.stderr)
+        if strict:
+            return 1
+        print(
+            "Continuing: this bundle only runs on this Mac's macOS version "
+            "or newer.",
+            file=sys.stderr,
+        )
 
     # Rewrite install names so every bundled dylib references its peers
     # via @loader_path/<basename>. After this, the bundle is self-

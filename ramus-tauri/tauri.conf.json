@@ -85,6 +85,7 @@
       }
     },
     "macOS": {
+      "minimumSystemVersion": "15.0",
       "signingIdentity": "-",
       "hardenedRuntime": false,
       "dmg": {

@@ -1,6 +1,6 @@
 name: Release
 
-# Builds ramus for macOS (Apple Silicon + Intel), Linux, Windows, Android,
+# Builds ramus for macOS (Apple Silicon), Linux, Windows, Android,
 # and iOS. Uploads the installers to a draft GitHub Release. Trigger by
 # pushing a `v*` tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`) or
 # by running the workflow manually from the Actions tab.
@@ -54,7 +54,7 @@ on:
         type: boolean
         default: true
       macos:
-        description: 'macOS (Universal)'
+        description: 'macOS (Apple Silicon)'
         type: boolean
         default: false
       linux:
@@ -149,12 +149,15 @@ jobs:
           # tauri-action where applicable; android + ios call their own
           # toolchains directly and ignore it.
           #
-          # macOS Universal: builds for both Apple Silicon and Intel on
-          # a single arm64 runner, then `lipo`s them together into one
-          # .dmg. Possible because libloading means we don't need a
-          # libmpv binary for each arch at link time — only at runtime,
-          # where each user's brew install provides the right one.
-          macos='{"id":"macos","platform":"macos-14","label":"macOS (Universal)","rust-target":"aarch64-apple-darwin,x86_64-apple-darwin","tauri-args":"--target universal-apple-darwin"}'
+          # macOS: Apple Silicon only. The bundled libmpv stack comes
+          # from Homebrew bottles, which are arm64-only and built for the
+          # runner's macOS version, so the runner image sets the app's
+          # real minimum. `bundle.macOS.minimumSystemVersion` in
+          # tauri.conf.json must match it (bundle-macos-libmpv.py fails
+          # the build otherwise). macos-15, not macos-14: Homebrew no
+          # longer builds Sonoma bottles, so macos-14 compiles ffmpeg and
+          # mpv from source. Every Apple Silicon Mac can run macOS 15.
+          macos='{"id":"macos","platform":"macos-15","label":"macOS (Apple Silicon)","rust-target":"aarch64-apple-darwin","tauri-args":"--target aarch64-apple-darwin"}'
           # Two separate linux entries so each arch can be dispatched
           # independently. Ubuntu 24.04: its libmpv carries FFmpeg 6.1,
           # the first LTS with the channel-layout API the spectrum tap's
@@ -186,9 +189,7 @@ jobs:
           # generates pbxproj files with objectVersion=77, which needs
           # Xcode 16+. macos-14's default Xcode is 15.4 (objectVersion
           # tops out around 56) and fails with "future Xcode project
-          # file format (77)". The desktop matrix entries stay on
-          # macos-14 because they build via cargo/tauri-action and
-          # never open an .xcodeproj.
+          # file format (77)".
           ios='{"id":"ios","platform":"macos-15","label":"iOS (IPA, ad-hoc)","rust-target":"aarch64-apple-ios","tauri-args":""}'
 
           # Push-tag triggers (if re-enabled) carry no workflow_dispatch
@@ -256,7 +257,7 @@ jobs:
         with:
           workspaces: '. -> target'
           # Separate cache per matrix entry. Android + iOS share runner
-          # OSes with desktop entries (ubuntu-22.04 / macos-14) but
+          # OSes with desktop entries (ubuntu / macos-15) but
           # produce different compiled artifacts, so they need their
           # own cache slots.
           key: ${{ matrix.id }}
@@ -754,7 +755,7 @@ jobs:
           releaseBody: |
             ### Available Binaries:
 
-            - **macOS (Universal)** - `*_universal.dmg` (works on Intel + Apple Silicon)
+            - **macOS (Apple Silicon)** - `*_aarch64.dmg` (macOS 15 or newer)
             - **Linux (x86_64)** - `*_amd64.AppImage` / `*_amd64.deb` / `*.x86_64.rpm`
             - **Linux (arm64)** - `*_aarch64.AppImage` / `*_arm64.deb` / `*.aarch64.rpm`
             - **Windows** - `*_x64-setup.exe` (NSIS) or `*_x64_en-US.msi` (MSI).
