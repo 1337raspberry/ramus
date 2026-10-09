@@ -4,7 +4,7 @@
 
 <h1 align="center">ramus</h1>
 
-<!-- ROBOT: the dictionary line lived here; the video's poster frame carries it now. If you want a hook line under the title instead, the film has one in your words: "you've got thousands of albums, but you're stuck replaying your favs". -->
+<p align="center"><sub>a genre-first music player for plex</sub></p>
 
 [![CI](https://github.com/1337raspberry/ramus/actions/workflows/ci.yml/badge.svg)](https://github.com/1337raspberry/ramus/actions/workflows/ci.yml)
 [![Release](https://github.com/1337raspberry/ramus/actions/workflows/release.yml/badge.svg)](https://github.com/1337raspberry/ramus/actions/workflows/release.yml)
@@ -15,8 +15,6 @@
 [Download](#download) · [Features](#features) · [Screenshots](#screenshots) · [Building From Source](#building-from-source)
 
 </div>
-
-<!-- ROBOT: VIDEO goes here. Drag ramus.mp4 (the 9.4 MB README cut, under GitHub's 10 MB free-plan limit) into this file in GitHub's web editor, or into any issue comment box, then paste the https://github.com/user-attachments/assets/... link it gives you on a line of its own here, with a blank line either side. GitHub renders that line as a player; its first frame is the title card. -->
 
 ## About
 
@@ -94,9 +92,7 @@ Pre-built installers are produced by [GitHub Actions](https://github.com/1337ras
 https://1337raspberry.github.io/ramus.json
 ```
 
-<!-- ROBOT: since f841b0d the .app carries a valid ad-hoc signature, so Gatekeeper should now say it can't verify the app rather than call it "damaged"; worth checking on a downloaded build before rewording the warning below. -->
-
-> ⚠️ **Releases are currently unsigned or self-signed.** As with many open source projects, macOS gatekeeper will quarantine the `.app` and tell you it's damaged or untrusted; Windows SmartScreen will whine that it's unrecognised, and Android Play Protect will ask to scan it first. The [Releases](https://github.com/1337raspberry/ramus/releases) listing will have more specifics on how to deal with these annoyances
+> ⚠️ **Releases are currently unsigned or self-signed.** As with many open source projects, macOS gatekeeper will quarantine the `.app` and tell you it's damaged or cant be verified or some other nonsense wording; Windows SmartScreen will whine that it's unrecognised, and Android Play Protect will ask to scan it first. The [Releases](https://github.com/1337raspberry/ramus/releases) listing will have more specifics on how to deal with these annoyances
 
 ### Requirements
 
