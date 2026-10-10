@@ -321,6 +321,12 @@ const LRCLIB_CLIENT_TAG: &str = concat!(
     " (https://github.com/1337raspberry/ramus)",
 );
 
+/// ramus's registered LRCLIB application ID, sent as `Lrclib-App-Id`. It
+/// identifies the app rather than authenticating it (LRCLIB keeps secret keys
+/// for server-side clients), so it ships in the source. The User-Agent is
+/// still required alongside it.
+const LRCLIB_APP_ID: &str = "cdB3KwHFdBtcyyUZ2cNBHgP6DIwtooidcYbSBgAZD9Q";
+
 /// Fetch lyrics from LRCLIB. Tries synced (LRC) first, falls back to plain text.
 ///
 /// Returns a [`LyricsOutcome`] so the caller can tell a definitive "no lyrics"
@@ -363,6 +369,7 @@ async fn fetch_from_lrclib_at(
             ("album_name", album_name),
             ("duration", &duration_int.to_string()),
         ])
+        .header("Lrclib-App-Id", LRCLIB_APP_ID)
         .header("Lrclib-Client", LRCLIB_CLIENT_TAG)
         .header("User-Agent", LRCLIB_CLIENT_TAG)
         .timeout(std::time::Duration::from_secs(LRCLIB_TIMEOUT_SECS))
@@ -847,6 +854,25 @@ mod tests {
             .await;
         let http = reqwest::Client::new();
         fetch_from_lrclib_at(&http, &mock_server.uri(), "Test", "Artist", "Album", 180.0).await
+    }
+
+    #[tokio::test]
+    async fn test_fetch_from_lrclib_identifies_the_app() {
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/api/get"))
+            .and(wiremock::matchers::header("Lrclib-App-Id", LRCLIB_APP_ID))
+            .and(wiremock::matchers::header("User-Agent", LRCLIB_CLIENT_TAG))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "plainLyrics": "Line one" })),
+            )
+            .mount(&mock_server)
+            .await;
+        let http = reqwest::Client::new();
+        let outcome =
+            fetch_from_lrclib_at(&http, &mock_server.uri(), "Test", "Artist", "Album", 180.0).await;
+        assert!(matches!(outcome, LyricsOutcome::Found(_)), "got {outcome:?}");
     }
 
     #[tokio::test]
