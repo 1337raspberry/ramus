@@ -16,12 +16,17 @@ interface KeyComponent {
   description: string;
 }
 
+// On iOS the text describes only the iOS build: App Store guideline 2.3.10
+// bars naming other mobile platforms inside the app.
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+
 const KEY_COMPONENTS: KeyComponent[] = [
   {
     name: "libmpv",
     license: "LGPL-2.1-or-later",
-    description:
-      "Audio playback engine. Loaded dynamically on desktop and Android (user-swappable); statically linked on iOS with its supporting libraries (see the notices).",
+    description: IS_IOS
+      ? "Audio playback engine, statically linked into the app together with FFmpeg and its supporting libraries (see the notices)."
+      : "Audio playback engine. Loaded dynamically on desktop and Android (user-swappable); statically linked on iOS with its supporting libraries (see the notices).",
   },
   {
     name: "Genre tree",
@@ -109,9 +114,9 @@ export default function AcknowledgementsPanel({ onDismiss }: Props) {
             <h3>Full third-party license list</h3>
             <p className="acknowledgements-section-body">
               The complete dependency manifest with full license texts is regenerated from
-              <code> Cargo.lock</code> and <code>ui/pnpm-lock.yaml</code> on every release; CI
-              fails the build if it drifts. The same files are bundled with the installed app for
-              offline reference.
+              <code> Cargo.lock</code> and <code>ui/pnpm-lock.yaml</code> on every release; CI fails
+              the build if it drifts. The same files are bundled with the installed app for offline
+              reference.
             </p>
             <div className="acknowledgements-links">
               <a href={THIRD_PARTY_URL} onClick={openLink(THIRD_PARTY_URL)}>
@@ -121,6 +126,14 @@ export default function AcknowledgementsPanel({ onDismiss }: Props) {
                 NOTICE.md
               </a>
             </div>
+          </div>
+
+          <div className="acknowledgements-section">
+            <h3>Trademarks</h3>
+            <p className="acknowledgements-section-body">
+              Plex is a trademark of Plex, Inc. ramus is an independent client for Plex Media Server
+              and is not affiliated with, endorsed by, or sponsored by Plex.
+            </p>
           </div>
         </div>
       </div>

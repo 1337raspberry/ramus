@@ -22,8 +22,20 @@ if [[ -z "${RAMUS_VERSION}" ]]; then
   exit 1
 fi
 
-export RAMUS_VERSION
-echo "regen-ios-project: RAMUS_VERSION=${RAMUS_VERSION} flavour=${RAMUS_FLAVOR}"
+# CFBundleVersion, the build number. App Store Connect needs a new one for
+# every upload of the same version, so an upload that doesn't bump the
+# version passes its own: one to three period-separated integers, compared
+# part by part and higher than the last build uploaded for that version
+# (after the default 2.1.0, RAMUS_BUILD=2.1.0.1 is invalid and
+# RAMUS_BUILD=2 sorts lower; 2.1.1 works). Unset means the version.
+RAMUS_BUILD="${RAMUS_BUILD:-${RAMUS_VERSION}}"
+if [[ ! "${RAMUS_BUILD}" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+  echo "regen-ios-project: RAMUS_BUILD='${RAMUS_BUILD}' is not 1-3 period-separated integers" >&2
+  exit 1
+fi
+
+export RAMUS_VERSION RAMUS_BUILD
+echo "regen-ios-project: RAMUS_VERSION=${RAMUS_VERSION} RAMUS_BUILD=${RAMUS_BUILD} flavour=${RAMUS_FLAVOR}"
 echo "regen-ios-project: ${RAMUS_PRODUCT_NAME}.app / ${RAMUS_BUNDLE_ID} / ${RAMUS_APPICON}"
 
 cd ramus-tauri/gen/apple

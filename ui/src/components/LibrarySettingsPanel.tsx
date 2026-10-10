@@ -11,6 +11,7 @@ import {
   removeCustomGenres,
   hasCustomGenres as checkCustomGenres,
   logout,
+  openExternalUrl,
 } from "../lib/commands";
 import type { Settings, CacheStats, PlaybackMode } from "../lib/types";
 import { clearGenreMetadataCache } from "../lib/genreMetadataCache";
@@ -24,6 +25,8 @@ import { useIsMobile } from "../lib/useIsMobile";
 import { TabBar } from "./TabBar";
 import { HelperText } from "./HelperText";
 import { useToastStore } from "./Toast";
+
+const PRIVACY_POLICY_URL = "https://1337raspberry.github.io/ramus/privacy/";
 
 interface Props {
   onDismiss: () => void;
@@ -715,10 +718,18 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
             <>
               <button className="settings-btn" onClick={() => setShowAcknowledgements(true)}>
                 Acknowledgements &amp; licenses
+              </button>{" "}
+              <button
+                className="settings-btn"
+                onClick={() =>
+                  openExternalUrl(PRIVACY_POLICY_URL).catch(() => {
+                    /* swallow — the link is informational, no recovery action */
+                  })
+                }
+              >
+                Privacy policy
               </button>
-
               <div className="settings-section-header">ACCOUNT</div>
-
               <button className="settings-btn settings-signout" onClick={handleSignOut}>
                 Sign Out
               </button>

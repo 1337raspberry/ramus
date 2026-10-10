@@ -63,6 +63,15 @@ targets:
       - path: Assets.xcassets
       - path: Externals
         buildPhase: none
+      # Holds the entitlements and PrivacyInfo.xcprivacy, the privacy
+      # manifest App Store Connect checks on upload. The manifest declares
+      # the required-reason APIs the binary imports: stat/fstat/lstat (file
+      # timestamps, C617.1: files in the app's own container),
+      # mach_absolute_time (system boot time, 35F9.1: elapsed time between
+      # in-app events), statfs/fstatfs (disk space, E174.1: checking space
+      # before writing), and NSUserDefaults (CA92.1: the app's own
+      # settings). Re-check with `nm -u` on the release binary when native
+      # dependencies change.
       - path: ramus-tauri_iOS
       - path: assets
         buildPhase: resources
@@ -85,17 +94,19 @@ targets:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        UISupportedInterfaceOrientations~ipad:
-          - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationPortraitUpsideDown
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
         # Substituted by xcodegen at generate-time from the RAMUS_VERSION
         # env var, which scripts/regen-ios-project.sh reads out of the
         # workspace Cargo.toml so iOS tracks the single-source-of-truth
         # version. Re-run the script after bumping the workspace version.
         CFBundleShortVersionString: ${RAMUS_VERSION}
-        CFBundleVersion: ${RAMUS_VERSION}
+        # The build number. App Store Connect refuses a second upload with
+        # a build number it has already seen for the same version, so it
+        # is set separately (RAMUS_BUILD, defaulting to the version).
+        CFBundleVersion: ${RAMUS_BUILD}
+        # Export-compliance answer for App Store Connect, so it isn't asked
+        # per upload. The app's only cryptography is TLS for HTTPS (rustls
+        # in the Rust networking, GnuTLS inside FFmpeg), declared as exempt.
+        ITSAppUsesNonExemptEncryption: false
         # audio: keeps the mpv decoder alive while the device is locked
         # or the app is backgrounded, which is how iOS knows to hand
         # control over to MPNowPlayingInfoCenter / MPRemoteCommandCenter.
@@ -119,6 +130,10 @@ targets:
         # bundle. Set explicitly because the catalog now holds two, and
         # xcodegen's own inference only makes sense when there is one.
         ASSETCATALOG_COMPILER_APPICON_NAME: ${RAMUS_APPICON}
+        # iPhone only. An iPad still runs the app in its iPhone
+        # compatibility window; the tablet layouts in the frontend stay
+        # dormant until the app is built for iPad as well ("1,2").
+        TARGETED_DEVICE_FAMILY: 1
         ENABLE_BITCODE: false
         ARCHS: [arm64]
         VALID_ARCHS: arm64

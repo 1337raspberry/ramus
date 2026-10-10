@@ -132,7 +132,7 @@ retains its own upstream license:
 | Library          | Version  | License                                    | Upstream                                              |
 | ---------------- | -------- | ------------------------------------------ | ----------------------------------------------------- |
 | mpv (libmpv)     | 0.41.0   | LGPL-2.1-or-later                          | https://github.com/mpv-player/mpv                     |
-| ffmpeg           | 8.1.2    | LGPL-2.1-or-later (non-GPL build)          | https://ffmpeg.org/                                    |
+| ffmpeg           | 8.1.2    | LGPL-3.0-or-later (non-GPL build, `--enable-version3`) | https://ffmpeg.org/                       |
 | libplacebo       | 7.360    | LGPL-2.1-or-later                          | https://code.videolan.org/videolan/libplacebo         |
 | libbluray        | 1.4.0    | LGPL-2.1-or-later                          | https://code.videolan.org/videolan/libbluray          |
 | fribidi          | 1.0.16   | LGPL-2.1-or-later                          | https://github.com/fribidi/fribidi                    |
@@ -153,10 +153,12 @@ retains its own upstream license:
 | uavs3d           | 1.2.1    | BSD-3-Clause                               | https://github.com/uavs3/uavs3d                       |
 
 For the LGPL-2.1-or-later components the license text at
-`licenses/LICENSE.LGPL-2.1` applies. nettle, hogweed and gmp are used
-under LGPL-3.0-or-later, whose text is at `licenses/LICENSE.LGPL-3.0`;
-the LGPL-3.0 is a set of additional permissions on top of the GNU GPL
-version 3, whose text is at `licenses/LICENSE.GPL-3.0`. Both ship in
+`licenses/LICENSE.LGPL-2.1` applies. FFmpeg is configured with
+`--enable-version3`, which makes it LGPL-3.0-or-later, and nettle,
+hogweed and gmp are used under LGPL-3.0-or-later; that text is at
+`licenses/LICENSE.LGPL-3.0`. The LGPL-3.0 is a set of additional
+permissions on top of the GNU GPL version 3, whose text is at
+`licenses/LICENSE.GPL-3.0`. Both ship in
 every ramus release. Source code for each component is available from
 the upstream listed above, and the exact build configuration from the
 MPVKit-lavfi repository.
