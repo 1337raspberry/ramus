@@ -26,7 +26,7 @@ import { TabBar } from "./TabBar";
 import { HelperText } from "./HelperText";
 import { useToastStore } from "./Toast";
 
-const PRIVACY_POLICY_URL = "https://1337raspberry.github.io/ramus/privacy/";
+const PRIVACY_POLICY_URL = "https://ramusplayer.app/privacy/";
 
 interface Props {
   onDismiss: () => void;
