@@ -172,6 +172,11 @@ pub struct ShowSearchBarArgs {
     pub width: f64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct PresentWebAuthArgs {
+    pub url: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NowPlayingMetadata {

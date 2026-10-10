@@ -106,6 +106,12 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn hide_native_search_bar(&self) -> crate::Result<()> {
         Ok(())
     }
+    pub fn present_web_auth(&self, _url: &str) -> crate::Result<()> {
+        Ok(())
+    }
+    pub fn dismiss_web_auth(&self) -> crate::Result<()> {
+        Ok(())
+    }
     pub fn now_playing_update(&self, _metadata: NowPlayingMetadata) -> crate::Result<()> {
         Ok(())
     }

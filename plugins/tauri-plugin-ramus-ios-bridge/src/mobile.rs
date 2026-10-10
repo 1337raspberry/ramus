@@ -243,6 +243,25 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
 
+    /// Present `url` in an in-app sign-in sheet. It stays up until
+    /// `dismiss_web_auth`, or until the user closes it, which dispatches
+    /// `webAuthClosed` on the page's window. iOS only.
+    pub fn present_web_auth(&self, url: &str) -> crate::Result<()> {
+        self.0.run_mobile_plugin::<Empty>(
+            "presentWebAuth",
+            PresentWebAuthArgs {
+                url: url.to_string(),
+            },
+        )?;
+        Ok(())
+    }
+
+    pub fn dismiss_web_auth(&self) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin::<Empty>("dismissWebAuth", Empty::default())?;
+        Ok(())
+    }
+
     pub fn now_playing_update(&self, metadata: NowPlayingMetadata) -> crate::Result<()> {
         self.0
             .run_mobile_plugin::<Empty>("nowPlayingUpdate", metadata)?;

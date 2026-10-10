@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use tauri::{AppHandle, State};
+#[cfg(not(target_os = "ios"))]
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
@@ -26,11 +27,22 @@ pub async fn start_oauth(app: AppHandle, state: State<'_, AppState>) -> CmdResul
 
     let url = PlexAuth::auth_url(&pin.code, &state.client.client_identifier);
 
-    // `tauri-plugin-opener` dispatches to the right platform backend:
-    // `UIApplication.open` on iOS, `NSWorkspace.open` on macOS,
-    // `ShellExecuteW` on Windows, `xdg-open` on Linux. The old `open`
-    // crate no-opped on iOS, which broke the OAuth flow in the
-    // simulator.
+    // iOS signs in inside the app, in an `ASWebAuthenticationSession`
+    // sheet: App Store review rejects a hand-off to the default browser
+    // for sign-in. The sheet has no callback URL (plex.tv forwards only to
+    // http(s) URLs), so the PIN poll picks up the token and `poll_oauth`
+    // closes the sheet.
+    #[cfg(target_os = "ios")]
+    {
+        use tauri_plugin_ramus_ios_bridge::RamusIosBridgeExt;
+        if let Err(e) = app.ramus_ios_bridge().present_web_auth(&url) {
+            log::warn!("failed to present the sign-in sheet: {e}");
+        }
+    }
+    // Elsewhere `tauri-plugin-opener` hands the page to the default
+    // browser: `NSWorkspace.open` on macOS, `ShellExecuteW` on Windows,
+    // `xdg-open` on Linux, an intent on Android.
+    #[cfg(not(target_os = "ios"))]
     if let Err(e) = app.opener().open_url(&url, None::<&str>) {
         log::warn!("failed to open auth URL in external browser: {e}");
     }
@@ -43,7 +55,11 @@ pub async fn start_oauth(app: AppHandle, state: State<'_, AppState>) -> CmdResul
 }
 
 #[tauri::command]
-pub async fn poll_oauth(state: State<'_, AppState>, pin_id: i64) -> CmdResult<bool> {
+pub async fn poll_oauth(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    pin_id: i64,
+) -> CmdResult<bool> {
     let auth = PlexAuth::default();
     let token_store = TokenStore::new().map_err(|e| e.to_string())?;
 
@@ -59,15 +75,32 @@ pub async fn poll_oauth(state: State<'_, AppState>, pin_id: i64) -> CmdResult<bo
     {
         Ok(token) => {
             state.client.set_token(Some(token));
+            close_sign_in_sheet(&app);
             Ok(true)
         }
         // Terminal: the frontend surfaces this and restarts the flow.
-        Err(PlexAuthError::PinExpired) => Err("Sign-in code expired — please try again".into()),
+        Err(PlexAuthError::PinExpired) => {
+            close_sign_in_sheet(&app);
+            Err("Sign-in code expired — please try again".into())
+        }
         // Transient: no token yet (PollingTimeout here just means the single
         // attempt didn't find a token — the frontend drives the polling
         // cadence), or a network blip. Keep polling.
         Err(_) => Ok(false),
     }
+}
+
+/// Close the iOS sign-in sheet `start_oauth` presented. A no-op elsewhere
+/// and when the sheet is already gone.
+fn close_sign_in_sheet(app: &AppHandle) {
+    #[cfg(target_os = "ios")]
+    {
+        use tauri_plugin_ramus_ios_bridge::RamusIosBridgeExt;
+        if let Err(e) = app.ramus_ios_bridge().dismiss_web_auth() {
+            log::warn!("failed to close the sign-in sheet: {e}");
+        }
+    }
+    let _ = app;
 }
 
 #[tauri::command]
@@ -323,11 +356,11 @@ pub async fn finalize_onboarding(
 pub async fn is_authenticated(state: State<'_, AppState>) -> CmdResult<bool> {
     // A token alone is not enough — after OAuth but before the user picks
     // a server + library, `poll_oauth` has set the token but no server
-    // config exists yet. On iOS this matters because the WKWebView
-    // reloads its JS state when the user returns from Safari after
-    // completing the PIN flow; App.tsx re-mounts, calls this command,
-    // and without the server-url check it would skip straight past the
-    // onboarding's server/library pickers into a broken main UI.
+    // config exists yet. A page reload in between (a mobile webview can
+    // drop its content process while the app sits behind a browser)
+    // re-mounts App.tsx, which calls this command; without the server-url
+    // check it would skip straight past the onboarding's server/library
+    // pickers into a broken main UI.
     Ok(state.client.token().is_some() && state.client.server_url().is_some())
 }
 

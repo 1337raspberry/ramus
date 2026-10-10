@@ -64,6 +64,8 @@ class MpvBridgePlugin: Plugin {
     /// pushes; guarded by `nativeFeedLock`.
     private var nativeFeed: NativeVisualizerFeed?
     private let nativeFeedLock = NSLock()
+    /// The in-app sign-in sheet. Main queue only.
+    private let webAuth = WebAuthSheet()
 
     override func load(webview: WKWebView) {
         self.webView = webview
@@ -840,7 +842,7 @@ class MpvBridgePlugin: Plugin {
 
     @objc private func searchCancelTapped() {
         removeSearchBar()
-        dispatchSearchEvent("nativeSearchCancel", detail: nil)
+        dispatchPageEvent("nativeSearchCancel", detail: nil)
     }
 
     private func removeSearchBar() {
@@ -852,7 +854,7 @@ class MpvBridgePlugin: Plugin {
         webView?.endEditing(true)
     }
 
-    private func dispatchSearchEvent(_ name: String, detail: [String: Any]?) {
+    private func dispatchPageEvent(_ name: String, detail: [String: Any]?) {
         let detailJS: String
         if let d = detail,
            let data = try? JSONSerialization.data(withJSONObject: d),
@@ -863,6 +865,38 @@ class MpvBridgePlugin: Plugin {
         }
         let js = "window.dispatchEvent(new CustomEvent('\(name)', { detail: \(detailJS) }))"
         webView?.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    // MARK: - Web sign-in
+
+    /// Presents the sign-in page in an in-app sheet. A close by the user, or
+    /// a sheet that could not be shown, dispatches `webAuthClosed` on the
+    /// page's window; `dismissWebAuth` closes it without the event.
+    @objc public func presentWebAuth(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(PresentWebAuthArgs.self)
+        guard let url = URL(string: args.url) else {
+            invoke.reject("invalid sign-in URL")
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let closed: () -> Void = { [weak self] in
+                self?.dispatchPageEvent("webAuthClosed", detail: nil)
+            }
+            guard let window = self.webView?.window else {
+                closed()
+                return
+            }
+            self.webAuth.present(url: url, anchor: window, onClosed: closed)
+        }
+        invoke.resolve([:])
+    }
+
+    @objc public func dismissWebAuth(_ invoke: Invoke) throws {
+        DispatchQueue.main.async { [weak self] in
+            self?.webAuth.dismiss()
+        }
+        invoke.resolve([:])
     }
 
     // MARK: - Keychain
@@ -984,6 +1018,10 @@ class ShowSearchBarArgs: Decodable {
     let width: Double?
 }
 
+class PresentWebAuthArgs: Decodable {
+    let url: String
+}
+
 class NowPlayingMetadata: Decodable {
     let title: String
     let artist: String
@@ -996,7 +1034,7 @@ class NowPlayingMetadata: Decodable {
 
 extension MpvBridgePlugin: UISearchBarDelegate {
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
-        dispatchSearchEvent("nativeSearchText", detail: ["text": searchText])
+        dispatchPageEvent("nativeSearchText", detail: ["text": searchText])
     }
 
     func searchBarShouldEndEditing(_ searchBar: UISearchBar) -> Bool {

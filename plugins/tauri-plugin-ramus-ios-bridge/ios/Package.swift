@@ -53,6 +53,7 @@ let package = Package(
             ],
             path: "Sources",
             linkerSettings: [
+                .linkedFramework("AuthenticationServices"),
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("MediaPlayer"),
                 .linkedFramework("Security"),
