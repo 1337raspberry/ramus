@@ -91,6 +91,14 @@ ignore = [
     # through wry. Drops as the servo-tree crates migrate.
     "RUSTSEC-2025-0057",
 
+    # zvariant / zvariant_derive / zbus_names marked unmaintained after
+    # being folded into zbus 6.0 (z-galaxy/zbus#2043). Reach us via
+    # tauri-plugin-opener → zbus 5 (Linux D-Bus). Drops when the
+    # opener plugin moves to zbus 6; no safe upgrade today.
+    "RUSTSEC-2026-0370",  # zvariant
+    "RUSTSEC-2026-0371",  # zbus_names
+    "RUSTSEC-2026-0372",  # zvariant_derive
+
     # rand unsound advisory — specifically the `rand::rng()` thread-
     # local pattern when combined with a custom logger that re-enters
     # rand during init. We don't install a custom logger and we don't
