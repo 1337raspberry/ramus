@@ -1644,44 +1644,34 @@ Used by:
 - `windows-sys` 0.48.0 — https://github.com/microsoft/windows-rs
 - `windows-sys` 0.52.0 — https://github.com/microsoft/windows-rs
 - `windows-sys` 0.59.0 — https://github.com/microsoft/windows-rs
-- `windows-sys` 0.60.2 — https://github.com/microsoft/windows-rs
 - `windows-sys` 0.61.2 — https://github.com/microsoft/windows-rs
 - `windows-targets` 0.42.2 — https://github.com/microsoft/windows-rs
 - `windows-targets` 0.48.5 — https://github.com/microsoft/windows-rs
 - `windows-targets` 0.52.6 — https://github.com/microsoft/windows-rs
-- `windows-targets` 0.53.5 — https://github.com/microsoft/windows-rs
 - `windows-threading` 0.1.0 — https://github.com/microsoft/windows-rs
 - `windows-version` 0.1.7 — https://github.com/microsoft/windows-rs
 - `windows_aarch64_gnullvm` 0.42.2 — https://github.com/microsoft/windows-rs
 - `windows_aarch64_gnullvm` 0.48.5 — https://github.com/microsoft/windows-rs
 - `windows_aarch64_gnullvm` 0.52.6 — https://github.com/microsoft/windows-rs
-- `windows_aarch64_gnullvm` 0.53.1 — https://github.com/microsoft/windows-rs
 - `windows_aarch64_msvc` 0.42.2 — https://github.com/microsoft/windows-rs
 - `windows_aarch64_msvc` 0.48.5 — https://github.com/microsoft/windows-rs
 - `windows_aarch64_msvc` 0.52.6 — https://github.com/microsoft/windows-rs
-- `windows_aarch64_msvc` 0.53.1 — https://github.com/microsoft/windows-rs
 - `windows_i686_gnu` 0.42.2 — https://github.com/microsoft/windows-rs
 - `windows_i686_gnu` 0.48.5 — https://github.com/microsoft/windows-rs
 - `windows_i686_gnu` 0.52.6 — https://github.com/microsoft/windows-rs
-- `windows_i686_gnu` 0.53.1 — https://github.com/microsoft/windows-rs
 - `windows_i686_gnullvm` 0.52.6 — https://github.com/microsoft/windows-rs
-- `windows_i686_gnullvm` 0.53.1 — https://github.com/microsoft/windows-rs
 - `windows_i686_msvc` 0.42.2 — https://github.com/microsoft/windows-rs
 - `windows_i686_msvc` 0.48.5 — https://github.com/microsoft/windows-rs
 - `windows_i686_msvc` 0.52.6 — https://github.com/microsoft/windows-rs
-- `windows_i686_msvc` 0.53.1 — https://github.com/microsoft/windows-rs
 - `windows_x86_64_gnu` 0.42.2 — https://github.com/microsoft/windows-rs
 - `windows_x86_64_gnu` 0.48.5 — https://github.com/microsoft/windows-rs
 - `windows_x86_64_gnu` 0.52.6 — https://github.com/microsoft/windows-rs
-- `windows_x86_64_gnu` 0.53.1 — https://github.com/microsoft/windows-rs
 - `windows_x86_64_gnullvm` 0.42.2 — https://github.com/microsoft/windows-rs
 - `windows_x86_64_gnullvm` 0.48.5 — https://github.com/microsoft/windows-rs
 - `windows_x86_64_gnullvm` 0.52.6 — https://github.com/microsoft/windows-rs
-- `windows_x86_64_gnullvm` 0.53.1 — https://github.com/microsoft/windows-rs
 - `windows_x86_64_msvc` 0.42.2 — https://github.com/microsoft/windows-rs
 - `windows_x86_64_msvc` 0.48.5 — https://github.com/microsoft/windows-rs
 - `windows_x86_64_msvc` 0.52.6 — https://github.com/microsoft/windows-rs
-- `windows_x86_64_msvc` 0.53.1 — https://github.com/microsoft/windows-rs
 
 ```
 MIT License
@@ -6169,7 +6159,7 @@ SOFTWARE.
 ### MIT License (MIT) (variant 161)
 
 Used by:
-- `tokio` 1.51.0 — https://github.com/tokio-rs/tokio
+- `tokio` 1.51.6 — https://github.com/tokio-rs/tokio
 - `tokio-util` 0.7.18 — https://github.com/tokio-rs/tokio
 
 ```
