@@ -5,7 +5,6 @@ import {
   getCacheStats,
   startFullSync,
   startIncrementalSync,
-  startGenreSync,
   importCustomGenres,
   importCustomGenresJson,
   removeCustomGenres,
@@ -146,7 +145,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
   );
 
   const handleSync = useCallback(
-    (type: "full" | "incremental" | "genre") => {
+    (type: "full" | "incremental") => {
       setSyncing(type);
       setSyncProgress(null);
       // Cancel a pending banner-clear from a just-finished sync so it
@@ -155,12 +154,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
         clearTimeout(syncBannerTimerRef.current);
         syncBannerTimerRef.current = null;
       }
-      const fn =
-        type === "full"
-          ? startFullSync
-          : type === "incremental"
-            ? startIncrementalSync
-            : startGenreSync;
+      const fn = type === "full" ? startFullSync : startIncrementalSync;
       fn().catch((e) => {
         setSyncing(null);
         showError(`Sync failed: ${e}`);
@@ -581,27 +575,17 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
                 <button
                   className="settings-btn"
                   disabled={syncing !== null}
-                  onClick={() => handleSync("genre")}
-                >
-                  {syncing === "genre" ? "Syncing..." : "Genre Sync"}
-                </button>
-                <button
-                  className="settings-btn"
-                  disabled={syncing !== null}
                   onClick={() => handleSync("full")}
                 >
                   {syncing === "full" ? "Syncing..." : "Full Sync"}
                 </button>
               </div>
               <HelperText>
-                <strong>Quick Sync</strong> catches anything new since your last sync, very quick.
-                Does nothing if nothing changed
+                <strong>Quick Sync</strong> picks up everything that changed since your last sync:
+                new music, tag and genre edits, plays and favourites from other devices.
                 <br />
-                <strong>Genre Sync</strong> re-fetches just the genre tags, useful after
-                editing/updating tags in Plex.
-                <br />
-                <strong>Full Sync</strong> re-reads your entire library from scratch, only needed if
-                something's missing or broken.
+                <strong>Full Sync</strong> re-reads your entire library from scratch. Use it if
+                something looks broken or not right.
               </HelperText>
 
               {stats && stats.trackCount > 0 && (
@@ -624,7 +608,8 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
               <HelperText>
                 Plex tags each album with a primary genre and one or more styles (more specific
                 sub-genres). Most libraries are richer with both — turn this off if you tag genres
-                yourself and use &ldquo;prefer local metadata&rdquo;.
+                yourself and use &ldquo;prefer local metadata&rdquo;. Albums already synced pick up
+                the change on the next Full Sync.
               </HelperText>
 
               <div className="settings-row">

@@ -330,6 +330,45 @@ impl PlexClient {
         .await
     }
 
+    /// The server's clock, in Unix seconds, read from the `Date` header of a
+    /// cheap `/identity` request. Timestamps such as `updatedAt` and
+    /// `lastViewedAt` are written on this clock, so "changed since" filters
+    /// must be anchored to it rather than to the client's.
+    pub async fn server_time(&self) -> Result<i64, PlexClientError> {
+        self.with_retry(|| async {
+            let (base, token) = self.read_state()?;
+            let url = join_path(&base, "identity").map_err(|_| PlexClientError::InvalidResponse)?;
+            let builder = self.apply_standard_headers(self.http.get(url), Some(&token));
+
+            let resp = builder.send().await.map_err(|e| {
+                if Self::is_connection_error(&e) {
+                    PlexClientError::ConnectionFailed
+                } else {
+                    PlexClientError::InvalidResponse
+                }
+            })?;
+
+            let status = resp.status().as_u16();
+            if status == 401 {
+                return Err(PlexClientError::Unauthorized);
+            }
+            if !(200..300).contains(&(status as usize)) {
+                return Err(PlexClientError::HttpError(status));
+            }
+
+            let date = resp
+                .headers()
+                .get(reqwest::header::DATE)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| httpdate::parse_http_date(s).ok())
+                .ok_or(PlexClientError::InvalidResponse)?;
+            date.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .map_err(|_| PlexClientError::InvalidResponse)
+        })
+        .await
+    }
+
     async fn with_retry<F, Fut, T>(&self, work: F) -> Result<T, PlexClientError>
     where
         F: Fn() -> Fut,
@@ -698,22 +737,72 @@ impl PlexClient {
         page_size: usize,
         on_page: impl Fn(usize, usize),
     ) -> Result<Vec<MediaItem>, PlexClientError> {
+        self.fetch_all_items_filtered_with_progress(library_key, item_type, &[], page_size, on_page)
+            .await
+    }
+
+    /// Like [`fetch_all_items_with_progress`] with extra filter terms, e.g.
+    /// `("updatedAt>>", "1700000000")` for items changed after that time. The
+    /// operator rides the key (see `plex/smart.rs`); `>>=` is strictly greater.
+    /// PMS silently ignores unknown filter fields and returns everything, so
+    /// callers pass only fields known to filter.
+    pub async fn fetch_all_items_filtered_with_progress(
+        &self,
+        library_key: &str,
+        item_type: i32,
+        filters: &[(&str, &str)],
+        page_size: usize,
+        on_page: impl Fn(usize, usize),
+    ) -> Result<Vec<MediaItem>, PlexClientError> {
+        let type_str = item_type.to_string();
+        let mut query = vec![("type", type_str.as_str())];
+        query.extend_from_slice(filters);
+        let path = format!("library/sections/{}/all", library_key);
+        self.fetch_paged(&path, &query, page_size, on_page).await
+    }
+
+    /// All albums of a section from `/library/sections/{key}/albums`. Same
+    /// rows as the `type=9` listing plus each album's track count
+    /// (`leafCount`), which the `all` listing omits.
+    pub async fn fetch_section_albums_with_progress(
+        &self,
+        library_key: &str,
+        page_size: usize,
+        on_page: impl Fn(usize, usize),
+    ) -> Result<Vec<MediaItem>, PlexClientError> {
+        let path = format!("library/sections/{}/albums", library_key);
+        self.fetch_paged(&path, &[], page_size, on_page).await
+    }
+
+    /// The direct children of an item (an album's tracks), with the same
+    /// per-track detail as the section listing.
+    pub async fn fetch_children(&self, rating_key: &str) -> Result<Vec<MediaItem>, PlexClientError> {
+        let path = format!("library/metadata/{}/children", rating_key);
+        self.fetch_paged(&path, &[], 200, |_, _| {}).await
+    }
+
+    /// Pages through a listing with `X-Plex-Container-Start`/`-Size` until a
+    /// short page. PMS ignores `-Size` unless `-Start` is also sent, and one
+    /// very large container is far slower than many small ones.
+    async fn fetch_paged(
+        &self,
+        path: &str,
+        filters: &[(&str, &str)],
+        page_size: usize,
+        on_page: impl Fn(usize, usize),
+    ) -> Result<Vec<MediaItem>, PlexClientError> {
         let mut all_items = Vec::new();
         let mut offset: usize = 0;
         let mut total_size: usize = 0;
         let max_pages = 5000;
         let page_size_str = page_size.to_string();
-        let type_str = item_type.to_string();
-        let path = format!("library/sections/{}/all", library_key);
 
         for _ in 0..max_pages {
             let offset_str = offset.to_string();
-            let query = [
-                ("type", type_str.as_str()),
-                ("X-Plex-Container-Start", offset_str.as_str()),
-                ("X-Plex-Container-Size", page_size_str.as_str()),
-            ];
-            let body = self.get(&path, &query).await?;
+            let mut query = filters.to_vec();
+            query.push(("X-Plex-Container-Start", offset_str.as_str()));
+            query.push(("X-Plex-Container-Size", page_size_str.as_str()));
+            let body = self.get(path, &query).await?;
             let container: MediaContainerResponse =
                 serde_json::from_slice(&body).map_err(|_| PlexClientError::InvalidResponse)?;
 

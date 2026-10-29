@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 
 use crate::cache::db::{CacheDatabase, CacheError};
+use crate::cache::sync_state::AlbumUserState;
 use crate::cache::upsert::{AlbumUpsertRow, TrackUpsertRow};
 use crate::plex::client::{MediaItem, PlexClient, PlexClientError};
 use crate::util::dedup_case_insensitive;
@@ -51,6 +52,13 @@ pub enum SyncError {
 
 const BATCH_SIZE: usize = 500;
 const DEEP_GENRE_CONCURRENCY: usize = 8;
+/// How far before the previous sync's start a quick sync's "changed since"
+/// filters reach. `>>=` is strictly greater, and re-fetching a few rows that
+/// are already current costs nothing.
+const CHANGED_SINCE_MARGIN_SECS: i64 = 300;
+/// Past this many albums to recheck, one full track listing is cheaper than
+/// fetching each album's tracks (~0.2 s per album, ~0.35 s per 200 tracks).
+const MAX_ALBUM_RECHECKS: usize = 100;
 
 pub struct SyncEngine {
     pub cache: Arc<CacheDatabase>,
@@ -124,32 +132,6 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Genre sync only: re-fetches full metadata for all albums to populate complete genre lists.
-    pub async fn genre_sync<F>(
-        &self,
-        include_styles: bool,
-        on_progress: F,
-    ) -> Result<(), SyncError>
-    where
-        F: Fn(SyncProgress) + Send + Sync + 'static,
-    {
-        let on_progress = Arc::new(on_progress);
-        let cached = self.cache.all_album_timestamps()?;
-        let album_map: HashMap<String, i64> =
-            cached.into_iter().map(|(k, v)| (k, v.id)).collect();
-
-        self.deep_genre_sync(&album_map, None, include_styles, on_progress.clone())
-            .await?;
-
-        on_progress(SyncProgress {
-            phase: SyncPhase::Done,
-            current: 1,
-            total: 1,
-            detail: "Sync complete".into(),
-        });
-        Ok(())
-    }
-
     async fn core_sync(
         &self,
         library_key: &str,
@@ -164,6 +146,16 @@ impl SyncEngine {
             )
         } else {
             (HashMap::new(), HashMap::new(), HashMap::new())
+        };
+
+        // Read before anything is fetched, so a change made while this sync
+        // runs is still newer than the mark it leaves for the next one. If
+        // the clock can't be read, the previous mark stays: older is safe.
+        let started_at = self.client.server_time().await.ok();
+        let changed_since = if incremental && !cached_tracks.is_empty() {
+            self.cache.sync_mark(library_key).unwrap_or(None)
+        } else {
+            None
         };
 
         let p = on_progress.clone();
@@ -186,21 +178,28 @@ impl SyncEngine {
             self.sync_artists(&artist_items, &cached_artists, incremental, on_progress.as_ref())?;
 
         let p = on_progress.clone();
-        let album_items = self
-            .client
-            .fetch_all_items_with_progress(library_key, 9, 200, move |fetched, total| {
-                p(SyncProgress {
-                    phase: SyncPhase::Albums,
-                    current: fetched,
-                    total,
-                    detail: if total > 0 {
-                        format!("Fetching albums: {}/{}", fetched, total)
-                    } else {
-                        format!("Fetching albums: {}...", fetched)
-                    },
-                });
-            })
-            .await?;
+        let on_album_page = move |fetched, total| {
+            p(SyncProgress {
+                phase: SyncPhase::Albums,
+                current: fetched,
+                total,
+                detail: if total > 0 {
+                    format!("Fetching albums: {}/{}", fetched, total)
+                } else {
+                    format!("Fetching albums: {}...", fetched)
+                },
+            });
+        };
+        // The track delta needs each album's track count to find deletions.
+        let album_items = if changed_since.is_some() {
+            self.client
+                .fetch_section_albums_with_progress(library_key, 200, on_album_page)
+                .await?
+        } else {
+            self.client
+                .fetch_all_items_with_progress(library_key, 9, 200, on_album_page)
+                .await?
+        };
         let (album_map, changed_source_ids) = self.sync_albums(
             &album_items,
             &artist_map,
@@ -209,39 +208,61 @@ impl SyncEngine {
             on_progress.as_ref(),
         )?;
 
-        let p = on_progress.clone();
-        let track_items = self
-            .client
-            .fetch_all_items_with_progress(library_key, 10, 200, move |fetched, total| {
-                p(SyncProgress {
-                    phase: SyncPhase::Tracks,
-                    current: fetched,
-                    total,
-                    detail: if total > 0 {
-                        format!("Fetching tracks: {}/{}", fetched, total)
-                    } else {
-                        format!("Fetching tracks: {}...", fetched)
-                    },
-                });
-            })
-            .await?;
-        self.sync_tracks(
-            &track_items,
-            &album_map,
-            &artist_map,
-            &cached_tracks,
-            incremental,
-            on_progress.as_ref(),
-        )?;
+        let delta_track_ids = match changed_since {
+            Some(since) => {
+                self.delta_sync_tracks(
+                    library_key,
+                    since - CHANGED_SINCE_MARGIN_SECS,
+                    &album_items,
+                    &album_map,
+                    &artist_map,
+                    &cached_albums,
+                    &cached_tracks,
+                    on_progress.clone(),
+                )
+                .await?
+            }
+            None => None,
+        };
 
-        // Prune local items no longer on Plex. Both sync modes fetch the full
-        // set of sourceIds for each type, so this is the authoritative live set.
+        let plex_track_ids: HashSet<String> = match delta_track_ids {
+            Some(ids) => ids,
+            None => {
+                let p = on_progress.clone();
+                let track_items = self
+                    .client
+                    .fetch_all_items_with_progress(library_key, 10, 200, move |fetched, total| {
+                        p(SyncProgress {
+                            phase: SyncPhase::Tracks,
+                            current: fetched,
+                            total,
+                            detail: if total > 0 {
+                                format!("Fetching tracks: {}/{}", fetched, total)
+                            } else {
+                                format!("Fetching tracks: {}...", fetched)
+                            },
+                        });
+                    })
+                    .await?;
+                self.sync_tracks(
+                    &track_items,
+                    &album_map,
+                    &artist_map,
+                    &cached_tracks,
+                    incremental,
+                    on_progress.as_ref(),
+                )?;
+                track_items.iter().map(|i| i.rating_key.clone()).collect()
+            }
+        };
+
+        // Prune local items no longer on Plex. Artists and albums are always
+        // listed in full; the track set comes from either the full listing or
+        // the delta's per-album reconciliation, so it is authoritative too.
         let plex_artist_ids: HashSet<String> =
             artist_items.iter().map(|i| i.rating_key.clone()).collect();
         let plex_album_ids: HashSet<String> =
             album_items.iter().map(|i| i.rating_key.clone()).collect();
-        let plex_track_ids: HashSet<String> =
-            track_items.iter().map(|i| i.rating_key.clone()).collect();
 
         let prune_counts =
             self.cache
@@ -262,7 +283,136 @@ impl SyncEngine {
             });
         }
 
+        if let Some(t) = started_at {
+            self.cache.set_sync_mark(library_key, t)?;
+        }
+
         Ok((album_map, changed_source_ids))
+    }
+
+    /// Quick-sync track phase: fetches only the tracks changed, played or
+    /// rated after `since`, then reconciles each album's track count against
+    /// the server's `leafCount` to find deletions. Returns the live track
+    /// set, or `None` when the caller must fall back to the full listing (an
+    /// album without a count, too many albums to recheck, or totals that
+    /// still disagree after reconciling).
+    #[allow(clippy::too_many_arguments)]
+    async fn delta_sync_tracks(
+        &self,
+        library_key: &str,
+        since: i64,
+        album_items: &[MediaItem],
+        album_map: &HashMap<String, i64>,
+        artist_map: &HashMap<String, i64>,
+        cached_albums: &HashMap<String, crate::cache::db::CachedAlbumInfo>,
+        cached_tracks: &HashMap<String, crate::cache::db::CachedItemInfo>,
+        on_progress: Arc<dyn Fn(SyncProgress) + Send + Sync>,
+    ) -> Result<Option<HashSet<String>>, SyncError> {
+        let mut leaf_counts: HashMap<&str, usize> = HashMap::new();
+        for album in album_items {
+            match album.leaf_count {
+                Some(n) => leaf_counts.insert(album.rating_key.as_str(), n.max(0) as usize),
+                None => return Ok(None),
+            };
+        }
+
+        // Plays and ratings are per-user and never move a track's
+        // `updatedAt`, so each needs its own filter.
+        let since_str = since.to_string();
+        let mut changed: HashMap<String, MediaItem> = HashMap::new();
+        for (field, label) in [
+            ("updatedAt>>", "changed"),
+            ("lastViewedAt>>", "played"),
+            ("lastRatedAt>>", "rated"),
+        ] {
+            let p = on_progress.clone();
+            let items = self
+                .client
+                .fetch_all_items_filtered_with_progress(
+                    library_key,
+                    10,
+                    &[(field, since_str.as_str())],
+                    200,
+                    move |fetched, total| {
+                        p(SyncProgress {
+                            phase: SyncPhase::Tracks,
+                            current: fetched,
+                            total,
+                            detail: format!("Fetching {} tracks: {}/{}", label, fetched, total),
+                        });
+                    },
+                )
+                .await?;
+            for item in items {
+                changed.insert(item.rating_key.clone(), item);
+            }
+        }
+        let changed: Vec<MediaItem> = changed.into_values().collect();
+        // Not `incremental`: played and rated rows carry an unchanged
+        // `updatedAt` and would be skipped as already current.
+        self.sync_tracks(&changed, album_map, artist_map, cached_tracks, false, on_progress.as_ref())?;
+
+        let local = self.cache.track_ids_by_album()?;
+        let mut recheck: HashSet<&str> = leaf_counts
+            .iter()
+            .filter(|(album, &count)| local.get(**album).map_or(0, Vec::len) != count)
+            .map(|(album, _)| *album)
+            .collect();
+        // An album that gained one track and lost another keeps its count, so
+        // any existing album with a new track is checked as well.
+        for track in &changed {
+            if cached_tracks.contains_key(&track.rating_key) {
+                continue;
+            }
+            if let Some(album) = track.parent_rating_key.as_deref() {
+                if cached_albums.contains_key(album) {
+                    if let Some((&key, _)) = leaf_counts.get_key_value(album) {
+                        recheck.insert(key);
+                    }
+                }
+            }
+        }
+        if recheck.len() > MAX_ALBUM_RECHECKS {
+            return Ok(None);
+        }
+
+        let total = recheck.len();
+        let mut stale: HashSet<String> = HashSet::new();
+        for (i, album) in recheck.iter().enumerate() {
+            on_progress(SyncProgress {
+                phase: SyncPhase::Tracks,
+                current: i,
+                total,
+                detail: format!("Checking albums: {}/{}", i, total),
+            });
+            let children = self.client.fetch_children(album).await?;
+            let live: HashSet<&str> = children.iter().map(|c| c.rating_key.as_str()).collect();
+            if let Some(ids) = local.get(*album) {
+                stale.extend(ids.iter().filter(|id| !live.contains(id.as_str())).cloned());
+            }
+            self.sync_tracks(&children, album_map, artist_map, cached_tracks, false, &|_| {})?;
+        }
+
+        // Tracks of albums gone from the server are left out here and go
+        // with their album in the prune.
+        let live_ids: HashSet<String> = self
+            .cache
+            .track_ids_by_album()?
+            .into_iter()
+            .filter(|(album, _)| leaf_counts.contains_key(album.as_str()))
+            .flat_map(|(_, ids)| ids)
+            .filter(|id| !stale.contains(id))
+            .collect();
+        let expected: usize = leaf_counts.values().sum();
+        if live_ids.len() != expected {
+            log::info!(
+                "quick sync: {} local tracks against {} on the server; listing all tracks",
+                live_ids.len(),
+                expected
+            );
+            return Ok(None);
+        }
+        Ok(Some(live_ids))
     }
 
     fn sync_artists(
@@ -438,6 +588,29 @@ impl SyncEngine {
                 total,
                 detail: format!("Saving albums: {}/{}", end, total),
             });
+        }
+
+        // Favourites and plays don't move `updatedAt`, so the skip above never
+        // sees them. Every album is listed on every sync, and the listing
+        // carries these fields, so compare them all.
+        let user_state = self.cache.album_user_state()?;
+        let user_changes: Vec<(String, AlbumUserState)> = items
+            .iter()
+            .filter_map(|item| {
+                let listed = AlbumUserState {
+                    rating: item.user_rating,
+                    view_count: item.view_count,
+                    last_viewed_at: item.last_viewed_at,
+                };
+                match user_state.get(&item.rating_key) {
+                    Some(cached) if cached.same_as(&listed) => None,
+                    Some(_) => Some((item.rating_key.clone(), listed)),
+                    None => None,
+                }
+            })
+            .collect();
+        if !user_changes.is_empty() {
+            self.cache.set_album_user_state(&user_changes)?;
         }
 
         if !genre_links.is_empty() {
@@ -1304,5 +1477,396 @@ mod tests {
         assert_eq!(stats.album_count, 10);
         // 2 genres per album ("Rock" + "GenreN"); "Rock" is shared → 11 unique.
         assert_eq!(stats.genre_count, 11);
+    }
+
+    /// Matches requests carrying the given query key, e.g. `updatedAt>>`.
+    struct HasParam(&'static str);
+
+    impl wiremock::Match for HasParam {
+        fn matches(&self, req: &wiremock::Request) -> bool {
+            req.url.query_pairs().any(|(k, _)| k == self.0)
+        }
+    }
+
+    /// Matches a listing with none of the quick sync's "changed since" filters.
+    struct Unfiltered;
+
+    impl wiremock::Match for Unfiltered {
+        fn matches(&self, req: &wiremock::Request) -> bool {
+            !req.url.query_pairs().any(|(k, _)| k.ends_with(">>"))
+        }
+    }
+
+    fn container(items: Vec<serde_json::Value>) -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "MediaContainer": { "Metadata": items }
+        }))
+    }
+
+    fn counted_album_json(rating_key: &str, leaf_count: i64) -> serde_json::Value {
+        let mut obj = album_item_json(rating_key, rating_key, 1000, "ar1", Some("Rock"));
+        obj["leafCount"] = serde_json::json!(leaf_count);
+        obj
+    }
+
+    /// Mocks shared by both syncs: server clock, artists, and album metadata
+    /// for the deep genre fetch.
+    async fn mount_quick_sync_common(server: &MockServer) {
+        Mock::given(method("GET"))
+            .and(path("/identity"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "MediaContainer": { "size": 0 }
+            })))
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "8"))
+            .respond_with(container(vec![media_item_json("ar1", "Radiohead", 1000, None, None)]))
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(wiremock::matchers::path_regex(r"^/library/metadata/[^/]+$"))
+            .respond_with(container(vec![serde_json::json!({
+                "ratingKey": "al", "title": "Album", "Genre": [{"tag": "Rock"}]
+            })]))
+            .mount(server)
+            .await;
+    }
+
+    /// Full sync of al1 holding tr1 and tr2, leaving the cache and a sync mark.
+    async fn full_sync_two_tracks(server: &MockServer) -> Arc<CacheDatabase> {
+        mount_quick_sync_common(server).await;
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "9"))
+            .respond_with(container(vec![album_item_json("al1", "al1", 1000, "ar1", Some("Rock"))]))
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "10"))
+            .respond_with(container(vec![
+                track_item_json("tr1", "One", 1000, "al1", "ar1"),
+                track_item_json("tr2", "Two", 1000, "al1", "ar1"),
+            ]))
+            .mount(server)
+            .await;
+
+        let cache = Arc::new(CacheDatabase::open_in_memory().unwrap());
+        SyncEngine::new(cache.clone(), setup_client(&server.uri()))
+            .full_sync("1", true, |_| {})
+            .await
+            .unwrap();
+        assert!(cache.sync_mark("1").unwrap().is_some());
+        server.reset().await;
+        mount_quick_sync_common(server).await;
+        cache
+    }
+
+    /// Answers the three "changed since" listings of the quick sync.
+    async fn mount_track_deltas(
+        server: &MockServer,
+        changed: Vec<serde_json::Value>,
+        played: Vec<serde_json::Value>,
+        rated: Vec<serde_json::Value>,
+    ) {
+        for (key, items) in [("updatedAt>>", changed), ("lastViewedAt>>", played), ("lastRatedAt>>", rated)] {
+            Mock::given(method("GET"))
+                .and(path("/library/sections/1/all"))
+                .and(query_param("type", "10"))
+                .and(HasParam(key))
+                .respond_with(container(items))
+                .mount(server)
+                .await;
+        }
+    }
+
+    async fn mount_section_albums(server: &MockServer, albums: Vec<serde_json::Value>) {
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/albums"))
+            .respond_with(container(albums))
+            .mount(server)
+            .await;
+    }
+
+    async fn mount_children(server: &MockServer, album: &str, tracks: Vec<serde_json::Value>) {
+        Mock::given(method("GET"))
+            .and(path(format!("/library/metadata/{album}/children")))
+            .respond_with(container(tracks))
+            .mount(server)
+            .await;
+    }
+
+    async fn quick_sync(server: &MockServer, cache: &Arc<CacheDatabase>) {
+        SyncEngine::new(cache.clone(), setup_client(&server.uri()))
+            .incremental_sync("1", true, |_| {})
+            .await
+            .unwrap();
+    }
+
+    fn source_ids(cache: &CacheDatabase, album: &str) -> Vec<String> {
+        let mut ids: Vec<String> = cache
+            .tracks_for_album(album)
+            .unwrap()
+            .into_iter()
+            .map(|t| t.rating_key)
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    async fn requests_to(server: &MockServer, path: &str) -> usize {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|r| r.url.path() == path)
+            .count()
+    }
+
+    // The unfiltered track listing is not mounted after the full sync, so
+    // any of these quick syncs falling back to it fails with a 404.
+
+    #[tokio::test]
+    async fn quick_sync_fetches_only_changed_tracks() {
+        let server = MockServer::start().await;
+        let cache = full_sync_two_tracks(&server).await;
+        mount_section_albums(&server, vec![counted_album_json("al1", 2), counted_album_json("al2", 1)]).await;
+        mount_track_deltas(&server, vec![track_item_json("tr3", "Three", 2000, "al2", "ar1")], vec![], vec![]).await;
+
+        quick_sync(&server, &cache).await;
+
+        assert_eq!(source_ids(&cache, "al1"), ["tr1", "tr2"]);
+        assert_eq!(source_ids(&cache, "al2"), ["tr3"]);
+        // A brand-new album's count already matches; nothing to recheck.
+        assert_eq!(requests_to(&server, "/library/metadata/al2/children").await, 0);
+    }
+
+    #[tokio::test]
+    async fn quick_sync_applies_plays_and_ratings_from_other_devices() {
+        let server = MockServer::start().await;
+        let cache = full_sync_two_tracks(&server).await;
+        mount_section_albums(&server, vec![counted_album_json("al1", 2)]).await;
+        // Same `updatedAt` as the cached rows: plays and ratings don't move it.
+        let mut played = track_item_json("tr1", "One", 1000, "al1", "ar1");
+        played["viewCount"] = serde_json::json!(5);
+        let mut rated = track_item_json("tr2", "Two", 1000, "al1", "ar1");
+        rated["userRating"] = serde_json::json!(10.0);
+        mount_track_deltas(&server, vec![], vec![played], vec![rated]).await;
+
+        quick_sync(&server, &cache).await;
+
+        assert_eq!(cache.track_by_source_id("tr1").unwrap().unwrap().view_count, Some(5));
+        assert!(cache.track_by_source_id("tr2").unwrap().unwrap().is_favourite);
+    }
+
+    #[tokio::test]
+    async fn quick_sync_prunes_a_deleted_track_from_the_album_count() {
+        let server = MockServer::start().await;
+        let cache = full_sync_two_tracks(&server).await;
+        mount_section_albums(&server, vec![counted_album_json("al1", 1)]).await;
+        mount_track_deltas(&server, vec![], vec![], vec![]).await;
+        mount_children(&server, "al1", vec![track_item_json("tr1", "One", 1000, "al1", "ar1")]).await;
+
+        quick_sync(&server, &cache).await;
+
+        assert_eq!(source_ids(&cache, "al1"), ["tr1"]);
+    }
+
+    #[tokio::test]
+    async fn quick_sync_rechecks_an_album_that_swapped_a_track() {
+        let server = MockServer::start().await;
+        let cache = full_sync_two_tracks(&server).await;
+        // tr2 replaced by tr3: the count stays at 2.
+        mount_section_albums(&server, vec![counted_album_json("al1", 2)]).await;
+        let tr3 = track_item_json("tr3", "Three", 2000, "al1", "ar1");
+        mount_track_deltas(&server, vec![tr3.clone()], vec![], vec![]).await;
+        mount_children(&server, "al1", vec![track_item_json("tr1", "One", 1000, "al1", "ar1"), tr3]).await;
+
+        quick_sync(&server, &cache).await;
+
+        assert_eq!(source_ids(&cache, "al1"), ["tr1", "tr3"]);
+    }
+
+    #[tokio::test]
+    async fn quick_sync_drops_tracks_of_a_removed_album() {
+        let server = MockServer::start().await;
+        let cache = full_sync_two_tracks(&server).await;
+        mount_section_albums(&server, vec![]).await;
+        mount_track_deltas(&server, vec![], vec![], vec![]).await;
+
+        quick_sync(&server, &cache).await;
+
+        assert_eq!(cache.cache_stats().unwrap().album_count, 0);
+        assert_eq!(cache.cache_stats().unwrap().track_count, 0);
+    }
+
+    #[tokio::test]
+    async fn quick_sync_lists_all_tracks_when_albums_carry_no_count() {
+        let server = MockServer::start().await;
+        let cache = full_sync_two_tracks(&server).await;
+        mount_section_albums(&server, vec![album_item_json("al1", "al1", 1000, "ar1", Some("Rock"))]).await;
+        mount_track_deltas(&server, vec![], vec![], vec![]).await;
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "10"))
+            .and(Unfiltered)
+            .respond_with(container(vec![track_item_json("tr1", "One", 1000, "al1", "ar1")]))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        quick_sync(&server, &cache).await;
+
+        assert_eq!(source_ids(&cache, "al1"), ["tr1"]);
+    }
+
+    #[tokio::test]
+    async fn quick_sync_lists_all_tracks_when_counts_disagree() {
+        let server = MockServer::start().await;
+        let cache = full_sync_two_tracks(&server).await;
+        // Claims three tracks, but the album's children only return two.
+        mount_section_albums(&server, vec![counted_album_json("al1", 3)]).await;
+        mount_track_deltas(&server, vec![], vec![], vec![]).await;
+        mount_children(
+            &server,
+            "al1",
+            vec![
+                track_item_json("tr1", "One", 1000, "al1", "ar1"),
+                track_item_json("tr2", "Two", 1000, "al1", "ar1"),
+            ],
+        )
+        .await;
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "10"))
+            .and(Unfiltered)
+            .respond_with(container(vec![
+                track_item_json("tr1", "One", 1000, "al1", "ar1"),
+                track_item_json("tr2", "Two", 1000, "al1", "ar1"),
+            ]))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        quick_sync(&server, &cache).await;
+
+        assert_eq!(source_ids(&cache, "al1"), ["tr1", "tr2"]);
+    }
+
+    #[tokio::test]
+    async fn quick_sync_without_a_mark_lists_all_tracks() {
+        // The existing incremental tests mount no `/identity`, so no mark is
+        // ever written and every quick sync there takes the full listing.
+        let server = MockServer::start().await;
+        mount_simple_library(&server).await;
+        let cache = Arc::new(CacheDatabase::open_in_memory().unwrap());
+        let engine = SyncEngine::new(cache.clone(), setup_client(&server.uri()));
+        engine.full_sync("1", true, |_| {}).await.unwrap();
+        assert_eq!(cache.sync_mark("1").unwrap(), None);
+
+        engine.incremental_sync("1", true, |_| {}).await.unwrap();
+
+        assert_eq!(requests_to(&server, "/library/sections/1/albums").await, 0);
+        assert_eq!(cache.cache_stats().unwrap().track_count, 1);
+    }
+
+    fn album_state(cache: &CacheDatabase, album: &str) -> AlbumUserState {
+        cache.album_user_state().unwrap().remove(album).unwrap()
+    }
+
+    #[tokio::test]
+    async fn sync_applies_album_favourites_and_plays_from_other_devices() {
+        let server = MockServer::start().await;
+        let cache = full_sync_two_tracks(&server).await;
+        assert_eq!(album_state(&cache, "al1").rating, None);
+        // Same `updatedAt` as the cached row: neither moves it.
+        let mut al1 = counted_album_json("al1", 2);
+        al1["userRating"] = serde_json::json!(10.0);
+        al1["viewCount"] = serde_json::json!(3);
+        al1["lastViewedAt"] = serde_json::json!(5000);
+        mount_section_albums(&server, vec![al1]).await;
+        mount_track_deltas(&server, vec![], vec![], vec![]).await;
+
+        quick_sync(&server, &cache).await;
+
+        let state = album_state(&cache, "al1");
+        assert_eq!(state.rating, Some(10.0));
+        assert_eq!(state.view_count, Some(3));
+        assert_eq!(state.last_viewed_at, Some(5000));
+        assert!(cache.album_by_source_id("al1").unwrap().unwrap().is_favourite);
+    }
+
+    #[tokio::test]
+    async fn sync_clears_an_album_favourite_removed_elsewhere() {
+        let server = MockServer::start().await;
+        let cache = full_sync_two_tracks(&server).await;
+        cache
+            .set_album_user_state(&[(
+                "al1".into(),
+                AlbumUserState { rating: Some(10.0), view_count: Some(2), last_viewed_at: Some(4000) },
+            )])
+            .unwrap();
+        // Unrated and marked unplayed on the server: the fields are absent.
+        mount_section_albums(&server, vec![counted_album_json("al1", 2)]).await;
+        mount_track_deltas(&server, vec![], vec![], vec![]).await;
+
+        quick_sync(&server, &cache).await;
+
+        assert_eq!(
+            album_state(&cache, "al1"),
+            AlbumUserState { rating: None, view_count: None, last_viewed_at: None }
+        );
+    }
+
+    #[tokio::test]
+    async fn full_sync_keeps_listed_album_favourites() {
+        let server = MockServer::start().await;
+        mount_quick_sync_common(&server).await;
+        let mut al1 = album_item_json("al1", "al1", 1000, "ar1", Some("Rock"));
+        al1["userRating"] = serde_json::json!(10.0);
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "9"))
+            .respond_with(container(vec![al1]))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/library/sections/1/all"))
+            .and(query_param("type", "10"))
+            .respond_with(container(vec![track_item_json("tr1", "One", 1000, "al1", "ar1")]))
+            .mount(&server)
+            .await;
+        let cache = Arc::new(CacheDatabase::open_in_memory().unwrap());
+
+        SyncEngine::new(cache.clone(), setup_client(&server.uri()))
+            .full_sync("1", true, |_| {})
+            .await
+            .unwrap();
+
+        // The deep fetch's metadata mock carries no rating; the listing's stands.
+        assert_eq!(album_state(&cache, "al1").rating, Some(10.0));
+    }
+
+    #[tokio::test]
+    async fn quick_sync_filters_from_the_previous_start_minus_margin() {
+        let server = MockServer::start().await;
+        let cache = full_sync_two_tracks(&server).await;
+        let mark = cache.sync_mark("1").unwrap().unwrap();
+        mount_section_albums(&server, vec![counted_album_json("al1", 2)]).await;
+        mount_track_deltas(&server, vec![], vec![], vec![]).await;
+
+        quick_sync(&server, &cache).await;
+
+        let expected = (mark - CHANGED_SINCE_MARGIN_SECS).to_string();
+        let requests = server.received_requests().await.unwrap();
+        for key in ["updatedAt>>", "lastViewedAt>>", "lastRatedAt>>"] {
+            let sent = requests
+                .iter()
+                .find_map(|r| r.url.query_pairs().find(|(k, _)| k == key).map(|(_, v)| v.into_owned()));
+            assert_eq!(sent.as_deref(), Some(expected.as_str()), "{key}");
+        }
     }
 }

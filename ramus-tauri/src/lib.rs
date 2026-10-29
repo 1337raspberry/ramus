@@ -1749,7 +1749,6 @@ pub fn run() {
             // sync
             commands::sync::start_full_sync,
             commands::sync::start_incremental_sync,
-            commands::sync::start_genre_sync,
             // settings
             commands::settings::get_settings,
             commands::settings::update_settings,

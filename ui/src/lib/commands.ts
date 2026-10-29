@@ -375,7 +375,6 @@ export const startFullSync = () => invoke<void>("start_full_sync");
 
 export const startIncrementalSync = () => invoke<void>("start_incremental_sync");
 
-export const startGenreSync = () => invoke<void>("start_genre_sync");
 
 // --- Settings ---
 

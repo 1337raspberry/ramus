@@ -233,7 +233,12 @@ impl CacheDatabase {
                 trackSourceId TEXT NOT NULL,
                 position INTEGER NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist ON playlist_items(playlistId, position);",
+            CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist ON playlist_items(playlistId, position);
+
+            CREATE TABLE IF NOT EXISTS sync_marks (
+                libraryKey TEXT PRIMARY KEY,
+                changedSince INTEGER NOT NULL
+            );",
         )?;
 
         // Back-compat: add firstGenre to an albums table that predates the

@@ -145,37 +145,3 @@ pub async fn start_incremental_sync(app: AppHandle, state: State<'_, AppState>) 
 
     Ok(())
 }
-
-#[tauri::command]
-pub async fn start_genre_sync(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
-    let guard = acquire_sync_guard(&state.sync_in_progress)?;
-
-    let engine_lock = state.sync_engine.lock();
-    let engine = engine_lock.as_ref().ok_or("Sync engine not initialized")?;
-
-    let cache = engine.cache.clone();
-    let client = engine.client.clone();
-    drop(engine_lock);
-
-    let sync = ramus_core::cache::sync::SyncEngine::new(cache, client);
-    let app_handle = app.clone();
-    let app_err = app.clone();
-    let settings = state.settings.clone();
-    let include_styles = settings.read().include_plex_styles;
-
-    tokio::spawn(async move {
-        let _guard = guard;
-        let result = sync
-            .genre_sync(include_styles, move |progress| {
-                events::emit_sync_progress(&app_handle, progress);
-            })
-            .await;
-        if result.is_ok() {
-            update_last_sync_time(&settings);
-        } else {
-            emit_sync_error(&app_err);
-        }
-    });
-
-    Ok(())
-}

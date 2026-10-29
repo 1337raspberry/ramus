@@ -31,6 +31,9 @@ pub struct MediaItem {
     pub user_rating: Option<f64>,
     pub rating_count: Option<i64>,
     pub view_count: Option<i64>,
+    /// Number of tracks under an album. Sent by `/library/sections/{key}/albums`
+    /// and item metadata, not by the `all?type=9` listing.
+    pub leaf_count: Option<i64>,
     pub studio: Option<String>,
     #[serde(rename = "Media")]
     pub media: Option<Vec<MediaInfo>>,

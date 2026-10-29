@@ -3608,6 +3608,7 @@ dependencies = [
  "core-foundation 0.10.1",
  "directories",
  "fuzzy-matcher",
+ "httpdate",
  "log",
  "parking_lot",
  "quick-xml",
