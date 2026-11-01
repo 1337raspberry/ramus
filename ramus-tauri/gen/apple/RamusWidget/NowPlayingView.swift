@@ -39,24 +39,33 @@ struct NowPlayingView: View {
         if large { largeBody } else { mediumBody }
     }
 
+    /// Border around the medium cover, which takes the rest of the height.
+    private static let mediumCoverInset: CGFloat = 10
+
     private var mediumBody: some View {
-        HStack(spacing: 12) {
-            cover.frame(width: 130, height: 130)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .shadow(color: .black.opacity(0.35), radius: 7, y: 4)
-            VStack(alignment: .leading, spacing: 0) {
-                titles(titleSize: 15, artistSize: 13)
-                    .padding(.top, 6)
-                Spacer(minLength: 6)
-                WaveformView(levels: levels, accent: accent, timing: timing, snapshot: snapshot)
-                    .frame(height: 30)
-                Spacer(minLength: 6)
-                transport(small: 20, main: 24)
-                    .padding(.horizontal, 4)
-                    .padding(.bottom, 4)
+        GeometryReader { geo in
+            let side = max(geo.size.height - 2 * Self.mediumCoverInset, 0)
+            HStack(spacing: 12) {
+                cover.frame(width: side, height: side)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .shadow(color: .black.opacity(0.35), radius: 7, y: 4)
+                // The text column keeps 14 pt from the widget's edges.
+                VStack(alignment: .leading, spacing: 0) {
+                    titles(titleSize: 15, artistSize: 13)
+                        .padding(.top, 6)
+                    Spacer(minLength: 6)
+                    WaveformView(levels: levels, accent: accent, timing: timing, snapshot: snapshot)
+                        .frame(height: 30)
+                    Spacer(minLength: 6)
+                    transport(small: 20, main: 24)
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 4)
+                }
+                .padding(.vertical, 4)
+                .padding(.trailing, 4)
             }
+            .padding(Self.mediumCoverInset)
         }
-        .padding(14)
     }
 
     private var largeBody: some View {
