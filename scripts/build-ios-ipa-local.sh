@@ -196,6 +196,9 @@ for FLAVOR in "${FLAVORS[@]}"; do
     # signature seals over the freshly signed dependencies.
     find "$STAGE/Payload/${RAMUS_PRODUCT_NAME}.app/Frameworks" -name "*.framework" -depth \
         -exec codesign --force --sign - --timestamp=none {} \;
+    # The home-screen widget extension is nested code too.
+    find "$STAGE/Payload/${RAMUS_PRODUCT_NAME}.app/PlugIns" -name "*.appex" -depth \
+        -exec codesign --force --sign - --timestamp=none {} \;
     codesign --force --sign - --timestamp=none "$STAGE/Payload/${RAMUS_PRODUCT_NAME}.app"
 
     if [[ "$FLAVOR" == "dev" ]]; then

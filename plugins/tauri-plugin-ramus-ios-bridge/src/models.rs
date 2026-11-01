@@ -218,3 +218,11 @@ pub struct NetworkInfoResponse {
     pub is_constrained: bool,
     pub satisfied: bool,
 }
+
+/// Response shape for `widgetContainerPath`: the widget's folder inside the
+/// shared App Group container, or an empty `path` when there is none.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetContainerResponse {
+    pub path: String,
+}

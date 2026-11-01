@@ -349,6 +349,7 @@ pub async fn clear_queue(app: AppHandle, state: State<'_, AppState>) -> CmdResul
     }
     stop_local_playback(&state);
     crate::queue_persist::forget();
+    state.widget.notify();
 
     emit_playback_state(
         &app,

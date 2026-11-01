@@ -41,6 +41,7 @@ pub mod queue_persist;
 pub mod session_reporter;
 pub mod stall_watchdog;
 pub mod state;
+pub mod widget;
 
 /// Cheap "is the internet reachable" probe. Races bare-TCP connects to
 /// well-known, always-on endpoints (Cloudflare 1.1.1.1 and Google 8.8.8.8).
@@ -1116,6 +1117,7 @@ pub fn run() {
                 mc_reanchor: mc_reanchor.clone(),
                 cast: crate::cast::CastRuntime::default(),
                 native_visualizer: native_visualizer.clone(),
+                widget: crate::widget::WidgetPublisher::new(),
             };
 
             // Restore previous session. State is set synchronously (no blocking
@@ -1195,6 +1197,10 @@ pub fn run() {
                                             crate::commands::downloads::recompute_image_pins(
                                                 &state,
                                             );
+                                            // The setup-time publish ran before the
+                                            // library was readable: repaint with the
+                                            // album's colours.
+                                            state.widget.notify();
                                         }
                                     }
                                 }
@@ -1650,6 +1656,15 @@ pub fn run() {
             // from their own call sites.
             crate::queue_persist::spawn(app_handle.clone());
 
+            // Home-screen widget: publish the restored state, then let any
+            // widget intent that launched the app go ahead.
+            {
+                let state = app.state::<AppState>();
+                state.widget.attach(app_handle.clone());
+                state.widget.publish_now();
+            }
+            crate::widget::ffi::mark_ready(app_handle.clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1686,6 +1701,7 @@ pub fn run() {
             commands::library::get_art_url,
             commands::library::get_album_colors,
             commands::library::set_album_palette,
+            commands::library::set_album_art_colors,
             commands::library::get_cache_stats,
             commands::library::get_distinct_countries,
             commands::library::get_all_collection_names,

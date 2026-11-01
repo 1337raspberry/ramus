@@ -4,6 +4,7 @@ import Network
 import RamusVisualiser
 import Tauri
 import UIKit
+import WidgetKit
 import WebKit
 import os
 
@@ -421,6 +422,29 @@ class MpvBridgePlugin: Plugin {
 
     @objc public func nowPlayingClear(_ invoke: Invoke) throws {
         nowPlaying?.clear()
+        invoke.resolve([:])
+    }
+
+    // MARK: - Home-screen widget
+
+    /// The widget's folder inside the App Group container named by the
+    /// bundle's `RamusAppGroup` key, created if missing. Resolves an empty
+    /// path when the build carries no App Group.
+    @objc public func widgetContainerPath(_ invoke: Invoke) throws {
+        guard let group = Bundle.main.object(forInfoDictionaryKey: "RamusAppGroup") as? String,
+              !group.isEmpty,
+              let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)
+        else {
+            invoke.resolve(["path": ""])
+            return
+        }
+        let dir = root.appendingPathComponent("widget", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        invoke.resolve(["path": dir.path])
+    }
+
+    @objc public func widgetReload(_ invoke: Invoke) throws {
+        WidgetCenter.shared.reloadTimelines(ofKind: "RamusPlayer")
         invoke.resolve([:])
     }
 

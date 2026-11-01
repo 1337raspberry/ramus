@@ -45,6 +45,15 @@ impl MediaControlsHandle {
             .find_map(|&size| cache.get(thumb, size))
             .map(|p| format!("file://{}", p.display()))
     }
+
+    /// Everything the OS media controls hear about, the home-screen widget
+    /// hears about too. `try_state` covers the setup window before
+    /// `AppState` is managed.
+    fn notify_widget(&self) {
+        if let Some(state) = self.app.try_state::<crate::state::AppState>() {
+            state.widget.notify();
+        }
+    }
 }
 
 impl MediaKeyHandler for MediaControlsHandle {
@@ -63,6 +72,7 @@ impl MediaKeyHandler for MediaControlsHandle {
         if let Err(e) = self.app.ramus_ios_bridge().now_playing_update(payload) {
             log::warn!("nowPlayingUpdate failed: {e}");
         }
+        self.notify_widget();
     }
 
     fn update_playback_state(&self, is_playing: bool, position: f64) {
@@ -75,6 +85,7 @@ impl MediaKeyHandler for MediaControlsHandle {
         if let Err(e) = self.app.ramus_ios_bridge().now_playing_update(payload) {
             log::warn!("nowPlayingUpdate (state) failed: {e}");
         }
+        self.notify_widget();
     }
 
     fn clear(&self) {
@@ -82,6 +93,7 @@ impl MediaKeyHandler for MediaControlsHandle {
         if let Err(e) = self.app.ramus_ios_bridge().now_playing_clear() {
             log::warn!("nowPlayingClear failed: {e}");
         }
+        self.notify_widget();
     }
 }
 

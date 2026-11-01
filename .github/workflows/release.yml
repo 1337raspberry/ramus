@@ -718,6 +718,8 @@ jobs:
           # Order matters: the outer .app signature must seal over its
           # dependencies' fresh signatures.
           find build/Payload/ramus.app/Frameworks -name "*.framework" -depth -exec codesign --force --sign - --timestamp=none {} \;
+          # The home-screen widget extension is nested code too.
+          find build/Payload/ramus.app/PlugIns -name "*.appex" -depth -exec codesign --force --sign - --timestamp=none {} \;
           codesign --force --sign - --timestamp=none build/Payload/ramus.app
 
           cd build

@@ -55,6 +55,9 @@ pub struct AppState {
     /// Whether the native full-screen visualiser is showing, and the
     /// queue that forwards the spectrum to it (see `native_visualizer`).
     pub native_visualizer: Arc<crate::native_visualizer::NativeVisualizerLink>,
+    /// Publishes playback state for the home-screen widget (iOS only; a
+    /// no-op elsewhere).
+    pub widget: crate::widget::WidgetPublisher,
 }
 
 impl AppState {

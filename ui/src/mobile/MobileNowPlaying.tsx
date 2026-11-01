@@ -7,6 +7,7 @@ import type { Album } from "../lib/types";
 import {
   ART_SIZE,
   setAlbumPalette,
+  setAlbumArtColors,
   togglePlayPause,
   nextTrack,
   previousTrack,
@@ -137,7 +138,12 @@ export default function MobileNowPlaying({
       // lib/blurArt.ts). Independent of the palette cache below, which
       // only feeds the accent.
       const corners = extractCornerColors(img);
-      if (corners) applyUltraBlurColors(corners, "extracted");
+      if (corners) {
+        applyUltraBlurColors(corners, "extracted");
+        if (track?.albumKey && capturedThumb) {
+          setAlbumArtColors(track.albumKey, capturedThumb, corners).catch(() => {});
+        }
+      }
       const existing = usePlaybackStore.getState().vibrantPalette;
       if (existing) {
         const [r, g, b] = accentFromPalette(existing);

@@ -268,6 +268,22 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
 
+    /// The home-screen widget's folder in the shared App Group container,
+    /// created if needed; `None` when the build has no App Group.
+    pub fn widget_container_path(&self) -> crate::Result<Option<String>> {
+        let response: WidgetContainerResponse = self
+            .0
+            .run_mobile_plugin("widgetContainerPath", Empty::default())?;
+        Ok(Some(response.path).filter(|p| !p.is_empty()))
+    }
+
+    /// Ask WidgetKit to re-read the widget's snapshot.
+    pub fn widget_reload(&self) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin::<Empty>("widgetReload", Empty::default())?;
+        Ok(())
+    }
+
     pub fn now_playing_clear(&self) -> crate::Result<()> {
         self.0
             .run_mobile_plugin::<Empty>("nowPlayingClear", Empty::default())?;

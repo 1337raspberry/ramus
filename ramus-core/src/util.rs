@@ -1,4 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+
+use rand::seq::SliceRandom;
+use rand::Rng;
+
+use crate::models::Track;
 
 /// Lossless audio codecs (case-insensitive matching via `is_lossless_codec`).
 pub const LOSSLESS_CODECS: &[&str] = &["flac", "alac", "wav", "aiff", "aif", "pcm"];
@@ -301,9 +307,165 @@ impl<T> DropOldestQueue<T> {
     }
 }
 
+/// Stratified shuffle: spreads each key-group's items at ~1/K average spacing
+/// across the result. A plain Fisher–Yates is uniformly random, but uniform
+/// randomness clusters — a large same-key group lands back-to-back runs often
+/// enough to read as "not shuffled". Each group is shuffled internally, then
+/// its members are placed at jittered evenly-spaced positions and the pool is
+/// sorted by position, so a group with K members lands roughly every 1/K of
+/// the list while single-member groups stay fully random.
+pub fn balanced_shuffle<T, K: Eq + Hash>(
+    items: Vec<T>,
+    key_of: impl Fn(&T) -> K,
+    rng: &mut impl Rng,
+) -> Vec<T> {
+    let mut group_of: HashMap<K, usize> = HashMap::new();
+    let mut groups: Vec<Vec<T>> = Vec::new();
+    for item in items {
+        let key = key_of(&item);
+        let idx = *group_of.entry(key).or_insert_with(|| {
+            groups.push(Vec::new());
+            groups.len() - 1
+        });
+        groups[idx].push(item);
+    }
+
+    let mut placed: Vec<(f64, T)> = Vec::new();
+    for mut group in groups {
+        group.shuffle(rng);
+        let len = group.len() as f64;
+        for (i, item) in group.into_iter().enumerate() {
+            placed.push(((i as f64 + rng.gen::<f64>()) / len, item));
+        }
+    }
+
+    placed.sort_by(|a, b| a.0.total_cmp(&b.0));
+    placed.into_iter().map(|(_, item)| item).collect()
+}
+
+/// The artist a track is grouped under when shuffling: the track's own
+/// artist credit when it has one, else the album artist, case-folded.
+pub fn track_shuffle_key(track: &Track) -> String {
+    track
+        .track_artist
+        .as_deref()
+        .unwrap_or(&track.artist_name)
+        .to_lowercase()
+}
+
+/// Artist-stratified track shuffle — the standard for every queue-feeding
+/// shuffle, so one artist's tracks spread across the queue instead of
+/// clumping.
+pub fn shuffle_tracks(tracks: Vec<Track>, rng: &mut impl Rng) -> Vec<Track> {
+    balanced_shuffle(tracks, track_shuffle_key, rng)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::{rngs::StdRng, SeedableRng};
+
+    fn shuffle_track(key: &str, artist_name: &str, track_artist: Option<&str>) -> Track {
+        Track {
+            rating_key: key.into(),
+            title: "Song".into(),
+            artist_name: artist_name.into(),
+            track_artist: track_artist.map(String::from),
+            album_title: "Album".into(),
+            album_key: None,
+            index: None,
+            duration: 0.0,
+            codec: None,
+            part_key: None,
+            thumb: None,
+            is_favourite: false,
+            bitrate: None,
+            disc_number: None,
+            file_size_bytes: None,
+            rating_count: None,
+            view_count: None,
+            last_viewed_at: None,
+        }
+    }
+
+    #[test]
+    fn balanced_shuffle_keeps_every_item() {
+        let items: Vec<(usize, u8)> = (0..50).map(|i| (i, (i % 5) as u8)).collect();
+        let mut rng = StdRng::seed_from_u64(1);
+        let mut out = balanced_shuffle(items.clone(), |&(_, k)| k, &mut rng);
+        out.sort();
+        assert_eq!(out, items);
+    }
+
+    fn longest_run_of(items: &[String], key: &str) -> usize {
+        let (mut longest, mut run) = (0, 0);
+        for s in items {
+            if s == key {
+                run += 1;
+                longest = longest.max(run);
+            } else {
+                run = 0;
+            }
+        }
+        longest
+    }
+
+    #[test]
+    fn balanced_shuffle_spreads_a_large_group() {
+        // The stratification bounds where each member lands, not how long a
+        // run can get, so compare against a plain shuffle over many seeds:
+        // on 20 same-key items among 20 singletons the balanced longest run
+        // averages about 3.6 against about 4.6 for a uniform shuffle.
+        let mut items: Vec<String> = (0..20).map(|_| "a".to_string()).collect();
+        items.extend((0..20).map(|i| format!("solo{i}")));
+        let seeds = 500;
+        let (mut balanced, mut uniform) = (0usize, 0usize);
+        for seed in 0..seeds {
+            let mut rng = StdRng::seed_from_u64(seed);
+            balanced += longest_run_of(
+                &balanced_shuffle(items.clone(), |s| s.clone(), &mut rng),
+                "a",
+            );
+            let mut plain = items.clone();
+            plain.shuffle(&mut rng);
+            uniform += longest_run_of(&plain, "a");
+        }
+        let (balanced, uniform) = (
+            balanced as f64 / seeds as f64,
+            uniform as f64 / seeds as f64,
+        );
+        assert!(
+            balanced + 0.5 < uniform,
+            "balanced mean longest run {balanced:.2} vs uniform {uniform:.2}"
+        );
+    }
+
+    #[test]
+    fn shuffle_tracks_keys_on_track_artist_case_insensitively() {
+        assert_eq!(track_shuffle_key(&shuffle_track("1", "AFI", None)), "afi");
+        assert_eq!(
+            track_shuffle_key(&shuffle_track("2", "Various", Some("afi"))),
+            "afi"
+        );
+        assert_eq!(
+            track_shuffle_key(&shuffle_track("3", "Various", Some("Davey Havok"))),
+            "davey havok"
+        );
+    }
+
+    #[test]
+    fn shuffle_tracks_keeps_every_track() {
+        let tracks: Vec<Track> = (0..12)
+            .map(|i| shuffle_track(&i.to_string(), &format!("Artist {}", i % 3), None))
+            .collect();
+        let mut rng = StdRng::seed_from_u64(5);
+        let mut keys: Vec<String> = shuffle_tracks(tracks, &mut rng)
+            .into_iter()
+            .map(|t| t.rating_key)
+            .collect();
+        keys.sort_by_key(|k| k.parse::<u32>().unwrap());
+        assert_eq!(keys, (0..12).map(|i| i.to_string()).collect::<Vec<_>>());
+    }
 
     #[test]
     fn test_is_loopback_uri_ipv4() {

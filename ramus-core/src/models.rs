@@ -199,12 +199,23 @@ pub struct VibrantPalette {
     pub light_muted: Option<String>,
 }
 
+/// Corner colours computed on the client from a decoded cover, with the
+/// thumb path they were computed from (a changed cover invalidates them).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtBlurColors {
+    pub thumb: String,
+    pub colors: UltraBlurColors,
+}
+
 /// UltraBlur colors + cached vibrant palette returned from the database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlbumColorInfo {
     pub colors: Option<UltraBlurColors>,
     pub palette: Option<VibrantPalette>,
+    #[serde(default)]
+    pub art_colors: Option<ArtBlurColors>,
 }
 
 // --- AlbumFilterParams ---

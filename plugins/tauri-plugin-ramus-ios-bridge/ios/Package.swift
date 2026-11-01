@@ -57,6 +57,7 @@ let package = Package(
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("MediaPlayer"),
                 .linkedFramework("Security"),
+                .linkedFramework("WidgetKit"),
             ]
         ),
         .testTarget(

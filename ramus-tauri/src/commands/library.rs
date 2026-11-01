@@ -2,7 +2,7 @@ use tauri::State;
 
 use ramus_core::cache::db::CacheStats;
 use ramus_core::genre::node::GenreNode;
-use ramus_core::models::{Album, AlbumColorInfo, AlbumFilterParams, ArtistInfo, Track, VibrantPalette};
+use ramus_core::models::{Album, AlbumColorInfo, AlbumFilterParams, ArtBlurColors, ArtistInfo, Track, VibrantPalette};
 use ramus_core::search::engine::GenreExpander;
 use ramus_core::util::{exclusion_window, plex_art_url};
 use rand::seq::SliceRandom;
@@ -625,7 +625,23 @@ pub async fn set_album_palette(
     source_id: String,
     palette: VibrantPalette,
 ) -> CmdResult<()> {
-    with_cache(&state, |db| db.set_album_palette(&source_id, &palette))
+    with_cache(&state, |db| db.set_album_palette(&source_id, &palette))?;
+    // The widget's accent comes from the palette.
+    state.widget.notify();
+    Ok(())
+}
+
+/// Saves the corner colours the client computed from an album's decoded
+/// cover, so the home-screen widget can paint the same backdrop.
+#[tauri::command]
+pub async fn set_album_art_colors(
+    state: State<'_, AppState>,
+    source_id: String,
+    colors: ArtBlurColors,
+) -> CmdResult<()> {
+    with_cache(&state, |db| db.set_album_art_colors(&source_id, &colors))?;
+    state.widget.notify();
+    Ok(())
 }
 
 #[tauri::command]

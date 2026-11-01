@@ -203,6 +203,11 @@ export const getAlbumColors = (sourceId: string) =>
 export const setAlbumPalette = (sourceId: string, palette: VibrantPalette) =>
   invoke<void>("set_album_palette", { sourceId, palette });
 
+/** Saves corner colours computed from an album's decoded cover, tagged with
+ * the thumb they came from, for the iOS home-screen widget. */
+export const setAlbumArtColors = (sourceId: string, thumb: string, colors: UltraBlurColors) =>
+  invoke<void>("set_album_art_colors", { sourceId, colors: { thumb, colors } });
+
 export const getCacheStats = () => invoke<CacheStats>("get_cache_stats");
 
 export const getDistinctCountries = () => invoke<string[]>("get_distinct_countries");

@@ -36,7 +36,7 @@ fi
 
 export RAMUS_VERSION RAMUS_BUILD
 echo "regen-ios-project: RAMUS_VERSION=${RAMUS_VERSION} RAMUS_BUILD=${RAMUS_BUILD} flavour=${RAMUS_FLAVOR}"
-echo "regen-ios-project: ${RAMUS_PRODUCT_NAME}.app / ${RAMUS_BUNDLE_ID} / ${RAMUS_APPICON}"
+echo "regen-ios-project: ${RAMUS_PRODUCT_NAME}.app / ${RAMUS_BUNDLE_ID} / ${RAMUS_APPICON} / ${RAMUS_APP_GROUP}"
 
 cd ramus-tauri/gen/apple
 
@@ -72,3 +72,5 @@ check_setting() {
 check_setting PRODUCT_NAME "${RAMUS_PRODUCT_NAME}"
 check_setting PRODUCT_BUNDLE_IDENTIFIER "${RAMUS_BUNDLE_ID}"
 check_setting ASSETCATALOG_COMPILER_APPICON_NAME "${RAMUS_APPICON}"
+check_setting PRODUCT_BUNDLE_IDENTIFIER "${RAMUS_WIDGET_BUNDLE_ID}"
+check_setting RAMUS_APP_GROUP "${RAMUS_APP_GROUP}"

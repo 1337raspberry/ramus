@@ -45,6 +45,7 @@ pub async fn update_settings(
 
     let prev_genre_source = state.settings.read().genre_source;
     let prev_offline_mode = state.settings.read().offline_mode;
+    let prev_resume = state.settings.read().resume_queue_on_launch;
     let prev_config = state.settings.read().to_playback_config();
 
     // Turning resume off must delete what's already on disk, not just stop
@@ -124,7 +125,12 @@ pub async fn update_settings(
     }
 
     ramus_core::settings::save(&settings).map_err(|e| e.to_string())?;
+    let resume_changed = settings.resume_queue_on_launch != prev_resume;
     *state.settings.write() = settings;
+    // The widget's Resume tile follows this setting.
+    if resume_changed {
+        state.widget.notify();
+    }
     Ok(())
 }
 

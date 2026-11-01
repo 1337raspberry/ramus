@@ -305,6 +305,15 @@ impl CacheDatabase {
             conn.execute("ALTER TABLE albums ADD COLUMN viewCount INTEGER", [])?;
         }
 
+        let has_art_blur_colors: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('albums') WHERE name = 'artBlurColors'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has_art_blur_colors == 0 {
+            conn.execute("ALTER TABLE albums ADD COLUMN artBlurColors TEXT", [])?;
+        }
+
         let has_format: i64 = conn.query_row(
             "SELECT COUNT(*) FROM pragma_table_info('albums') WHERE name = 'format'",
             [],
@@ -2428,5 +2437,39 @@ mod tests {
         db.set_album_palette("al1", &palette).unwrap();
         let info = db.album_colors("al1").unwrap();
         assert_eq!(info.palette.unwrap().vibrant.as_deref(), Some("112233"));
+    }
+
+    fn art_colors(thumb: &str, top_left: &str) -> crate::models::ArtBlurColors {
+        crate::models::ArtBlurColors {
+            thumb: thumb.into(),
+            colors: crate::models::UltraBlurColors {
+                top_left: top_left.into(),
+                top_right: "222222".into(),
+                bottom_right: "333333".into(),
+                bottom_left: "444444".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn art_colors_round_trip_on_a_first_release_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = first_release_database(&dir);
+        let db = CacheDatabase::open(&path).unwrap();
+        assert_eq!(db.album_colors("al1").unwrap().art_colors, None);
+        let saved = art_colors("/library/metadata/1/thumb/1700000000", "111111");
+        db.set_album_art_colors("al1", &saved).unwrap();
+        assert_eq!(db.album_colors("al1").unwrap().art_colors, Some(saved));
+    }
+
+    #[test]
+    fn art_colors_are_replaced_by_a_later_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = first_release_database(&dir);
+        let db = CacheDatabase::open(&path).unwrap();
+        db.set_album_art_colors("al1", &art_colors("/t/1", "111111")).unwrap();
+        let newer = art_colors("/t/2", "aaaaaa");
+        db.set_album_art_colors("al1", &newer).unwrap();
+        assert_eq!(db.album_colors("al1").unwrap().art_colors, Some(newer));
     }
 }

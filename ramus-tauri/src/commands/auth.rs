@@ -349,6 +349,9 @@ pub async fn finalize_onboarding(
 
     state.discovered_servers.lock().clear();
 
+    // The widget leaves its signed-out face.
+    state.widget.notify();
+
     Ok(())
 }
 
@@ -397,6 +400,9 @@ pub async fn logout(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()>
     // disk (and in the iOS Keychain) — surface that to the caller rather
     // than reporting a clean logout. On next launch the startup probe chain
     // would otherwise auto-restore the session.
+    // The widget drops the account's track and cover straight away.
+    state.widget.publish_now();
+
     if let Some(e) = store_err {
         return Err(format!("logout incomplete — persisted credentials not removed: {e}"));
     }

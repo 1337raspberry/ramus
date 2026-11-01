@@ -12,7 +12,7 @@
 #
 #     . scripts/ios-flavor.sh dev
 #
-# It exports the three values project.yml substitutes at xcodegen time.
+# It exports the values project.yml substitutes at xcodegen time.
 # Defaults to stable, so any path that forgets to select a flavour
 # produces the shipping configuration rather than something novel.
 #
@@ -24,6 +24,10 @@
 # every time; distinct paths let one shared derived-data directory keep
 # both flavours warm. It also doubles as the home-screen label, since
 # CFBundleName follows PRODUCT_NAME.
+#
+# Each flavour also gets its own App Group, the shared folder the app and
+# its home-screen widget exchange state through, so a dev build's widget
+# never shows the stable build's playback.
 
 RAMUS_FLAVOR="${1:-stable}"
 
@@ -32,11 +36,13 @@ case "$RAMUS_FLAVOR" in
         RAMUS_PRODUCT_NAME="ramus"
         RAMUS_BUNDLE_ID="com.ramus.app"
         RAMUS_APPICON="AppIcon"
+        RAMUS_APP_GROUP="group.com.ramus.app"
         ;;
     dev)
         RAMUS_PRODUCT_NAME="ramusDEV"
         RAMUS_BUNDLE_ID="com.ramus.app.dev"
         RAMUS_APPICON="AppIconDev"
+        RAMUS_APP_GROUP="group.com.ramus.app.dev"
         ;;
     *)
         echo "ios-flavor: unknown flavour '$RAMUS_FLAVOR' (expected 'stable' or 'dev')" >&2
@@ -44,4 +50,6 @@ case "$RAMUS_FLAVOR" in
         ;;
 esac
 
-export RAMUS_FLAVOR RAMUS_PRODUCT_NAME RAMUS_BUNDLE_ID RAMUS_APPICON
+RAMUS_WIDGET_BUNDLE_ID="${RAMUS_BUNDLE_ID}.widget"
+
+export RAMUS_FLAVOR RAMUS_PRODUCT_NAME RAMUS_BUNDLE_ID RAMUS_APPICON RAMUS_APP_GROUP RAMUS_WIDGET_BUNDLE_ID

@@ -115,6 +115,12 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn now_playing_update(&self, _metadata: NowPlayingMetadata) -> crate::Result<()> {
         Ok(())
     }
+    pub fn widget_container_path(&self) -> crate::Result<Option<String>> {
+        Ok(None)
+    }
+    pub fn widget_reload(&self) -> crate::Result<()> {
+        Ok(())
+    }
     pub fn now_playing_clear(&self) -> crate::Result<()> {
         Ok(())
     }

@@ -20,6 +20,24 @@ pub fn normalize_db_levels(db_levels: &[f32]) -> Vec<f32> {
     linear.iter().map(|v| v / max_val).collect()
 }
 
+/// Shrink a waveform to `points` values for a small display: the mean of
+/// each bucket, clamped to 0..=1 and rounded to three decimals so the result
+/// stays compact as JSON. Input already no longer than `points` is returned
+/// as it is.
+pub fn downsample_levels(levels: &[f32], points: usize) -> Vec<f32> {
+    if levels.len() <= points || points == 0 {
+        return levels.to_vec();
+    }
+    let n = levels.len();
+    (0..points)
+        .map(|j| {
+            let bucket = &levels[j * n / points..(j + 1) * n / points];
+            let mean = bucket.iter().sum::<f32>() / bucket.len() as f32;
+            (mean.clamp(0.0, 1.0) * 1000.0).round() / 1000.0
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +92,34 @@ mod tests {
         let result = normalize_db_levels(&[-6.0, 0.0]);
         assert!((result[1] - 1.0).abs() < 0.001);
         assert!((result[0] - 0.501).abs() < 0.01);
+    }
+
+    #[test]
+    fn downsample_600_to_96_is_mean_per_bucket() {
+        let levels: Vec<f32> = (0..600).map(|i| (i % 2) as f32).collect();
+        let out = downsample_levels(&levels, 96);
+        assert_eq!(out.len(), 96);
+        // 600 / 96 is 6.25, so buckets hold 6 or 7 alternating 0/1 values.
+        for v in &out {
+            assert!((0.42..=0.58).contains(v), "bucket mean {v}");
+        }
+        let ramp: Vec<f32> = (0..192).map(|i| i as f32 / 191.0).collect();
+        let r = downsample_levels(&ramp, 96);
+        assert_eq!(
+            r[0],
+            ((0.0 + 1.0 / 191.0) / 2.0 * 1000.0f32).round() / 1000.0
+        );
+    }
+
+    #[test]
+    fn downsample_short_input_unchanged() {
+        assert_eq!(downsample_levels(&[0.25, 0.5], 96), vec![0.25, 0.5]);
+        assert!(downsample_levels(&[], 96).is_empty());
+    }
+
+    #[test]
+    fn downsample_clamps_and_rounds() {
+        let out = downsample_levels(&[1.5, 1.5, -0.2, -0.2, 0.12345, 0.12345], 3);
+        assert_eq!(out, vec![1.0, 0.0, 0.123]);
     }
 }

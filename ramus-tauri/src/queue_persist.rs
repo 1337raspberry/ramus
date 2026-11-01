@@ -78,6 +78,10 @@ pub fn save_blocking(app: &AppHandle) {
 /// `tauri::async_runtime::spawn`, not `tokio::spawn` — mpv callbacks run on
 /// the libmpv event-loop thread, which has no tokio reactor).
 pub fn save_soon(app: &AppHandle) {
+    // A queue change can change what the widget's Resume would pick up.
+    if let Some(state) = app.try_state::<crate::state::AppState>() {
+        state.widget.notify();
+    }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         save_blocking(&app);
