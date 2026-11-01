@@ -2,8 +2,70 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { isHDR } from "../lib/hdr";
 import { formatDuration } from "../lib/format";
+import {
+  MORPH_MS,
+  blendLevels,
+  easeInOut,
+  morphPointCount,
+  resampleLevels,
+} from "../lib/waveformMorph";
 
 const UNPLAYED_ALPHA = isHDR ? 0.15 : 0.25;
+
+/** How long the previous track's shape is held after the store drops it on
+ * a track change, waiting for the new levels before easing to a flat line. */
+const HOLD_MS = 2500;
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** Fill `canvas` with the waveform silhouette for `levels` at `w`×`h` CSS px. */
+function paintShape(
+  canvas: HTMLCanvasElement,
+  levels: readonly number[] | null,
+  w: number,
+  h: number,
+  dpr: number,
+) {
+  if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+  }
+  const ctx = canvas.getContext("2d")!;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (!levels || levels.length === 0) return;
+  const midY = h / 2;
+  const maxAmp = midY - 4;
+  const count = levels.length;
+  const stepX = w / count;
+
+  ctx.beginPath();
+  let x = 0;
+  let amp = levels[0] * maxAmp;
+  ctx.moveTo(x, midY - amp);
+  for (let i = 1; i < count; i++) {
+    x = i * stepX;
+    amp = levels[i] * maxAmp;
+    const cpX = ((i - 1) * stepX + x) / 2;
+    ctx.quadraticCurveTo(cpX, midY - amp, x, midY - amp);
+  }
+  for (let i = count - 1; i >= 0; i--) {
+    x = i * stepX;
+    amp = levels[i] * maxAmp;
+    if (i === count - 1) {
+      ctx.lineTo(x, midY + amp);
+    } else {
+      const cpX = ((i + 1) * stepX + x) / 2;
+      ctx.quadraticCurveTo(cpX, midY + amp, x, midY + amp);
+    }
+  }
+  ctx.closePath();
+  // Fill white; colour comes from a later composite pass.
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+}
 
 export default function WaveformSeekBar() {
   const levels = usePlaybackStore((s) => s.waveformLevels);
@@ -19,8 +81,19 @@ export default function WaveformSeekBar() {
 
   // Cache the static waveform shape on an offscreen canvas.
   const shapeCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const lastLevelsRef = useRef<number[] | null>(null);
   const lastSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
+
+  // The levels currently drawn. They differ from the store's while the
+  // previous track's shape is held, and during a morph, when they are the
+  // in-between frame.
+  const shownRef = useRef<number[] | null>(null);
+  const morphRafRef = useRef(0);
+  const holdTimerRef = useRef(0);
+  // False until the first levels effect has run: what is there on mount is
+  // drawn as is, not morphed in.
+  const primedRef = useRef(false);
+  const isBufferingRef = useRef(isBuffering);
+  isBufferingRef.current = isBuffering;
 
   // Bumped by the ResizeObserver on container size change, and listed
   // in both effects' deps so the offscreen shape and progress overlay
@@ -54,6 +127,7 @@ export default function WaveformSeekBar() {
     return () => ro.disconnect();
   }, []);
 
+  // Resize the backing stores and repaint the shape at the new size.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -63,57 +137,15 @@ export default function WaveformSeekBar() {
     const w = rect.width;
     const h = rect.height;
 
-    // Resize canvas backing store only when dimensions change.
-    const needsResize = lastSizeRef.current.w !== w || lastSizeRef.current.h !== h;
-    if (needsResize) {
+    if (lastSizeRef.current.w !== w || lastSizeRef.current.h !== h) {
       canvas.width = w * dpr;
       canvas.height = h * dpr;
       lastSizeRef.current = { w, h };
     }
-
-    if (levels !== lastLevelsRef.current || needsResize) {
-      lastLevelsRef.current = levels;
-      const offscreen = document.createElement("canvas");
-      offscreen.width = w * dpr;
-      offscreen.height = h * dpr;
-      const ctx = offscreen.getContext("2d")!;
-      ctx.scale(dpr, dpr);
-      const midY = h / 2;
-
-      if (levels && levels.length > 0) {
-        const maxAmp = midY - 4;
-        const count = levels.length;
-        const stepX = w / count;
-
-        ctx.beginPath();
-        let x = 0;
-        let amp = levels[0] * maxAmp;
-        ctx.moveTo(x, midY - amp);
-        for (let i = 1; i < count; i++) {
-          x = i * stepX;
-          amp = levels[i] * maxAmp;
-          const cpX = ((i - 1) * stepX + x) / 2;
-          ctx.quadraticCurveTo(cpX, midY - amp, x, midY - amp);
-        }
-        for (let i = count - 1; i >= 0; i--) {
-          x = i * stepX;
-          amp = levels[i] * maxAmp;
-          if (i === count - 1) {
-            ctx.lineTo(x, midY + amp);
-          } else {
-            const cpX = ((i + 1) * stepX + x) / 2;
-            ctx.quadraticCurveTo(cpX, midY + amp, x, midY + amp);
-          }
-        }
-        ctx.closePath();
-        // Fill white; colour comes from a later composite pass.
-        ctx.fillStyle = "#fff";
-        ctx.fill();
-      }
-
-      shapeCanvasRef.current = offscreen;
-    }
-  }, [levels, sizeVersion]);
+    const shape = shapeCanvasRef.current ?? document.createElement("canvas");
+    paintShape(shape, shownRef.current, w, h, dpr);
+    shapeCanvasRef.current = shape;
+  }, [sizeVersion]);
 
   // Draw one frame: the waveform silhouette + accent-tinted played fill at
   // the current `fraction`, plus — when `sweepFrac` is non-null — a sweeping
@@ -144,7 +176,8 @@ export default function WaveformSeekBar() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      if (shape && levels && levels.length > 0) {
+      const shown = shownRef.current;
+      if (shape && shown && shown.length > 0) {
         // Unplayed silhouette.
         ctx.globalAlpha = UNPLAYED_ALPHA;
         ctx.globalCompositeOperation = "source-over";
@@ -215,14 +248,73 @@ export default function WaveformSeekBar() {
 
       ctx.restore();
     },
-    [levels, fraction, sizeVersion],
+    [fraction, sizeVersion],
   );
 
-  // Static redraw on position/levels/size change. While buffering the RAF
+  // Static redraw on position/size change. While buffering the RAF
   // loop below owns the canvas, so skip here to avoid the two fighting.
   useEffect(() => {
     if (!isBuffering) drawFrame(null);
   }, [drawFrame, isBuffering]);
+
+  // Show new levels: straight away on mount or with reduced motion, else by
+  // morphing from what is drawn now. When the store drops the levels (a
+  // track change, before the new ones are fetched), the old shape is held
+  // for HOLD_MS and then eased to a flat line if nothing has arrived.
+  useEffect(() => {
+    cancelAnimationFrame(morphRafRef.current);
+    window.clearTimeout(holdTimerRef.current);
+
+    const repaint = (next: number[] | null) => {
+      shownRef.current = next;
+      const shape = shapeCanvasRef.current;
+      const { w, h } = lastSizeRef.current;
+      if (shape && w > 0) paintShape(shape, next, w, h, window.devicePixelRatio || 1);
+      if (!isBufferingRef.current) drawFrameRef.current(null);
+    };
+
+    const morphTo = (target: number[] | null) => {
+      const from = shownRef.current ?? [];
+      const to = target ?? [];
+      const n = morphPointCount(from, to);
+      const a = resampleLevels(from, n);
+      const b = resampleLevels(to, n);
+      let start: number | null = null;
+      const tick = (t: number) => {
+        if (start === null) start = t;
+        const p = Math.min(1, (t - start) / MORPH_MS);
+        if (p < 1) {
+          repaint(blendLevels(a, b, easeInOut(p)));
+          morphRafRef.current = requestAnimationFrame(tick);
+        } else {
+          repaint(target);
+        }
+      };
+      morphRafRef.current = requestAnimationFrame(tick);
+    };
+
+    const target = levels && levels.length > 0 ? levels : null;
+    const primed = primedRef.current;
+    primedRef.current = true;
+
+    if (!target) {
+      if (shownRef.current) holdTimerRef.current = window.setTimeout(() => morphTo(null), HOLD_MS);
+      return;
+    }
+    if (!primed || prefersReducedMotion()) {
+      repaint(target);
+      return;
+    }
+    morphTo(target);
+  }, [levels]);
+
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(morphRafRef.current);
+      window.clearTimeout(holdTimerRef.current);
+    },
+    [],
+  );
 
   // Buffering scanner: triangle-wave sweep (0→1→0), 1.6s period — slow enough
   // that the bounce reads as deliberate, fast enough to feel alive.
