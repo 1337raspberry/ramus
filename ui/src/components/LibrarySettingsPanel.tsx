@@ -26,6 +26,10 @@ import { HelperText } from "./HelperText";
 import { useToastStore } from "./Toast";
 
 const PRIVACY_POLICY_URL = "https://ramusplayer.app/privacy/";
+// Plex account settings; "Delete Account" sits at the bottom of the page. It
+// loads reliably, while a cold link to the deletion page itself can bounce
+// through Plex's home page before arriving.
+const PLEX_ACCOUNT_URL = "https://app.plex.tv/desktop/#!/settings/account";
 
 interface Props {
   onDismiss: () => void;
@@ -58,6 +62,7 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
   const [hasCustomGenres, setHasCustomGenres] = useState(false);
   const [showAcknowledgements, setShowAcknowledgements] = useState(false);
   const [showSpectrumConfirm, setShowSpectrumConfirm] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("playback");
   const isMobile = useIsMobile();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -298,14 +303,19 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
   useEffect(() => {
     if (!settingsLoaded) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !showAcknowledgements && !showSpectrumConfirm) {
+      if (
+        e.key === "Escape" &&
+        !showAcknowledgements &&
+        !showSpectrumConfirm &&
+        !showDeleteAccount
+      ) {
         e.preventDefault();
         onDismiss();
       }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onDismiss, showAcknowledgements, showSpectrumConfirm, settingsLoaded]);
+  }, [onDismiss, showAcknowledgements, showSpectrumConfirm, showDeleteAccount, settingsLoaded]);
 
   if (!settings) return null;
 
@@ -717,6 +727,9 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
               <div className="settings-section-header">ACCOUNT</div>
               <button className="settings-btn settings-signout" onClick={handleSignOut}>
                 Sign Out
+              </button>{" "}
+              <button className="settings-btn" onClick={() => setShowDeleteAccount(true)}>
+                Delete Plex Account…
               </button>
             </>
           )}
@@ -724,6 +737,18 @@ export default function LibrarySettingsPanel({ onDismiss, onSignOut }: Props) {
       </div>
       {showAcknowledgements && (
         <AcknowledgementsPanel onDismiss={() => setShowAcknowledgements(false)} />
+      )}
+      {showDeleteAccount && (
+        <ConfirmDialog
+          message="ramus has no accounts of its own: you sign in with your Plex account, which Plex manages. Deleting it removes it from every Plex app and server, and can't be undone. Open your Plex account settings, where Delete Account is at the bottom of the page?"
+          onConfirm={() => {
+            setShowDeleteAccount(false);
+            openExternalUrl(PLEX_ACCOUNT_URL).catch((e) =>
+              showError(`Couldn't open your Plex account settings: ${e}`),
+            );
+          }}
+          onCancel={() => setShowDeleteAccount(false)}
+        />
       )}
       {showSpectrumConfirm && (
         <ConfirmDialog
@@ -781,7 +806,7 @@ function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmDialogProps) {
   };
 
   return (
-    <div className="settings-backdrop" onClick={handleBackdropClick}>
+    <div className="settings-backdrop confirm-backdrop" onClick={handleBackdropClick}>
       <div className="confirm-dialog glass">
         <div className="confirm-dialog-message">{message}</div>
         <div className="confirm-dialog-actions">

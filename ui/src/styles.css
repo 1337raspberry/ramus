@@ -7768,6 +7768,13 @@ body.is-fullscreen .focus-singalong {
     -webkit-backdrop-filter: blur(8px);
   }
 
+  /* A confirm dialog is a centred card over the sheet, not a page: the
+     stretch alignment above would pull it into a full-height strip. */
+  .settings-backdrop.confirm-backdrop {
+    align-items: center;
+    justify-content: center;
+  }
+
   /* A full-screen chassis surface makes the now-playing surfaces
      unreachable — hide them outright instead of fighting WebKit's
      compositor: the mini player's promoted layers paint over even an
