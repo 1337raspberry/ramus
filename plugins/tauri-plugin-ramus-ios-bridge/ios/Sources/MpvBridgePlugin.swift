@@ -155,11 +155,18 @@ class MpvBridgePlugin: Plugin {
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playback, mode: .default, options: [])
-            try session.setActive(true)
         } catch {
-            invoke.reject("failed to activate audio session: \(error)")
+            invoke.reject("failed to set audio session category: \(error)")
             return
         }
+        // Activation can be refused here without anything being wrong: a
+        // widget button launches the app in the background, and while another
+        // app owns Now Playing iOS answers "cannot interrupt others" until the
+        // button's AudioPlaybackIntent runs. The session stays inactive and
+        // `ensureAudioActive()` retries before playback starts; the rest of
+        // this setup (remote commands, interruptions, Now Playing, path
+        // monitor) doesn't depend on it.
+        ensureAudioActive()
 
         DispatchQueue.main.async {
             UIApplication.shared.beginReceivingRemoteControlEvents()
@@ -203,6 +210,17 @@ class MpvBridgePlugin: Plugin {
         startPathMonitor()
 
         invoke.resolve([:])
+    }
+
+    /// Activate the playback session before anything that starts sound. A
+    /// no-op when it is already active; a refusal is logged and left to the
+    /// next attempt, since mpv's output then simply has no audio yet.
+    private func ensureAudioActive() {
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            log.notice("audio session not activated: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Start NWPathMonitor and forward every interface change to Rust as a
@@ -317,6 +335,10 @@ class MpvBridgePlugin: Plugin {
             return
         }
         let args = try invoke.parseArgs(LoadFileArgs.self)
+        // "append" only queues; "replace" and "append-play" start playback.
+        if args.mode != "append" {
+            ensureAudioActive()
+        }
         mpv.loadFile(args.url, mode: args.mode, options: args.options)
         invoke.resolve([:])
     }
@@ -333,6 +355,7 @@ class MpvBridgePlugin: Plugin {
 
     @objc public func mpvPlaylistPlayIndex(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(PlaylistIndexArgs.self)
+        ensureAudioActive()
         mpv?.playlistPlayIndex(args.index)
         invoke.resolve([:])
     }
@@ -357,6 +380,9 @@ class MpvBridgePlugin: Plugin {
 
     @objc public func mpvSetPause(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(PauseArgs.self)
+        if !args.paused {
+            ensureAudioActive()
+        }
         mpv?.setPause(args.paused)
         invoke.resolve([:])
     }
