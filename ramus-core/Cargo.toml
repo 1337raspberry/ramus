@@ -22,7 +22,7 @@ directories = "5"
 rand = "0.8"
 fuzzy-matcher = "0.3"
 strsim = "0.11"
-rusqlite = { version = "0.31", features = ["bundled", "column_decltype"] }
+rusqlite = { version = "0.41", features = ["bundled", "column_decltype"] }
 # Plex Companion players answer in XML (timelines, `/resources`).
 quick-xml = "0.41"
 # Parses the server's `Date` header (`PlexClient::server_time`).
