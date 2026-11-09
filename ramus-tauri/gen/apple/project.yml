@@ -106,6 +106,19 @@ targets:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        # Declares the UIScene lifecycle with a single scene. Apps built
+        # against the iOS 27 SDK fail to launch unless they adopt it,
+        # either through this manifest or an app delegate that answers
+        # application:configurationForConnectingSceneSession:options:.
+        # tao does the latter and installs the same delegate class at
+        # runtime; this entry states the adoption in the bundle itself.
+        # One scene keeps the app single-window (no iPad "New Window").
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default Configuration
+                UISceneDelegateClassName: TaoSceneDelegate
         # Substituted by xcodegen at generate-time from the RAMUS_VERSION
         # env var, which scripts/regen-ios-project.sh reads out of the
         # workspace Cargo.toml so iOS tracks the single-source-of-truth

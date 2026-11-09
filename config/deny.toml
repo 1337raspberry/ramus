@@ -69,18 +69,6 @@ ignore = [
     "RUSTSEC-2024-0419",  # gdkwayland
     "RUSTSEC-2024-0420",  # gdkx11
 
-    # unic-* Unicode crates — all five entries in the rust-unic
-    # project archived together (per github.com/rustsec/
-    # advisory-db/issues/2414). Reach us via
-    # tauri-utils → urlpattern → unic-ucd-ident. Drops when
-    # urlpattern migrates to icu4x; upstream issue open at
-    # whatwg/urlpattern. No safe upgrade today.
-    "RUSTSEC-2025-0075",  # unic-char-range
-    "RUSTSEC-2025-0080",  # unic-common
-    "RUSTSEC-2025-0081",  # unic-char-property
-    "RUSTSEC-2025-0098",  # unic-ucd-version
-    "RUSTSEC-2025-0100",  # unic-ucd-ident
-
     # proc-macro-error v1 deprecated by author in favour of
     # proc-macro-error2. Transitive via several macro crates in
     # the tauri tree; drops as those upgrade.

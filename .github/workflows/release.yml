@@ -425,17 +425,17 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
           path: ~/.cargo/bin/cargo-tauri
-          key: tauri-cli-2.11.1-${{ runner.os }}
+          key: tauri-cli-2.12.4-${{ runner.os }}
 
       # Pin to an exact patch version (note the leading `=`; without it
-      # cargo treats `2.11.1` as `^2.11.1` and could pick up 2.11.2 etc).
+      # cargo treats `2.12.4` as `^2.12.4` and could pick up 2.12.5 etc).
       # `--locked` makes cargo respect the Cargo.lock that ships with the
       # tauri-cli crate on crates.io, so we inherit Tauri's own dep
       # pinning for the ~1500 transitive crates rather than fresh-
       # resolving every time. Bump deliberately, not implicitly.
       - name: Install tauri CLI
         if: (matrix.id == 'android' || matrix.id == 'ios') && steps.cache-tauri-cli.outputs.cache-hit != 'true'
-        run: cargo install tauri-cli --locked --version '=2.11.1'
+        run: cargo install tauri-cli --locked --version '=2.12.4'
 
       # ── Android ────────────────────────────────────────────────────
       - name: Set up JDK 17
