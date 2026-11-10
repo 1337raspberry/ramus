@@ -59,3 +59,7 @@ tools/genre-editor/screenshots/
 # them just means a perpetually dirty working tree. Hand-written
 # capability files under `ramus-tauri/capabilities/` ARE tracked.
 ramus-tauri/gen/schemas/
+
+# Claude Code project configuration (skills, hooks, worktrees) is
+# per-developer tooling and stays local.
+.claude/
