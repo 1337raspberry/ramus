@@ -67,6 +67,8 @@ class MpvBridgePlugin: Plugin {
     private let nativeFeedLock = NSLock()
     /// The in-app sign-in sheet. Main queue only.
     private let webAuth = WebAuthSheet()
+    /// Main queue only.
+    private let haptics = Haptics()
 
     override func load(webview: WKWebView) {
         self.webView = webview
@@ -775,6 +777,16 @@ class MpvBridgePlugin: Plugin {
         invoke.resolve([:])
     }
 
+    // MARK: - Haptics
+
+    @objc public func haptic(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(HapticArgs.self)
+        DispatchQueue.main.async { [weak self] in
+            self?.haptics.play(effect: args.effect, value: args.value)
+        }
+        invoke.resolve([:])
+    }
+
     // MARK: - Native Search Bar
 
     @objc public func showNativeSearchBar(_ invoke: Invoke) throws {
@@ -987,6 +999,11 @@ class MpvBridgePlugin: Plugin {
 }
 
 // MARK: - Argument payloads
+
+class HapticArgs: Decodable {
+    let effect: String
+    let value: Double?
+}
 
 class LoadFileArgs: Decodable {
     let url: String

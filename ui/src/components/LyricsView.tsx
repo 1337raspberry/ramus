@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { haptic } from "../lib/haptics";
 import type { LyricsResult } from "../lib/types";
 import { usePlaybackStore, activeLineIndex } from "../stores/playbackStore";
 
@@ -45,6 +46,7 @@ export default function LyricsView({ lyrics, onSeek }: Props) {
     const ts = lyrics.lines[lineIndex].timestamp;
     if (ts === null) return;
     setFlashId(lyrics.lines[lineIndex].id);
+    haptic("pop");
     onSeek(ts);
     setTimeout(() => setFlashId(null), 300);
   };

@@ -13,6 +13,23 @@ pub async fn dismiss_keyboard(app: tauri::AppHandle) -> CmdResult<()> {
     Ok(())
 }
 
+/// Play a named haptic effect. Only the iPhone has any; elsewhere this does
+/// nothing.
+#[tauri::command]
+pub async fn haptic(app: tauri::AppHandle, effect: String, value: Option<f64>) -> CmdResult<()> {
+    #[cfg(target_os = "ios")]
+    {
+        use tauri_plugin_ramus_ios_bridge::RamusIosBridgeExt;
+        app.ramus_ios_bridge()
+            .haptic(&effect, value)
+            .map_err(|e| e.to_string())?;
+    }
+    let _ = app;
+    let _ = effect;
+    let _ = value;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn show_native_search_bar(
     app: tauri::AppHandle,

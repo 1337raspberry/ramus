@@ -503,6 +503,11 @@ export const openExternalUrl = (url: string) => invoke<void>("open_external_url"
 
 export const dismissKeyboard = () => invoke<void>("dismiss_keyboard");
 
+/** Play a named haptic effect (iOS; a no-op elsewhere). Call it through
+ * `lib/haptics.ts`, which owns the effect names. */
+export const playHaptic = (effect: string, value?: number) =>
+  invoke<void>("haptic", { effect, value });
+
 /** Enter or leave the full-screen visualiser's native presentation (iOS:
  * landscape, status bar and home indicator out of the way, and the screen
  * kept awake while `keepAwake`; a repeat enter updates just that). A no-op

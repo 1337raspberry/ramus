@@ -11,6 +11,9 @@ import MobileFilterPanel from "./MobileFilterPanel";
 /** Hold duration for the toolbar's long-press shortcuts (settings on the
  * genre button, shuffle-favourites on the Lists button). */
 const TOOLBAR_HOLD_MS = 1500;
+/** The toolbar doesn't scroll, so the hold's rumble only has to stay out of
+ * a plain tap's way. */
+const TOOLBAR_RUMBLE_DELAY_MS = 80;
 
 /** Accent ring that fills clockwise over the hold duration — pure CSS
  * animation, so no per-frame JS while the user holds. */
@@ -206,6 +209,7 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
   // so there's no gesture to disambiguate from.
   const genresPress = useLongPress({
     ms: TOOLBAR_HOLD_MS,
+    rumbleDelayMs: TOOLBAR_RUMBLE_DELAY_MS,
     moveCancelSq: 576,
     onLongPress: onOpenSettings,
     onClick: () => pick("genres"),
@@ -213,6 +217,7 @@ export default function MobileToolbar({ view, onSelect, onOpenSettings }: Props)
   });
   const listsPress = useLongPress({
     ms: TOOLBAR_HOLD_MS,
+    rumbleDelayMs: TOOLBAR_RUMBLE_DELAY_MS,
     moveCancelSq: 576,
     onLongPress: () => void playFavouritesShuffled(),
     onClick: () => pick("lists"),

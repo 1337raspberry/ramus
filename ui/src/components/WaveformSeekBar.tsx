@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { isHDR } from "../lib/hdr";
 import { formatDuration } from "../lib/format";
+import { haptic } from "../lib/haptics";
+import { createSeekHaptics } from "../lib/seekHaptics";
 import {
   MORPH_MS,
   blendLevels,
@@ -394,6 +396,12 @@ export default function WaveformSeekBar() {
       handleSeekStart(touch.clientX);
 
       const rect = el.getBoundingClientRect();
+      const fracAt = (x: number) => Math.max(0, Math.min(1, (x - rect.left) / rect.width));
+
+      // Texture under the thumb: a tick per step of travel and a bump on
+      // reaching either end.
+      const ticks = createSeekHaptics();
+      ticks.begin(touch.clientX, fracAt(touch.clientX), performance.now());
 
       activeDragAbortRef.current?.abort();
       const ac = new AbortController();
@@ -403,14 +411,15 @@ export default function WaveformSeekBar() {
         const t = ev.touches[0];
         if (!t) return;
         ev.preventDefault();
-        const frac = Math.max(0, Math.min(1, (t.clientX - rect.left) / rect.width));
+        const frac = fracAt(t.clientX);
         setSeekPos(frac * duration);
+        const tick = ticks.move(t.clientX, frac, performance.now());
+        if (tick) haptic(tick);
       };
       const onEnd = (ev: TouchEvent) => {
         const t = ev.changedTouches[0];
         if (t) {
-          const frac = Math.max(0, Math.min(1, (t.clientX - rect.left) / rect.width));
-          seek(frac * duration);
+          seek(fracAt(t.clientX) * duration);
         }
         setIsSeeking(false);
         ac.abort();

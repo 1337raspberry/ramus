@@ -19,6 +19,7 @@ import { applyAccent } from "../lib/accent";
 import { useBlurColors } from "../lib/useBlurColors";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useNowPlayingActions } from "../lib/useNowPlayingActions";
+import { haptic } from "../lib/haptics";
 import { useSheetDrag } from "./useSheetDrag";
 import UpNextList from "./UpNextList";
 import WaveformSeekBar from "../components/WaveformSeekBar";
@@ -70,6 +71,14 @@ function IconSkipForward({ size = 22 }: { size?: number }) {
       <path d="M12 6l9 6-9 6V6z" />
     </svg>
   );
+}
+
+/** A tap on a transport button: a haptic pop, then the command. The pop sits
+ * here rather than in the command so presses from the lock screen or a
+ * widget, which run the same command, stay silent. */
+function transportTap(command: () => Promise<unknown>): void {
+  haptic("pop");
+  command().catch(() => {});
 }
 
 interface Props {
@@ -305,21 +314,21 @@ export default function MobileNowPlaying({
           >
             <button
               className="mobile-miniplayer-btn"
-              onClick={() => previousTrack().catch(() => {})}
+              onClick={() => transportTap(previousTrack)}
               aria-label="Previous"
             >
               <IconSkipBack size={22} />
             </button>
             <button
               className="mobile-miniplayer-btn"
-              onClick={() => togglePlayPause().catch(() => {})}
+              onClick={() => transportTap(togglePlayPause)}
               aria-label={isPlaying ? "Pause" : "Play"}
             >
               {isPlaying ? <IconPause size={26} /> : <IconPlay size={26} />}
             </button>
             <button
               className="mobile-miniplayer-btn"
-              onClick={() => nextTrack().catch(() => {})}
+              onClick={() => transportTap(nextTrack)}
               aria-label="Next"
             >
               <IconSkipForward size={22} />
@@ -341,7 +350,10 @@ export default function MobileNowPlaying({
         <button
           ref={miniArtRef}
           className="mobile-miniplayer-art mobile-miniplayer-art-float"
-          onClick={onExpand}
+          onClick={() => {
+            haptic("thud");
+            onExpand();
+          }}
           onPointerDown={(e) => e.stopPropagation()}
           aria-label="Open now playing"
           style={{ width: 42, height: 42, top: 68, left: 14 }}
@@ -449,21 +461,21 @@ export default function MobileNowPlaying({
               </button>
               <button
                 className="mobile-sheet-transport-btn"
-                onClick={() => previousTrack().catch(() => {})}
+                onClick={() => transportTap(previousTrack)}
                 aria-label="Previous"
               >
                 <IconPrevious size={34} />
               </button>
               <button
                 className="mobile-sheet-transport-btn primary"
-                onClick={() => togglePlayPause().catch(() => {})}
+                onClick={() => transportTap(togglePlayPause)}
                 aria-label={isPlaying ? "Pause" : "Play"}
               >
                 {isPlaying ? <IconPause size={56} /> : <IconPlay size={56} />}
               </button>
               <button
                 className="mobile-sheet-transport-btn"
-                onClick={() => nextTrack().catch(() => {})}
+                onClick={() => transportTap(nextTrack)}
                 aria-label="Next"
               >
                 <IconNext size={34} />

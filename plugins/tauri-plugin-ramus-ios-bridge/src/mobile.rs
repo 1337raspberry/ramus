@@ -220,6 +220,18 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
 
+    /// Play a named haptic effect. iOS only: Android has no handler.
+    pub fn haptic(&self, effect: &str, value: Option<f64>) -> crate::Result<()> {
+        self.0.run_mobile_plugin::<Empty>(
+            "haptic",
+            HapticArgs {
+                effect: effect.to_string(),
+                value,
+            },
+        )?;
+        Ok(())
+    }
+
     pub fn show_native_search_bar(
         &self,
         initial_query: &str,

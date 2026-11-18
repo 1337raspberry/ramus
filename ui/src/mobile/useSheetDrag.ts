@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { haptic } from "../lib/haptics";
 import { usePlaybackStore } from "../stores/playbackStore";
 import { createArtMorph } from "./artMorph";
 
@@ -15,6 +16,10 @@ const RUBBER_BAND = 0.35;
 /** Settle duration, scaled between these by the distance still to travel. */
 const SETTLE_MIN_MS = 180;
 const SETTLE_MAX_MS = 380;
+/** Fraction of a settle after which its haptic thud plays. The curve
+ *  decelerates hard, so the sheet looks landed well before the transition
+ *  ends. */
+const THUD_AT = 0.4;
 /** Duration of the class-driven open/close in styles.css — the mini-player and
  *  the art morph have to match it when something other than a drag moves the
  *  sheet. */
@@ -140,6 +145,8 @@ export function useSheetDrag(refs: SheetDragRefs, opts: Options): void {
     travel: 0,
     samples: [] as { y: number; t: number }[],
   });
+  /** The pending thud of the settle in flight; dropped with the settle. */
+  const thudTimer = useRef(0);
   const settle = useRef<{ active: boolean; timer: number; off: (() => void) | null }>({
     active: false,
     timer: 0,
@@ -158,6 +165,8 @@ export function useSheetDrag(refs: SheetDragRefs, opts: Options): void {
     const morph = morphRef.current!;
 
     const clearSettleWatch = () => {
+      if (thudTimer.current) window.clearTimeout(thudTimer.current);
+      thudTimer.current = 0;
       if (settle.current.timer) window.clearTimeout(settle.current.timer);
       settle.current.off?.();
       settle.current = { active: false, timer: 0, off: null };
@@ -249,6 +258,14 @@ export function useSheetDrag(refs: SheetDragRefs, opts: Options): void {
 
       clearSettleWatch();
       settle.current.active = true;
+      // Read before `onExpand` below flips it: a drag that settles back to
+      // where it started lands without a thud.
+      if ((target === 0) !== live.current.expanded) {
+        thudTimer.current = window.setTimeout(() => {
+          thudTimer.current = 0;
+          haptic("thud");
+        }, ms * THUD_AT);
+      }
 
       // Opening flips React now, so `.expanded` is in place by the time the
       // resting transform is handed back to it; the inline value wins in the

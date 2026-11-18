@@ -1,10 +1,11 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Album } from "../lib/types";
 import { useArtUrl } from "../lib/useArtUrl";
 import { useLibraryStore } from "../stores/libraryStore";
 import { ART_SIZE } from "../lib/commands";
 import { useQueueAlbum } from "../lib/useQueueAlbum";
+import { useLongPress } from "../lib/useLongPress";
 import { IconMusicNote, IconStarFilled } from "../components/Icons";
 import { AlbumDownloadMenuItem } from "../components/DownloadMenuItems";
 import CollectionPickerSheet from "./CollectionPickerSheet";
@@ -15,8 +16,6 @@ interface Props {
   album: Album;
 }
 
-const LONG_PRESS_MS = 500;
-
 export default memo(function MobileAlbumCard({ album }: Props) {
   const openAlbumDetail = useLibraryStore((s) => s.openAlbumDetail);
   const playAlbum = useLibraryStore((s) => s.playAlbum);
@@ -26,39 +25,13 @@ export default memo(function MobileAlbumCard({ album }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [collectionsOpen, setCollectionsOpen] = useState(false);
   const [playlistOpen, setPlaylistOpen] = useState(false);
-  const timerRef = useRef<number | null>(null);
-  const longPressedRef = useRef(false);
 
-  const clearTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => () => clearTimer(), [clearTimer]);
-
-  const handleTouchStart = useCallback(() => {
-    longPressedRef.current = false;
-    clearTimer();
-    timerRef.current = window.setTimeout(() => {
-      longPressedRef.current = true;
-      setSheetOpen(true);
-    }, LONG_PRESS_MS);
-  }, [clearTimer]);
-
-  const handleTouchEnd = useCallback(() => {
-    clearTimer();
-  }, [clearTimer]);
-
-  const handleClick = useCallback(() => {
-    if (longPressedRef.current) {
-      // Swallow the click that fires after a long-press.
-      longPressedRef.current = false;
-      return;
-    }
-    openAlbumDetail(album);
-  }, [album, openAlbumDetail]);
+  // The shared hold tolerates a few pixels of drift before it reads a touch
+  // as a scroll: the hold's own haptic rumble shakes the contact point, and
+  // cancelling on any movement at all would let it cancel itself.
+  const openSheet = useCallback(() => setSheetOpen(true), []);
+  const openDetail = useCallback(() => openAlbumDetail(album), [album, openAlbumDetail]);
+  const longPress = useLongPress({ onLongPress: openSheet, onClick: openDetail });
 
   const queueTracks = useQueueAlbum(album.ratingKey);
 
@@ -66,15 +39,7 @@ export default memo(function MobileAlbumCard({ album }: Props) {
     <>
       <button
         className="mobile-album-card"
-        onClick={handleClick}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onTouchMove={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setSheetOpen(true);
-        }}
+        {...longPress}
       >
         <div className="mobile-album-art">
           {artSrc && !artErr ? (

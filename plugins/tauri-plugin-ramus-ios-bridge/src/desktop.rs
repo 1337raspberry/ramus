@@ -95,6 +95,9 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn dismiss_keyboard(&self) -> crate::Result<()> {
         Ok(())
     }
+    pub fn haptic(&self, _effect: &str, _value: Option<f64>) -> crate::Result<()> {
+        Ok(())
+    }
     pub fn show_native_search_bar(
         &self,
         _initial_query: &str,

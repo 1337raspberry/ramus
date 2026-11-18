@@ -1779,6 +1779,7 @@ pub fn run() {
             commands::settings::get_audio_cache_stats,
             // platform
             commands::platform::dismiss_keyboard,
+            commands::platform::haptic,
             commands::platform::show_native_search_bar,
             commands::platform::hide_native_search_bar,
             commands::platform::set_visualizer_presentation,

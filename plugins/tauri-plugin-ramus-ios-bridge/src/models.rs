@@ -161,6 +161,15 @@ pub struct ExcludeBackupArgs {
     pub path: String,
 }
 
+/// A named haptic effect. `value` is the length in milliseconds of a hold
+/// rumble; other effects carry none.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HapticArgs {
+    pub effect: String,
+    pub value: Option<f64>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShowSearchBarArgs {
