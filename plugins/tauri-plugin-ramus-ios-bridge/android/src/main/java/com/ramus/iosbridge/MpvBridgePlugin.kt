@@ -42,6 +42,11 @@ private const val POST_NOTIFICATIONS_REQUEST_CODE = 1001
 private const val MEDIA_SESSION_PROP = "debug.ramus.media_session"
 
 @InvokeArg
+internal class MpvInitArgs {
+    var caFile: String? = null
+}
+
+@InvokeArg
 internal class LoadFileArgs {
     lateinit var url: String
     lateinit var mode: String
@@ -175,10 +180,11 @@ class MpvBridgePlugin(private val activity: Activity) : Plugin(activity) {
         // followed by a queued path for the next command would let
         // `mpvLoadFile` race ahead of `mpvInit`. Posting unconditionally
         // serialises init + first load on the main looper FIFO.
+        val args = invoke.parseArgs(MpvInitArgs::class.java)
         mainHandler.post {
             if (player == null) {
                 val p = try {
-                    LibmpvSimplePlayer(activity.applicationContext)
+                    LibmpvSimplePlayer(activity.applicationContext, args.caFile)
                 } catch (e: Throwable) {
                     Log.e(TAG, "LibmpvSimplePlayer construction failed", e)
                     invoke.reject("libmpv init failed: ${e.message}")

@@ -133,6 +133,12 @@ pub fn default_mpv_options() -> Vec<(&'static str, &'static str)> {
             "stream-lavf-o",
             "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4",
         ),
+        // mpv leaves HTTPS certificate checking off by default. Stream URLs
+        // carry the Plex token, so an unverified connection would hand it
+        // to anyone able to intercept a remote session. The roots to check
+        // against are supplied separately through `tls-ca-file` (see
+        // `ca_bundle.rs`); plain-HTTP and local-file loads never reach TLS.
+        ("tls-verify", "yes"),
         ("keep-open", "no"),
         ("idle", "yes"),
         ("input-default-bindings", "no"),
@@ -281,6 +287,8 @@ mod tests {
         assert!(opts
             .iter()
             .any(|(k, v)| *k == "stream-lavf-o" && v.contains("reconnect=1")));
+        // Stream URLs carry the Plex token: HTTPS must be verified.
+        assert!(opts.iter().any(|(k, v)| *k == "tls-verify" && *v == "yes"));
     }
 
     #[test]

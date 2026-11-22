@@ -1,3 +1,4 @@
+pub mod ca_bundle;
 pub mod download_cache;
 pub mod lyrics;
 pub mod media_keys;

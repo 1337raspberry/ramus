@@ -291,8 +291,9 @@ class MpvBridgePlugin: Plugin {
     }
 
     @objc public func mpvInit(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(MpvInitArgs.self)
         if mpv == nil {
-            let controller = MpvController()
+            let controller = MpvController(caFile: args.caFile)
             guard controller.isReady else {
                 invoke.reject("mpv initialization failed")
                 return
@@ -1003,6 +1004,10 @@ class MpvBridgePlugin: Plugin {
 class HapticArgs: Decodable {
     let effect: String
     let value: Double?
+}
+
+class MpvInitArgs: Decodable {
+    let caFile: String?
 }
 
 class LoadFileArgs: Decodable {

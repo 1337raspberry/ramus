@@ -78,7 +78,16 @@ impl MpvController {
     ///
     /// `lib` is the runtime-loaded libmpv; load it once at startup via
     /// `MpvLib::load()` and share the `Arc` across controllers.
-    pub fn new(lib: Arc<MpvLib>, callbacks: Arc<MpvCallbacks>) -> Result<Self, String> {
+    ///
+    /// `ca_file` is the PEM root list HTTPS streams are verified against
+    /// (`ramus_core::playback::ca_bundle`). `tls-verify` is on regardless,
+    /// so without a file an HTTPS stream is refused unless this libmpv's
+    /// TLS library finds a system store of its own.
+    pub fn new(
+        lib: Arc<MpvLib>,
+        callbacks: Arc<MpvCallbacks>,
+        ca_file: Option<&std::path::Path>,
+    ) -> Result<Self, String> {
         unsafe {
             // mpv requires LC_NUMERIC=C for POSIX float formatting (e.g. EQ filters).
             // Without this, mpv_create() returns null on Linux with non-C locales.
@@ -99,6 +108,15 @@ impl MpvController {
                 let k = CString::new(*key).unwrap();
                 let v = CString::new(*val).unwrap();
                 lib.set_option_string(ctx, k.as_ptr(), v.as_ptr());
+            }
+            // mpv hands the path to FFmpeg as UTF-8 on every platform.
+            match ca_file.map(|p| p.to_str().map(CString::new)) {
+                Some(Some(Ok(path))) => {
+                    let k = CString::new("tls-ca-file").unwrap();
+                    lib.set_option_string(ctx, k.as_ptr(), path.as_ptr());
+                }
+                Some(_) => log::error!("libmpv: CA bundle path is not valid UTF-8"),
+                None => log::warn!("libmpv: no CA bundle, HTTPS streams rely on a system store"),
             }
 
             let err = lib.initialize(ctx);
@@ -201,9 +219,9 @@ impl MpvController {
                 }
             };
 
-            // Read back the cache / demuxer caps so we can verify our
-            // `set_option_string` calls actually landed. mpv silently
-            // discards unknown options and doesn't reject out-of-range
+            // Read back the cache / demuxer caps and the TLS settings so we
+            // can verify our `set_option_string` calls actually landed. mpv
+            // silently discards unknown options and doesn't reject out-of-range
             // values; without a read-back the only way to detect "option
             // didn't apply" is via downstream symptoms (e.g. recorder
             // failing because the demuxer slurped a whole track).
@@ -212,6 +230,8 @@ impl MpvController {
                 "demuxer-readahead-secs",
                 "cache-secs",
                 "cache",
+                "tls-verify",
+                "tls-ca-file",
             ] {
                 if let Some(v) = read_string_property(&lib, ctx, opt) {
                     log::info!("libmpv: {opt}={v}");
@@ -952,7 +972,7 @@ mod tap_probe {
             })),
             ..Default::default()
         });
-        let mpv = MpvController::new(lib, callbacks).expect("mpv controller");
+        let mpv = MpvController::new(lib, callbacks, None).expect("mpv controller");
         mpv.set_volume(0.0);
         apply_probe_ao(&mpv);
         Harness {
@@ -1464,5 +1484,126 @@ mod tap_probe {
         }
         remove_tap(&h.mpv);
         h.mpv.stop();
+    }
+}
+
+/// Opt-in checks that this machine's libmpv verifies HTTPS certificates
+/// against the bundled root list (`ramus_core::playback::ca_bundle`).
+/// Whether the CA file is honoured depends on the TLS library FFmpeg was
+/// built with, so the checks are worth a run on each platform's libmpv
+/// build. They need network access:
+///
+/// ```sh
+/// cargo test -p ramus-tauri --lib -- --ignored tls_probe --test-threads=1
+/// ```
+///
+/// `RAMUS_TLS_PROBE_URL` replaces the default URL. It must be HTTPS,
+/// answer 200 without a token, and not be playable media, such as a Plex
+/// server's `https://<address>.plex.direct:32400/identity`. The checks
+/// tell a refused connection from an accepted one by how the load ends:
+/// mpv reports "loading failed" when the stream never opened and
+/// "unrecognized file format" once it has read the body.
+#[cfg(test)]
+mod tls_probe {
+    use std::io::{Read, Write};
+    use std::path::Path;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use super::*;
+
+    /// A self-signed certificate that issued nothing. A CA file holding
+    /// only this one parses on every TLS backend and trusts no server.
+    const UNRELATED_ROOT: &str = "-----BEGIN CERTIFICATE-----
+MIIBrTCCAVOgAwIBAgIULwCB3I8rozVJNqGyuO1qG09E+nEwCgYIKoZIzj0EAwIw
+KzEpMCcGA1UEAwwgcmFtdXMgdGxzIHByb2JlICh0cnVzdHMgbm90aGluZykwIBcN
+MjYxMTE4MTQ0MDI1WhgPMjEyNjEwMjUxNDQwMjVaMCsxKTAnBgNVBAMMIHJhbXVz
+IHRscyBwcm9iZSAodHJ1c3RzIG5vdGhpbmcpMFkwEwYHKoZIzj0CAQYIKoZIzj0D
+AQcDQgAE0u8ZFijVGHpItKxkSlT5S3Oj+UDYOu/Hs/7Tt7sXgfj7H0MEgKDiL3Ak
+lEA6EjafWUAGgVz7DDQmfXib5Mz7K6NTMFEwHQYDVR0OBBYEFD2keQaXNxNNhZnw
+Og/72ukfFwtnMB8GA1UdIwQYMBaAFD2keQaXNxNNhZnwOg/72ukfFwtnMA8GA1Ud
+EwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSAAwRQIgZcufMJxyRcVO19V/pzkxBhkP
+htGxLbynWvdJ01dFD0UCIQCEmYgFKX1Gc8+O5846oMHFsUD+D8mgAj+IsdKLlVr7
+FQ==
+-----END CERTIFICATE-----
+";
+
+    const LOADING_FAILED: &str = "loading failed";
+    const UNRECOGNIZED_FORMAT: &str = "unrecognized file format";
+
+    fn probe_url() -> String {
+        std::env::var("RAMUS_TLS_PROBE_URL").unwrap_or_else(|_| "https://plex.tv/pms/:/ip".into())
+    }
+
+    /// Load `url` on a fresh controller and return mpv's error string for
+    /// how the load ended.
+    fn load_outcome(ca_file: Option<&Path>, url: &str) -> String {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let lib = Arc::new(MpvLib::load().expect("libmpv must be loadable"));
+        let (tx, rx) = mpsc::channel();
+        let tx = parking_lot::Mutex::new(tx);
+        let callbacks = Arc::new(MpvCallbacks {
+            on_file_ended: Some(Box::new(move |reason| {
+                let _ = tx.lock().send(reason);
+            })),
+            ..Default::default()
+        });
+        let mpv = MpvController::new(lib, callbacks, ca_file).expect("mpv controller");
+        mpv.load_file(url, LoadMode::Replace, None);
+        let reason = rx
+            .recv_timeout(Duration::from_secs(40))
+            .expect("the load never ended");
+        mpv.stop();
+        match reason {
+            FileEndReason::Error(msg) => msg,
+            other => panic!("the probe URL played or stopped instead of failing: {other:?}"),
+        }
+    }
+
+    #[test]
+    #[ignore = "needs libmpv and network access"]
+    fn tls_probe_accepts_a_server_the_bundle_trusts() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = ramus_core::playback::ca_bundle::ensure_ca_bundle(dir.path()).unwrap();
+        assert_eq!(
+            load_outcome(Some(&bundle), &probe_url()),
+            UNRECOGNIZED_FORMAT,
+            "the TLS backend did not verify the server against the CA file"
+        );
+    }
+
+    #[test]
+    #[ignore = "needs libmpv and network access"]
+    fn tls_probe_refuses_a_server_the_ca_file_does_not_cover() {
+        let dir = tempfile::tempdir().unwrap();
+        let unrelated = dir.path().join("unrelated-root.pem");
+        std::fs::write(&unrelated, UNRELATED_ROOT).unwrap();
+        assert_eq!(
+            load_outcome(Some(&unrelated), &probe_url()),
+            LOADING_FAILED,
+            "certificate verification is not in effect"
+        );
+    }
+
+    /// Verification must not reach plain-HTTP loads (a LAN server without
+    /// secure connections), even with no CA file at all.
+    #[test]
+    #[ignore = "needs libmpv"]
+    fn tls_probe_leaves_plain_http_alone() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for mut conn in listener.incoming().flatten() {
+                let mut request = [0u8; 2048];
+                let _ = conn.read(&mut request);
+                let _ = conn.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 9\r\nConnection: close\r\n\r\nnot media",
+                );
+            }
+        });
+        assert_eq!(
+            load_outcome(None, &format!("http://127.0.0.1:{port}/")),
+            UNRECOGNIZED_FORMAT
+        );
     }
 }

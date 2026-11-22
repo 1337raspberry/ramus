@@ -22,7 +22,7 @@ impl<R: Runtime> RamusIosBridge<R> {
     pub fn init_audio(&self) -> crate::Result<()> {
         Ok(())
     }
-    pub fn mpv_init(&self) -> crate::Result<()> {
+    pub fn mpv_init(&self, _args: MpvInitArgs) -> crate::Result<()> {
         Ok(())
     }
     pub fn mpv_load_file(&self, _args: LoadFileArgs) -> crate::Result<()> {

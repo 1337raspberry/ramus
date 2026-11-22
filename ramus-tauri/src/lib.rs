@@ -752,7 +752,9 @@ pub fn create_mpv_player(
         // `MpvLib::load()` returns a multi-line string listing every path
         // it tried; surface that verbatim if it fails.
         let mpv_lib = Arc::new(MpvLib::load().unwrap_or_else(|e| panic!("{e}")));
-        let mpv = MpvController::new(mpv_lib, callbacks).expect("Failed to initialize libmpv");
+        let ca_file = ramus_core::playback::ca_bundle::mpv_ca_file();
+        let mpv = MpvController::new(mpv_lib, callbacks, ca_file.as_deref())
+            .expect("Failed to initialize libmpv");
         Arc::new(ramus_core::playback::player::AudioPlayer::new(Arc::new(
             mpv,
         )))

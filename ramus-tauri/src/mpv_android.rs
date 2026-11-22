@@ -35,8 +35,10 @@ impl<R: Runtime> AndroidMpvPlayer<R> {
         // path doesn't have the AVAudioSession sample-rate quirk; matching
         // the order keeps the platforms easy to reason about, and
         // `init_audio` on Android is a no-op (Media3 owns audio focus).
+        let ca_file = ramus_core::playback::ca_bundle::mpv_ca_file()
+            .and_then(|p| p.to_str().map(str::to_owned));
         app.ramus_ios_bridge()
-            .mpv_init()
+            .mpv_init(tauri_plugin_ramus_ios_bridge::MpvInitArgs { ca_file })
             .map_err(|e| format!("failed to init mpv: {e}"))?;
         app.ramus_ios_bridge()
             .init_audio()

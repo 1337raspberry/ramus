@@ -27,6 +27,12 @@ rusqlite = { version = "0.41", features = ["bundled", "column_decltype"] }
 quick-xml = "0.41"
 # Parses the server's `Date` header (`PlexClient::server_time`).
 httpdate = "1"
+# The Mozilla root certificates as whole X.509 certificates, written out
+# as the CA file libmpv verifies HTTPS streams against
+# (`playback/ca_bundle.rs`). Same project and release train as the
+# `webpki-roots` list reqwest trusts; keep the two on one version.
+webpki-root-certs = "1"
+base64 = "0.22"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
@@ -40,3 +46,7 @@ winreg = "0.55"
 tokio = { version = "1", features = ["test-util", "macros"] }
 wiremock = "0.6"
 tempfile = "3"
+# Compared against `webpki-root-certs` so the CA file handed to libmpv
+# never drifts from the roots reqwest trusts (`playback/ca_bundle.rs`).
+webpki-roots = "1"
+rustls-webpki = { version = "0.103", default-features = false, features = ["alloc"] }

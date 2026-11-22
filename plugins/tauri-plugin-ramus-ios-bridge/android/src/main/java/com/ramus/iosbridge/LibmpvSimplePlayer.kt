@@ -25,6 +25,10 @@ import dev.jdtech.mpv.MPVLib
  */
 class LibmpvSimplePlayer(
     context: Context,
+    // PEM root list HTTPS streams are verified against (`ca_bundle.rs`
+    // writes it). mbedTLS has no system trust store, so without it every
+    // HTTPS stream is refused.
+    caFile: String?,
 ) : SimpleBasePlayer(Looper.getMainLooper()), MPVLib.EventObserver, MPVLib.LogObserver {
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -96,6 +100,15 @@ class LibmpvSimplePlayer(
             "stream-lavf-o",
             "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4",
         )
+        // mpv leaves HTTPS certificate checking off by default, and stream
+        // URLs carry the Plex token. Set here, not per file: per-file
+        // options never reach this player.
+        mpv.setOptionString("tls-verify", "yes")
+        if (caFile != null) {
+            mpv.setOptionString("tls-ca-file", caFile)
+        } else {
+            Log.e("LibmpvSimplePlayer", "no CA bundle: HTTPS streams will be refused")
+        }
         mpv.setOptionString("keep-open", "no")
         mpv.setOptionString("idle", "yes")
         mpv.setOptionString("input-default-bindings", "no")

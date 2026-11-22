@@ -818,6 +818,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ### Community Data License Agreement Permissive 2.0 (CDLA-Permissive-2.0)
 
 Used by:
+- `webpki-root-certs` 1.0.10 — https://github.com/rustls/webpki-roots
 - `webpki-roots` 1.0.10 — https://github.com/rustls/webpki-roots
 
 ```

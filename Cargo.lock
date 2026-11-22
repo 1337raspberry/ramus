@@ -3578,6 +3578,7 @@ name = "ramus-core"
 version = "2.2.0"
 dependencies = [
  "aes-gcm",
+ "base64 0.22.1",
  "core-foundation 0.10.1",
  "directories",
  "fuzzy-matcher",
@@ -3588,6 +3589,7 @@ dependencies = [
  "rand 0.8.5",
  "reqwest 0.12.28",
  "rusqlite",
+ "rustls-webpki",
  "serde",
  "serde_json",
  "sha2",
@@ -3597,6 +3599,8 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
+ "webpki-root-certs",
+ "webpki-roots",
  "winreg",
  "wiremock",
 ]
@@ -5734,6 +5738,15 @@ dependencies = [
  "pkg-config",
  "soup3-sys",
  "system-deps",
+]
+
+[[package]]
+name = "webpki-root-certs"
+version = "1.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58ec80e73fd8baf57bf0d9615554c75348bda990d6d5bbeab964dd068319fecb"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]

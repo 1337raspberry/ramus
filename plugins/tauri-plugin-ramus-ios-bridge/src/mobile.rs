@@ -49,9 +49,8 @@ impl<R: Runtime> RamusIosBridge<R> {
         Ok(())
     }
 
-    pub fn mpv_init(&self) -> crate::Result<()> {
-        self.0
-            .run_mobile_plugin::<Empty>("mpvInit", Empty::default())?;
+    pub fn mpv_init(&self, args: MpvInitArgs) -> crate::Result<()> {
+        self.0.run_mobile_plugin::<Empty>("mpvInit", args)?;
         Ok(())
     }
 

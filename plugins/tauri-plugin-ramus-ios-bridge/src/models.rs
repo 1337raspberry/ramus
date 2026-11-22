@@ -25,6 +25,15 @@ impl<'de> Deserialize<'de> for Empty {
     }
 }
 
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MpvInitArgs {
+    /// PEM root list mpv verifies HTTPS streams against, set as
+    /// `tls-ca-file`. The native side turns `tls-verify` on either way,
+    /// so `None` refuses HTTPS streams instead of playing them unverified.
+    pub ca_file: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadFileArgs {

@@ -66,7 +66,10 @@ final class MpvController {
 
     // MARK: - Lifecycle
 
-    init() {
+    /// `caFile` is the PEM root list HTTPS streams are verified against
+    /// (`ca_bundle.rs` writes it). GnuTLS has no system trust store on
+    /// iOS, so without it every HTTPS stream is refused.
+    init(caFile: String?) {
         guard let handle = mpv_create() else {
             log.error("mpv_create() failed")
             return
@@ -122,6 +125,14 @@ final class MpvController {
             "stream-lavf-o",
             "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4"
         )
+        // mpv leaves HTTPS certificate checking off by default, and stream
+        // URLs carry the Plex token. Matches desktop.
+        setOption("tls-verify", "yes")
+        if let caFile {
+            setOption("tls-ca-file", caFile)
+        } else {
+            log.error("no CA bundle: HTTPS streams will be refused")
+        }
 
         let err = mpv_initialize(handle)
         guard err >= 0 else {
