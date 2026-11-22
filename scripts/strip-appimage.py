@@ -109,6 +109,28 @@ def find_or_download_appimagetool(arch: str) -> Path:
     return tool
 
 
+def make_readable_by_all(appdir: Path) -> None:
+    """Give everyone read access, and execute on directories and on files
+    that already carry an execute bit (`chmod -R a+rX`).
+
+    The extracted AppDir keeps the payload's modes, which can be
+    owner-only. appimagetool refuses to pack an AppDir whose root or
+    AppRun others cannot read and execute, and warns for every other such
+    path, because an AppImage is run by users other than the one who
+    built it. Symlinks are skipped: their own mode is ignored, and
+    following one could change a file outside the AppDir.
+    """
+    for path in [appdir, *appdir.rglob("*")]:
+        if path.is_symlink():
+            continue
+        mode = path.stat().st_mode
+        add = 0o444
+        if path.is_dir() or mode & 0o111:
+            add |= 0o111
+        if mode | add != mode:
+            path.chmod(mode | add)
+
+
 def main() -> int:
     src = find_appimage()
     print(f"stripping {src.name}")
@@ -149,6 +171,8 @@ def main() -> int:
     print(f"removed {len(removed)} libs:")
     for name in removed:
         print(f"  - {name}")
+
+    make_readable_by_all(appdir)
 
     arch = detect_arch()
     tool = find_or_download_appimagetool(arch)
