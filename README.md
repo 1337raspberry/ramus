@@ -87,14 +87,8 @@ Pre-built installers are produced by [GitHub Actions](https://github.com/1337ras
 | **Windows 10/11 (x64)**           | `ramus_<version>_x64-setup.exe` (NSIS) or `ramus_<version>_x64_en-US.msi` | `libmpv-2.dll` ships next to the executable.                                                          |
 | **Linux (x86_64)**                | `ramus_<version>_<amd64>/<x86_64>.AppImage` / `.deb` / `.rpm`             | The AppImage bundles libmpv. The `.deb` / `.rpm` depend on the system `libmpv2` / `mpv-libs` package. |
 | **Linux (ARM)**                   | `ramus_<version>_<aarch64>/<arm64>.AppImage` / `.deb` / `.rpm`            | The AppImage bundles libmpv. The `.deb` / `.rpm` depend on the system `libmpv2` / `mpv-libs` package. |
-| **iOS**                           | `ramus_<version>_ios-adhoc.ipa`                                           | Ad-hoc signed for manual self side-loading. SideStore install also available via the source below. |
+| **iOS**                           | App Store link on the way                                                 |                                                                                                       |
 | **Android**                       | `ramus_<version>_universal.apk`                                           | Signed multi-ABI APK (`arm64-v8a` + `armeabi-v7a`). libmpv + ffmpeg/codec stack bundled inside the APK. Sideload via `adb install` or your file manager.  |
-
-**SideStore source:**
-
-```
-https://1337raspberry.github.io/ramus.json
-```
 
 > ⚠️ **Releases are currently unsigned or self-signed.** As with many open source projects, macOS gatekeeper will quarantine the `.app` and tell you it's damaged or cant be verified or some other nonsense wording; Windows SmartScreen will whine that it's unrecognised, and Android Play Protect will ask to scan it first. The [Releases](https://github.com/1337raspberry/ramus/releases) listing will have more specifics on how to deal with these annoyances
 
@@ -195,7 +189,7 @@ Mobile:
 cargo tauri ios build
 ```
 
-> You'll need to sideload this yourself. If demand is there I may put this on the App Store, but I'm not in a rush to pay Apple for the privilege of releasing an open-source, ad-free, zero cost app.
+> Installing a local build on a device needs your own Apple developer signing. The App Store link is on the way.
 
 ```sh
 # Android — emulator or connected device

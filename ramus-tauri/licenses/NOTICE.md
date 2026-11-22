@@ -36,7 +36,7 @@ depends on where it comes from:
 | Linux AppImage | Ubuntu 24.04's `libmpv2` and its dependencies, bundled by `scripts/bundle-linux-libmpv.py` | GPL-3.0-or-later as a whole: FFmpeg is configured with `--enable-gpl`, libmpv links libcdio (GPL-3.0-or-later), and x264, x265 and xvid are GPL |
 | Linux `.deb` / `.rpm` | the distribution's own libmpv package, installed as a dependency | not shipped by ramus |
 | Windows installers | `libmpv-2.dll` from the LGPL build of [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild), mirrored in this repository's `libmpv-windows-*` pre-release and pinned by SHA-256 in `.github/workflows/release.yml` | LGPL: mpv is built with `-Dgpl=false` (LGPL-2.1-or-later) and FFmpeg without `--enable-gpl` but with `--enable-version3` (LGPL-3.0-or-later) |
-| iOS `.ipa` | [MPVKit-lavfi](https://github.com/1337raspberry/MPVKit-lavfi), statically linked | LGPL; the components are listed below |
+| iOS (App Store) | [MPVKit-lavfi](https://github.com/1337raspberry/MPVKit-lavfi), statically linked | LGPL; the components are listed below |
 | Android `.apk` | the [`dev.jdtech.mpv:libmpv`](https://github.com/jarnedemeulemeester/libmpv-android) AAR | GPL-3.0-or-later as a whole: FFmpeg is configured with `--enable-gpl --enable-version3` and mpv with its `gpl` feature |
 
 A release that bundles a GPL build is distributed as a whole under the
