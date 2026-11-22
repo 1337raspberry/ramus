@@ -1600,8 +1600,8 @@ Used by:
 - `phf_shared` 0.8.0 — https://github.com/sfackler/rust-phf
 - `r-efi` 5.3.0 — https://github.com/r-efi/r-efi
 - `r-efi` 6.0.0 — https://github.com/r-efi/r-efi
-- `ramus-core` 2.2.0 — https://github.com/1337raspberry/ramus
-- `ramus-tauri` 2.2.0 — https://github.com/1337raspberry/ramus
+- `ramus-core` 2.3.0 — https://github.com/1337raspberry/ramus
+- `ramus-tauri` 2.3.0 — https://github.com/1337raspberry/ramus
 - `rsqlite-vfs` 0.2.0 — https://github.com/Spxg/sqlite-wasm-rs
 - `siphasher` 0.3.11 — https://github.com/jedisct1/rust-siphash
 - `siphasher` 1.0.2 — https://github.com/jedisct1/rust-siphash
@@ -2987,7 +2987,7 @@ SOFTWARE.
 ### MIT License (MIT) (variant 59)
 
 Used by:
-- `form_urlencoded` 1.2.2 — https://github.com/servo/rust-url
+- `form_urlencoded` 1.2.3 — https://github.com/servo/rust-url
 
 ```
 Copyright (c) 2013-2016 The rust-url developers
@@ -3927,7 +3927,7 @@ SOFTWARE.
 Used by:
 - `idna` 1.1.0 — https://github.com/servo/rust-url/
 - `percent-encoding` 2.3.2 — https://github.com/servo/rust-url/
-- `url` 2.5.8 — https://github.com/servo/rust-url
+- `url` 2.5.9 — https://github.com/servo/rust-url
 
 ```
 Copyright (c) 2013-2025 The rust-url developers
