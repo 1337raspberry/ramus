@@ -52,23 +52,6 @@ yanked = "deny"
 # NOT cover `vulnerability` — a real CVE in any of these crates
 # would still fail the check, which is the behaviour we want.
 ignore = [
-    # gtk-rs GTK3 bindings — entire cluster marked unmaintained
-    # after the project announced their GTK4 migration. Pulled in
-    # transitively by Tauri's Linux WebKit runtime (webkit2gtk-sys
-    # → gtk-sys → glib-sys etc). Drops when Tauri migrates to
-    # GTK4-on-Linux upstream; until then there is no version of
-    # tauri that avoids them.
-    "RUSTSEC-2024-0411",  # gtk-sys
-    "RUSTSEC-2024-0412",  # gtk
-    "RUSTSEC-2024-0413",  # atk-sys
-    "RUSTSEC-2024-0414",  # gdk-sys
-    "RUSTSEC-2024-0415",  # gdkwayland-sys
-    "RUSTSEC-2024-0416",  # gdkx11-sys
-    "RUSTSEC-2024-0417",  # atk
-    "RUSTSEC-2024-0418",  # gdk
-    "RUSTSEC-2024-0419",  # gdkwayland
-    "RUSTSEC-2024-0420",  # gdkx11
-
     # proc-macro-error v1 deprecated by author in favour of
     # proc-macro-error2. Transitive via several macro crates in
     # the tauri tree; drops as those upgrade.
